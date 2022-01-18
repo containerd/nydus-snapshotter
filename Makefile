@@ -35,7 +35,5 @@ test:
 
 .PHONY: cover
 cover:
-	@mkdir -p _out
-	@go test -coverprofile=_out/cover.out ${PACKAGES}
-	@go tool cover -func=_out/cover.out
-	@rm -rf _out
+	go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+	go tool cover -func=coverage.txt
