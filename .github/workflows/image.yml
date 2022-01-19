@@ -1,0 +1,33 @@
+name: nydus-snapshotter image
+
+on:
+  schedule:
+    # Every day at 00:33 clock UTC
+    - cron: "33 0 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  ORGANIZATION: ${{ github.repository }}
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build nydus-snapshotter
+        run: |
+          make static-release
+          cp bin/containerd-nydus-grpc misc/snapshotter
+      - name: Log in to container registry
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push nydus-snapshotter image
+        run: |
+          cd misc/snapshotter
+          docker build -t ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:latest .
+          docker push ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:latest
