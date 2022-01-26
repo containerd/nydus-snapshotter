@@ -1,9 +1,14 @@
 name: nydus-snapshotter image
 
 on:
-  schedule:
-    # Every day at 00:33 clock UTC
-    - cron: "33 0 * * *"
+  push:
+    branches:
+      - 'main'
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+  pull_request:
+    branches:
+      - 'main'
 
 env:
   CARGO_TERM_COLOR: always
@@ -35,6 +40,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push nydus-snapshotter image
         run: |
+          TAG=$GITHUB_REF_NAME
+          [ "$TAG" == "main" ] && TAG="latest"
+          [ "$GITHUB_EVENT_NAME" == "pull_request" ] && TAG="local"
           cd misc/snapshotter
-          docker build -t ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:latest .
-          docker push ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:latest
+          docker build -t ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:$TAG .
+          # Only push for non pull_request
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+              docker push ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:$TAG
+          fi
