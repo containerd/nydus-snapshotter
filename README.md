@@ -4,7 +4,7 @@
 
 Nydus-snapshotter is a **non-core** sub-project of containerd.
 
-Pulling and unpacking OCI container image are time consuming when start a container. [Nydus](https://github.com/dragonflyoss/image-service) is a vendor-neutral project aiming at mitigating the problem. It designs a new container image oriented and optimized file system format with capability of on-demand read. For instructions on how to build nydus container image, please refer to [nydusify](https://github.com/changweige/image-service/blob/master/docs/nydusify.md) conversion tool.
+Pulling and unpacking OCI container image are time consuming when start a container. [Nydus](https://github.com/dragonflyoss/image-service) is a vendor-neutral project aiming at mitigating the problem. It designs a new container image oriented and optimized file system format with capability of on-demand read. For instructions on how to build nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool.
 
 ## Building
 
@@ -43,7 +43,7 @@ Find a suitable `nydusd` release for you from [nydus releases page](https://gith
 ## Configure Nydus
 
 Nydus is configured by a json file which is required now. Because nydus container images are likely stored in a registry, where auth has to be provided.
-Please follow instructions to [configure nydus](./documents/configure_nydus.md) configure nydus making it work properly in your environment.
+Please follow instructions to [configure nydus](./docs/configure_nydus.md) configure nydus making it work properly in your environment.
 
 ## Start Nydus Snapshotter
 
@@ -107,7 +107,7 @@ NOTE: A potential drawback using CRI is that we can hardly specify snapshotter t
    snapshotter = "nydus"
 ```
 
-Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](.documents/../documents/crictl_dry_run.md) of using `ctrctl` can be found in [documents](./documents).
+Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./docs/crictl_dry_run.md) of using `ctrctl` can be found in [documents](./docs).
 
 ## Community
 
