@@ -49,6 +49,7 @@ type Config struct {
 	LogToStdout          bool          `toml:"log_to_stdout"`
 	DisableCacheManager  bool          `toml:"disable_cache_manager"`
 	EnableNydusOverlayFS bool          `toml:"enable_nydus_overlayfs"`
+	NydusdThreadNum      int           `toml:"nydusd_thread_num"`
 }
 
 func (c *Config) FillupWithDefaults() error {

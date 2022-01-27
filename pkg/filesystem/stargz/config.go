@@ -97,3 +97,10 @@ func WithLogToStdout(logToStdout bool) NewFSOpt {
 }
 
 type NewFSOpt func(d *filesystem) error
+
+func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
+	return func(d *filesystem) error {
+		d.nydusdThreadNum = nydusdThreadNum
+		return nil
+	}
+}

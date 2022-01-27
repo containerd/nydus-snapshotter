@@ -131,3 +131,10 @@ func WithAPISock(apiSock string) NewDaemonOpt {
 		return nil
 	}
 }
+
+func WithNydusdThreadNum(nydusdThreadNum int) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.nydusdThreadNum = nydusdThreadNum
+		return nil
+	}
+}

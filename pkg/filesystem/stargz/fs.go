@@ -41,6 +41,7 @@ type filesystem struct {
 	logLevel              string
 	logDir                string
 	logToStdout           bool
+	nydusdThreadNum       int
 }
 
 func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fs.FileSystem, error) {
@@ -149,6 +150,7 @@ func (f *filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon
 		daemon.WithImageID(imageID),
 		daemon.WithLogLevel(f.logLevel),
 		daemon.WithLogToStdout(f.logToStdout),
+		daemon.WithNydusdThreadNum(f.nydusdThreadNum),
 	)
 	if err != nil {
 		return nil, err

@@ -49,6 +49,7 @@ type Args struct {
 	DisableCacheManager  bool
 	LogToStdout          bool
 	EnableNydusOverlayFS bool
+	NydusdThreadNum      int
 }
 
 type Flags struct {
@@ -182,6 +183,11 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to disable nydus-overlayfs to mount",
 			Destination: &args.EnableNydusOverlayFS,
 		},
+		&cli.IntFlag{
+			Name:        "nydusd-thread-num",
+			Usage:       "Nydusd daemon thread-num, default will be set to the number of CPUs",
+			Destination: &args.NydusdThreadNum,
+		},
 	}
 }
 
@@ -235,6 +241,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.EnableStargz = args.EnableStargz
 	cfg.DisableCacheManager = args.DisableCacheManager
 	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	cfg.NydusdThreadNum = args.NydusdThreadNum
 
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {

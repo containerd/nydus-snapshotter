@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
@@ -39,6 +40,7 @@ type Daemon struct {
 	apiSock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
+	nydusdThreadNum  int
 }
 
 func (d *Daemon) SharedMountPoint() string {
@@ -65,6 +67,17 @@ func (d *Daemon) BootstrapFile() (string, error) {
 
 func (d *Daemon) ConfigFile() string {
 	return filepath.Join(d.ConfigDir, "config.json")
+}
+
+// NydusdThreadNum returns `nydusd-thread-num` for nydusd if set,
+// otherwise will return the number of CPUs as default.
+func (d *Daemon) NydusdThreadNum() string {
+	if d.nydusdThreadNum > 0 {
+		return strconv.Itoa(d.nydusdThreadNum)
+	}
+	// if nydusd-thread-num is not set, return empty string
+	// to let manager don't set thread-num option.
+	return ""
 }
 
 func (d *Daemon) APISock() string {
