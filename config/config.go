@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	exec "golang.org/x/sys/execabs"
 )
 
 const (
@@ -23,8 +24,8 @@ const (
 	defaultGCPeriod           = 24 * time.Hour
 
 	defaultNydusDaemonConfigPath string = "/etc/nydus/config.json"
-	defaultNydusdBinaryPath      string = "/usr/local/bin/nydusd"
-	defaultNydusImageBinaryPath  string = "/usr/local/bin/nydus-image"
+	nydusdBinaryName             string = "nydusd"
+	nydusImageBinaryName         string = "nydus-image"
 )
 
 type Config struct {
@@ -59,14 +60,6 @@ func (c *Config) FillupWithDefaults() error {
 		c.DaemonCfgPath = defaultNydusDaemonConfigPath
 	}
 
-	if c.NydusdBinaryPath == "" {
-		c.NydusdBinaryPath = defaultNydusdBinaryPath
-	}
-
-	if c.NydusImageBinaryPath == "" {
-		c.NydusImageBinaryPath = defaultNydusImageBinaryPath
-	}
-
 	if c.DaemonMode == "" {
 		c.DaemonMode = DefaultDaemonMode
 	}
@@ -87,5 +80,27 @@ func (c *Config) FillupWithDefaults() error {
 		return errors.Wrapf(err, "failed to load config file %q", c.DaemonCfgPath)
 	}
 	c.DaemonCfg = daemonCfg
+	return c.SetupNydusBinaryPaths()
+}
+
+func (c *Config) SetupNydusBinaryPaths() error {
+	// resolve nydusd path
+	if c.NydusdBinaryPath == "" {
+		path, err := exec.LookPath(nydusdBinaryName)
+		if err != nil {
+			return err
+		}
+		c.NydusdBinaryPath = path
+	}
+
+	// resolve nydus-image path
+	if c.NydusImageBinaryPath == "" {
+		path, err := exec.LookPath(nydusImageBinaryName)
+		if err != nil {
+			return err
+		}
+		c.NydusImageBinaryPath = path
+	}
+
 	return nil
 }

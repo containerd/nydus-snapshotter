@@ -18,13 +18,11 @@ import (
 )
 
 const (
-	defaultAddress        = "/run/containerd-nydus-grpc/containerd-nydus-grpc.sock"
-	defaultLogLevel       = logrus.InfoLevel
-	defaultRootDir        = "/var/lib/containerd-nydus-grpc"
-	defaultGCPeriod       = "24h"
-	defaultPublicKey      = "/signing/nydus-image-signing-public.key"
-	defaultNydusdPath     = "/bin/nydusd"
-	defaultNydusImagePath = "/bin/nydusd-img"
+	defaultAddress   = "/run/containerd-nydus-grpc/containerd-nydus-grpc.sock"
+	defaultLogLevel  = logrus.InfoLevel
+	defaultRootDir   = "/var/lib/containerd-nydus-grpc"
+	defaultGCPeriod  = "24h"
+	defaultPublicKey = "/signing/nydus-image-signing-public.key"
 )
 
 type Args struct {
@@ -96,7 +94,7 @@ func buildFlags(args *Args) []cli.Flag {
 		&cli.StringFlag{
 			Name:        "gc-period",
 			Value:       defaultGCPeriod,
-			Usage:       "period for gc blob cache, for example, 1m, 2h",
+			Usage:       "period for gc blob cache, duration string(for example, 1m, 2h)",
 			Destination: &args.GCPeriod,
 		},
 		&cli.BoolFlag{
@@ -113,14 +111,14 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "nydusd-path",
-			Value:       defaultNydusdPath,
-			Usage:       "path to nydusd binary",
+			Value:       "",
+			Usage:       "path to nydusd binary, if not set will lookup in $PATH",
 			Destination: &args.NydusdBinaryPath,
 		},
 		&cli.StringFlag{
 			Name:        "nydusimg-path",
-			Value:       defaultNydusImagePath,
-			Usage:       "path to nydus-img binary path",
+			Value:       "",
+			Usage:       "path to nydus-img binary path, if not set will lookup in $PATH",
 			Destination: &args.NydusImageBinaryPath,
 		},
 		&cli.BoolFlag{
@@ -179,7 +177,7 @@ func buildFlags(args *Args) []cli.Flag {
 		&cli.BoolFlag{
 			Name:        "enable-nydus-overlayfs",
 			Value:       false,
-			Usage:       "whether to disable nydus-overlayfs to mount",
+			Usage:       "whether to enable nydus-overlayfs to mount",
 			Destination: &args.EnableNydusOverlayFS,
 		},
 	}
@@ -241,5 +239,5 @@ func Validate(args *Args, cfg *config.Config) error {
 		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
 	}
 	cfg.GCPeriod = d
-	return nil
+	return cfg.SetupNydusBinaryPaths()
 }

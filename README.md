@@ -91,7 +91,7 @@ fetching sha256:75002dfe... application/vnd.oci.image.manifest.v1+json
 fetching sha256:5a42e21c... application/vnd.oci.image.config.v1+json
 fetching sha256:eb1af2e1... application/vnd.oci.image.layer.v1.tar+gzip
 
-# Start container by `ctr`
+# Start container by `ctr-remote`
 $ sudo ctr-remote run --snapshotter nydus ghcr.io/dragonflyoss/image-service/nginx:nydus-latest
 
 # Start container by `nerdctl`
@@ -100,14 +100,14 @@ nerdctl --snapshotter nydus run ghcr.io/dragonflyoss/image-service/nginx:nydus-l
 
 ### Start Container in Kubernetes
 
-NOTE: A potential drawback using CRI is that we can hardly specify snapshotter to `nydus-snapshotter`. So we have to change containerd's default snapshotter in its configuration file like below:
+**NOTE:** A potential drawback using CRI is that we can hardly specify snapshotter to `nydus-snapshotter`. So we have to change containerd's default snapshotter in its configuration file like below:
 
 ```toml
 [plugins."io.containerd.grpc.v1.cri".containerd]
    snapshotter = "nydus"
 ```
 
-Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./docs/crictl_dry_run.md) of using `ctrctl` can be found in [documents](./docs).
+Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./docs/crictl_dry_run.md) of using `crictl` can be found in [documents](./docs).
 
 ## Community
 
