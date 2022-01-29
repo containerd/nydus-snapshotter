@@ -135,3 +135,10 @@ func WithLogToStdout(logToStdout bool) NewFSOpt {
 		return nil
 	}
 }
+
+func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
+	return func(d *filesystem) error {
+		d.nydusdThreadNum = nydusdThreadNum
+		return nil
+	}
+}

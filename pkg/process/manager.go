@@ -134,8 +134,12 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	args := []string{
 		"--apisock", d.APISock(),
 		"--log-level", d.LogLevel,
-		"--thread-num", "10",
 	}
+	nydusdThreadNum := d.NydusdThreadNum()
+	if nydusdThreadNum != "" {
+		args = append(args, "--thread-num", nydusdThreadNum)
+	}
+
 	if !d.LogToStdout {
 		args = append(args, "--log-file", d.LogFile())
 	}

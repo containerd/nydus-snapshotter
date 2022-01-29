@@ -45,6 +45,7 @@ type filesystem struct {
 	logLevel         string
 	logDir           string
 	logToStdout      bool
+	nydusdThreadNum  int
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -79,6 +80,7 @@ func (fs *filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 		daemon.WithRootMountPoint(filepath.Join(fs.RootDir, "mnt")),
 		daemon.WithLogLevel(fs.logLevel),
 		daemon.WithLogToStdout(fs.logToStdout),
+		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		modeOpt,
 	)
 	if err != nil {
@@ -361,6 +363,7 @@ func (fs *filesystem) createNewDaemon(snapshotID string, imageID string) (*daemo
 		daemon.WithLogLevel(fs.logLevel),
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithCustomMountPoint(customMountPoint),
+		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 	); err != nil {
 		return nil, err
 	}
@@ -397,6 +400,7 @@ func (fs *filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 		daemon.WithImageID(imageID),
 		daemon.WithLogLevel(fs.logLevel),
 		daemon.WithLogToStdout(fs.logToStdout),
+		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 	); err != nil {
 		return nil, err
 	}
