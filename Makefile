@@ -21,6 +21,14 @@ clear:
 	rm -f bin/*
 	rm -rf _out
 
+
+.PHONY: install
+install: static-release
+	sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
+	sudo install -D -m 755 misc/snapshotter/nydusd-config.json /etc/nydus/config.json
+	sudo install -D -m 644 misc/snapshotter/nydus-snapshotter.service /etc/systemd/system/nydus-snapshotter.service
+	sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service
+
 .PHONY: vet
 vet:
 	go vet $(PACKAGES)
