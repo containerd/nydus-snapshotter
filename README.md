@@ -49,8 +49,14 @@ Please follow instructions to [configure nydus](./docs/configure_nydus.md) confi
 
 Nydus-snapshotter is implemented as a [proxy plugin](https://github.com/containerd/containerd/blob/04985039cede6aafbb7dfb3206c9c4d04e2f924d/PLUGINS.md#proxy-plugins) (`containerd-nydus-grpc`) for containerd.
 
-A example of starting nydus-snapshotter:
+Assume your server systemd based, install nydus-snapshotter:
+Note: `nydusd` and `nydus-image` should be found from $PATH.
+```bash
+make install
+systemctl restart containerd
+```
 
+Or you can start nydus-snapshotter manually.
 ```bash
 # `nydusd-path` is the path to nydusd binary
 # `address` is the domain socket that you configured in containerd configuration file
@@ -62,7 +68,7 @@ $ ./containerd-nydus-grpc \
     --log-level info \
     --root /var/lib/containerd/io.containerd.snapshotter.v1.nydus \
     --cache-dir /var/lib/nydus/cache \
-    --address /run/containerd/containerd-nydus-grpc.sock \
+    --address /run/containerd-nydus/containerd-nydus-grpc.sock \
     --nydusd-path /usr/local/bin/nydusd \
     --nydusimg-path /usr/local/bin/nydus-image \
     --log-to-stdout

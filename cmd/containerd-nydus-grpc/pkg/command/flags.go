@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultAddress   = "/run/containerd-nydus-grpc/containerd-nydus-grpc.sock"
+	defaultAddress   = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 	defaultLogLevel  = logrus.InfoLevel
 	defaultRootDir   = "/var/lib/containerd-nydus-grpc"
 	defaultGCPeriod  = "24h"
