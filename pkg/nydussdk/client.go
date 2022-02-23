@@ -47,7 +47,7 @@ type NydusClient struct {
 func NewNydusClient(sock string) (Interface, error) {
 	transport, err := buildTransport(sock)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to build transport for nydus client")
 	}
 	return &NydusClient{
 		httpClient: &http.Client{
@@ -58,14 +58,15 @@ func NewNydusClient(sock string) (Interface, error) {
 }
 
 func (c *NydusClient) CheckStatus() (model.DaemonInfo, error) {
-	resp, err := c.httpClient.Get(fmt.Sprintf("http://unix%s", infoEndpoint))
+	addr := fmt.Sprintf("http://unix%s", infoEndpoint)
+	resp, err := c.httpClient.Get(addr)
 	if err != nil {
-		return model.DaemonInfo{}, err
+		return model.DaemonInfo{}, errors.Wrapf(err, "failed to do HTTP GET from %s", addr)
 	}
 	defer resp.Body.Close()
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return model.DaemonInfo{}, err
+		return model.DaemonInfo{}, errors.Wrap(err, "failed to read status response")
 	}
 	var info model.DaemonInfo
 	if err = json.Unmarshal(b, &info); err != nil {
@@ -78,11 +79,11 @@ func (c *NydusClient) Umount(sharedMountPoint string) error {
 	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", mountEndpoint, sharedMountPoint)
 	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to create umount request")
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "failed to do HTTP DELETE to %s", requestURL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNoContent {
@@ -102,20 +103,20 @@ func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetri
 
 	req, err := http.NewRequest(http.MethodGet, getStatURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to create GetFsMetric request")
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to do HTTP GET to %s", getStatURL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNoContent {
-		return nil, err
+		return nil, errors.New("got unexpected http status StatusNoContent")
 	}
 
 	var m model.FsMetric
 	if err = json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to decode FsMetric")
 	}
 	return &m, nil
 }
@@ -132,7 +133,7 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 	}
 	resp, err := c.httpClient.Post(requestURL, contentType, bytes.NewBuffer(body))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "failed to do HTTP POST to %s", requestURL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNoContent {
@@ -175,11 +176,11 @@ func buildTransport(sock string) (http.RoundTripper, error) {
 func handleMountError(r io.Reader) error {
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to read from reader")
 	}
 	var errMessage model.ErrorMessage
 	if err = json.Unmarshal(b, &errMessage); err != nil {
-		return err
+		return errors.Wrap(err, "failed unmarshal ErrorMessage")
 	}
-	return errors.New(errMessage.Message)
+	return fmt.Errorf("error code: %s, error message: %s", errMessage.Code, errMessage.Message)
 }
