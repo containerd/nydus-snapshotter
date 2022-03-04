@@ -1,0 +1,28 @@
+version = 2
+root = "/var/lib/containerd-test"
+state = "/run/containerd-test"
+oom_score = 0
+
+[grpc]
+  address = "/run/containerd-test/containerd.sock"
+
+[debug]
+  level = "debug"
+
+[plugins."io.containerd.grpc.v1.cri"]
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+      snapshotter = "nydus"
+      disable_snapshot_annotations = false
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      runtime_type = "io.containerd.runc.v2"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata]
+      runtime_type = "io.containerd.kata.v2"
+      privileged_without_host_devices = true
+  [plugins."io.containerd.grpc.v1.cri".cni]
+      bin_dir = "/opt/cni/bin"
+      conf_dir = "/etc/cni/net.d"
+
+[proxy_plugins]
+  [proxy_plugins.nydus]
+     type = "snapshot"
+     address = "/var/lib/containerd-test/io.containerd.snapshotter.v1.nydus/containerd-nydus-grpc.sock"
