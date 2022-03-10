@@ -1,0 +1,8 @@
+metadata:
+  attempt: 1
+  name: foobar
+  namespace: default
+log_directory: /tmp
+linux:
+  namespaces:
+    options: {}

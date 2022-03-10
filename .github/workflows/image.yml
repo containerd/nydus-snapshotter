@@ -14,6 +14,8 @@ env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
   ORGANIZATION: ${{ github.repository }}
+  CNI_VERSION: v1.1.0
+  CRICTL_VERSION: v1.23.0
 
 jobs:
   build-image:
@@ -57,3 +59,44 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
               docker push ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:$TAG
           fi
+      - name: Prepare nydus-snapshotter image test
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          sudo mkdir -p /var/lib/containerd-test/ /etc/containerd/ /opt/cni/bin/ /etc/cni/net.d/
+          sudo cp misc/example/containerd-test-config.toml /etc/containerd/
+          sudo cp misc/example/crictl.yaml /etc/
+          sudo cp misc/example/10-containerd-net.conflist /etc/cni/net.d/
+          # install cni plugin
+          wget https://github.com/containernetworking/plugins/releases/download/${{ env.CNI_VERSION }}/cni-plugins-linux-amd64-${{ env.CNI_VERSION }}.tgz
+          sudo tar xzf cni-plugins-linux-amd64-${{ env.CNI_VERSION }}.tgz -C /opt/cni/bin/
+          # install crictl
+          wget https://github.com/kubernetes-sigs/cri-tools/releases/download/${{ env.CRICTL_VERSION }}/crictl-${{ env.CRICTL_VERSION }}-linux-amd64.tar.gz
+          tar xzf crictl-${{ env.CRICTL_VERSION }}-linux-amd64.tar.gz -C /usr/local/bin/
+          # install nydus-overlayfs
+          NYDUS_VER=v$(curl -s "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-x86_64.tgz
+          tar xzf nydus-static-$NYDUS_VER-x86_64.tgz
+          sudo cp nydus-static/nydus-overlayfs /usr/local/sbin/
+          # install containerd
+          #CONTAINERD_VER=$(curl -s "https://api.github.com/repos/containerd/containerd/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          # Let's use fixed containerd version for now.
+          CONTAINERD_VER=1.6.1
+          wget https://github.com/containerd/containerd/releases/download/v$CONTAINERD_VER/containerd-$CONTAINERD_VER-linux-amd64.tar.gz
+          tar xzf containerd-$CONTAINERD_VER-linux-amd64.tar.gz
+          sudo cp bin/* /usr/local/bin/
+      - name: Test nydus-snapshotter image
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          # start nydus-snapshotter
+          docker run -d --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
+          # start containerd
+          sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
+          # wait for containerd to start up
+          sleep 10
+          echo "create new pod with nydus snapshotter"
+          sudo crictl run misc/example/container.yaml misc/example/pod.yaml
+          container=$(sudo crictl ps -q)
+          echo "check container liveness"
+          sudo crictl exec $container ls
+          echo "delete pod"
+          sudo crictl rmp -fa

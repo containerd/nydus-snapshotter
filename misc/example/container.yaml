@@ -1,0 +1,6 @@
+metadata:
+  name: foobar-container
+image:
+  image: ghcr.io/dragonflyoss/image-service/ubuntu:nydus-latest
+command: ["tail", "-f", "/dev/null"]
+log_path: log.0

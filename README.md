@@ -116,6 +116,9 @@ nerdctl --snapshotter nydus run ghcr.io/dragonflyoss/image-service/nginx:nydus-l
 
 Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./docs/crictl_dry_run.md) of using `crictl` can be found in [documents](./docs).
 
+### Setup with nydus-snapshotter image
+We can also use the `nydus-snapshotter` container image when we want to put nydus staff inside a container. See the [nydus-snapshotter exmple](./misc/example/README.md) for how to setup and use it.
+
 ## Community
 
 Nydus aims to form a **vendor-neutral opensource** image distribution solution to all communities.
