@@ -3,7 +3,7 @@ all: clear build
 VERSION=$(shell git rev-parse --verify HEAD --short=7)
 BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
 PACKAGES ?= $(shell go list ./... | grep -v /vendor/)
-GOPROXY ?= https://goproxy.io
+#GOPROXY ?= https://goproxy.io
 
 ifdef GOPROXY
 PROXY := GOPROXY="${GOPROXY}"
