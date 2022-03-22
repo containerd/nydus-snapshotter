@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
@@ -41,6 +42,10 @@ type Daemon struct {
 	RootMountPoint   *string
 	CustomMountPoint *string
 	nydusdThreadNum  int
+
+	// Client will be rebuilt on Reconnect, skip marshal/unmarshal
+	Client nydussdk.Interface `json:"-"`
+	Once   *sync.Once         `json:"-"`
 }
 
 func (d *Daemon) SharedMountPoint() string {
@@ -92,31 +97,35 @@ func (d *Daemon) LogFile() string {
 }
 
 func (d *Daemon) CheckStatus() (model.DaemonInfo, error) {
-	client, err := nydussdk.NewNydusClient(d.APISock())
-	if err != nil {
-		return model.DaemonInfo{}, errors.Wrap(err, "failed to check status, client has not been initialized")
+	if err := d.ensureClient("check status"); err != nil {
+		return model.DaemonInfo{}, err
 	}
-	return client.CheckStatus()
+	return d.Client.CheckStatus()
 }
 
 func (d *Daemon) SharedMount() error {
-	client, err := nydussdk.NewNydusClient(d.APISock())
-	if err != nil {
-		return errors.Wrap(err, "failed to mount")
+	if err := d.ensureClient("share mount"); err != nil {
+		return err
 	}
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
 		return err
 	}
-	return client.SharedMount(d.MountPoint(), bootstrap, d.ConfigFile())
+	return d.Client.SharedMount(d.MountPoint(), bootstrap, d.ConfigFile())
 }
 
 func (d *Daemon) SharedUmount() error {
-	client, err := nydussdk.NewNydusClient(d.APISock())
-	if err != nil {
-		return errors.Wrap(err, "failed to mount")
+	if err := d.ensureClient("share umount"); err != nil {
+		return err
 	}
-	return client.Umount(d.MountPoint())
+	return d.Client.Umount(d.MountPoint())
+}
+
+func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
+	if err := d.ensureClient("get metric"); err != nil {
+		return nil, err
+	}
+	return d.Client.GetFsMetric(sharedDaemon, sid)
 }
 
 func (d *Daemon) IsMultipleDaemon() bool {
@@ -131,10 +140,36 @@ func (d *Daemon) IsPrefetchDaemon() bool {
 	return d.DaemonMode == config.DaemonModePrefetch
 }
 
+func (d *Daemon) initClient() error {
+	client, err := nydussdk.NewNydusClient(d.APISock())
+	if err != nil {
+		return errors.Wrap(err, "failed to create new nydus client")
+	}
+	d.Client = client
+	return nil
+}
+
+func (d *Daemon) ensureClient(action string) error {
+	var err error
+	d.Once.Do(func() {
+		if d.Client == nil {
+			if ierr := d.initClient(); ierr != nil {
+				err = errors.Wrapf(ierr, "failed to %s", action)
+				d.Once = &sync.Once{}
+			}
+		}
+	})
+	if err == nil && d.Client == nil {
+		return fmt.Errorf("failed to %s, client not initialized", action)
+	}
+	return err
+}
+
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{Pid: 0}
 	d.ID = newID()
 	d.DaemonMode = config.DefaultDaemonMode
+	d.Once = &sync.Once{}
 	for _, o := range opt {
 		err := o(d)
 		if err != nil {

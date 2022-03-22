@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/metric/exporter"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -112,14 +111,7 @@ outer:
 				if d.ID == daemon.SharedNydusDaemonID {
 					continue
 				}
-
-				client, err := nydussdk.NewNydusClient(d.APISock())
-				if err != nil {
-					log.G(ctx).Errorf("failed to connect nydusd: %v", err)
-					continue
-				}
-
-				fsMetrics, err := client.GetFsMetric(s.pm.IsSharedDaemon(), d.SnapshotID)
+				fsMetrics, err := d.GetFsMetric(s.pm.IsSharedDaemon(), d.SnapshotID)
 				if err != nil {
 					log.G(ctx).Errorf("failed to get fs metric: %v", err)
 					continue
