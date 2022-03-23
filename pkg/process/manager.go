@@ -254,16 +254,16 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 			WithField("mode", d.DaemonMode).
 			Info("found daemon in database")
 
+		d.Once = &sync.Once{}
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 			daemons = append(daemons, d)
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
 			return nil
 		}
-
 		_, err := d.CheckStatus()
 		if err != nil {
-			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status")
+			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 			return nil
 		}
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
