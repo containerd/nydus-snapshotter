@@ -9,6 +9,7 @@ package converter
 import (
 	"archive/tar"
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -33,8 +34,8 @@ const envNydusWorkdir = "NYDUS_WORKDIR"
 type Layer struct {
 	// Digest represents the hash of whole tar blob.
 	Digest digest.Digest
-	// Reader holds the reader of whole tar blob.
-	Reader io.Reader
+	// ReaderAt holds the reader of whole tar blob.
+	ReaderAt io.ReaderAt
 }
 
 type ConvertOption struct {
@@ -82,20 +83,14 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 	return nil
 }
 
-// Unpack the bootstrap in Nydus formatted tar stream (blob + bootstrap).
-func unpackBootstrapFromNydusTar(ctx context.Context, reader io.Reader) (io.ReadCloser, error) {
+// Unpack the bootstrap from Nydus formatted tar stream (blob + bootstrap).
+func unpackBootstrapFromNydusTar(ctx context.Context, ra io.ReaderAt) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 
 	go func() {
-		rdr, err := compression.DecompressStream(reader)
-		if err != nil {
-			pw.CloseWithError(errors.Wrap(err, "apply with convert whiteout"))
-			return
-		}
-		defer rdr.Close()
-
 		found := false
-		tr := tar.NewReader(rdr)
+		reader := newSeekReader(ra)
+		tr := tar.NewReader(reader)
 		for {
 			hdr, err := tr.Next()
 			if err != nil {
@@ -117,7 +112,7 @@ func unpackBootstrapFromNydusTar(ctx context.Context, reader io.Reader) (io.Read
 		}
 
 		if !found {
-			pw.CloseWithError(errors.Wrapf(err, "not found %s in tar", bootstrapNameInTar))
+			pw.CloseWithError(fmt.Errorf("not found %s in tar", bootstrapNameInTar))
 			return
 		}
 
@@ -282,7 +277,7 @@ func Merge(ctx context.Context, layers []Layer, opt MergeOption) (reader io.Read
 				}
 				defer bootstrap.Close()
 
-				bootstrapReader, err := unpackBootstrapFromNydusTar(ctx, layer.Reader)
+				bootstrapReader, err := unpackBootstrapFromNydusTar(ctx, layer.ReaderAt)
 				if err != nil {
 					return errors.Wrap(err, "unpack nydus tar")
 				}

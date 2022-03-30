@@ -26,6 +26,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 )
 
@@ -160,7 +161,7 @@ func buildOCIUpperTar(t *testing.T) io.ReadCloser {
 	return pr
 }
 
-func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string) (io.Reader, digest.Digest) {
+func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string) (string, digest.Digest) {
 	var data bytes.Buffer
 	writer := bufio.NewWriter(&data)
 
@@ -183,7 +184,7 @@ func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string)
 	tarBlobFilePath := filepath.Join(workDir, blobDigest.Hex())
 	writeToFile(t, bytes.NewReader(data.Bytes()), tarBlobFilePath)
 
-	return bufio.NewReader(&data), blobDigest
+	return tarBlobFilePath, blobDigest
 }
 
 func verify(t *testing.T, workDir string) {
@@ -246,12 +247,15 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	dictOCITarReader := buildChunkDictTar(t)
 
 	blobDir := filepath.Join(workDir, "blobs")
-	lowerNydusTarReader, lowerNydusBlobDigest := convertLayer(t, dictOCITarReader, "", blobDir)
+	nydusTarPath, lowerNydusBlobDigest := convertLayer(t, dictOCITarReader, "", blobDir)
+	ra, err := local.OpenReader(nydusTarPath)
+	require.NoError(t, err)
+	defer ra.Close()
 
 	layers := []Layer{
 		{
-			Digest: lowerNydusBlobDigest,
-			Reader: lowerNydusTarReader,
+			Digest:   lowerNydusBlobDigest,
+			ReaderAt: ra,
 		},
 	}
 
@@ -299,17 +303,25 @@ func TestConverter(t *testing.T) {
 
 	chunkDictBootstrapPath, chunkDictBlobHash := buildChunkDict(t, workDir)
 
-	lowerNydusTarReader, lowerNydusBlobDigest := convertLayer(t, lowerOCITarReader, chunkDictBootstrapPath, blobDir)
-	upperNydusTarReader, upperNydusBlobDigest := convertLayer(t, upperOCITarReader, chunkDictBootstrapPath, blobDir)
+	lowerNydusTarPath, lowerNydusBlobDigest := convertLayer(t, lowerOCITarReader, chunkDictBootstrapPath, blobDir)
+	upperNydusTarPath, upperNydusBlobDigest := convertLayer(t, upperOCITarReader, chunkDictBootstrapPath, blobDir)
+
+	lowerTarRa, err := local.OpenReader(lowerNydusTarPath)
+	require.NoError(t, err)
+	defer lowerTarRa.Close()
+
+	upperTarRa, err := local.OpenReader(upperNydusTarPath)
+	require.NoError(t, err)
+	defer upperTarRa.Close()
 
 	layers := []Layer{
 		{
-			Digest: lowerNydusBlobDigest,
-			Reader: lowerNydusTarReader,
+			Digest:   lowerNydusBlobDigest,
+			ReaderAt: lowerTarRa,
 		},
 		{
-			Digest: upperNydusBlobDigest,
-			Reader: upperNydusTarReader,
+			Digest:   upperNydusBlobDigest,
+			ReaderAt: upperTarRa,
 		},
 	}
 
