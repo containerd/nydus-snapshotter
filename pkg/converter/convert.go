@@ -50,6 +50,8 @@ type MergeOption struct {
 	ChunkDictPath string
 	// PrefetchPatterns holds file path pattern list want to prefetch.
 	PrefetchPatterns string
+	// WithTar puts bootstrap into a tar stream (no gzip).
+	WithTar bool
 }
 
 func getBuilder() string {
@@ -224,6 +226,10 @@ func Convert(ctx context.Context, dest io.Writer, opt ConvertOption) (io.WriteCl
 	}()
 
 	wc := newWriteCloser(pw, func() error {
+		defer func() {
+			os.RemoveAll(workDir)
+		}()
+
 		bootstrapPath := filepath.Join(workDir, "bootstrap")
 		blobPath := filepath.Join(workDir, "blob")
 
@@ -251,16 +257,12 @@ func Convert(ctx context.Context, dest io.Writer, opt ConvertOption) (io.WriteCl
 }
 
 // Merge multiple nydus boostraps (from every layer of image) to a final boostrap.
-func Merge(ctx context.Context, layers []Layer, opt MergeOption) (reader io.ReadCloser, err error) {
-	workDir, err := ioutil.TempDir("", "nydus-converter-")
+func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
+	workDir, err := ioutil.TempDir(os.Getenv(envNydusWorkdir), "nydus-converter-")
 	if err != nil {
-		return nil, errors.Wrap(err, "create work directory")
+		return errors.Wrap(err, "create work directory")
 	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(workDir)
-		}
-	}()
+	defer os.RemoveAll(workDir)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
@@ -293,7 +295,7 @@ func Merge(ctx context.Context, layers []Layer, opt MergeOption) (reader io.Read
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, errors.Wrap(err, "unpack all bootstraps")
+		return errors.Wrap(err, "unpack all bootstraps")
 	}
 
 	targetBootstrapPath := filepath.Join(workDir, "bootstrap")
@@ -306,15 +308,27 @@ func Merge(ctx context.Context, layers []Layer, opt MergeOption) (reader io.Read
 		ChunkDictPath:        opt.ChunkDictPath,
 		PrefetchPatterns:     opt.PrefetchPatterns,
 	}); err != nil {
-		return nil, errors.Wrap(err, "merge bootstrap")
+		return errors.Wrap(err, "merge bootstrap")
 	}
 
-	reader, err = os.Open(targetBootstrapPath)
-	if err != nil {
-		return nil, errors.Wrap(err, "open targe bootstrap")
+	var rc io.ReadCloser
+
+	if opt.WithTar {
+		rc, err = packToTar(targetBootstrapPath, bootstrapNameInTar, false)
+		if err != nil {
+			return errors.Wrap(err, "pack bootstrap to tar")
+		}
+	} else {
+		rc, err = os.Open(targetBootstrapPath)
+		if err != nil {
+			return errors.Wrap(err, "open targe bootstrap")
+		}
+	}
+	defer rc.Close()
+
+	if _, err = io.Copy(dest, rc); err != nil {
+		return errors.Wrap(err, "copy merged bootstrap")
 	}
 
-	return newReadCloser(reader, func() error {
-		return os.RemoveAll(workDir)
-	}), nil
+	return nil
 }

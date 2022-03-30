@@ -87,6 +87,8 @@ func Convert(option ConvertOption) error {
 func Merge(option MergeOption) error {
 	args := []string{
 		"merge",
+		"--log-level",
+		"warn",
 		"--prefetch-policy",
 		"fs",
 		"--bootstrap",

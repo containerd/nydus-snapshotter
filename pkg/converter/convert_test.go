@@ -32,13 +32,21 @@ import (
 
 const envNydusdPath = "NYDUS_NYDUSD"
 
-func hugeString(size int) string {
+func hugeString(mb int) string {
 	var buf strings.Builder
+	size := mb * 1024 * 1024
+	seqSize := 512 * 1024
 	buf.Grow(size)
 
-	data := make([]byte, size)
-	rand.Read(data)
-	buf.Write(data)
+	seq := size / seqSize
+
+	for i := 0; i < seq; i++ {
+		data := make([]byte, seqSize)
+		if i%2 == 0 {
+			rand.Read(data)
+		}
+		buf.Write(data)
+	}
 
 	return buf.String()
 }
@@ -96,7 +104,7 @@ var expectedFileTree = map[string]string{
 	"dir-1":        "",
 	"dir-1/file-2": "lower-file-2",
 	"dir-2":        "",
-	"dir-2/file-1": hugeString(1024 * 1024 * 3),
+	"dir-2/file-1": hugeString(3),
 	"dir-2/file-2": "upper-file-2",
 	"dir-2/file-3": "upper-file-3",
 }
@@ -169,7 +177,6 @@ func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string)
 		ChunkDictPath: chunkDict,
 	})
 	require.NoError(t, err)
-	defer twc.Close()
 
 	_, err = io.Copy(twc, source)
 	require.NoError(t, err)
@@ -259,12 +266,13 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 		},
 	}
 
-	finalBootstrapReader, err := Merge(context.TODO(), layers, MergeOption{})
-	require.NoError(t, err)
-	defer finalBootstrapReader.Close()
-
 	bootstrapPath := filepath.Join(workDir, "dict-bootstrap")
-	writeToFile(t, finalBootstrapReader, bootstrapPath)
+	file, err := os.Create(bootstrapPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	err = Merge(context.TODO(), layers, file, MergeOption{})
+	require.NoError(t, err)
 
 	dictBlobPath := ""
 	err = filepath.WalkDir(blobDir, func(path string, entry fs.DirEntry, err error) error {
@@ -325,14 +333,15 @@ func TestConverter(t *testing.T) {
 		},
 	}
 
-	finalBootstrapReader, err := Merge(context.TODO(), layers, MergeOption{
+	bootstrapPath := filepath.Join(workDir, "bootstrap")
+	file, err := os.Create(bootstrapPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	err = Merge(context.TODO(), layers, file, MergeOption{
 		ChunkDictPath: chunkDictBootstrapPath,
 	})
 	require.NoError(t, err)
-	defer finalBootstrapReader.Close()
-
-	bootstrapPath := filepath.Join(workDir, "bootstrap")
-	writeToFile(t, finalBootstrapReader, bootstrapPath)
 
 	verify(t, workDir)
 	dropCache(t)
