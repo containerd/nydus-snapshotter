@@ -12,9 +12,8 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-containerregistry v0.5.1
 	github.com/google/uuid v1.2.0
-	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.11.0
+	github.com/prometheus/client_golang v1.11.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.30.0
 	github.com/sirupsen/logrus v1.8.1
@@ -27,6 +26,6 @@ require (
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.81.0
-	github.com/containerd/containerd => github.com/containerd/containerd v1.6.1
+	github.com/containerd/containerd => github.com/luodw/containerd v1.5.1-0.20220331034458-7aa1646ddbfa
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.0.3
 )

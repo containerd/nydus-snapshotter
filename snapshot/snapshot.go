@@ -8,7 +8,6 @@ package snapshot
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -584,7 +583,7 @@ func overlayMount(options []string) []mount.Mount {
 	}
 }
 
-type ExtraOption struct {
+type RafsOption struct {
 	Source      string `json:"source"`
 	Config      string `json:"config"`
 	Snapshotdir string `json:"snapshotdir"`
@@ -603,12 +602,6 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	}
 	lowerDirOption := fmt.Sprintf("lowerdir=%s", o.upperPath(id))
 	overlayOptions = append(overlayOptions, lowerDirOption)
-
-	// when hasDaemon and not enableNydusOverlayFS, return overlayfs mount slice
-	if !o.enableNydusOverlayFS && o.hasDaemon {
-		log.G(ctx).Infof("mount options %v", overlayOptions)
-		return overlayMount(overlayOptions), nil
-	}
 
 	source, err := o.fs.BootstrapFile(id)
 	if err != nil {
@@ -655,27 +648,26 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	} else {
 		version = NydusRootfsV6
 	}
-	// when enable nydus-overlayfs, return unified mount slice for runc and kata
-	extraOption := &ExtraOption{
+
+	rafsOption := &RafsOption{
 		Source:      source,
 		Config:      configContent,
 		Snapshotdir: o.snapshotDir(s.ID),
 		Version:     version,
 	}
-	no, err := json.Marshal(extraOption)
+	ro, err := json.Marshal(rafsOption)
 	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal NydusOption")
+		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal RafsOption")
 	}
-	// XXX: Log options without extraoptions as it might contain secrets.
-	log.G(ctx).Infof("mount options %v", overlayOptions)
-	// base64 to filter easily in `nydus-overlayfs`
-	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
-	options := append(overlayOptions, opt)
+	extraOption := append([]string{"rafs"}, string(ro)) // [0]=type, [1]=option
+	log.G(ctx).Infof("mount overlay options %v", overlayOptions)
+	log.G(ctx).Infof("mount extro options %v", extraOption)
 	return []mount.Mount{
 		{
-			Type:    "fuse.nydus-overlayfs",
-			Source:  "overlay",
-			Options: options,
+			Type:         "overlay",
+			Source:       "overlay",
+			Options:      overlayOptions,
+			ExtraOptions: extraOption,
 		},
 	}, nil
 }
