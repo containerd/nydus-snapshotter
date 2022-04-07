@@ -2,7 +2,11 @@ all: clear build
 
 VERSION=$(shell git rev-parse --verify HEAD --short=7)
 BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
-PACKAGES ?= $(shell go list ./... | grep -v /vendor/)
+PACKAGES ?= $(shell go list ./... | grep -v /tests)
+SUDO = $(shell which sudo)
+GO_EXECUTABLE_PATH ?= $(shell which go)
+NYDUS_BUILDER ?= /usr/bin/nydus-image
+NYDUS_NYDUSD ?= /usr/bin/nydusd-fusedev
 #GOPROXY ?= https://goproxy.io
 
 ifdef GOPROXY
@@ -31,7 +35,7 @@ install: static-release
 
 .PHONY: vet
 vet:
-	go vet $(PACKAGES)
+	go vet $(PACKAGES) ./tests
 
 .PHONY: check
 check: vet
@@ -43,5 +47,8 @@ test:
 
 .PHONY: cover
 cover:
-	go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+	go test -v -covermode=atomic -coverprofile=coverage.txt $(PACKAGES)
 	go tool cover -func=coverage.txt
+
+smoke:
+	$(SUDO) NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ${GO_EXECUTABLE_PATH} test -race -v ./tests
