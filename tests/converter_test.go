@@ -28,7 +28,6 @@ import (
 
 	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
-	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 )
 
 const envNydusdPath = "NYDUS_NYDUSD"
@@ -202,7 +201,7 @@ func verify(t *testing.T, workDir string) {
 	if nydusdPath == "" {
 		nydusdPath = "nydusd"
 	}
-	config := tool.NydusdConfig{
+	config := NydusdConfig{
 		EnablePrefetch: true,
 		NydusdPath:     nydusdPath,
 		BootstrapPath:  filepath.Join(workDir, "bootstrap"),
@@ -214,7 +213,7 @@ func verify(t *testing.T, workDir string) {
 		MountPath:      mountDir,
 	}
 
-	nydusd, err := tool.NewNydusd(config)
+	nydusd, err := NewNydusd(config)
 	require.NoError(t, err)
 	err = nydusd.Mount()
 	require.NoError(t, err)
