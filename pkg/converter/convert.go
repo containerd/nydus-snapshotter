@@ -39,6 +39,9 @@ type Layer struct {
 }
 
 type ConvertOption struct {
+	// RafsVersion specifies nydus format version, possible values:
+	// `5`, `6` (EROFS-compatible), default is `5`.
+	RafsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
 	// PrefetchPatterns holds file path pattern list want to prefetch.
@@ -238,7 +241,7 @@ func Convert(ctx context.Context, dest io.Writer, opt ConvertOption) (io.WriteCl
 
 			BootstrapPath:    bootstrapPath,
 			BlobPath:         blobPath,
-			RafsVersion:      "5",
+			RafsVersion:      opt.RafsVersion,
 			SourcePath:       sourceDir,
 			ChunkDictPath:    opt.ChunkDictPath,
 			PrefetchPatterns: opt.PrefetchPatterns,

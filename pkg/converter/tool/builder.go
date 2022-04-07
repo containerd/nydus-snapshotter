@@ -37,6 +37,10 @@ type MergeOption struct {
 }
 
 func Convert(option ConvertOption) error {
+	if option.RafsVersion == "" {
+		option.RafsVersion = "5"
+	}
+
 	args := []string{
 		"create",
 		"--log-level",
@@ -57,7 +61,7 @@ func Convert(option ConvertOption) error {
 		// Add blob offset for chunk info with size_of(tar_header) * 2.
 		"1024",
 	}
-	if option.RafsVersion != "" {
+	if option.RafsVersion == "6" {
 		// FIXME: these options should be handled automatically in builder (nydus-image).
 		args = append(args, "--disable-check")
 	}
