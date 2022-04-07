@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package converter
+package tests
 
 import (
 	"archive/tar"
@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/containerd/containerd/content/local"
+	"github.com/containerd/nydus-snapshotter/pkg/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 )
 
@@ -173,7 +174,7 @@ func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string)
 	var data bytes.Buffer
 	writer := bufio.NewWriter(&data)
 
-	twc, err := Convert(context.TODO(), writer, ConvertOption{
+	twc, err := converter.Convert(context.TODO(), writer, converter.ConvertOption{
 		ChunkDictPath: chunkDict,
 	})
 	require.NoError(t, err)
@@ -259,7 +260,7 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	require.NoError(t, err)
 	defer ra.Close()
 
-	layers := []Layer{
+	layers := []converter.Layer{
 		{
 			Digest:   lowerNydusBlobDigest,
 			ReaderAt: ra,
@@ -271,7 +272,7 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	err = Merge(context.TODO(), layers, file, MergeOption{})
+	err = converter.Merge(context.TODO(), layers, file, converter.MergeOption{})
 	require.NoError(t, err)
 
 	dictBlobPath := ""
@@ -322,7 +323,7 @@ func TestConverter(t *testing.T) {
 	require.NoError(t, err)
 	defer upperTarRa.Close()
 
-	layers := []Layer{
+	layers := []converter.Layer{
 		{
 			Digest:   lowerNydusBlobDigest,
 			ReaderAt: lowerTarRa,
@@ -338,7 +339,7 @@ func TestConverter(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	err = Merge(context.TODO(), layers, file, MergeOption{
+	err = converter.Merge(context.TODO(), layers, file, converter.MergeOption{
 		ChunkDictPath: chunkDictBootstrapPath,
 	})
 	require.NoError(t, err)
