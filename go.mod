@@ -56,4 +56,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
 
-replace cloud.google.com/go => cloud.google.com/go v0.81.0
+replace (
+	cloud.google.com/go => cloud.google.com/go v0.81.0
+	github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.2
+)
