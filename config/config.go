@@ -51,6 +51,7 @@ type Config struct {
 	DisableCacheManager  bool          `toml:"disable_cache_manager"`
 	EnableNydusOverlayFS bool          `toml:"enable_nydus_overlayfs"`
 	NydusdThreadNum      int           `toml:"nydusd_thread_num"`
+	CleanupOnClose       bool          `toml:"cleanup_on_close"`
 }
 
 func (c *Config) FillupWithDefaults() error {

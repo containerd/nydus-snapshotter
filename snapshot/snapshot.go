@@ -59,6 +59,7 @@ type snapshotter struct {
 	manager              *process.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
+	cleanupOnClose       bool
 }
 
 func (o *snapshotter) Cleanup(ctx context.Context) error {
@@ -210,6 +211,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		manager:              pm,
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.EnableNydusOverlayFS,
+		cleanupOnClose:       cfg.CleanupOnClose,
 	}, nil
 }
 
@@ -462,9 +464,11 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 }
 
 func (o *snapshotter) Close() error {
-	err := o.fs.Cleanup(context.Background())
-	if err != nil {
-		log.L.Errorf("failed to clean up remote snapshot, err %v", err)
+	if o.cleanupOnClose {
+		err := o.fs.Cleanup(context.Background())
+		if err != nil {
+			log.L.Errorf("failed to clean up remote snapshot, err %v", err)
+		}
 	}
 	return o.ms.Close()
 }
