@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
 )
@@ -40,6 +41,7 @@ type Daemon struct {
 	Pid              int
 	ImageID          string
 	DaemonMode       string
+	DaemonBackend    string
 	APISock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
@@ -94,6 +96,10 @@ func (d *Daemon) GetAPISock() string {
 	return filepath.Join(d.SocketDir, APISocketFileName)
 }
 
+func (d *Daemon) ErofsWorkDir() string {
+	return filepath.Join(d.SnapshotDir, d.SnapshotID, "erofs_workdir")
+}
+
 func (d *Daemon) LogFile() string {
 	return filepath.Join(d.LogDir, "stderr.log")
 }
@@ -127,6 +133,12 @@ func (d *Daemon) SharedMount() error {
 	if err := d.ensureClient("share mount"); err != nil {
 		return err
 	}
+	if d.DaemonBackend == config.DaemonBackendErofs {
+		if err := d.sharedErofsMount(); err != nil {
+			return errors.Wrapf(err, "failed to erofs mount")
+		}
+		return nil
+	}
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
 		return err
@@ -139,6 +151,33 @@ func (d *Daemon) SharedUmount() error {
 		return err
 	}
 	return d.Client.Umount(d.MountPoint())
+}
+
+func (d *Daemon) sharedErofsMount() error {
+	if err := d.ensureClient("erofs mount"); err != nil {
+		return err
+	}
+
+	bootstrapPath, err := d.BootstrapFile()
+	if err != nil {
+		return err
+	}
+	if err := d.Client.ErofsBindBlob(d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "request to add erofs config")
+	}
+
+	mountPoint := d.SharedMountPoint()
+
+	if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
+	}
+
+	fscacheID := erofs.FscacheID(d.ImageID)
+	if err := erofs.Mount(bootstrapPath, fscacheID, mountPoint); err != nil {
+		return errors.Wrapf(err, "mount erofs")
+	}
+
+	return nil
 }
 
 func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {

@@ -28,6 +28,11 @@ const (
 	nydusImageBinaryName         string = "nydus-image"
 )
 
+const (
+	DaemonBackendFusedev string = "fusedev"
+	DaemonBackendErofs   string = "erofs"
+)
+
 type Config struct {
 	Address              string        `toml:"-"`
 	ConvertVpcRegistry   bool          `toml:"-"`
@@ -41,6 +46,7 @@ type Config struct {
 	NydusdBinaryPath     string        `toml:"nydusd_binary_path"`
 	NydusImageBinaryPath string        `toml:"nydus_image_binary"`
 	DaemonMode           string        `toml:"daemon_mode"`
+	DaemonBackend        string        `toml:"daemon_backend"`
 	AsyncRemove          bool          `toml:"async_remove"`
 	EnableMetrics        bool          `toml:"enable_metrics"`
 	MetricsFile          string        `toml:"metrics_file"`

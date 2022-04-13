@@ -108,6 +108,18 @@ func WithDaemonMode(daemonMode string) NewFSOpt {
 	}
 }
 
+func WithDaemonBackend(daemonBackend string) NewFSOpt {
+	return func(d *filesystem) error {
+		switch daemonBackend {
+		case config.DaemonBackendErofs:
+			d.daemonBackend = config.DaemonBackendErofs
+		default:
+			d.daemonBackend = config.DaemonBackendFusedev
+		}
+		return nil
+	}
+}
+
 func WithLogLevel(logLevel string) NewFSOpt {
 	return func(d *filesystem) error {
 		if logLevel == "" {

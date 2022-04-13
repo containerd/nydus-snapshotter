@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -28,15 +29,18 @@ import (
 type Manager struct {
 	store            Store
 	nydusdBinaryPath string
-	DaemonMode       string
-	mounter          mount.Interface
-	mu               sync.Mutex
+	daemonMode       string
+	cacheDir         string
+
+	mounter mount.Interface
+	mu      sync.Mutex
 }
 
 type Opt struct {
 	NydusdBinaryPath string
 	Database         *store.Database
 	DaemonMode       string
+	CacheDir         string
 }
 
 func NewManager(opt Opt) (*Manager, error) {
@@ -49,7 +53,8 @@ func NewManager(opt Opt) (*Manager, error) {
 		store:            s,
 		mounter:          &mount.Mounter{},
 		nydusdBinaryPath: opt.NydusdBinaryPath,
-		DaemonMode:       opt.DaemonMode,
+		daemonMode:       opt.DaemonMode,
+		cacheDir:         opt.CacheDir,
 	}, nil
 }
 
@@ -131,39 +136,51 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 }
 
 func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
-	args := []string{
-		"--apisock", d.GetAPISock(),
-		"--log-level", d.LogLevel,
-	}
-	nydusdThreadNum := d.NydusdThreadNum()
-	if nydusdThreadNum != "" {
-		args = append(args, "--thread-num", nydusdThreadNum)
+	var args []string
+	if d.DaemonBackend == config.DaemonBackendErofs {
+		args = []string{
+			"daemon",
+			"--apisock", d.GetAPISock(),
+			"--fscache", m.cacheDir,
+		}
+	} else {
+		args = []string{
+			"--apisock", d.GetAPISock(),
+			"--log-level", d.LogLevel,
+		}
+		nydusdThreadNum := d.NydusdThreadNum()
+		if nydusdThreadNum != "" {
+			args = append(args, "--thread-num", nydusdThreadNum)
+		}
+
+		if !d.LogToStdout {
+			args = append(args, "--log-file", d.LogFile())
+		}
+		if d.IsMultipleDaemon() {
+			bootstrap, err := d.BootstrapFile()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args,
+				"--config",
+				d.ConfigFile(),
+				"--bootstrap",
+				bootstrap,
+				"--mountpoint",
+				d.MountPoint(),
+			)
+		} else if m.isOneDaemon() {
+			args = append(args,
+				"--mountpoint",
+				*d.RootMountPoint,
+			)
+		} else {
+			return nil, errors.Errorf("DaemonMode %s doesn't have daemon configured", d.DaemonMode)
+		}
 	}
 
-	if !d.LogToStdout {
-		args = append(args, "--log-file", d.LogFile())
-	}
-	if d.IsMultipleDaemon() {
-		bootstrap, err := d.BootstrapFile()
-		if err != nil {
-			return nil, err
-		}
-		args = append(args,
-			"--config",
-			d.ConfigFile(),
-			"--bootstrap",
-			bootstrap,
-			"--mountpoint",
-			d.MountPoint(),
-		)
-	} else if m.isOneDaemon() {
-		args = append(args,
-			"--mountpoint",
-			*d.RootMountPoint,
-		)
-	} else {
-		return nil, errors.Errorf("DaemonMode %s doesn't have daemon configured", d.DaemonMode)
-	}
+	log.L.Infof("start nydus daemon: %s %s", m.nydusdBinaryPath, strings.Join(args, " "))
+
 	cmd := exec.Command(m.nydusdBinaryPath, args...)
 	if d.LogToStdout {
 		cmd.Stdout = os.Stdout
@@ -234,20 +251,20 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 }
 
 func (m *Manager) isOneDaemon() bool {
-	return m.DaemonMode == config.DaemonModeShared ||
-		m.DaemonMode == config.DaemonModePrefetch
+	return m.daemonMode == config.DaemonModeShared ||
+		m.daemonMode == config.DaemonModePrefetch
 }
 
 func (m *Manager) isNoneDaemon() bool {
-	return m.DaemonMode == config.DaemonModeNone
+	return m.daemonMode == config.DaemonModeNone
 }
 
 func (m *Manager) IsSharedDaemon() bool {
-	return m.DaemonMode == config.DaemonModeShared
+	return m.daemonMode == config.DaemonModeShared
 }
 
 func (m *Manager) IsPrefetchDaemon() bool {
-	return m.DaemonMode == config.DaemonModePrefetch
+	return m.daemonMode == config.DaemonModePrefetch
 }
 
 // Reconnect already running daemons，and rebuild daemons management structs.

@@ -20,6 +20,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
@@ -36,6 +37,7 @@ const (
 type Interface interface {
 	CheckStatus() (*model.DaemonInfo, error)
 	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
+	ErofsBindBlob(daemonConfig string) error
 	Umount(sharedMountPoint string) error
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
 }
@@ -139,6 +141,35 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
+	return handleMountError(resp)
+}
+
+func (c NydusClient) ErofsBindBlob(daemonConfig string) error {
+	log.L.Infof("requesting daemon to bind erofs blob with config %s", daemonConfig)
+
+	body, err := ioutil.ReadFile(daemonConfig)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
+	}
+
+	fmt.Println("REQUEST {}", string(body))
+
+	requestURL := fmt.Sprintf("http://unix%s", "/api/v2/blobs")
+	req, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewBuffer(body))
+	if err != nil {
+		return errors.Wrapf(err, "failed to create request for url %s", requestURL)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.Wrapf(err, "failed to do HTTP PUT to %s", requestURL)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
 	return handleMountError(resp)
 }
 
