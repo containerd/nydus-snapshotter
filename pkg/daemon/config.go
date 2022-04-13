@@ -138,3 +138,10 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewDaemonOpt {
 		return nil
 	}
 }
+
+func WithDaemonBackend(daemonBackend string) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.DaemonBackend = daemonBackend
+		return nil
+	}
+}
