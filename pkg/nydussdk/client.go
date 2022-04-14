@@ -34,7 +34,7 @@ const (
 )
 
 type Interface interface {
-	CheckStatus() (model.DaemonInfo, error)
+	CheckStatus() (*model.DaemonInfo, error)
 	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
 	Umount(sharedMountPoint string) error
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
@@ -57,22 +57,22 @@ func NewNydusClient(sock string) (Interface, error) {
 	}, nil
 }
 
-func (c *NydusClient) CheckStatus() (model.DaemonInfo, error) {
+func (c *NydusClient) CheckStatus() (*model.DaemonInfo, error) {
 	addr := fmt.Sprintf("http://unix%s", infoEndpoint)
 	resp, err := c.httpClient.Get(addr)
 	if err != nil {
-		return model.DaemonInfo{}, errors.Wrapf(err, "failed to do HTTP GET from %s", addr)
+		return nil, errors.Wrapf(err, "failed to do HTTP GET from %s", addr)
 	}
 	defer resp.Body.Close()
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return model.DaemonInfo{}, errors.Wrap(err, "failed to read status response")
+		return nil, errors.Wrap(err, "failed to read status response")
 	}
 	var info model.DaemonInfo
 	if err = json.Unmarshal(b, &info); err != nil {
-		return model.DaemonInfo{}, err
+		return nil, err
 	}
-	return info, nil
+	return &info, nil
 }
 
 func (c *NydusClient) Umount(sharedMountPoint string) error {

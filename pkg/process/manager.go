@@ -261,9 +261,13 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
 			return nil
 		}
-		_, err := d.CheckStatus()
+		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+			return nil
+		}
+		if !info.Running() {
+			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", info)
 			return nil
 		}
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")

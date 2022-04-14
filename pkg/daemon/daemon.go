@@ -12,10 +12,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
 )
 
@@ -96,11 +98,29 @@ func (d *Daemon) LogFile() string {
 	return filepath.Join(d.LogDir, "stderr.log")
 }
 
-func (d *Daemon) CheckStatus() (model.DaemonInfo, error) {
+func (d *Daemon) CheckStatus() (*model.DaemonInfo, error) {
 	if err := d.ensureClient("check status"); err != nil {
-		return model.DaemonInfo{}, err
+		return nil, err
 	}
+
 	return d.Client.CheckStatus()
+}
+
+func (d *Daemon) WaitUntilReady() error {
+	return retry.Do(func() error {
+		info, err := d.CheckStatus()
+		if err != nil {
+			return errors.Wrap(err, "wait until daemon ready by checking status")
+		}
+		if !info.Running() {
+			return fmt.Errorf("daemon %s is not ready: %v", d.ID, info)
+		}
+		return nil
+	},
+		retry.Attempts(3),
+		retry.LastErrorOnly(true),
+		retry.Delay(100*time.Millisecond),
+	)
 }
 
 func (d *Daemon) SharedMount() error {
