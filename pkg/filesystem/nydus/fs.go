@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"time"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
@@ -26,7 +25,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
 // TODO: Move snapshotter needed all image annotations to nydus-snapshotter.
@@ -151,25 +149,12 @@ func (fs *filesystem) WaitUntilReady(ctx context.Context, snapshotID string) err
 		return nil
 	}
 
-	s, err := fs.manager.GetBySnapshotID(snapshotID)
+	d, err := fs.manager.GetBySnapshotID(snapshotID)
 	if err != nil {
 		return err
 	}
-	return retry.Do(func() error {
-		info, err := s.CheckStatus()
-		if err != nil {
-			return err
-		}
-		log.G(ctx).Infof("daemon %s snapshotID %s info %v", s.ID, snapshotID, info)
-		if info.State != "Running" {
-			return errors.Wrap(err, fmt.Sprintf("daemon %s snapshotID %s is not ready", s.ID, snapshotID))
-		}
-		return nil
-	},
-		retry.Attempts(3),
-		retry.LastErrorOnly(true),
-		retry.Delay(100*time.Millisecond),
-	)
+
+	return d.WaitUntilReady()
 }
 
 func (fs *filesystem) Umount(ctx context.Context, mountPoint string) error {

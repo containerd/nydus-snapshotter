@@ -27,7 +27,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
 type filesystem struct {
@@ -214,25 +213,12 @@ func (f *filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]st
 }
 
 func (f *filesystem) WaitUntilReady(ctx context.Context, snapshotID string) error {
-	s, err := f.manager.GetBySnapshotID(snapshotID)
+	d, err := f.manager.GetBySnapshotID(snapshotID)
 	if err != nil {
 		return err
 	}
-	return retry.Do(func() error {
-		info, err := s.CheckStatus()
-		if err != nil {
-			return err
-		}
-		log.G(ctx).Infof("daemon %s snapshotID %s info %v", s.ID, snapshotID, info)
-		if info.State != "Running" {
-			return errors.Wrap(err, fmt.Sprintf("daemon %s snapshotID %s is not ready", s.ID, snapshotID))
-		}
-		return nil
-	},
-		retry.Attempts(3),
-		retry.LastErrorOnly(true),
-		retry.Delay(100*time.Millisecond),
-	)
+
+	return d.WaitUntilReady()
 }
 
 func (f *filesystem) Umount(ctx context.Context, mountPoint string) error {

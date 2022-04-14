@@ -6,6 +6,8 @@
 
 package model
 
+import "strings"
+
 type BuildTimeInfo struct {
 	PackageVer string `json:"package_ver"`
 	GitCommit  string `json:"git_commit"`
@@ -18,6 +20,12 @@ type DaemonInfo struct {
 	ID      string        `json:"id"`
 	Version BuildTimeInfo `json:"version"`
 	State   string        `json:"state"`
+}
+
+func (info *DaemonInfo) Running() bool {
+	// Due to history reason, the daemon state returned by nydusd sock API has
+	// been changed from `Running` to `RUNNING`, so keeps compatibility here.
+	return strings.ToUpper(info.State) == "RUNNING"
 }
 
 type ErrorMessage struct {

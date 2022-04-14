@@ -39,7 +39,7 @@ func prepareNydusServer(t *testing.T) (string, func()) {
 		info := model.DaemonInfo{
 			ID:      "testid",
 			Version: BTI,
-			State:   "Running",
+			State:   "RUNNING",
 		}
 		w.Header().Set("Content-Type", "application/json")
 		j, _ := json.Marshal(info)
@@ -61,7 +61,7 @@ func TestNydusClient_CheckStatus(t *testing.T) {
 	require.Nil(t, err)
 	info, err := client.CheckStatus()
 	require.Nil(t, err)
-	assert.Equal(t, "Running", info.State)
+	assert.True(t, info.Running())
 	assert.Equal(t, "testid", info.ID)
 	assert.Equal(t, BTI, info.Version)
 }
