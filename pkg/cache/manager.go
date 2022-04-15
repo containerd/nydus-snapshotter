@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"os"
 	"time"
 
 	"github.com/containerd/containerd/log"
@@ -23,6 +24,11 @@ type Opt struct {
 }
 
 func NewManager(opt Opt) (*Manager, error) {
+	// Ensure cache directory exists
+	if err := os.MkdirAll(opt.CacheDir, 0755); err != nil {
+		return nil, errors.Wrapf(err, "failed to create cache dir %s", opt.CacheDir)
+	}
+
 	db, err := store.NewCacheStore(opt.Database)
 	if err != nil {
 		return nil, err
