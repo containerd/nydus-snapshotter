@@ -150,6 +150,12 @@ func (d *Daemon) SharedUmount() error {
 	if err := d.ensureClient("share umount"); err != nil {
 		return err
 	}
+	if d.DaemonBackend == config.DaemonBackendErofs {
+		if err := d.sharedErofsUmount(); err != nil {
+			return errors.Wrapf(err, "failed to erofs mount")
+		}
+		return nil
+	}
 	return d.Client.Umount(d.MountPoint())
 }
 
@@ -158,23 +164,40 @@ func (d *Daemon) sharedErofsMount() error {
 		return err
 	}
 
-	bootstrapPath, err := d.BootstrapFile()
-	if err != nil {
-		return err
-	}
 	if err := d.Client.ErofsBindBlob(d.ConfigFile()); err != nil {
-		return errors.Wrapf(err, "request to add erofs config")
+		return errors.Wrapf(err, "request to bind erofs blob")
 	}
 
 	mountPoint := d.SharedMountPoint()
-
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
 	}
 
+	bootstrapPath, err := d.BootstrapFile()
+	if err != nil {
+		return err
+	}
 	fscacheID := erofs.FscacheID(d.ImageID)
+
 	if err := erofs.Mount(bootstrapPath, fscacheID, mountPoint); err != nil {
 		return errors.Wrapf(err, "mount erofs")
+	}
+
+	return nil
+}
+
+func (d *Daemon) sharedErofsUmount() error {
+	if err := d.ensureClient("erofs umount"); err != nil {
+		return err
+	}
+
+	if err := d.Client.ErofsUnbindBlob(d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "request to unbind erofs blob")
+	}
+
+	mountPoint := d.SharedMountPoint()
+	if err := erofs.Umount(mountPoint); err != nil {
+		return errors.Wrapf(err, "umount erofs")
 	}
 
 	return nil

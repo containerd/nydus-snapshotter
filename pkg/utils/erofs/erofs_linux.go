@@ -79,6 +79,10 @@ func Mount(bootstrapPath, fsID, mountPoint string) error {
 	return nil
 }
 
+func Umount(mountPoint string) error {
+	return unix.Unmount(mountPoint, 0)
+}
+
 func FscacheID(imageID string) string {
-	return digest.FromString(imageID).Hex()[:4]
+	return digest.FromString(imageID).Hex()
 }
