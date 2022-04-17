@@ -9,6 +9,10 @@ func Mount(bootstrapPath, fsID, mountPoint string) error {
 	return fmt.Errorf("not implemented")
 }
 
+func Umount(mountPoint string) error {
+	return fmt.Errorf("not implemented")
+}
+
 func FscacheID(imageID string) string {
 	panic("not implemented")
 }
