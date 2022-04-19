@@ -124,9 +124,10 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	if !cfg.DisableCacheManager {
 		cacheMgr, err := cache.NewManager(cache.Opt{
-			Database: db,
-			Period:   cfg.GCPeriod,
-			CacheDir: cfg.CacheDir,
+			Database:      db,
+			Period:        cfg.GCPeriod,
+			CacheDir:      cfg.CacheDir,
+			DaemonBackend: cfg.DaemonBackend,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to new cache manager")
