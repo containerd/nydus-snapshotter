@@ -182,31 +182,42 @@ func (m *Manager) DestroyBySnapshotID(id string) error {
 	return m.DestroyDaemon(d)
 }
 
+// FIXME: should handle the inconsistent status caused by any step
+// in the function that returns an error.
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
-	m.store.Delete(d)
-	m.CleanUpDaemonResource(d)
-	log.L.Infof("umount remote snapshot, mountpoint %s", d.MountPoint())
+	cleanup := func() error {
+		m.CleanUpDaemonResource(d)
+		if err := m.store.Delete(d); err != nil {
+			return errors.Wrap(err, "delete daemon in store")
+		}
+		return nil
+	}
+
 	// if daemon is shared mount or use shared mount to do
 	// prefetch, we should only umount the daemon with api instead
 	// of umount entire mountpoint
 	if m.isOneDaemon() {
-		return d.SharedUmount()
+		log.L.Infof("umount remote snapshot for shared daemon, mountpoint %s", d.SharedMountPoint())
+		if err := d.SharedUmount(); err != nil {
+			return errors.Wrap(err, "shared umount on destroying daemon")
+		}
+		return cleanup()
 	}
+
+	log.L.Infof("umount remote snapshot, mountpoint %s", d.MountPoint())
 	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
 	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
 	if d.Pid > 0 {
 		p, err := os.FindProcess(d.Pid)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "find process %d", d.Pid)
 		}
-		err = p.Signal(syscall.SIGTERM)
-		if err != nil {
-			return err
+		if err = p.Signal(syscall.SIGTERM); err != nil {
+			return errors.Wrapf(err, "send SIGTERM signal to process %d", d.Pid)
 		}
-		_, err = p.Wait()
 		// if nydus-snapshotter restart, it will break the relationship between nydusd and
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
-		if err != nil && !stderrors.Is(err, syscall.ECHILD) {
+		if _, err = p.Wait(); err != nil && !stderrors.Is(err, syscall.ECHILD) {
 			log.L.Errorf("failed to process wait, %v", err)
 		}
 	}
@@ -218,7 +229,8 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 			return errors.Wrap(err, fmt.Sprintf("failed to umount mountpoint %s", mp))
 		}
 	}
-	return nil
+
+	return cleanup()
 }
 
 func (m *Manager) isOneDaemon() bool {
