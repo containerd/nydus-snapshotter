@@ -379,7 +379,7 @@ func (fs *filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 		daemon.WithSnapshotID(snapshotID),
 		daemon.WithRootMountPoint(*sharedDaemon.RootMountPoint),
 		daemon.WithSnapshotDir(fs.SnapshotRoot()),
-		daemon.WithAPISock(sharedDaemon.APISock()),
+		daemon.WithAPISock(sharedDaemon.GetAPISock()),
 		daemon.WithConfigDir(fs.ConfigRoot()),
 		daemon.WithLogDir(fs.logDir),
 		daemon.WithImageID(imageID),

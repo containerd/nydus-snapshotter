@@ -89,7 +89,7 @@ func (c *NydusClient) Umount(sharedMountPoint string) error {
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return handleMountError(resp.Body)
+	return handleMountError(resp)
 }
 
 func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
@@ -139,7 +139,7 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	return handleMountError(resp.Body)
+	return handleMountError(resp)
 }
 
 func waitUntilSocketReady(sock string) error {
@@ -173,7 +173,9 @@ func buildTransport(sock string) (http.RoundTripper, error) {
 		},
 	}, nil
 }
-func handleMountError(r io.Reader) error {
+
+func handleMountError(resp *http.Response) error {
+	var r io.Reader = resp.Body
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		return errors.Wrap(err, "failed to read from reader")
@@ -182,5 +184,5 @@ func handleMountError(r io.Reader) error {
 	if err = json.Unmarshal(b, &errMessage); err != nil {
 		return errors.Wrap(err, "failed unmarshal ErrorMessage")
 	}
-	return fmt.Errorf("error code: %s, error message: %s", errMessage.Code, errMessage.Message)
+	return fmt.Errorf("http response: %d, error code: %s, error message: %s", resp.StatusCode, errMessage.Code, errMessage.Message)
 }

@@ -132,7 +132,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	args := []string{
-		"--apisock", d.APISock(),
+		"--apisock", d.GetAPISock(),
 		"--log-level", d.LogLevel,
 	}
 	nydusdThreadNum := d.NydusdThreadNum()

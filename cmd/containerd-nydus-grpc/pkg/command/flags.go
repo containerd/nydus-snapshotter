@@ -48,6 +48,7 @@ type Args struct {
 	LogToStdout          bool
 	EnableNydusOverlayFS bool
 	NydusdThreadNum      int
+	CleanupOnClose       bool
 }
 
 type Flags struct {
@@ -186,6 +187,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "Nydusd daemon thread-num, default will be set to the number of CPUs",
 			Destination: &args.NydusdThreadNum,
 		},
+		&cli.BoolFlag{
+			Name:        "cleanup-on-close",
+			Value:       false,
+			Usage:       "whether to do cleanup when close snapshotter",
+			Destination: &args.CleanupOnClose,
+		},
 	}
 }
 
@@ -240,6 +247,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.DisableCacheManager = args.DisableCacheManager
 	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
 	cfg.NydusdThreadNum = args.NydusdThreadNum
+	cfg.CleanupOnClose = args.CleanupOnClose
 
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {

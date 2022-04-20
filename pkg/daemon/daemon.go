@@ -40,7 +40,7 @@ type Daemon struct {
 	Pid              int
 	ImageID          string
 	DaemonMode       string
-	apiSock          *string
+	APISock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
 	nydusdThreadNum  int
@@ -87,9 +87,9 @@ func (d *Daemon) NydusdThreadNum() string {
 	return ""
 }
 
-func (d *Daemon) APISock() string {
-	if d.apiSock != nil {
-		return *d.apiSock
+func (d *Daemon) GetAPISock() string {
+	if d.APISock != nil {
+		return *d.APISock
 	}
 	return filepath.Join(d.SocketDir, APISocketFileName)
 }
@@ -161,7 +161,7 @@ func (d *Daemon) IsPrefetchDaemon() bool {
 }
 
 func (d *Daemon) initClient() error {
-	client, err := nydussdk.NewNydusClient(d.APISock())
+	client, err := nydussdk.NewNydusClient(d.GetAPISock())
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nydus client")
 	}
