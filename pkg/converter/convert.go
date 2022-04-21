@@ -221,17 +221,24 @@ func Convert(ctx context.Context, dest io.Writer, opt ConvertOption) (io.WriteCl
 
 	pr, pw := io.Pipe()
 
+	unpackDone := make(chan bool, 1)
 	go func() {
 		if err := unpackOciTar(ctx, sourceDir, pr); err != nil {
 			pr.CloseWithError(errors.Wrapf(err, "unpack to %s", sourceDir))
 			return
 		}
+		unpackDone <- true
 	}()
 
 	wc := newWriteCloser(pw, func() error {
 		defer func() {
 			os.RemoveAll(workDir)
 		}()
+
+		// Because PipeWriter#Close is called does not mean that the PipeReader
+		// has finished reading all the data, and unpack may not be complete yet,
+		// so we need to wait for that here.
+		<-unpackDone
 
 		bootstrapPath := filepath.Join(workDir, "bootstrap")
 		blobPath := filepath.Join(workDir, "blob")

@@ -26,13 +26,16 @@ func (c *writeCloser) Close() error {
 	if c.closed {
 		return nil
 	}
-	if err := c.action(); err != nil {
-		return err
-	}
+
 	if err := c.WriteCloser.Close(); err != nil {
 		return err
 	}
 	c.closed = true
+
+	if err := c.action(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
