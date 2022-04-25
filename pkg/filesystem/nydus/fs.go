@@ -576,6 +576,7 @@ func (fs *filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 			return errors.Wrap(err, "get bootstrap path")
 		}
 		cfg.Config.MetadataPath = bootstrapPath
+		cfg.ErofsDaemonConfig.FSPrefetch = cfg.FSPrefetch
 		return config.SaveConfig(cfg.ErofsDaemonConfig, d.ConfigFile())
 	}
 
