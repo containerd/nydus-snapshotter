@@ -23,6 +23,14 @@ const (
 	backendTypeRegistry = "registry"
 )
 
+type FSPrefetch struct {
+	Enable        bool `json:"enable"`
+	PrefetchAll   bool `json:"prefetch_all"`
+	ThreadsCount  int  `json:"threads_count"`
+	MergingSize   int  `json:"merging_size"`
+	BandwidthRate int  `json:"bandwidth_rate"`
+}
+
 type ErofsDaemonConfig struct {
 	// These fields is only for erofs daemon.
 	Type     string `json:"type"`
@@ -38,6 +46,7 @@ type ErofsDaemonConfig struct {
 		} `json:"cache_config"`
 		MetadataPath string `json:"metadata_path"`
 	} `json:"config"`
+	FSPrefetch `json:"fs_prefetch,omitempty"`
 }
 
 type DaemonConfig struct {
@@ -46,13 +55,8 @@ type DaemonConfig struct {
 	DigestValidate bool         `json:"digest_validate"`
 	IOStatsFiles   bool         `json:"iostats_files,omitempty"`
 	EnableXattr    bool         `json:"enable_xattr,omitempty"`
-	FSPrefetch     struct {
-		Enable       bool `json:"enable"`
-		PrefetchAll  bool `json:"prefetch_all"`
-		ThreadsCount int  `json:"threads_count"`
-		MergingSize  int  `json:"merging_size"`
-	} `json:"fs_prefetch,omitempty"`
 
+	FSPrefetch `json:"fs_prefetch,omitempty"`
 	ErofsDaemonConfig
 }
 
