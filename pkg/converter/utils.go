@@ -9,7 +9,6 @@ package converter
 import (
 	"archive/tar"
 	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -58,10 +57,13 @@ func (ra *seekReader) Read(p []byte) (int, error) {
 }
 
 func (ra *seekReader) Seek(offset int64, whence int) (int64, error) {
-	if whence != io.SeekCurrent {
-		return 0, fmt.Errorf("only support SeekCurrent whence")
+	if whence == io.SeekCurrent {
+		ra.pos += offset
+	} else if whence == io.SeekStart {
+		ra.pos = offset
+	} else {
+		return 0, fmt.Errorf("unsupported whence %d", whence)
 	}
-	ra.pos += offset
 	return ra.pos, nil
 }
 
@@ -69,25 +71,6 @@ func newSeekReader(ra io.ReaderAt) *seekReader {
 	return &seekReader{
 		ReaderAt: ra,
 		pos:      0,
-	}
-}
-
-type ctxReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r *ctxReader) Read(p []byte) (n int, err error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(p)
-}
-
-func newCtxReader(ctx context.Context, reader io.Reader) io.Reader {
-	return &ctxReader{
-		ctx:    ctx,
-		reader: reader,
 	}
 }
 
