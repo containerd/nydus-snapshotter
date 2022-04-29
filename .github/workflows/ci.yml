@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  NYDUS_VERSION: v2.0.0-rc.2
+  NYDUS_VERSION: v2.0.0-rc.5
 
 jobs:
   build:
@@ -57,8 +57,8 @@ jobs:
       - name: Build
         run: |
           # Download nydus components
-          wget https://github.com/dragonflyoss/image-service/releases/download/${{ env.NYDUS_VERSION }}/nydus-static-${{ env.NYDUS_VERSION }}-x86_64.tgz
-          tar xzvf nydus-static-${{ env.NYDUS_VERSION }}-x86_64.tgz
+          wget https://github.com/dragonflyoss/image-service/releases/download/${{ env.NYDUS_VERSION }}/nydus-static-${{ env.NYDUS_VERSION }}-linux-amd64.tgz
+          tar xzvf nydus-static-${{ env.NYDUS_VERSION }}-linux-amd64.tgz
           mkdir -p /usr/bin
           sudo mv nydus-static/nydus-image nydus-static/nydusd-fusedev nydus-static/nydusify /usr/bin/
 
