@@ -33,6 +33,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
 // TODO: Move snapshotter needed all image annotations to nydus-snapshotter.
@@ -125,17 +126,6 @@ func (fs *filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	return d, nil
 }
 
-// TODO(tianqian.zyf:) Put it in the utils module and reuse it with stargz
-func parseLabels(labels map[string]string) (rRef, rDigest string) {
-	if ref, ok := labels[label.ImageRef]; ok {
-		rRef = ref
-	}
-	if layerDigest, ok := labels[label.CRIDigest]; ok {
-		rDigest = layerDigest
-	}
-	return
-}
-
 func (fs *filesystem) Support(ctx context.Context, labels map[string]string) bool {
 	_, dataOk := labels[label.NydusDataLayer]
 	_, metaOk := labels[label.NydusMetaLayer]
@@ -147,7 +137,7 @@ func isRafsV6(buf []byte) bool {
 }
 
 func getBootstrapRealSizeInV6(buf []byte) uint64 {
-	return binary.LittleEndian.Uint64(buf[ChunkInfoOffset:])
+	return nativeEndian.Uint64(buf[ChunkInfoOffset:])
 }
 
 func writeBootstrapToFile(reader io.Reader, bootstrap *os.File) error {
@@ -208,7 +198,7 @@ func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labe
 		duration := time.Since(start)
 		log.G(ctx).Infof("total nydus prepare layer duration %d", duration.Milliseconds())
 	}()
-	ref, layerDigest := parseLabels(labels)
+	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
