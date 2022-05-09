@@ -47,8 +47,6 @@ func Convert(option ConvertOption) error {
 		"warn",
 		"--prefetch-policy",
 		"fs",
-		"--bootstrap",
-		option.BootstrapPath,
 		"--blob",
 		option.BlobPath,
 		"--source-type",
@@ -57,9 +55,7 @@ func Convert(option ConvertOption) error {
 		"none",
 		"--fs-version",
 		option.RafsVersion,
-		"--blob-offset",
-		// Add blob offset for chunk info with size_of(tar_header) * 2.
-		"1024",
+		"--inline-bootstrap",
 	}
 	if option.RafsVersion == "6" {
 		// FIXME: these options should be handled automatically in builder (nydus-image).
