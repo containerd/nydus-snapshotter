@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
@@ -62,7 +63,10 @@ func (r *Resolver) Resolve(ref, digest string, keychain authn.Keychain) (io.Read
 		return nil, err
 	}
 
-	client := &http.Client{Transport: tr}
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   time.Second * 10,
+	}
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, err

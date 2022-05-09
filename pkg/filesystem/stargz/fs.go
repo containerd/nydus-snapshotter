@@ -63,7 +63,7 @@ func (f *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, label
 		duration := time.Since(start)
 		log.G(ctx).Infof("total stargz prepare layer duration %d", duration.Milliseconds())
 	}()
-	ref, layerDigest := parseLabels(labels)
+	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
