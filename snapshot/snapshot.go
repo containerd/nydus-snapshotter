@@ -298,7 +298,14 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	if target, ok := base.Labels[label.TargetSnapshotLabel]; ok {
 		// check if image layer is nydus layer
 		if o.fs.Support(ctx, base.Labels) {
-			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
+			logCtx.Infof("nydus data/meta layer, skip download and unpack %s", key)
+			_, isBootstrapLayer := base.Labels[label.NydusMetaLayer]
+			if isBootstrapLayer {
+				err = o.fs.PrepareLayer(ctx, s, base.Labels)
+				if err != nil {
+					logCtx.Errorf("failed to prepare nydus layer of snapshot ID %s, err: %v", s.ID, err)
+				}
+			}
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
