@@ -91,7 +91,7 @@ jobs:
           # wait for containerd to start up
           sleep 10
           echo "Pull nydus-latest image"
-          sudo ctr-remote images rpull ghcr.io/dragonflyoss/image-service/ubuntu:nydus-latest
+          sudo crictl pull ghcr.io/dragonflyoss/image-service/ubuntu:nydus-latest
           docker logs `docker ps |grep  "nydus-snapshotter"|cut -d ' ' -f1`
           echo "create new pod with nydus snapshotter"
           sudo crictl run misc/example/container.yaml misc/example/pod.yaml
