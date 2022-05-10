@@ -24,7 +24,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -202,8 +201,8 @@ func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labe
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
-	keychain := auth.FromLabels(labels)
-	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, keychain)
+
+	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
 	if err != nil {
 		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
 	}

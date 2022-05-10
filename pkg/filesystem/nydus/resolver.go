@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/reference/docker"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/pkg/errors"
 )
@@ -30,7 +30,7 @@ func NewResolver() *Resolver {
 	return &resolver
 }
 
-func (r *Resolver) Resolve(ref, digest string, keychain authn.Keychain) (io.ReadCloser, error) {
+func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.ReadCloser, error) {
 	named, err := docker.ParseDockerRef(ref)
 	if err != nil {
 		return nil, err
@@ -41,6 +41,7 @@ func (r *Resolver) Resolve(ref, digest string, keychain authn.Keychain) (io.Read
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse ref %q (%q)", sref, digest)
 	}
+	keychain := auth.GetRegistryKeyChain(host, labels)
 
 	var tr http.RoundTripper
 	if nref.Context().Registry.Scheme() == "https" {
@@ -65,7 +66,7 @@ func (r *Resolver) Resolve(ref, digest string, keychain authn.Keychain) (io.Read
 
 	client := &http.Client{
 		Transport: tr,
-		Timeout:   time.Second * 10,
+		Timeout:   time.Second * 30,
 	}
 	res, err := client.Do(req)
 	if err != nil {
