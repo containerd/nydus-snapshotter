@@ -64,7 +64,7 @@ func Test_writeBootsrapFile(t *testing.T) {
 				t.Fatalf("failed to create bootstrap file %s", err)
 			}
 
-			err = writeBootstrapToFile(file, rawBootstrapFile)
+			err = writeBootstrapToFile(file, rawBootstrapFile, nil)
 			if tt.hasError && err == nil {
 				t.Errorf("writeBootstrapToFile expect return error, but actual is nil")
 			}

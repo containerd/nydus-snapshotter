@@ -46,6 +46,7 @@ const RafsV6Magic = 0xE0F5E1E2
 const ChunkInfoOffset = 1024 + 128 + 24
 const RafsV6SuppeOffset = 1024
 const BootstrapFile = "image/image.boot"
+const LegacyBootstrapFile = "image.boot"
 
 var nativeEndian binary.ByteOrder
 
@@ -139,7 +140,7 @@ func getBootstrapRealSizeInV6(buf []byte) uint64 {
 	return nativeEndian.Uint64(buf[ChunkInfoOffset:])
 }
 
-func writeBootstrapToFile(reader io.Reader, bootstrap *os.File) error {
+func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap *os.File) error {
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
@@ -151,6 +152,7 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File) error {
 	}
 	found := false
 	tr := tar.NewReader(rd)
+	var finalBootstarp *os.File
 	for {
 		h, err := tr.Next()
 		if err != nil {
@@ -158,6 +160,13 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File) error {
 		}
 		if h.Name == BootstrapFile {
 			found = true
+			finalBootstarp = bootstrap
+			break
+		}
+
+		if h.Name == LegacyBootstrapFile {
+			found = true
+			finalBootstarp = LegacyBootstrap
 			break
 		}
 	}
@@ -170,7 +179,7 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File) error {
 	if err != nil {
 		return err
 	}
-	_, err = bootstrap.Write(buf)
+	_, err = finalBootstarp.Write(buf)
 
 	if err != nil {
 		return err
@@ -182,12 +191,12 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File) error {
 			return fmt.Errorf("invalid chunk info offset %d", size)
 		}
 		// The content of the chunkinfo part is not needed in the v6 format, so it is discarded here.
-		_, err := io.CopyN(bootstrap, tr, int64(size-MaxSuperBlockSize))
+		_, err := io.CopyN(finalBootstarp, tr, int64(size-MaxSuperBlockSize))
 		return err
 	}
 
 	// Copy remain data to bootstrap file
-	_, err = io.Copy(bootstrap, tr)
+	_, err = io.Copy(finalBootstarp, tr)
 	return err
 }
 
@@ -211,7 +220,7 @@ func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labe
 	}()
 
 	workdir := filepath.Join(fs.UpperPath(s.ID), BootstrapFile)
-
+	legacy := filepath.Join(fs.UpperPath(s.ID), LegacyBootstrapFile)
 	err = os.Mkdir(filepath.Dir(workdir), 0755)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bootstrap dir")
@@ -220,7 +229,15 @@ func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labe
 	if err != nil {
 		return errors.Wrap(err, "failed to create bootstrap file")
 	}
-	return writeBootstrapToFile(readerCloser, nydusBootstrap)
+
+	legacyNydusBootstrap, err := os.OpenFile(legacy, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return errors.Wrap(err, "failed to create legacy bootstrap file")
+	}
+
+	defer nydusBootstrap.Close()
+	defer legacyNydusBootstrap.Close()
+	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
 }
 
 // Mount will be called when containerd snapshotter prepare remote snapshotter
