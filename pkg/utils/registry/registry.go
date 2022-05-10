@@ -59,7 +59,7 @@ func ParseLabels(labels map[string]string) (rRef, rDigest string) {
 }
 
 func AuthnTransport(ref name.Reference, tr http.RoundTripper, keychain authn.Keychain) (http.RoundTripper, error) {
-	if keychain == nil || reflect.ValueOf(keychain).IsNil() {
+	if keychain == nil || (reflect.ValueOf(keychain).Kind() == reflect.Ptr && reflect.ValueOf(keychain).IsNil()) {
 		return nil, fmt.Errorf("keychain is required")
 	}
 	auth, err := keychain.Resolve(ref.Context())
