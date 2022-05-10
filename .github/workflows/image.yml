@@ -73,6 +73,7 @@ jobs:
           wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
           tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz
           sudo cp nydus-static/nydus-overlayfs /usr/local/sbin/
+          sudo cp nydus-static/ctr-remote /usr/local/sbin/
           # install containerd
           #CONTAINERD_VER=$(curl -s "https://api.github.com/repos/containerd/containerd/releases/latest" | jq -r .tag_name | sed 's/^v//')
           # Let's use fixed containerd version for now.
@@ -89,6 +90,9 @@ jobs:
           sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
           # wait for containerd to start up
           sleep 10
+          echo "Pull nydus-latest image"
+          sudo ctr-remote images rpull ghcr.io/dragonflyoss/image-service/ubuntu:nydus-latest
+          docker logs `docker ps |grep  "nydus-snapshotter"|cut -d ' ' -f1`
           echo "create new pod with nydus snapshotter"
           sudo crictl run misc/example/container.yaml misc/example/pod.yaml
           container=$(sudo crictl ps -q)
@@ -96,3 +100,4 @@ jobs:
           sudo crictl exec $container ls
           echo "delete pod"
           sudo crictl rmp -fa
+

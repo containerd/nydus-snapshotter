@@ -237,6 +237,7 @@ func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labe
 
 	defer nydusBootstrap.Close()
 	defer legacyNydusBootstrap.Close()
+	log.G(ctx).Infof("prepare write to bootstrap to %s", workdir)
 	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
 }
 
