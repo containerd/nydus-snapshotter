@@ -85,7 +85,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         run: |
           # start nydus-snapshotter
-          docker run -d --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
+          docker run -d --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
           # start containerd
           sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
           # wait for containerd to start up

@@ -304,6 +304,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				err = o.fs.PrepareLayer(ctx, s, base.Labels)
 				if err != nil {
 					logCtx.Errorf("failed to prepare nydus layer of snapshot ID %s, err: %v", s.ID, err)
+					return nil, err
 				}
 			}
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
