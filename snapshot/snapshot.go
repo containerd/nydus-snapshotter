@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
@@ -37,6 +36,10 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
+
+	// Import the converter package so that it can be compiled during
+	// `go build` to ensure cross-compilation compatibility.
+	_ "github.com/containerd/nydus-snapshotter/pkg/converter"
 )
 
 const (
@@ -541,9 +544,7 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 			return storage.Snapshot{}, errors.Wrap(err, "failed to stat parent")
 		}
 
-		stat := st.Sys().(*syscall.Stat_t)
-
-		if err := os.Lchown(filepath.Join(td, "fs"), int(stat.Uid), int(stat.Gid)); err != nil {
+		if err := lchown(filepath.Join(td, "fs"), st); err != nil {
 			if rerr := t.Rollback(); rerr != nil {
 				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
 			}

@@ -65,6 +65,32 @@ jobs:
           export PATH=$PATH:$(go env GOPATH)/bin
           make smoke
 
+  cross-build-test:
+    name: Cross Build Test
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        GOOS: ['linux', 'windows', 'darwin']
+        GOARCH: ['amd64', 'arm64']
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '1.17'
+      - name: Check out code
+        uses: actions/checkout@v1
+      - name: cache go mod
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go
+      - name: Build
+        run: |
+          make -e GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }}
+
   coverage:
     name: Code coverage
     timeout-minutes: 10

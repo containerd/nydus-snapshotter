@@ -7,6 +7,8 @@ SUDO = $(shell which sudo)
 GO_EXECUTABLE_PATH ?= $(shell which go)
 NYDUS_BUILDER ?= /usr/bin/nydus-image
 NYDUS_NYDUSD ?= /usr/bin/nydusd-fusedev
+GOOS ?= linux
+GOARCH ?= amd64
 #GOPROXY ?= https://goproxy.io
 
 ifdef GOPROXY
@@ -15,16 +17,15 @@ endif
 
 .PHONY: build
 build:
-	GOOS=linux ${PROXY} go build -ldflags="-s -w -X 'main.Version=${VERSION}'" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags="-s -w -X 'main.Version=${VERSION}'" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 
 static-release:
-	CGO_ENABLED=0 ${PROXY} GOOS=linux go build -ldflags '-s -w -X "main.Version=${VERSION}" -extldflags "-static"' -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-s -w -X "main.Version=${VERSION}" -extldflags "-static"' -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 
 .PHONY: clear
 clear:
 	rm -f bin/*
 	rm -rf _out
-
 
 .PHONY: install
 install: static-release
