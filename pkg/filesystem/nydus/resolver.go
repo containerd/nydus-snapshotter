@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
@@ -33,7 +34,7 @@ func NewResolver() *Resolver {
 func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.ReadCloser, error) {
 	named, err := docker.ParseDockerRef(ref)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed parse docker ref %s", ref)
 	}
 	host := docker.Domain(named)
 	sref := fmt.Sprintf("%s/%s", host, docker.Path(named))
@@ -44,14 +45,15 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 	keychain := auth.GetRegistryKeyChain(host, labels)
 
 	var tr http.RoundTripper
-	if nref.Context().Registry.Scheme() == "https" {
+	if keychain == nil {
+		// Fallback to use no auth RoundTripper
+		log.L.Infof("fallback to use no auth round tripper")
+		tr = r.transport
+	} else {
 		tr, err = registry.AuthnTransport(nref, r.transport, keychain)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "failt to create authn transport %v", keychain)
 		}
-	} else {
-		// Use default transport
-		tr = r.transport
 	}
 	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s",
 		nref.Context().Registry.Scheme(),
@@ -61,7 +63,7 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "faild to new http get %s", url)
 	}
 
 	client := &http.Client{
@@ -70,7 +72,7 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "faild to http get %s", url)
 	}
 
 	if res.StatusCode != http.StatusOK {

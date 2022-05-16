@@ -148,7 +148,7 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap 
 	}()
 	rd, err := gzip.NewReader(reader)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "gzip new reader faield")
 	}
 	found := false
 	tr := tar.NewReader(rd)
@@ -156,7 +156,7 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap 
 	for {
 		h, err := tr.Next()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "can't get next tar entry")
 		}
 		if h.Name == BootstrapFile {
 			found = true
@@ -177,18 +177,18 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap 
 	buf := make([]byte, MaxSuperBlockSize)
 	_, err = tr.Read(buf)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "read max super block size from bootstrap file failed")
 	}
 	_, err = finalBootstarp.Write(buf)
 
 	if err != nil {
-		return err
+		return errors.Wrap(err, "write to bootstrap file failed")
 	}
 
 	if isRafsV6(buf) {
 		size := getBootstrapRealSizeInV6(buf)
 		if size < MaxSuperBlockSize {
-			return fmt.Errorf("invalid chunk info offset %d", size)
+			return fmt.Errorf("invalid bootstrap size %d", size)
 		}
 		// The content of the chunkinfo part is not needed in the v6 format, so it is discarded here.
 		_, err := io.CopyN(finalBootstarp, tr, int64(size-MaxSuperBlockSize))
@@ -215,9 +215,7 @@ func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labe
 	if err != nil {
 		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
 	}
-	defer func() {
-		readerCloser.Close()
-	}()
+	defer readerCloser.Close()
 
 	workdir := filepath.Join(fs.UpperPath(s.ID), BootstrapFile)
 	legacy := filepath.Join(fs.UpperPath(s.ID), LegacyBootstrapFile)
