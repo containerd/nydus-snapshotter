@@ -57,7 +57,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fs.FileSystem, error) 
 	return &fs, nil
 }
 
-func (f *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+func (f *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)

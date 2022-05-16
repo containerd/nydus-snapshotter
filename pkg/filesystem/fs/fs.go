@@ -28,7 +28,7 @@ type FileSystem interface {
 	Umount(ctx context.Context, mountPoint string) error
 	Cleanup(ctx context.Context) error
 	Support(ctx context.Context, labels map[string]string) bool
-	PrepareLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error
+	PrepareMetaLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error
 	MountPoint(snapshotID string) (string, error)
 	BootstrapFile(snapshotID string) (string, error)
 	NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error)

@@ -301,7 +301,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			logCtx.Infof("nydus data/meta layer, skip download and unpack %s", key)
 			_, isBootstrapLayer := base.Labels[label.NydusMetaLayer]
 			if isBootstrapLayer {
-				err = o.fs.PrepareLayer(ctx, s, base.Labels)
+				err = o.fs.PrepareMetaLayer(ctx, s, base.Labels)
 				if err != nil {
 					logCtx.Errorf("failed to prepare nydus layer of snapshot ID %s, err: %v", s.ID, err)
 					return nil, err
@@ -317,7 +317,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		if o.stargzFs != nil && o.stargzFs.Support(ctx, base.Labels) {
 			// Mark this snapshot as remote
 			base.Labels[label.RemoteLabel] = "remote snapshot"
-			err := o.stargzFs.PrepareLayer(ctx, s, base.Labels)
+			err := o.stargzFs.PrepareMetaLayer(ctx, s, base.Labels)
 			if err != nil {
 				logCtx.Errorf("failed to prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
 			} else {

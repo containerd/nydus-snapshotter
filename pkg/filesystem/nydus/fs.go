@@ -200,7 +200,7 @@ func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap 
 	return err
 }
 
-func (fs *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+func (fs *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
