@@ -250,7 +250,7 @@ func (fs *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, 
 		for _, in := range closeEmptyFile {
 			size, err := in.file.Seek(0, 2)
 			if err != nil {
-				log.G(ctx).Warnf("failed to seek bootstrap %s file", workdir)
+				log.G(ctx).Warnf("failed to seek bootstrap %s file, error %s", workdir, err)
 			}
 			in.file.Close()
 			if size == 0 {
@@ -258,8 +258,6 @@ func (fs *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, 
 			}
 		}
 	}()
-
-	defer legacyNydusBootstrap.Close()
 	log.G(ctx).Infof("prepare write to bootstrap to %s", workdir)
 	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
 }
