@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
 type filesystem struct {
@@ -56,23 +57,13 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fs.FileSystem, error) 
 	return &fs, nil
 }
 
-func parseLabels(labels map[string]string) (rRef, rDigest string) {
-	if ref, ok := labels[label.ImageRef]; ok {
-		rRef = ref
-	}
-	if layerDigest, ok := labels[label.CRIDigest]; ok {
-		rDigest = layerDigest
-	}
-	return
-}
-
-func (f *filesystem) PrepareLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+func (f *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
 		log.G(ctx).Infof("total stargz prepare layer duration %d", duration.Milliseconds())
 	}()
-	ref, layerDigest := parseLabels(labels)
+	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
@@ -125,7 +116,7 @@ func getParentSnapshotID(s storage.Snapshot) string {
 }
 
 func (f *filesystem) Support(ctx context.Context, labels map[string]string) bool {
-	ref, layerDigest := parseLabels(labels)
+	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return false
 	}

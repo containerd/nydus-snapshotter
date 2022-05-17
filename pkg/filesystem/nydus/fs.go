@@ -7,10 +7,17 @@
 package nydus
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"time"
+	"unsafe"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
@@ -25,10 +32,37 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
 // TODO: Move snapshotter needed all image annotations to nydus-snapshotter.
 const LayerAnnotationNydusBlobIDs = "containerd.io/snapshot/nydus-blob-ids"
+
+// RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtener(256)
+// RafsV5 layout: 8K superblock
+// So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
+const MaxSuperBlockSize = 8 * 1024
+const RafsV6Magic = 0xE0F5E1E2
+const ChunkInfoOffset = 1024 + 128 + 24
+const RafsV6SuppeOffset = 1024
+const BootstrapFile = "image/image.boot"
+const LegacyBootstrapFile = "image.boot"
+
+var nativeEndian binary.ByteOrder
+
+func init() {
+	buf := [2]byte{}
+	*(*uint16)(unsafe.Pointer(&buf[0])) = uint16(0xABCD)
+
+	switch buf {
+	case [2]byte{0xCD, 0xAB}:
+		nativeEndian = binary.LittleEndian
+	case [2]byte{0xAB, 0xCD}:
+		nativeEndian = binary.BigEndian
+	default:
+		panic("Could not determine native endianness.")
+	}
+}
 
 type filesystem struct {
 	meta.FileSystemMeta
@@ -37,6 +71,7 @@ type filesystem struct {
 	verifier         *signature.Verifier
 	sharedDaemon     *daemon.Daemon
 	daemonCfg        config.DaemonConfig
+	resolver         *Resolver
 	vpcRegistry      bool
 	nydusdBinaryPath string
 	mode             fspkg.Mode
@@ -55,6 +90,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fspkg.FileSystem, erro
 			return nil, err
 		}
 	}
+	fs.resolver = NewResolver()
 
 	// Try to reconnect to running daemons
 	if err := fs.manager.Reconnect(ctx); err != nil {
@@ -91,12 +127,139 @@ func (fs *filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 }
 
 func (fs *filesystem) Support(ctx context.Context, labels map[string]string) bool {
-	_, ok := labels[label.NydusDataLayer]
-	return ok
+	_, dataOk := labels[label.NydusDataLayer]
+	_, metaOk := labels[label.NydusMetaLayer]
+	return dataOk || metaOk
 }
 
-func (fs *filesystem) PrepareLayer(context.Context, storage.Snapshot, map[string]string) error {
-	panic("implement me")
+func isRafsV6(buf []byte) bool {
+	return nativeEndian.Uint32(buf[RafsV6SuppeOffset:]) == RafsV6Magic
+}
+
+func getBootstrapRealSizeInV6(buf []byte) uint64 {
+	return nativeEndian.Uint64(buf[ChunkInfoOffset:])
+}
+
+func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap *os.File) error {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		log.L.Infof("read bootstrap duration %d", duration.Milliseconds())
+	}()
+	rd, err := gzip.NewReader(reader)
+	if err != nil {
+		return errors.Wrap(err, "gzip new reader faield")
+	}
+	found := false
+	tr := tar.NewReader(rd)
+	var finalBootstarp *os.File
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			return errors.Wrap(err, "can't get next tar entry")
+		}
+		if h.Name == BootstrapFile {
+			found = true
+			finalBootstarp = bootstrap
+			break
+		}
+
+		if h.Name == LegacyBootstrapFile {
+			found = true
+			finalBootstarp = LegacyBootstrap
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("not found file image.boot in targz")
+	}
+	buf := make([]byte, MaxSuperBlockSize)
+	_, err = tr.Read(buf)
+	if err != nil {
+		return errors.Wrap(err, "read max super block size from bootstrap file failed")
+	}
+	_, err = finalBootstarp.Write(buf)
+
+	if err != nil {
+		return errors.Wrap(err, "write to bootstrap file failed")
+	}
+
+	if isRafsV6(buf) {
+		size := getBootstrapRealSizeInV6(buf)
+		if size < MaxSuperBlockSize {
+			return fmt.Errorf("invalid bootstrap size %d", size)
+		}
+		// The content of the chunkinfo part is not needed in the v6 format, so it is discarded here.
+		_, err := io.CopyN(finalBootstarp, tr, int64(size-MaxSuperBlockSize))
+		return err
+	}
+
+	// Copy remain data to bootstrap file
+	_, err = io.Copy(finalBootstarp, tr)
+	return err
+}
+
+func (fs *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		log.G(ctx).Infof("total nydus prepare layer duration %d", duration.Milliseconds())
+	}()
+	ref, layerDigest := registry.ParseLabels(labels)
+	if ref == "" || layerDigest == "" {
+		return fmt.Errorf("can not find ref and digest from label %+v", labels)
+	}
+
+	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
+	if err != nil {
+		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
+	}
+	defer readerCloser.Close()
+
+	workdir := filepath.Join(fs.UpperPath(s.ID), BootstrapFile)
+	legacy := filepath.Join(fs.UpperPath(s.ID), LegacyBootstrapFile)
+	err = os.Mkdir(filepath.Dir(workdir), 0755)
+	if err != nil {
+		return errors.Wrap(err, "failed to create bootstrap dir")
+	}
+	nydusBootstrap, err := os.OpenFile(workdir, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return errors.Wrap(err, "failed to create bootstrap file")
+	}
+
+	legacyNydusBootstrap, err := os.OpenFile(legacy, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return errors.Wrap(err, "failed to create legacy bootstrap file")
+	}
+
+	defer func() {
+		closeEmptyFile := []struct {
+			file *os.File
+			path string
+		}{
+			{
+				file: nydusBootstrap,
+				path: workdir,
+			},
+			{
+				file: legacyNydusBootstrap,
+				path: legacy,
+			},
+		}
+		for _, in := range closeEmptyFile {
+			size, err := in.file.Seek(0, io.SeekEnd)
+			if err != nil {
+				log.G(ctx).Warnf("failed to seek bootstrap %s file, error %s", workdir, err)
+			}
+			in.file.Close()
+			if size == 0 {
+				os.Remove(in.path)
+			}
+		}
+	}()
+	log.G(ctx).Infof("prepare write to bootstrap to %s", workdir)
+	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
 }
 
 // Mount will be called when containerd snapshotter prepare remote snapshotter
