@@ -248,7 +248,7 @@ func (fs *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, 
 			},
 		}
 		for _, in := range closeEmptyFile {
-			size, err := in.file.Seek(0, 2)
+			size, err := in.file.Seek(0, io.SeekEnd)
 			if err != nil {
 				log.G(ctx).Warnf("failed to seek bootstrap %s file, error %s", workdir, err)
 			}
