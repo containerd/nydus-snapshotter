@@ -233,7 +233,32 @@ func (fs *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, 
 		return errors.Wrap(err, "failed to create legacy bootstrap file")
 	}
 
-	defer nydusBootstrap.Close()
+	defer func() {
+		closeEmptyFile := []struct {
+			file *os.File
+			path string
+		}{
+			{
+				file: nydusBootstrap,
+				path: workdir,
+			},
+			{
+				file: legacyNydusBootstrap,
+				path: legacy,
+			},
+		}
+		for _, in := range closeEmptyFile {
+			size, err := in.file.Seek(0, 2)
+			if err != nil {
+				log.G(ctx).Warnf("failed to seek bootstrap %s file", workdir)
+			}
+			in.file.Close()
+			if size == 0 {
+				os.Remove(in.path)
+			}
+		}
+	}()
+
 	defer legacyNydusBootstrap.Close()
 	log.G(ctx).Infof("prepare write to bootstrap to %s", workdir)
 	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
