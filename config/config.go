@@ -86,6 +86,11 @@ func (c *Config) FillupWithDefaults() error {
 }
 
 func (c *Config) SetupNydusBinaryPaths() error {
+	// when using DaemonMode = none, nydusd and nydus-image binaries are not required
+	if c.DaemonMode == DaemonModeNone {
+		return nil
+	}
+
 	// resolve nydusd path
 	if c.NydusdBinaryPath == "" {
 		path, err := exec.LookPath(nydusdBinaryName)
