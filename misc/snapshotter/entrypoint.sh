@@ -5,7 +5,7 @@ CONTAINERD_ROOT="${CONTAINERD_ROOT:-/var/lib/containerd/}"
 set -eu
 MODE="config"
 if [ "$#" -eq 0 ]; then
-	if [ ! -z ${BACKEND_TYPE} == "localfs" ];then 
+	if [ ! -z ${BACKEND_TYPE} ];then 
 		MODE=${BACKEND_TYPE}
 	fi
 	containerd-nydus-grpc \
