@@ -101,13 +101,19 @@ jobs:
           echo "delete pod"
           sudo crictl rmp -fa
       - name: Cleanup containerd and snapshotter
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
           echo "stop snapshotter"
           docker stop snapshotter
           docker rm snapshotter
           echo "stop containerd"
-          sudo pkill containerd
+          sudo pkill -f /usr/local/bin/containerd
           echo "delete containerd dir"
-          sudo rm -rf /var/lib/containerd
+          # After the snapshotter container is stopped, it seems that Nydud doesn't umount it
+          # so we need to umount it here, otherwise you cannot delete this directory. 
+          # Frankly, I don't know why Nydud didn't clean up these resources.
+          sudo umount -f /var/lib/containerd-test/io.containerd.snapshotter.v1.nydus/mnt
+          sudo rm -rf /var/lib/containerd-test/*
       - name: Test nydus-snapshotter image in localfs mode
         if: ${{ github.event_name == 'pull_request' }}
         run: |

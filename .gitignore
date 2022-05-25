@@ -1,5 +1,4 @@
 bin/
 pkg/filesystem/stargz/testdata/db/
 coverage.txt
-
 .vscode/
