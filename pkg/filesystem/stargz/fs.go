@@ -57,11 +57,11 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fs.FileSystem, error) 
 	return &fs, nil
 }
 
-func (fs *filesystem) CleanupBlobLayer(ctx context.Context, key string, async bool) error {
+func (f *filesystem) CleanupBlobLayer(ctx context.Context, key string, async bool) error {
 	return nil
 }
 
-func (fs *filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
+func (f *filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
 	return nil
 }
 

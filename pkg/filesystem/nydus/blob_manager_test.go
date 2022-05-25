@@ -35,30 +35,30 @@ func Test_Remove(t *testing.T) {
 	}
 }
 
-func Test_decodeId(t *testing.T) {
+func Test_decodeID(t *testing.T) {
 	blobMgr := NewBlobManager("dir")
 	tests := []struct {
 		name     string
 		id       string
-		decodeId string
+		decodeID string
 		hasError bool
 	}{
 		{
 			name:     "ok",
 			id:       "sha256:038f2b2815ae3c309b77bf34bf6ce988c922b7718773b4c98d5cd2b76c35a146",
-			decodeId: "038f2b2815ae3c309b77bf34bf6ce988c922b7718773b4c98d5cd2b76c35a146",
+			decodeID: "038f2b2815ae3c309b77bf34bf6ce988c922b7718773b4c98d5cd2b76c35a146",
 			hasError: false,
 		},
 		{
 			name:     "not ok",
 			id:       "038f2b2815ae3c309b77bf34bf6ce988c922b7718773b4c98d5cd2b76c35a146",
-			decodeId: "",
+			decodeID: "",
 			hasError: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			realId, err := blobMgr.decodeId(tt.id)
+			realID, err := blobMgr.decodeID(tt.id)
 			if tt.hasError {
 				if err == nil {
 					t.Fatal("expect has error, but actual is nil")
@@ -67,7 +67,7 @@ func Test_decodeId(t *testing.T) {
 				if err != nil {
 					t.Fatalf("expect doesn't have error, but actual is %s", err)
 				}
-				if realId != tt.decodeId {
+				if realID != tt.decodeID {
 					t.Fatalf("expect doesn't have error, but actual is %s", err)
 				}
 			}

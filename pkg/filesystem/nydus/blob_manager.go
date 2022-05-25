@@ -46,14 +46,14 @@ func (b *BlobManager) GetBlobDir() string {
 }
 
 func (b *BlobManager) cleanupBlob(id string) error {
-	id, err := b.decodeId(id)
+	id, err := b.decodeID(id)
 	if err != nil {
 		return err
 	}
 	return os.Remove(filepath.Join(b.blobDir, id))
 }
 
-func (b *BlobManager) decodeId(id string) (string, error) {
+func (b *BlobManager) decodeID(id string) (string, error) {
 	digest, err := digest.Parse(id)
 	if err != nil {
 		return "", errors.Wrapf(err, "invalid blob layer digest %s", id)
