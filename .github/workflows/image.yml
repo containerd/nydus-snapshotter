@@ -85,7 +85,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         run: |
           # start nydus-snapshotter
-          docker run -d --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
+          docker run -d --name snapshotter --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
           # start containerd
           sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
           # wait for containerd to start up
@@ -100,11 +100,19 @@ jobs:
           sudo crictl exec $container ls
           echo "delete pod"
           sudo crictl rmp -fa
+      - name: Cleanup containerd and snapshotter
+          echo "stop snapshotter"
+          docker stop snapshotter
+          docker rm snapshotter
+          echo "stop containerd"
+          sudo pkill containerd
+          echo "delete containerd dir"
+          sudo rm -rf /var/lib/containerd
       - name: Test nydus-snapshotter image in localfs mode
         if: ${{ github.event_name == 'pull_request' }}
         run: |
           # start nydus-snapshotter
-          docker run -d --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e BACKEND_TYPE=localfs -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
+          docker run -d --name snapshotter --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e BACKEND_TYPE=localfs -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
           # start containerd
           sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
           # wait for containerd to start up
