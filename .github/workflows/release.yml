@@ -58,10 +58,15 @@ jobs:
           tar cf - nydus-snapshotter | gzip > ${tarball}
           echo "tag=$tag" >> $GITHUB_ENV
           echo "tarball=$tarball" >> $GITHUB_ENV
+
+          tarball_shasum="$tarball.sha256sum"
+          sha256sum $tarball > $tarball_shasum
+          echo "tarball_shasum=$tarball_shasum" >> $GITHUB_ENV
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          name: "Nydus-snapshotter ${{ env.tag }} release"
+          name: "Nydus Snapshotter ${{ env.tag }} Release"
           generate_release_notes: true
           files:
             ${{ env.tarball }}
+            ${{ env.tarball_shasum }}
