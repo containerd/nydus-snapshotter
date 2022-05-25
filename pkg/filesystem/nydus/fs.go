@@ -92,12 +92,12 @@ type filesystem struct {
 	blobMgr          *BlobManager
 }
 
-func getBlobPath(cfg config.DeviceConfig, blobDigest string) (string, error) {
+func getBlobPath(dir string, blobDigest string) (string, error) {
 	digest, err := digest.Parse(blobDigest)
 	if err != nil {
 		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
 	}
-	return filepath.Join(cfg.Backend.Config.Dir, digest.Encoded()), nil
+	return filepath.Join(dir, digest.Encoded()), nil
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -148,7 +148,7 @@ func (fs *filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
-	blobPath, err := getBlobPath(fs.daemonCfg.Device, layerDigest)
+	blobPath, err := getBlobPath(fs.blobMgr.GetBlobDir(), layerDigest)
 	if err != nil {
 		return errors.Wrap(err, "failed to get blob path")
 	}
