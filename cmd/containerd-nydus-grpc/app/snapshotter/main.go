@@ -17,6 +17,8 @@ import (
 )
 
 func Start(ctx context.Context, cfg config.Config) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	rs, err := snapshot.NewSnapshotter(ctx, &cfg)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize snapshotter")

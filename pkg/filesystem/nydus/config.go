@@ -154,3 +154,13 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
 		return nil
 	}
 }
+
+func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
+	return func(d *filesystem) error {
+		if cfg.Device.Backend.BackendType == "localfs" &&
+			len(cfg.Device.Backend.Config.Dir) != 0 {
+			d.imageMode = PreLoad
+		}
+		return nil
+	}
+}

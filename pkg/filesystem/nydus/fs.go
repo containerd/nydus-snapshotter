@@ -21,6 +21,7 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -49,6 +50,13 @@ const BootstrapFile = "image/image.boot"
 const LegacyBootstrapFile = "image.boot"
 
 var nativeEndian binary.ByteOrder
+
+type ImageMode int
+
+const (
+	OnDemand ImageMode = iota
+	PreLoad
+)
 
 func init() {
 	buf := [2]byte{}
@@ -80,6 +88,16 @@ type filesystem struct {
 	logDir           string
 	logToStdout      bool
 	nydusdThreadNum  int
+	imageMode        ImageMode
+	blobMgr          *BlobManager
+}
+
+func getBlobPath(cfg config.DeviceConfig, blobDigest string) (string, error) {
+	digest, err := digest.Parse(blobDigest)
+	if err != nil {
+		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
+	}
+	return filepath.Join(cfg.Backend.Config.Dir, digest.Encoded()), nil
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -91,13 +109,68 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fspkg.FileSystem, erro
 			return nil, err
 		}
 	}
+	if fs.imageMode == PreLoad {
+		fs.blobMgr = NewBlobManager(fs.daemonCfg.Device.Backend.Config.Dir)
+		go func() {
+			err := fs.blobMgr.Run(ctx)
+			if err != nil {
+				log.G(ctx).Warnf("blob manager run failed %s", err)
+			}
+		}()
+	}
 	fs.resolver = NewResolver()
-
 	// Try to reconnect to running daemons
 	if err := fs.manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
 	return &fs, nil
+}
+
+func (fs *filesystem) CleanupBlobLayer(ctx context.Context, key string, async bool) error {
+	if fs.blobMgr == nil {
+		return nil
+	}
+	return fs.blobMgr.Remove(key, async)
+}
+
+func (fs *filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		log.G(ctx).Infof("total nydus prepare data layer duration %d", duration.Milliseconds())
+	}()
+
+	if fs.imageMode == OnDemand {
+		return nil
+	}
+
+	ref, layerDigest := registry.ParseLabels(labels)
+	if ref == "" || layerDigest == "" {
+		return fmt.Errorf("can not find ref and digest from label %+v", labels)
+	}
+	blobPath, err := getBlobPath(fs.daemonCfg.Device, layerDigest)
+	if err != nil {
+		return errors.Wrap(err, "failed to get blob path")
+	}
+	_, err = os.Stat(blobPath)
+	if err == nil {
+		log.G(ctx).Debugf("%s blob layer already exists", blobPath)
+		return nil
+	}
+
+	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
+	if err != nil {
+		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
+	}
+	defer readerCloser.Close()
+
+	blobFile, err := os.OpenFile(blobPath, os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return errors.Wrap(err, "failed to create blob file")
+	}
+	defer blobFile.Close()
+	_, err = io.Copy(blobFile, readerCloser)
+	return err
 }
 
 func (fs *filesystem) newSharedDaemon() (*daemon.Daemon, error) {
