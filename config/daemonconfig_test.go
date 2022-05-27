@@ -20,6 +20,7 @@ func TestLoadConfig(t *testing.T) {
       "type": "registry",
       "config": {
         "scheme": "https",
+        "skip_verify": true,
         "host": "acr-nydus-registry-vpc.cn-hangzhou.cr.aliyuncs.com",
         "repo": "test/myserver",
         "auth": "",
@@ -59,5 +60,6 @@ func TestLoadConfig(t *testing.T) {
 	require.Equal(t, cfg.FSPrefetch.MergingSize, 131072)
 	require.Equal(t, cfg.FSPrefetch.ThreadsCount, 10)
 	require.Equal(t, cfg.Device.Backend.Config.BlobURLScheme, "http")
+	require.Equal(t, cfg.Device.Backend.Config.SkipVerify, true)
 	require.Equal(t, cfg.Device.Backend.Config.Proxy.CheckInterval, 5)
 }

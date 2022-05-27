@@ -62,7 +62,8 @@ type DeviceConfig struct {
 			ObjectPrefix    string `json:"object_prefix,omitempty"`
 
 			// Shared by registry and oss backend
-			Scheme string `json:"scheme,omitempty"`
+			Scheme     string `json:"scheme,omitempty"`
+			SkipVerify bool   `json:"skip_verify,omitempty"`
 
 			// Below configs are common configs shared by all backends
 			Proxy struct {
