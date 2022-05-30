@@ -20,6 +20,8 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
@@ -36,6 +38,8 @@ const (
 type Interface interface {
 	CheckStatus() (*model.DaemonInfo, error)
 	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
+	FscacheBindBlob(daemonConfig string) error
+	FscacheUnbindBlob(daemonConfig string) error
 	Umount(sharedMountPoint string) error
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
 }
@@ -134,6 +138,60 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 	resp, err := c.httpClient.Post(requestURL, contentType, bytes.NewBuffer(body))
 	if err != nil {
 		return errors.Wrapf(err, "failed to do HTTP POST to %s", requestURL)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	return handleMountError(resp)
+}
+
+func (c NydusClient) FscacheBindBlob(daemonConfig string) error {
+	log.L.Infof("requesting daemon to bind fscache blob with config %s", daemonConfig)
+
+	body, err := ioutil.ReadFile(daemonConfig)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
+	}
+
+	requestURL := "http://unix/api/v2/blobs"
+	req, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewBuffer(body))
+	if err != nil {
+		return errors.Wrapf(err, "failed to create request for url %s", requestURL)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.Wrapf(err, "failed to do HTTP PUT to %s", requestURL)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
+	return handleMountError(resp)
+}
+
+func (c NydusClient) FscacheUnbindBlob(daemonConfig string) error {
+	body, err := ioutil.ReadFile(daemonConfig)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
+	}
+
+	var cfg config.DaemonConfig
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return errors.Wrap(err, "unmarshal fscache daemon config")
+	}
+
+	requestURL := fmt.Sprintf("http://unix/api/v2/blobs?domain_id=%s", cfg.DomainID)
+	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to create fscache unbind blob request")
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.Wrapf(err, "failed to do HTTP DELETE to %s", requestURL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNoContent {

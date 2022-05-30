@@ -1,28 +1,37 @@
 package cache
 
 import (
+	"os"
 	"time"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/pkg/errors"
 )
 
 type Manager struct {
-	db       DB
-	store    *Store
-	cacheDir string
-	period   time.Duration
-	eventCh  chan struct{}
+	db            DB
+	store         *Store
+	cacheDir      string
+	period        time.Duration
+	eventCh       chan struct{}
+	daemonBackend string
 }
 
 type Opt struct {
-	CacheDir string
-	Period   time.Duration
-	Database *store.Database
+	CacheDir      string
+	Period        time.Duration
+	Database      *store.Database
+	DaemonBackend string
 }
 
 func NewManager(opt Opt) (*Manager, error) {
+	// Ensure cache directory exists
+	if err := os.MkdirAll(opt.CacheDir, 0755); err != nil {
+		return nil, errors.Wrapf(err, "failed to create cache dir %s", opt.CacheDir)
+	}
+
 	db, err := store.NewCacheStore(opt.Database)
 	if err != nil {
 		return nil, err
@@ -31,14 +40,24 @@ func NewManager(opt Opt) (*Manager, error) {
 
 	eventCh := make(chan struct{})
 	m := &Manager{
-		db:       db,
-		store:    s,
-		cacheDir: opt.CacheDir,
-		period:   opt.Period,
-		eventCh:  eventCh,
+		db:            db,
+		store:         s,
+		cacheDir:      opt.CacheDir,
+		period:        opt.Period,
+		eventCh:       eventCh,
+		daemonBackend: opt.DaemonBackend,
 	}
+
+	// For fscache backend, the cache is maintained by the kernel fscache module,
+	// so here we ignore gc for now, and in the future we need another design
+	// to remove the cache.
+	if opt.DaemonBackend == config.DaemonBackendFscache {
+		return m, nil
+	}
+
 	go m.runGC()
 	log.L.Info("gc goroutine start...")
+
 	return m, nil
 }
 
@@ -47,6 +66,9 @@ func (m *Manager) CacheDir() string {
 }
 
 func (m *Manager) SchedGC() {
+	if m.daemonBackend == config.DaemonBackendFscache {
+		return
+	}
 	m.eventCh <- struct{}{}
 }
 

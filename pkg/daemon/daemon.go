@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
 )
@@ -40,6 +41,7 @@ type Daemon struct {
 	Pid              int
 	ImageID          string
 	DaemonMode       string
+	DaemonBackend    string
 	APISock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
@@ -94,6 +96,10 @@ func (d *Daemon) GetAPISock() string {
 	return filepath.Join(d.SocketDir, APISocketFileName)
 }
 
+func (d *Daemon) FscacheWorkDir() string {
+	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fscache_workdir")
+}
+
 func (d *Daemon) LogFile() string {
 	return filepath.Join(d.LogDir, "stderr.log")
 }
@@ -127,6 +133,12 @@ func (d *Daemon) SharedMount() error {
 	if err := d.ensureClient("share mount"); err != nil {
 		return err
 	}
+	if d.DaemonBackend == config.DaemonBackendFscache {
+		if err := d.sharedErofsMount(); err != nil {
+			return errors.Wrapf(err, "failed to erofs mount")
+		}
+		return nil
+	}
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
 		return err
@@ -138,7 +150,57 @@ func (d *Daemon) SharedUmount() error {
 	if err := d.ensureClient("share umount"); err != nil {
 		return err
 	}
+	if d.DaemonBackend == config.DaemonBackendFscache {
+		if err := d.sharedErofsUmount(); err != nil {
+			return errors.Wrapf(err, "failed to erofs mount")
+		}
+		return nil
+	}
 	return d.Client.Umount(d.MountPoint())
+}
+
+func (d *Daemon) sharedErofsMount() error {
+	if err := d.ensureClient("erofs mount"); err != nil {
+		return err
+	}
+
+	if err := d.Client.FscacheBindBlob(d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "request to bind fscache blob")
+	}
+
+	mountPoint := d.SharedMountPoint()
+	if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
+	}
+
+	bootstrapPath, err := d.BootstrapFile()
+	if err != nil {
+		return err
+	}
+	fscacheID := erofs.FscacheID(d.ImageID)
+
+	if err := erofs.Mount(bootstrapPath, fscacheID, mountPoint); err != nil {
+		return errors.Wrapf(err, "mount erofs")
+	}
+
+	return nil
+}
+
+func (d *Daemon) sharedErofsUmount() error {
+	if err := d.ensureClient("erofs umount"); err != nil {
+		return err
+	}
+
+	if err := d.Client.FscacheUnbindBlob(d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "request to unbind fscache blob")
+	}
+
+	mountPoint := d.SharedMountPoint()
+	if err := erofs.Umount(mountPoint); err != nil {
+		return errors.Wrapf(err, "umount erofs")
+	}
+
+	return nil
 }
 
 func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
