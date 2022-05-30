@@ -108,7 +108,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	opts := []nydus.NewFSOpt{
 		nydus.WithProcessManager(pm),
-		nydus.WithNydusdBinaryPath(cfg.NydusdBinaryPath),
+		nydus.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		nydus.WithMeta(cfg.RootDir),
 		nydus.WithDaemonConfig(cfg.DaemonCfg),
 		nydus.WithVPCRegistry(cfg.ConvertVpcRegistry),
