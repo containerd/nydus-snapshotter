@@ -48,10 +48,10 @@ func NewManager(opt Opt) (*Manager, error) {
 		daemonBackend: opt.DaemonBackend,
 	}
 
-	// For erofs backend, the cache is maintained by the kernel fscache module,
+	// For fscache backend, the cache is maintained by the kernel fscache module,
 	// so here we ignore gc for now, and in the future we need another design
 	// to remove the cache.
-	if opt.DaemonBackend == config.DaemonBackendErofs {
+	if opt.DaemonBackend == config.DaemonBackendFscache {
 		return m, nil
 	}
 
@@ -66,7 +66,7 @@ func (m *Manager) CacheDir() string {
 }
 
 func (m *Manager) SchedGC() {
-	if m.daemonBackend == config.DaemonBackendErofs {
+	if m.daemonBackend == config.DaemonBackendFscache {
 		return
 	}
 	m.eventCh <- struct{}{}

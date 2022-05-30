@@ -569,15 +569,15 @@ func (fs *filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 		return errors.Wrapf(err, "failed to generate daemon config for daemon %s", d.ID)
 	}
 
-	if d.DaemonBackend == config.DaemonBackendErofs {
-		cfg.Config.CacheConfig.WorkDir = d.ErofsWorkDir()
+	if d.DaemonBackend == config.DaemonBackendFscache {
+		cfg.Config.CacheConfig.WorkDir = d.FscacheWorkDir()
 		bootstrapPath, err := d.BootstrapFile()
 		if err != nil {
 			return errors.Wrap(err, "get bootstrap path")
 		}
 		cfg.Config.MetadataPath = bootstrapPath
-		cfg.ErofsDaemonConfig.FSPrefetch = cfg.FSPrefetch
-		return config.SaveConfig(cfg.ErofsDaemonConfig, d.ConfigFile())
+		cfg.FscacheDaemonConfig.FSPrefetch = cfg.FSPrefetch
+		return config.SaveConfig(cfg.FscacheDaemonConfig, d.ConfigFile())
 	}
 
 	if fs.cacheMgr != nil {

@@ -30,7 +30,7 @@ const (
 
 const (
 	DaemonBackendFusedev string = "fusedev"
-	DaemonBackendErofs   string = "erofs"
+	DaemonBackendFscache string = "fscache"
 )
 
 type Config struct {

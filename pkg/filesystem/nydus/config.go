@@ -111,8 +111,8 @@ func WithDaemonMode(daemonMode string) NewFSOpt {
 func WithDaemonBackend(daemonBackend string) NewFSOpt {
 	return func(d *filesystem) error {
 		switch daemonBackend {
-		case config.DaemonBackendErofs:
-			d.daemonBackend = config.DaemonBackendErofs
+		case config.DaemonBackendFscache:
+			d.daemonBackend = config.DaemonBackendFscache
 		default:
 			d.daemonBackend = config.DaemonBackendFusedev
 		}

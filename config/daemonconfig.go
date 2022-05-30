@@ -31,8 +31,8 @@ type FSPrefetch struct {
 	BandwidthRate int  `json:"bandwidth_rate"`
 }
 
-type ErofsDaemonConfig struct {
-	// These fields is only for erofs daemon.
+type FscacheDaemonConfig struct {
+	// These fields is only for fscache daemon.
 	Type     string `json:"type"`
 	ID       string `json:"id"`
 	DomainID string `json:"domain_id"`
@@ -57,7 +57,7 @@ type DaemonConfig struct {
 	EnableXattr    bool         `json:"enable_xattr,omitempty"`
 
 	FSPrefetch `json:"fs_prefetch,omitempty"`
-	ErofsDaemonConfig
+	FscacheDaemonConfig
 }
 
 type BackendConfig struct {
@@ -139,7 +139,7 @@ func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID string, vpc
 	}
 
 	backend := cfg.Device.Backend.BackendType
-	if daemonBackend == DaemonBackendErofs {
+	if daemonBackend == DaemonBackendFscache {
 		backend = cfg.Config.BackendType
 	}
 
@@ -157,7 +157,7 @@ func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID string, vpc
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		backendConfig := &cfg.Device.Backend.Config
-		if daemonBackend == DaemonBackendErofs {
+		if daemonBackend == DaemonBackendFscache {
 			backendConfig = &cfg.Config.BackendConfig
 			fscacheID := erofs.FscacheID(imageID)
 			cfg.ID = fscacheID

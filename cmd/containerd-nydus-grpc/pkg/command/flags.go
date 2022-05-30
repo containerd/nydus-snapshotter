@@ -145,7 +145,7 @@ func buildFlags(args *Args) []cli.Flag {
 		&cli.StringFlag{
 			Name:        "daemon-backend",
 			Value:       config.DaemonBackendFusedev,
-			Usage:       "daemon fs backend, could be \"fusedev\", \"erofs\"",
+			Usage:       "daemon fs backend, could be \"fusedev\", \"fscache\"",
 			Destination: &args.DaemonBackend,
 		},
 		&cli.BoolFlag{

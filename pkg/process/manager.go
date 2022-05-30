@@ -137,7 +137,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	var args []string
-	if d.DaemonBackend == config.DaemonBackendErofs {
+	if d.DaemonBackend == config.DaemonBackendFscache {
 		args = []string{
 			"daemon",
 			"--apisock", d.GetAPISock(),

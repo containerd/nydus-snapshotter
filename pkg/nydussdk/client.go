@@ -38,8 +38,8 @@ const (
 type Interface interface {
 	CheckStatus() (*model.DaemonInfo, error)
 	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
-	ErofsBindBlob(daemonConfig string) error
-	ErofsUnbindBlob(daemonConfig string) error
+	FscacheBindBlob(daemonConfig string) error
+	FscacheUnbindBlob(daemonConfig string) error
 	Umount(sharedMountPoint string) error
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
 }
@@ -146,8 +146,8 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 	return handleMountError(resp)
 }
 
-func (c NydusClient) ErofsBindBlob(daemonConfig string) error {
-	log.L.Infof("requesting daemon to bind erofs blob with config %s", daemonConfig)
+func (c NydusClient) FscacheBindBlob(daemonConfig string) error {
+	log.L.Infof("requesting daemon to bind fscache blob with config %s", daemonConfig)
 
 	body, err := ioutil.ReadFile(daemonConfig)
 	if err != nil {
@@ -173,7 +173,7 @@ func (c NydusClient) ErofsBindBlob(daemonConfig string) error {
 	return handleMountError(resp)
 }
 
-func (c NydusClient) ErofsUnbindBlob(daemonConfig string) error {
+func (c NydusClient) FscacheUnbindBlob(daemonConfig string) error {
 	body, err := ioutil.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
@@ -181,13 +181,13 @@ func (c NydusClient) ErofsUnbindBlob(daemonConfig string) error {
 
 	var cfg config.DaemonConfig
 	if err := json.Unmarshal(body, &cfg); err != nil {
-		return errors.Wrap(err, "unmarshal erofs daemon config")
+		return errors.Wrap(err, "unmarshal fscache daemon config")
 	}
 
 	requestURL := fmt.Sprintf("http://unix/api/v2/blobs?domain_id=%s", cfg.DomainID)
 	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
 	if err != nil {
-		return errors.Wrap(err, "failed to create erofs unbind blob request")
+		return errors.Wrap(err, "failed to create fscache unbind blob request")
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

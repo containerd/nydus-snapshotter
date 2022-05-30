@@ -96,8 +96,8 @@ func (d *Daemon) GetAPISock() string {
 	return filepath.Join(d.SocketDir, APISocketFileName)
 }
 
-func (d *Daemon) ErofsWorkDir() string {
-	return filepath.Join(d.SnapshotDir, d.SnapshotID, "erofs_workdir")
+func (d *Daemon) FscacheWorkDir() string {
+	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fscache_workdir")
 }
 
 func (d *Daemon) LogFile() string {
@@ -133,7 +133,7 @@ func (d *Daemon) SharedMount() error {
 	if err := d.ensureClient("share mount"); err != nil {
 		return err
 	}
-	if d.DaemonBackend == config.DaemonBackendErofs {
+	if d.DaemonBackend == config.DaemonBackendFscache {
 		if err := d.sharedErofsMount(); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
@@ -150,7 +150,7 @@ func (d *Daemon) SharedUmount() error {
 	if err := d.ensureClient("share umount"); err != nil {
 		return err
 	}
-	if d.DaemonBackend == config.DaemonBackendErofs {
+	if d.DaemonBackend == config.DaemonBackendFscache {
 		if err := d.sharedErofsUmount(); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
@@ -164,8 +164,8 @@ func (d *Daemon) sharedErofsMount() error {
 		return err
 	}
 
-	if err := d.Client.ErofsBindBlob(d.ConfigFile()); err != nil {
-		return errors.Wrapf(err, "request to bind erofs blob")
+	if err := d.Client.FscacheBindBlob(d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
 	mountPoint := d.SharedMountPoint()
@@ -191,8 +191,8 @@ func (d *Daemon) sharedErofsUmount() error {
 		return err
 	}
 
-	if err := d.Client.ErofsUnbindBlob(d.ConfigFile()); err != nil {
-		return errors.Wrapf(err, "request to unbind erofs blob")
+	if err := d.Client.FscacheUnbindBlob(d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
 	mountPoint := d.SharedMountPoint()
