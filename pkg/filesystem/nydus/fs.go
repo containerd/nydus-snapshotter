@@ -272,7 +272,7 @@ func (fs *filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		return nil
 	}
 
-	imageID, ok := labels[label.ImageRef]
+	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
@@ -381,7 +381,7 @@ func (fs *filesystem) BootstrapFile(id string) (string, error) {
 }
 
 func (fs *filesystem) NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error) {
-	imageID, ok := labels[label.ImageRef]
+	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return config.DaemonConfig{}, fmt.Errorf("no image ID found in label")
 	}

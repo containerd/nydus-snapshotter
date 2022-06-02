@@ -153,7 +153,7 @@ func (f *filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon
 }
 
 func (f *filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) error {
-	imageID, ok := labels[label.ImageRef]
+	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
