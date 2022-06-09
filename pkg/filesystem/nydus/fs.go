@@ -130,8 +130,7 @@ func (fs *filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 
 func (fs *filesystem) Support(ctx context.Context, labels map[string]string) bool {
 	_, dataOk := labels[label.NydusDataLayer]
-	_, metaOk := labels[label.NydusMetaLayer]
-	return dataOk || metaOk
+	return dataOk
 }
 
 func isRafsV6(buf []byte) bool {
