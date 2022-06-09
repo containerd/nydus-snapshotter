@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
 )
@@ -81,7 +82,7 @@ func (c *Config) FillupWithDefaults() error {
 	}
 
 	if len(c.LogDir) == 0 {
-		c.LogDir = filepath.Join(c.RootDir, "logs")
+		c.LogDir = filepath.Join(c.RootDir, logging.DefaultLogDirName)
 	}
 	var daemonCfg DaemonConfig
 	if err := LoadConfig(c.DaemonCfgPath, &daemonCfg); err != nil {

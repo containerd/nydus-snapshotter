@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -234,7 +235,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	// Always let options from CLI override those from configuration file.
 	cfg.LogToStdout = args.LogToStdout
 	if len(cfg.LogDir) == 0 {
-		cfg.LogDir = filepath.Join(cfg.RootDir, "logs")
+		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
 	cfg.ValidateSignature = args.ValidateSignature
 	cfg.PublicKeyFile = args.PublicKeyFile

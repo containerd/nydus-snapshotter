@@ -28,15 +28,16 @@ func main() {
 		Version: Version,
 		Flags:   flags.F,
 		Action: func(c *cli.Context) error {
-			ctx := logging.WithContext()
-			if err := logging.SetUp(flags.Args.LogLevel); err != nil {
-				return errors.Wrap(err, "failed to prepare logger")
-			}
-
 			var cfg config.Config
 			if err := command.Validate(flags.Args, &cfg); err != nil {
 				return errors.Wrap(err, "invalid argument")
 			}
+
+			ctx := logging.WithContext()
+			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir); err != nil {
+				return errors.Wrap(err, "failed to prepare logger")
+			}
+
 			return snapshotter.Start(ctx, cfg)
 		},
 	}
