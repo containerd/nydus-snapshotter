@@ -98,7 +98,7 @@ fetching sha256:5a42e21c... application/vnd.oci.image.config.v1+json
 fetching sha256:eb1af2e1... application/vnd.oci.image.layer.v1.tar+gzip
 
 # Start container by `ctr-remote`
-$ sudo ctr-remote run --snapshotter nydus ghcr.io/dragonflyoss/image-service/nginx:nydus-latest awsome-nydus
+$ sudo ctr-remote run --snapshotter nydus ghcr.io/dragonflyoss/image-service/nginx:nydus-latest awesome-nydus
 
 # Start container by `nerdctl`
 nerdctl --snapshotter nydus run ghcr.io/dragonflyoss/image-service/nginx:nydus-latest
