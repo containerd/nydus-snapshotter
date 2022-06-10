@@ -142,6 +142,7 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 			"daemon",
 			"--apisock", d.GetAPISock(),
 			"--fscache", m.cacheDir,
+			"--log-level", d.LogLevel,
 		}
 	} else {
 		args = []string{
