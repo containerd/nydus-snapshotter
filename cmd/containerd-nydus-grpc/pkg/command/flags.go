@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -102,7 +103,6 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "validate-signature",
-			Value:       false,
 			Usage:       "whether force validate image bootstrap",
 			Destination: &args.ValidateSignature,
 		},
@@ -126,13 +126,11 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "convert-vpc-registry",
-			Value:       false,
 			Usage:       "whether automatically convert the image to vpc registry to accelerate image pulling",
 			Destination: &args.ConvertVpcRegistry,
 		},
 		&cli.BoolFlag{
 			Name:        "shared-daemon",
-			Value:       false,
 			Usage:       "Deprecated, equivalent to \"--daemon-mode shared\"",
 			Destination: &args.SharedDaemon,
 		},
@@ -156,7 +154,6 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "enable-metrics",
-			Value:       false,
 			Usage:       "whether to collect metrics",
 			Destination: &args.EnableMetrics,
 		},
@@ -167,25 +164,21 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "enable-stargz",
-			Value:       false,
 			Usage:       "whether to support stargz image",
 			Destination: &args.EnableStargz,
 		},
 		&cli.BoolFlag{
 			Name:        "disable-cache-manager",
-			Value:       false,
 			Usage:       "whether to disable blob cache manager",
 			Destination: &args.DisableCacheManager,
 		},
 		&cli.BoolFlag{
 			Name:        "log-to-stdout",
-			Value:       false,
 			Usage:       "Print logs to standard out rather than files.",
 			Destination: &args.LogToStdout,
 		},
 		&cli.BoolFlag{
 			Name:        "enable-nydus-overlayfs",
-			Value:       false,
 			Usage:       "whether to enable nydus-overlayfs to mount",
 			Destination: &args.EnableNydusOverlayFS,
 		},
@@ -234,7 +227,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	// Always let options from CLI override those from configuration file.
 	cfg.LogToStdout = args.LogToStdout
 	if len(cfg.LogDir) == 0 {
-		cfg.LogDir = filepath.Join(cfg.RootDir, "logs")
+		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
 	cfg.ValidateSignature = args.ValidateSignature
 	cfg.PublicKeyFile = args.PublicKeyFile
