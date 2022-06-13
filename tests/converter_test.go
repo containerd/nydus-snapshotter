@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -31,6 +32,8 @@ import (
 )
 
 const envNydusdPath = "NYDUS_NYDUSD"
+
+var fsVersion = flag.String("fs-version", "5", "specifie the fs version for test")
 
 func hugeString(mb int) string {
 	var buf strings.Builder
@@ -169,12 +172,13 @@ func buildOCIUpperTar(t *testing.T) io.ReadCloser {
 	return pr
 }
 
-func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string) (string, digest.Digest) {
+func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fsVersion string) (string, digest.Digest) {
 	var data bytes.Buffer
 	writer := bufio.NewWriter(&data)
 
 	twc, err := converter.Convert(context.TODO(), writer, converter.ConvertOption{
 		ChunkDictPath: chunkDict,
+		RafsVersion:   fsVersion,
 	})
 	require.NoError(t, err)
 
@@ -201,6 +205,13 @@ func verify(t *testing.T, workDir string) {
 	if nydusdPath == "" {
 		nydusdPath = "nydusd"
 	}
+	mode := "cached"
+	digestValidate := true
+	// Currently v6 does not support digestValidate, and only direct mode is supported
+	if *fsVersion == "6" {
+		mode = "direct"
+		digestValidate = false
+	}
 	config := NydusdConfig{
 		EnablePrefetch: true,
 		NydusdPath:     nydusdPath,
@@ -211,6 +222,8 @@ func verify(t *testing.T, workDir string) {
 		BlobCacheDir:   filepath.Join(workDir, "cache"),
 		APISockPath:    filepath.Join(workDir, "nydusd-api.sock"),
 		MountPath:      mountDir,
+		Mode:           mode,
+		DigestValidate: digestValidate,
 	}
 
 	nydusd, err := NewNydusd(config)
@@ -254,7 +267,7 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	dictOCITarReader := buildChunkDictTar(t)
 
 	blobDir := filepath.Join(workDir, "blobs")
-	nydusTarPath, lowerNydusBlobDigest := convertLayer(t, dictOCITarReader, "", blobDir)
+	nydusTarPath, lowerNydusBlobDigest := convertLayer(t, dictOCITarReader, "", blobDir, *fsVersion)
 	ra, err := local.OpenReader(nydusTarPath)
 	require.NoError(t, err)
 	defer ra.Close()
@@ -311,8 +324,8 @@ func TestConverter(t *testing.T) {
 
 	chunkDictBootstrapPath, chunkDictBlobHash := buildChunkDict(t, workDir)
 
-	lowerNydusTarPath, lowerNydusBlobDigest := convertLayer(t, lowerOCITarReader, chunkDictBootstrapPath, blobDir)
-	upperNydusTarPath, upperNydusBlobDigest := convertLayer(t, upperOCITarReader, chunkDictBootstrapPath, blobDir)
+	lowerNydusTarPath, lowerNydusBlobDigest := convertLayer(t, lowerOCITarReader, chunkDictBootstrapPath, blobDir, *fsVersion)
+	upperNydusTarPath, upperNydusBlobDigest := convertLayer(t, upperOCITarReader, chunkDictBootstrapPath, blobDir, *fsVersion)
 
 	lowerTarRa, err := local.OpenReader(lowerNydusTarPath)
 	require.NoError(t, err)

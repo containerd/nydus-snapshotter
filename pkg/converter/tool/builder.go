@@ -57,10 +57,6 @@ func Convert(option ConvertOption) error {
 		option.RafsVersion,
 		"--inline-bootstrap",
 	}
-	if option.RafsVersion == "6" {
-		// FIXME: these options should be handled automatically in builder (nydus-image).
-		args = append(args, "--disable-check")
-	}
 	if option.ChunkDictPath != "" {
 		args = append(args, "--chunk-dict", fmt.Sprintf("bootstrap=%s", option.ChunkDictPath))
 	}
