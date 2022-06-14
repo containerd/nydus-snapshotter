@@ -48,7 +48,7 @@ type Config struct {
 	NydusImageBinaryPath string        `toml:"nydus_image_binary"`
 	DaemonMode           string        `toml:"daemon_mode"`
 	DaemonBackend        string        `toml:"daemon_backend"`
-	AsyncRemove          bool          `toml:"async_remove"`
+	SyncRemove           bool          `toml:"sync_remove"`
 	EnableMetrics        bool          `toml:"enable_metrics"`
 	MetricsFile          string        `toml:"metrics_file"`
 	EnableStargz         bool          `toml:"enable_stargz"`

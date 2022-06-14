@@ -42,7 +42,7 @@ type Args struct {
 	SharedDaemon         bool
 	DaemonMode           string
 	DaemonBackend        string
-	AsyncRemove          bool
+	SyncRemove           bool
 	EnableMetrics        bool
 	MetricsFile          string
 	EnableStargz         bool
@@ -147,10 +147,9 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.DaemonBackend,
 		},
 		&cli.BoolFlag{
-			Name:        "async-remove",
-			Value:       true,
-			Usage:       "whether to cleanup snapshots asynchronously",
-			Destination: &args.AsyncRemove,
+			Name:        "sync-remove",
+			Usage:       "whether to cleanup snapshots synchronously, default is asynchronous",
+			Destination: &args.SyncRemove,
 		},
 		&cli.BoolFlag{
 			Name:        "enable-metrics",
@@ -240,7 +239,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	if args.SharedDaemon {
 		cfg.DaemonMode = config.DaemonModeShared
 	}
-	cfg.AsyncRemove = args.AsyncRemove
+	cfg.SyncRemove = args.SyncRemove
 	cfg.EnableMetrics = args.EnableMetrics
 	cfg.MetricsFile = args.MetricsFile
 	cfg.EnableStargz = args.EnableStargz
