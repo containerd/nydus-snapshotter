@@ -46,10 +46,6 @@ func (b *BlobManager) GetBlobDir() string {
 }
 
 func (b *BlobManager) cleanupBlob(id string) error {
-	id, err := b.decodeID(id)
-	if err != nil {
-		return err
-	}
 	return os.Remove(filepath.Join(b.blobDir, id))
 }
 
@@ -62,6 +58,10 @@ func (b *BlobManager) decodeID(id string) (string, error) {
 }
 
 func (b *BlobManager) Remove(id string, async bool) error {
+	id, err := b.decodeID(id)
+	if err != nil {
+		return err
+	}
 	if async {
 		b.eventChan <- id
 		return nil

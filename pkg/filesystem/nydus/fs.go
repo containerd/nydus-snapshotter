@@ -157,8 +157,7 @@ func (fs *filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 		log.G(ctx).Debugf("%s blob layer already exists", blobPath)
 		return nil
 	} else if !os.IsNotExist(err) {
-		log.G(ctx).Errorf("Unexpected error %v, we can't handle it", err)
-		return err
+		return errors.Wrap(err, "Unexpected error, we can't handle it")
 	}
 
 	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
