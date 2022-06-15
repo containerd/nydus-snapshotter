@@ -1,4 +1,4 @@
-package nydus
+package fs
 
 import (
 	"context"
