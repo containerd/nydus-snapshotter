@@ -24,14 +24,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
-type filesystem struct {
+type Filesystem struct {
 	meta.FileSystemMeta
 	manager               *process.Manager
 	daemonCfg             config.DaemonConfig
@@ -45,8 +44,8 @@ type filesystem struct {
 	nydusdThreadNum       int
 }
 
-func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fs.FileSystem, error) {
-	var fs filesystem
+func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
+	var fs Filesystem
 	for _, o := range opt {
 		err := o(&fs)
 		if err != nil {
@@ -58,15 +57,15 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (fs.FileSystem, error) 
 	return &fs, nil
 }
 
-func (f *filesystem) CleanupBlobLayer(ctx context.Context, key string, async bool) error {
+func (f *Filesystem) CleanupBlobLayer(ctx context.Context, key string, async bool) error {
 	return nil
 }
 
-func (f *filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
+func (f *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
 	return nil
 }
 
-func (f *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+func (f *Filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
@@ -127,7 +126,7 @@ func getParentSnapshotID(s storage.Snapshot) string {
 	return s.ParentIDs[0]
 }
 
-func (f *filesystem) Support(ctx context.Context, labels map[string]string) bool {
+func (f *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
 	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return false
@@ -155,7 +154,7 @@ func (f *filesystem) Support(ctx context.Context, labels map[string]string) bool
 	return true
 }
 
-func (f *filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
+func (f *Filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
 	d, err := daemon.NewDaemon(
 		daemon.WithSnapshotID(snapshotID),
 		daemon.WithSocketDir(f.SocketRoot()),
@@ -177,7 +176,7 @@ func (f *filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon
 	return d, nil
 }
 
-func (f *filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) error {
+func (f *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) error {
 	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
@@ -203,15 +202,15 @@ func (f *filesystem) Mount(ctx context.Context, snapshotID string, labels map[st
 	return nil
 }
 
-func (f *filesystem) BootstrapFile(id string) (string, error) {
+func (f *Filesystem) BootstrapFile(id string) (string, error) {
 	panic("stargz has no bootstrap file")
 }
 
-func (f *filesystem) NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error) {
+func (f *Filesystem) NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error) {
 	panic("implement me")
 }
 
-func (f *filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
+func (f *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 	err := f.generateDaemonConfig(d, labels)
 	if err != nil {
 		return err
@@ -219,7 +218,7 @@ func (f *filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 	return f.manager.StartDaemon(d)
 }
 
-func (f *filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]string) error {
+func (f *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]string) error {
 	cfg, err := config.NewDaemonConfig(d.DaemonBackend, f.daemonCfg, d.ImageID, f.vpcRegistry, labels)
 	if err != nil {
 		return errors.Wrapf(err, "failed to generate daemon config for daemon %s", d.ID)
@@ -229,7 +228,7 @@ func (f *filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]st
 	return config.SaveConfig(cfg, d.ConfigFile())
 }
 
-func (f *filesystem) WaitUntilReady(ctx context.Context, snapshotID string) error {
+func (f *Filesystem) WaitUntilReady(ctx context.Context, snapshotID string) error {
 	d, err := f.manager.GetBySnapshotID(snapshotID)
 	if err != nil {
 		return err
@@ -238,13 +237,13 @@ func (f *filesystem) WaitUntilReady(ctx context.Context, snapshotID string) erro
 	return d.WaitUntilReady()
 }
 
-func (f *filesystem) Umount(ctx context.Context, mountPoint string) error {
+func (f *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	id := filepath.Base(mountPoint)
 	log.G(ctx).Infof("umount nydus daemon of id %s, mountpoint %s", id, mountPoint)
 	return f.manager.DestroyBySnapshotID(id)
 }
 
-func (f *filesystem) Cleanup(ctx context.Context) error {
+func (f *Filesystem) Cleanup(ctx context.Context) error {
 	for _, d := range f.manager.ListDaemons() {
 		err := f.Umount(ctx, filepath.Dir(d.MountPoint()))
 		if err != nil {
@@ -254,7 +253,7 @@ func (f *filesystem) Cleanup(ctx context.Context) error {
 	return nil
 }
 
-func (f *filesystem) MountPoint(snapshotID string) (string, error) {
+func (f *Filesystem) MountPoint(snapshotID string) (string, error) {
 	if d, err := f.manager.GetBySnapshotID(snapshotID); err == nil {
 		return d.MountPoint(), nil
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 func WithMeta(root string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if root == "" {
 			return errors.New("rootDir is required")
 		}
@@ -28,7 +28,7 @@ func WithMeta(root string) NewFSOpt {
 }
 
 func WithNydusdBinaryPath(p string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if p == "" {
 			return errors.New("nydusd binary path is required")
 		}
@@ -38,7 +38,7 @@ func WithNydusdBinaryPath(p string) NewFSOpt {
 }
 
 func WithProcessManager(pm *process.Manager) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if pm == nil {
 			return errors.New("process manager cannot be nil")
 		}
@@ -49,7 +49,7 @@ func WithProcessManager(pm *process.Manager) NewFSOpt {
 }
 
 func WithNydusImageBinaryPath(p string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if p == "" {
 			return errors.New("nydus image binary path is required")
 		}
@@ -59,7 +59,7 @@ func WithNydusImageBinaryPath(p string) NewFSOpt {
 }
 
 func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if (config.DaemonConfig{}) == cfg {
 			return errors.New("daemon config is empty")
 		}
@@ -69,7 +69,7 @@ func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
 }
 
 func WithLogLevel(logLevel string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if logLevel == "" {
 			d.logLevel = config.DefaultLogLevel
 		} else {
@@ -80,7 +80,7 @@ func WithLogLevel(logLevel string) NewFSOpt {
 }
 
 func WithLogDir(dir string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return errors.Errorf("failed to create logDir %s: %v", dir, err)
 		}
@@ -90,16 +90,16 @@ func WithLogDir(dir string) NewFSOpt {
 }
 
 func WithLogToStdout(logToStdout bool) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		d.logToStdout = logToStdout
 		return nil
 	}
 }
 
-type NewFSOpt func(d *filesystem) error
+type NewFSOpt func(d *Filesystem) error
 
 func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		d.nydusdThreadNum = nydusdThreadNum
 		return nil
 	}
