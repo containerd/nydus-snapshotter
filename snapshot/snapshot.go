@@ -31,7 +31,6 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -58,7 +57,6 @@ type snapshotter struct {
 	ms                   *storage.MetaStore
 	syncRemove           bool
 	fs                   *fspkg.Filesystem
-	stargzFs             *fspkg.Filesystem
 	manager              *process.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
@@ -145,30 +143,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
 	}
 
-	var stargzFs fspkg.Filesystem
-	if cfg.EnableStargz {
-		if hasDaemon {
-			stargzFs, err = stargz.NewFileSystem(
-				ctx,
-				stargz.WithProcessManager(pm),
-				stargz.WithMeta(cfg.RootDir),
-				stargz.WithNydusdBinaryPath(cfg.NydusdBinaryPath),
-				stargz.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
-				stargz.WithDaemonConfig(cfg.DaemonCfg),
-				stargz.WithLogLevel(cfg.LogLevel),
-				stargz.WithLogDir(cfg.LogDir),
-				stargz.WithLogToStdout(cfg.LogToStdout),
-				stargz.WithNydusdThreadNum(cfg.NydusdThreadNum),
-			)
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to initialize stargz filesystem")
-			}
-		} else {
-			// stargz support requires nydusd to run
-			log.G(ctx).Info("DaemonMode is none, disable stargz support")
-		}
-	}
-
 	if cfg.EnableMetrics {
 		metricServer, err := metrics.NewServer(
 			ctx,
@@ -214,7 +188,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		ms:                   ms,
 		syncRemove:           cfg.SyncRemove,
 		fs:                   nydusFs,
-		stargzFs:             stargzFs,
 		manager:              pm,
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.EnableNydusOverlayFS,
@@ -263,15 +236,6 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 			return nil, err
 		}
 		return o.remoteMounts(ctx, *s, id, info.Labels)
-	} else if o.stargzFs != nil {
-		if id, _, rErr := o.findStargzMetaLayer(ctx, key); rErr == nil {
-			err = o.stargzFs.WaitUntilReady(ctx, id)
-			if err != nil {
-				log.G(ctx).Errorf("snapshot %s is not ready, err: %v", id, err)
-				return nil, err
-			}
-			return o.remoteMounts(ctx, *s, id, info.Labels)
-		}
 	}
 	return o.mounts(ctx, *s)
 }
@@ -279,11 +243,6 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 func (o *snapshotter) prepareRemoteSnapshot(ctx context.Context, id string, labels map[string]string) error {
 	log.G(ctx).Infof("prepare remote snapshot mountpoint %s", o.upperPath(id))
 	return o.fs.Mount(o.context, id, labels)
-}
-
-func (o *snapshotter) prepareStargzRemoteSnapshot(ctx context.Context, id string, labels map[string]string) error {
-	log.G(ctx).Infof("prepare stargz remote snapshot mountpoint %s", o.upperPath(id))
-	return o.stargzFs.Mount(o.context, id, labels)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
@@ -327,21 +286,6 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 			}
 		}
-		// check if image layer is stargz layer, we need to download the stargz toc and convert it to nydus formated meta
-		// then skip layer download
-		if o.stargzFs != nil && o.stargzFs.Support(ctx, base.Labels) {
-			// Mark this snapshot as remote
-			base.Labels[label.RemoteLabel] = "remote snapshot"
-			err := o.stargzFs.PrepareMetaLayer(ctx, s, base.Labels)
-			if err != nil {
-				logCtx.Errorf("failed to prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
-			} else {
-				err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
-				if err == nil || errdefs.IsAlreadyExists(err) {
-					return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
-				}
-			}
-		}
 	}
 	if prepareForContainer(base) {
 		logCtx.Infof("prepare for container layer %s", key)
@@ -362,24 +306,9 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				return nil, err
 			}
 			return o.remoteMounts(ctx, s, id, info.Labels)
-		} else if o.stargzFs != nil {
-			if id, info, err := o.findStargzMetaLayer(ctx, key); err == nil {
-				logCtx.Infof("found stargz meta layer id %s, parpare remote snapshot", id)
-				if err := o.prepareStargzRemoteSnapshot(ctx, id, info.Labels); err != nil {
-					return nil, err
-				}
-				return o.remoteMounts(ctx, s, id, info.Labels)
-			}
 		}
 	}
 	return o.mounts(ctx, s)
-}
-
-func (o *snapshotter) findStargzMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
-	return snapshot.FindSnapshot(ctx, o.ms, key, func(info snapshots.Info) bool {
-		_, ok := info.Labels[label.RemoteLabel]
-		return ok
-	})
 }
 
 func (o *snapshotter) findNydusMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
@@ -519,12 +448,6 @@ func (o *snapshotter) Close() error {
 func (o *snapshotter) upperPath(id string) string {
 	if mnt, err := o.fs.MountPoint(id); err == nil {
 		return mnt
-	}
-
-	if o.stargzFs != nil {
-		if mnt, err := o.stargzFs.MountPoint(id); err == nil {
-			return mnt
-		}
 	}
 
 	return filepath.Join(o.root, "snapshots", id, "fs")
@@ -846,10 +769,6 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	log.G(ctx).WithField("dir", dir).Infof("cleanupSnapshotDirectory %s", dir)
 	if err := o.fs.Umount(ctx, dir); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
-	} else if o.stargzFs != nil {
-		if err := o.stargzFs.Umount(ctx, dir); err != nil && !os.IsNotExist(err) {
-			log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
-		}
 	}
 
 	if err := os.RemoveAll(dir); err != nil {
