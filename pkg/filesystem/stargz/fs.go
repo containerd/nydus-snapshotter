@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -75,7 +76,10 @@ func (f *filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, l
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
-	keychain := auth.FromLabels(labels)
+	keychain, err := auth.GetKeyChainByRef(ref, labels)
+	if err != nil {
+		return errors.Wrap(err, "get key chain")
+	}
 	blob, err := f.resolver.GetBlob(ref, layerDigest, keychain)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get blob from ref %s, digest %s", ref, layerDigest)
@@ -129,13 +133,26 @@ func (f *filesystem) Support(ctx context.Context, labels map[string]string) bool
 		return false
 	}
 	log.G(ctx).Infof("image ref %s digest %s", ref, layerDigest)
-	keychain := auth.FromLabels(labels)
+	keychain, err := auth.GetKeyChainByRef(ref, labels)
+	if err != nil {
+		logrus.WithError(err).Warn("get key chain by ref")
+		return false
+	}
 	blob, err := f.resolver.GetBlob(ref, layerDigest, keychain)
 	if err != nil {
+		logrus.WithError(err).Warn("get stargz blob")
 		return false
 	}
 	off, err := blob.getTocOffset()
-	return err == nil && off > 0
+	if err != nil {
+		logrus.WithError(err).Warn("get toc offset")
+		return false
+	}
+	if off <= 0 {
+		logrus.WithError(err).Warnf("invalid stargz toc offset %d", off)
+		return false
+	}
+	return true
 }
 
 func (f *filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
@@ -175,6 +192,7 @@ func (f *filesystem) Mount(ctx context.Context, snapshotID string, labels map[st
 	}
 	defer func() {
 		if err != nil {
+			logrus.WithError(err).Warn("failed to mount")
 			_ = f.manager.DestroyDaemon(d)
 		}
 	}()

@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"path/filepath"
 	"testing"
 
 	"github.com/golang/groupcache/lru"
@@ -51,38 +50,6 @@ func TestResolver_resolve(t *testing.T) {
 	h, err := tr.Next()
 	assert.Nil(t, err)
 	assert.Equal(t, "stargz.index.json", h.Name)
-}
-
-func TestResolver_getTocOffset(t *testing.T) {
-	keychain, _ := auth.FromBase64("dGVzdDp0ZXN0Cg==")
-	resolver := Resolver{
-		transport: &mockRoundTripper{},
-		trPool:    lru.New(3000),
-	}
-	image := "example.com/test/myserver:latest-stargz"
-	digest := "sha256:mock"
-	blob, err := resolver.GetBlob(image, digest, keychain)
-	assert.Nil(t, err)
-	offset, err := blob.getTocOffset()
-	assert.Nil(t, err)
-	assert.Equal(t, int64(24442675), offset)
-}
-
-func TestResolver_getToc(t *testing.T) {
-	keychain, _ := auth.FromBase64("dGVzdDp0ZXN0Cg==")
-	resolver := Resolver{
-		transport: &mockRoundTripper{},
-		trPool:    lru.New(3000),
-	}
-	image := "example.com/test/myserver:latest-stargz"
-	digest := "sha256:mock"
-	blob, err := resolver.GetBlob(image, digest, keychain)
-	assert.Nil(t, err)
-	reader, err := blob.ReadToc()
-	assert.Nil(t, err)
-	expect, _ := ioutil.ReadFile(filepath.Join("testdata", "stargz.index.json"))
-	actual, _ := ioutil.ReadAll(reader)
-	assert.Equal(t, expect, actual)
 }
 
 type mockRoundTripper struct{}
