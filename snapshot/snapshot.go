@@ -31,7 +31,6 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/nydus"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
@@ -58,8 +57,8 @@ type snapshotter struct {
 	nydusdPath           string
 	ms                   *storage.MetaStore
 	syncRemove           bool
-	fs                   fspkg.FileSystem
-	stargzFs             fspkg.FileSystem
+	fs                   *fspkg.Filesystem
+	stargzFs             *fspkg.Filesystem
 	manager              *process.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
@@ -108,20 +107,20 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to new process manager")
 	}
 
-	opts := []nydus.NewFSOpt{
-		nydus.WithProcessManager(pm),
-		nydus.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
-		nydus.WithMeta(cfg.RootDir),
-		nydus.WithDaemonConfig(cfg.DaemonCfg),
-		nydus.WithVPCRegistry(cfg.ConvertVpcRegistry),
-		nydus.WithVerifier(verifier),
-		nydus.WithDaemonMode(cfg.DaemonMode),
-		nydus.WithDaemonBackend(cfg.DaemonBackend),
-		nydus.WithLogLevel(cfg.LogLevel),
-		nydus.WithLogDir(cfg.LogDir),
-		nydus.WithLogToStdout(cfg.LogToStdout),
-		nydus.WithNydusdThreadNum(cfg.NydusdThreadNum),
-		nydus.WithImageMode(cfg.DaemonCfg),
+	opts := []fspkg.NewFSOpt{
+		fspkg.WithProcessManager(pm),
+		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
+		fspkg.WithMeta(cfg.RootDir),
+		fspkg.WithDaemonConfig(cfg.DaemonCfg),
+		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
+		fspkg.WithVerifier(verifier),
+		fspkg.WithDaemonMode(cfg.DaemonMode),
+		fspkg.WithDaemonBackend(cfg.DaemonBackend),
+		fspkg.WithLogLevel(cfg.LogLevel),
+		fspkg.WithLogDir(cfg.LogDir),
+		fspkg.WithLogToStdout(cfg.LogToStdout),
+		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
+		fspkg.WithImageMode(cfg.DaemonCfg),
 	}
 
 	if !cfg.DisableCacheManager {
@@ -134,19 +133,19 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to new cache manager")
 		}
-		opts = append(opts, nydus.WithCacheManager(cacheMgr))
+		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
 	}
 
 	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
 	// container rootfs doesn't need daemon
 	hasDaemon := cfg.DaemonMode != config.DaemonModeNone && cfg.DaemonMode != config.DaemonModePrefetch
 
-	nydusFs, err := nydus.NewFileSystem(ctx, opts...)
+	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
 	}
 
-	var stargzFs fspkg.FileSystem
+	var stargzFs fspkg.Filesystem
 	if cfg.EnableStargz {
 		if hasDaemon {
 			stargzFs, err = stargz.NewFileSystem(

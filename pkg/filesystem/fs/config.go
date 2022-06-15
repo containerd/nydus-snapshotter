@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package nydus
+package fs
 
 import (
 	"os"
@@ -12,17 +12,16 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/pkg/errors"
 )
 
-type NewFSOpt func(d *filesystem) error
+type NewFSOpt func(d *Filesystem) error
 
 func WithMeta(root string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if root == "" {
 			return errors.New("rootDir is required")
 		}
@@ -34,7 +33,7 @@ func WithMeta(root string) NewFSOpt {
 }
 
 func WithNydusdBinaryPath(p string, daemonMode string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if daemonMode != config.DaemonModeNone && p == "" {
 			return errors.New("nydusd binary path is required")
 		}
@@ -44,7 +43,7 @@ func WithNydusdBinaryPath(p string, daemonMode string) NewFSOpt {
 }
 
 func WithProcessManager(pm *process.Manager) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if pm == nil {
 			return errors.New("process manager cannot be nil")
 		}
@@ -55,7 +54,7 @@ func WithProcessManager(pm *process.Manager) NewFSOpt {
 }
 
 func WithCacheManager(cm *cache.Manager) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if cm == nil {
 			return errors.New("cache manager cannot be nil")
 		}
@@ -66,14 +65,14 @@ func WithCacheManager(cm *cache.Manager) NewFSOpt {
 }
 
 func WithVerifier(verifier *signature.Verifier) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		d.verifier = verifier
 		return nil
 	}
 }
 
 func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if (config.DaemonConfig{}) == cfg {
 			return errors.New("daemon config is empty")
 		}
@@ -83,33 +82,33 @@ func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
 }
 
 func WithVPCRegistry(vpcRegistry bool) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		d.vpcRegistry = vpcRegistry
 		return nil
 	}
 }
 
 func WithDaemonMode(daemonMode string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		mode := strings.ToLower(daemonMode)
 		switch mode {
 		case config.DaemonModeNone:
-			d.mode = fs.NoneInstance
+			d.mode = NoneInstance
 		case config.DaemonModeShared:
-			d.mode = fs.SharedInstance
+			d.mode = SharedInstance
 		case config.DaemonModePrefetch:
-			d.mode = fs.PrefetchInstance
+			d.mode = PrefetchInstance
 		case config.DaemonModeMultiple:
 			fallthrough
 		default:
-			d.mode = fs.MultiInstance
+			d.mode = MultiInstance
 		}
 		return nil
 	}
 }
 
 func WithDaemonBackend(daemonBackend string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		switch daemonBackend {
 		case config.DaemonBackendFscache:
 			d.daemonBackend = config.DaemonBackendFscache
@@ -121,7 +120,7 @@ func WithDaemonBackend(daemonBackend string) NewFSOpt {
 }
 
 func WithLogLevel(logLevel string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if logLevel == "" {
 			d.logLevel = config.DefaultLogLevel
 		} else {
@@ -132,7 +131,7 @@ func WithLogLevel(logLevel string) NewFSOpt {
 }
 
 func WithLogDir(dir string) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return errors.Errorf("failed to create logDir %s: %v", dir, err)
 		}
@@ -142,21 +141,21 @@ func WithLogDir(dir string) NewFSOpt {
 }
 
 func WithLogToStdout(logToStdout bool) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		d.logToStdout = logToStdout
 		return nil
 	}
 }
 
 func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		d.nydusdThreadNum = nydusdThreadNum
 		return nil
 	}
 }
 
 func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *filesystem) error {
+	return func(d *Filesystem) error {
 		if cfg.Device.Backend.BackendType == "localfs" &&
 			len(cfg.Device.Backend.Config.Dir) != 0 {
 			d.imageMode = PreLoad
