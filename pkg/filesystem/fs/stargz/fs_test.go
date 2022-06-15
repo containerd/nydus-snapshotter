@@ -55,7 +55,7 @@ func Test_filesystem_createNewDaemon(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	f := filesystem{
+	f := Filesystem{
 		FileSystemMeta: meta.FileSystemMeta{
 			RootDir: snapshotRoot,
 		},
@@ -92,7 +92,7 @@ func Test_filesystem_generateDaemonConfig(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	f := filesystem{
+	f := Filesystem{
 		FileSystemMeta: meta.FileSystemMeta{
 			RootDir: snapshotRoot,
 		},

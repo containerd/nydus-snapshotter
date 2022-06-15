@@ -14,7 +14,7 @@ import (
 )
 
 func TestWithNydusdBinaryPath(t *testing.T) {
-	var fs filesystem
+	var fs Filesystem
 	opt := WithNydusdBinaryPath("/bin/nydusd", config.DaemonModeMultiple)
 	err := opt(&fs)
 	assert.Nil(t, err)
