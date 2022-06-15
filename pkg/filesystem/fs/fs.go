@@ -29,7 +29,9 @@ type FileSystem interface {
 	Cleanup(ctx context.Context) error
 	Support(ctx context.Context, labels map[string]string) bool
 	PrepareMetaLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error
+	PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error
 	MountPoint(snapshotID string) (string, error)
 	BootstrapFile(snapshotID string) (string, error)
 	NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error)
+	CleanupBlobLayer(ctx context.Context, key string, async bool) error
 }

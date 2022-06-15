@@ -1,8 +1,9 @@
 /*
+/*
  * Copyright (c) 2020. Ant Group. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
- */
+*/
 
 package snapshot
 
@@ -120,6 +121,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		nydus.WithLogDir(cfg.LogDir),
 		nydus.WithLogToStdout(cfg.LogToStdout),
 		nydus.WithNydusdThreadNum(cfg.NydusdThreadNum),
+		nydus.WithImageMode(cfg.DaemonCfg),
 	}
 
 	if !cfg.DisableCacheManager {
@@ -313,6 +315,14 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 					return nil, err
 				}
 			}
+			_, isDataLater := base.Labels[label.NydusDataLayer]
+			if isDataLater {
+				err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
+				if err != nil {
+					logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
+					return nil, err
+				}
+			}
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
@@ -438,9 +448,18 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}
 	}()
 
+	_, snap, _, err := storage.GetInfo(ctx, key)
+	if err != nil {
+		return errors.Wrap(err, "failed to get snapshot")
+	}
+
 	_, _, err = storage.Remove(ctx, key)
 	if err != nil {
 		return errors.Wrap(err, "failed to remove")
+	}
+	var cleanupBlob bool
+	if _, ok := snap.Labels[label.NydusDataLayer]; ok {
+		cleanupBlob = true
 	}
 
 	if o.syncRemove {
@@ -460,11 +479,22 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 						log.G(ctx).WithError(err).WithField("path", dir).Warn("failed to remove directory")
 					}
 				}
+				if cleanupBlob {
+					if err := o.fs.CleanupBlobLayer(ctx, key, false); err != nil {
+						log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
+					}
+				}
 			}
 		}()
-
+	} else {
+		defer func() {
+			if cleanupBlob {
+				if err := o.fs.CleanupBlobLayer(ctx, key, true); err != nil {
+					log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
+				}
+			}
+		}()
 	}
-
 	return t.Commit()
 }
 
@@ -796,7 +826,6 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 		// When it quits, there will be nothing inside
 		cleanup = append(cleanup, o.snapshotDir(d))
 	}
-
 	return cleanup, nil
 }
 

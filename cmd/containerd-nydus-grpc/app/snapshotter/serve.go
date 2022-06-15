@@ -29,7 +29,6 @@ func Serve(ctx context.Context, rs snapshots.Snapshotter, options ServeOptions, 
 	if err != nil {
 		return err
 	}
-
 	rpc := grpc.NewServer()
 	snapshotsapi.RegisterSnapshotsServer(rpc, snapshotservice.FromSnapshotter(rs))
 	l, err := net.Listen("unix", options.ListeningSocketPath)
