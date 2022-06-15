@@ -56,7 +56,7 @@ type snapshotter struct {
 	root                 string
 	nydusdPath           string
 	ms                   *storage.MetaStore
-	asyncRemove          bool
+	syncRemove           bool
 	fs                   fspkg.FileSystem
 	stargzFs             fspkg.FileSystem
 	manager              *process.Manager
@@ -211,7 +211,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		root:                 cfg.RootDir,
 		nydusdPath:           cfg.NydusdBinaryPath,
 		ms:                   ms,
-		asyncRemove:          cfg.AsyncRemove,
+		syncRemove:           cfg.SyncRemove,
 		fs:                   nydusFs,
 		stargzFs:             stargzFs,
 		manager:              pm,
@@ -443,7 +443,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		return errors.Wrap(err, "failed to remove")
 	}
 
-	if !o.asyncRemove {
+	if o.syncRemove {
 		var removals []string
 		removals, err = o.getCleanupDirectories(ctx)
 		if err != nil {
