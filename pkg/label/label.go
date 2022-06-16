@@ -16,7 +16,7 @@ const (
 	TargetSnapshotLabel = "containerd.io/snapshot.ref"
 	CRIImageLayer       = "containerd.io/snapshot/cri.image-layers"
 	CRIDigest           = "containerd.io/snapshot/cri.layer-digest"
-	RemoteLabel         = "containerd.io/snapshot/remote"
+	StargzLayer         = "containerd.io/snapshot/stargz"
 	NydusMetaLayer      = "containerd.io/snapshot/nydus-bootstrap"
 	NydusDataLayer      = "containerd.io/snapshot/nydus-blob"
 )

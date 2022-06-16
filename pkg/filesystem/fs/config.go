@@ -12,6 +12,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -38,6 +39,13 @@ func WithNydusdBinaryPath(p string, daemonMode string) NewFSOpt {
 			return errors.New("nydusd binary path is required")
 		}
 		d.nydusdBinaryPath = p
+		return nil
+	}
+}
+
+func WithNydusImageBinaryPath(p string) NewFSOpt {
+	return func(d *Filesystem) error {
+		d.nydusImageBinaryPath = p
 		return nil
 	}
 }
@@ -159,6 +167,15 @@ func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
 		if cfg.Device.Backend.BackendType == "localfs" &&
 			len(cfg.Device.Backend.Config.Dir) != 0 {
 			d.imageMode = PreLoad
+		}
+		return nil
+	}
+}
+
+func WithEnableStargz(enable bool) NewFSOpt {
+	return func(d *Filesystem) error {
+		if enable {
+			d.stargzResolver = stargz.NewResolver()
 		}
 		return nil
 	}
