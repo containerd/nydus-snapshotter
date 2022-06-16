@@ -27,6 +27,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/pkg/errors"
+
+	"github.com/containerd/stargz-snapshotter/estargz"
 )
 
 const (
@@ -56,15 +58,12 @@ type Blob struct {
 
 // getTocOffset get toc offset from stargz footer
 func (bb *Blob) getTocOffset() (int64, error) {
-	b := make([]byte, stargzFooterSize)
-	_, err := bb.sr.ReadAt(b[:], bb.sr.Size()-stargzFooterSize)
-	if err != nil && err != io.EOF {
-		return 0, err
+	tocOffset, _, err := estargz.OpenFooter(bb.sr)
+	if err != nil {
+		return 0, errors.Wrap(err, "open stargz blob footer")
 	}
-	if tocOffset, ok := parseFooter(b); ok {
-		return tocOffset, nil
-	}
-	return 0, fmt.Errorf("failed to parse stargz footer of ref %s digest %s", bb.ref, bb.digest)
+
+	return tocOffset, nil
 }
 
 // ReadToc read stargz toc content from blob

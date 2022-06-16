@@ -8,13 +8,14 @@ package auth
 
 import (
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/pkg/errors"
 
+	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
+	"github.com/google/go-containerregistry/pkg/authn"
 )
 
 const (
@@ -88,6 +89,18 @@ func GetRegistryKeyChain(host string, labels map[string]string) *PassKeyChain {
 		return kc
 	}
 	return FromDockerConfig(host)
+}
+
+func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {
+	named, err := docker.ParseDockerRef(ref)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parse ref %s", ref)
+	}
+
+	host := docker.Domain(named)
+	keychain := GetRegistryKeyChain(host, labels)
+
+	return keychain, nil
 }
 
 func (kc PassKeyChain) Resolve(target authn.Resource) (authn.Authenticator, error) {
