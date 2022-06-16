@@ -307,6 +307,12 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	if prepareForContainer(base) {
 		logCtx.Infof("prepare for container layer %s", key)
 		if id, info, err := o.findMetaLayer(ctx, key); err == nil {
+			// For stargz layer, we need to merge all bootstraps into one.
+			if o.fs.StargzLayer(info.Labels) {
+				if err := o.fs.MergeStargzMetaLayer(ctx, s); err != nil {
+					return nil, errors.Wrap(err, "merge stargz meta layer")
+				}
+			}
 			logCtx.Infof("found nydus meta layer id %s, parpare remote snapshot", id)
 			if o.manager.IsPrefetchDaemon() {
 				// Prepare prefetch mount in background, so we could return Mounts

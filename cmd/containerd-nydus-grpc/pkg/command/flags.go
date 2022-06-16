@@ -163,7 +163,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "enable-stargz",
-			Usage:       "whether to support stargz image",
+			Usage:       "whether to support stargz image (experimental)",
 			Destination: &args.EnableStargz,
 		},
 		&cli.BoolFlag{
