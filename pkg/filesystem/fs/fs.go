@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,13 +218,6 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	return d, nil
 }
 
-func getParentSnapshotID(s storage.Snapshot) string {
-	if len(s.ParentIDs) == 0 {
-		return ""
-	}
-	return s.ParentIDs[0]
-}
-
 func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) bool {
 	if fs.stargzResolver == nil {
 		return false
@@ -253,6 +247,50 @@ func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]strin
 		return false
 	}
 	return true
+}
+
+func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapshot) error {
+	mergedBootstrap := filepath.Join(fs.UpperPath(s.ParentIDs[0]), "image.boot")
+	if _, err := os.Stat(mergedBootstrap); err == nil {
+		return nil
+	}
+
+	bootstraps := []string{}
+	for _, snapshotID := range s.ParentIDs {
+		files, err := ioutil.ReadDir(fs.UpperPath(snapshotID))
+		if err != nil {
+			if err != nil {
+				return errors.Wrap(err, "read snapshot dir")
+			}
+		}
+
+		bootstrapName := ""
+		for _, file := range files {
+			if digest.Digest(fmt.Sprintf("sha256:%s", file.Name())).Validate() == nil {
+				bootstrapName = file.Name()
+				break
+			}
+		}
+		if bootstrapName == "" {
+			return fmt.Errorf("can't find bootstrap for snapshot %s", snapshotID)
+		}
+
+		bootstrapPath := filepath.Join(fs.UpperPath(snapshotID), bootstrapName)
+		bootstraps = append([]string{bootstrapPath}, bootstraps...)
+	}
+
+	options := []string{
+		"merge",
+		"--bootstrap", filepath.Join(fs.UpperPath(s.ParentIDs[0]), "image.boot"),
+	}
+	options = append(options, bootstraps...)
+	log.G(ctx).Infof("nydus image command %v", options)
+
+	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	return cmd.Run()
 }
 
 func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
@@ -289,21 +327,14 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	if err != nil {
 		return errors.Wrap(err, "failed to save stargz index")
 	}
+	blobID := digest.Digest(layerDigest).Hex()
 	options := []string{
 		"create",
 		"--source-type", "stargz_index",
-		"--bootstrap", filepath.Join(fs.UpperPath(s.ID), "image.boot"),
-		"--blob-id", digest.Digest(layerDigest).Hex(),
+		"--bootstrap", filepath.Join(fs.UpperPath(s.ID), blobID),
+		"--blob-id", blobID,
 		"--repeatable",
 		"--disable-check",
-	}
-	if getParentSnapshotID(s) != "" {
-		parentBootstrap := filepath.Join(fs.UpperPath(getParentSnapshotID(s)), "image.boot")
-		if _, err := os.Stat(parentBootstrap); err != nil {
-			return fmt.Errorf("failed to find parentBootstrap from %s", parentBootstrap)
-		}
-		options = append(options,
-			"--parent-bootstrap", parentBootstrap)
 	}
 	options = append(options, filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName))
 	log.G(ctx).Infof("nydus image command %v", options)
@@ -316,6 +347,10 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
 	_, dataOk := labels[label.NydusDataLayer]
 	return dataOk
+}
+
+func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
+	return labels[label.StargzLayer] != ""
 }
 
 func isRafsV6(buf []byte) bool {
@@ -781,7 +816,7 @@ func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
 	if !ok {
 		// FIXME: for stargz layer, just return empty blobs here, we
 		// need to rethink how to implement blob cache GC for stargz.
-		if labels[label.StargzLayer] != "" {
+		if fs.StargzLayer(labels) {
 			return nil, nil
 		}
 		return nil, errors.New("no blob ids found")
