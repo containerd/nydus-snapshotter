@@ -18,7 +18,7 @@ const (
 
 	TargetSnapshotLabel       = "containerd.io/snapshot.ref"
 	TargetManifestDigestLabel = "containerd.io/snapshot/cri.manifest-digest"
-	RemoteLabel               = "containerd.io/snapshot/remote"
+	StargzLayer               = "containerd.io/snapshot/stargz"
 
 	NydusMetaLayer = "containerd.io/snapshot/nydus-bootstrap"
 	NydusDataLayer = "containerd.io/snapshot/nydus-blob"

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 	"unsafe"
@@ -23,11 +24,14 @@ import (
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
@@ -82,22 +86,24 @@ func init() {
 
 type Filesystem struct {
 	meta.FileSystemMeta
-	manager          *process.Manager
-	cacheMgr         *cache.Manager
-	verifier         *signature.Verifier
-	sharedDaemon     *daemon.Daemon
-	daemonCfg        config.DaemonConfig
-	resolver         *Resolver
-	vpcRegistry      bool
-	daemonBackend    string
-	nydusdBinaryPath string
-	mode             Mode
-	logLevel         string
-	logDir           string
-	logToStdout      bool
-	nydusdThreadNum  int
-	imageMode        ImageMode
-	blobMgr          *BlobManager
+	manager              *process.Manager
+	cacheMgr             *cache.Manager
+	verifier             *signature.Verifier
+	sharedDaemon         *daemon.Daemon
+	daemonCfg            config.DaemonConfig
+	resolver             *Resolver
+	stargzResolver       *stargz.Resolver
+	vpcRegistry          bool
+	daemonBackend        string
+	nydusdBinaryPath     string
+	nydusImageBinaryPath string
+	mode                 Mode
+	logLevel             string
+	logDir               string
+	logToStdout          bool
+	nydusdThreadNum      int
+	imageMode            ImageMode
+	blobMgr              *BlobManager
 }
 
 func getBlobPath(dir string, blobDigest string) (string, error) {
@@ -209,6 +215,102 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+func getParentSnapshotID(s storage.Snapshot) string {
+	if len(s.ParentIDs) == 0 {
+		return ""
+	}
+	return s.ParentIDs[0]
+}
+
+func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) bool {
+	if fs.stargzResolver == nil {
+		return false
+	}
+	ref, layerDigest := registry.ParseLabels(labels)
+	if ref == "" || layerDigest == "" {
+		return false
+	}
+	log.G(ctx).Infof("image ref %s digest %s", ref, layerDigest)
+	keychain, err := auth.GetKeyChainByRef(ref, labels)
+	if err != nil {
+		logrus.WithError(err).Warn("get key chain by ref")
+		return false
+	}
+	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
+	if err != nil {
+		logrus.WithError(err).Warn("get stargz blob")
+		return false
+	}
+	off, err := blob.GetTocOffset()
+	if err != nil {
+		logrus.WithError(err).Warn("get toc offset")
+		return false
+	}
+	if off <= 0 {
+		logrus.WithError(err).Warnf("invalid stargz toc offset %d", off)
+		return false
+	}
+	return true
+}
+
+func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+	if fs.stargzResolver == nil {
+		return fmt.Errorf("stargz is not enabled")
+	}
+
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		log.G(ctx).Infof("total stargz prepare layer duration %d", duration.Milliseconds())
+	}()
+	ref, layerDigest := registry.ParseLabels(labels)
+	if ref == "" || layerDigest == "" {
+		return fmt.Errorf("can not find ref and digest from label %+v", labels)
+	}
+	keychain, err := auth.GetKeyChainByRef(ref, labels)
+	if err != nil {
+		return errors.Wrap(err, "get key chain")
+	}
+	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get blob from ref %s, digest %s", ref, layerDigest)
+	}
+	r, err := blob.ReadToc()
+	if err != nil {
+		return errors.Wrapf(err, "failed to read toc from ref %s, digest %s", ref, layerDigest)
+	}
+	starGzToc, err := os.OpenFile(filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName), os.O_CREATE|os.O_RDWR, 0755)
+	if err != nil {
+		return errors.Wrap(err, "failed to create stargz index")
+	}
+	_, err = io.Copy(starGzToc, r)
+	if err != nil {
+		return errors.Wrap(err, "failed to save stargz index")
+	}
+	options := []string{
+		"create",
+		"--source-type", "stargz_index",
+		"--bootstrap", filepath.Join(fs.UpperPath(s.ID), "image.boot"),
+		"--blob-id", digest.Digest(layerDigest).Hex(),
+		"--repeatable",
+		"--disable-check",
+	}
+	if getParentSnapshotID(s) != "" {
+		parentBootstrap := filepath.Join(fs.UpperPath(getParentSnapshotID(s)), "image.boot")
+		if _, err := os.Stat(parentBootstrap); err != nil {
+			return fmt.Errorf("failed to find parentBootstrap from %s", parentBootstrap)
+		}
+		options = append(options,
+			"--parent-bootstrap", parentBootstrap)
+	}
+	options = append(options, filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName))
+	log.G(ctx).Infof("nydus image command %v", options)
+	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
 }
 
 func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
@@ -354,7 +456,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		return nil
 	}
 
-	imageID, ok := labels[label.ImageRef]
+	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
@@ -463,7 +565,7 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 }
 
 func (fs *Filesystem) NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error) {
-	imageID, ok := labels[label.ImageRef]
+	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return config.DaemonConfig{}, fmt.Errorf("no image ID found in label")
 	}
@@ -677,6 +779,11 @@ func (fs *Filesystem) hasDaemon() bool {
 func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
 	idStr, ok := labels[LayerAnnotationNydusBlobIDs]
 	if !ok {
+		// FIXME: for stargz layer, just return empty blobs here, we
+		// need to rethink how to implement blob cache GC for stargz.
+		if labels[label.StargzLayer] != "" {
+			return nil, nil
+		}
 		return nil, errors.New("no blob ids found")
 	}
 	var result []string
