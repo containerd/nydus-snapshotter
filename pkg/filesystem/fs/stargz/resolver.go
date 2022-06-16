@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	stargzFooterSize = 47
-	stargzToc        = "stargz.index.json"
+	FooterSize  = 47
+	TocFileName = "stargz.index.json"
 )
 
 type Resolver struct {
@@ -57,7 +57,7 @@ type Blob struct {
 }
 
 // getTocOffset get toc offset from stargz footer
-func (bb *Blob) getTocOffset() (int64, error) {
+func (bb *Blob) GetTocOffset() (int64, error) {
 	tocOffset, _, err := estargz.OpenFooter(bb.sr)
 	if err != nil {
 		return 0, errors.Wrap(err, "open stargz blob footer")
@@ -74,11 +74,11 @@ func (bb *Blob) ReadToc() (io.Reader, error) {
 		log.L.Infof("read toc duration %d", duration.Milliseconds())
 	}()
 
-	tocOffset, err := bb.getTocOffset()
+	tocOffset, err := bb.GetTocOffset()
 	if err != nil {
 		return nil, err
 	}
-	tocBuf := make([]byte, bb.sr.Size()-tocOffset-stargzFooterSize)
+	tocBuf := make([]byte, bb.sr.Size()-tocOffset-FooterSize)
 	_, err = bb.sr.ReadAt(tocBuf, tocOffset)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func (bb *Blob) ReadToc() (io.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	if h.Name != stargzToc {
+	if h.Name != TocFileName {
 		return nil, fmt.Errorf("failed to find toc from image %s blob %s", bb.ref, bb.digest)
 	}
 	var buf bytes.Buffer

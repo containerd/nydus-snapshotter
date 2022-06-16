@@ -108,6 +108,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithProcessManager(pm),
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
+		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
 		fspkg.WithDaemonConfig(cfg.DaemonCfg),
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
@@ -119,6 +120,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithLogToStdout(cfg.LogToStdout),
 		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
 		fspkg.WithImageMode(cfg.DaemonCfg),
+		fspkg.WithEnableStargz(cfg.EnableStargz),
 	}
 
 	if !cfg.DisableCacheManager {
@@ -229,7 +231,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get active mount")
 	}
-	if id, info, rErr := o.findNydusMetaLayer(ctx, key); rErr == nil {
+	if id, info, rErr := o.findMetaLayer(ctx, key); rErr == nil {
 		err = o.fs.WaitUntilReady(ctx, id)
 		if err != nil {
 			log.G(ctx).Errorf("snapshot %s is not ready, err: %v", id, err)
@@ -286,10 +288,25 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 			}
 		}
+
+		// Check if image layer is estargz layer
+		if o.fs.SupportStargz(ctx, base.Labels) {
+			err = o.fs.PrepareStargzMetaLayer(ctx, s, base.Labels)
+			if err != nil {
+				logCtx.Errorf("failed to prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
+			} else {
+				// Mark this snapshot as stargz layer
+				base.Labels[label.StargzLayer] = "true"
+				err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
+				if err == nil || errdefs.IsAlreadyExists(err) {
+					return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
+				}
+			}
+		}
 	}
 	if prepareForContainer(base) {
 		logCtx.Infof("prepare for container layer %s", key)
-		if id, info, err := o.findNydusMetaLayer(ctx, key); err == nil {
+		if id, info, err := o.findMetaLayer(ctx, key); err == nil {
 			logCtx.Infof("found nydus meta layer id %s, parpare remote snapshot", id)
 			if o.manager.IsPrefetchDaemon() {
 				// Prepare prefetch mount in background, so we could return Mounts
@@ -311,9 +328,13 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	return o.mounts(ctx, s)
 }
 
-func (o *snapshotter) findNydusMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
+func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
 	return snapshot.FindSnapshot(ctx, o.ms, key, func(info snapshots.Info) bool {
 		_, ok := info.Labels[label.NydusMetaLayer]
+		if !ok {
+			// For stargz support
+			_, ok = info.Labels[label.StargzLayer]
+		}
 		return ok
 	})
 }
