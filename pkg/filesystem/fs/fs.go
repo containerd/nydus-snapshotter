@@ -336,6 +336,8 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 		return errors.Wrap(err, "failed to save stargz index")
 	}
 	blobID := digest.Digest(layerDigest).Hex()
+	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
+
 	options := []string{
 		"create",
 		"--source-type", "stargz_index",
@@ -343,12 +345,19 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 		"--blob-id", blobID,
 		"--repeatable",
 		"--disable-check",
+		// FIXME: allow user to specify fs version and automatically detect
+		// chunk size and compressor from estargz TOC file.
+		"--fs-version", "6",
+		"--chunk-size", "0x400000",
+		"--blob-meta", blobMetaPath,
 	}
 	options = append(options, filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName))
 	log.G(ctx).Infof("nydus image command %v", options)
+
 	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+
 	return cmd.Run()
 }
 
