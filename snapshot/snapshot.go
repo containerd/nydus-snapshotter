@@ -391,7 +391,7 @@ func (o *snapshotter) findNydusMetaLayer(ctx context.Context, key string) (strin
 }
 
 func prepareForContainer(info snapshots.Info) bool {
-	_, ok := info.Labels[label.CRIImageLayer]
+	_, ok := info.Labels[label.CRIImageLayers]
 	return !ok
 }
 
