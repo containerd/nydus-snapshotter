@@ -338,6 +338,14 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	blobID := digest.Digest(layerDigest).Hex()
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 
+	if fs.daemonBackend == config.DaemonBackendFscache {
+		fscacheWorkdir := fs.FscacheWorkDir()
+		if err := os.MkdirAll(fscacheWorkdir, 0755); err != nil {
+			return errors.Wrapf(err, "failed to create fscache work dir %s", fscacheWorkdir)
+		}
+		blobMetaPath = filepath.Join(fscacheWorkdir, fmt.Sprintf("%s.blob.meta", blobID))
+	}
+
 	options := []string{
 		"create",
 		"--source-type", "stargz_index",
