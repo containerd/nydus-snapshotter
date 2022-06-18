@@ -330,6 +330,10 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	blobID := digest.Digest(layerDigest).Hex()
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 
+	if fs.daemonBackend == config.DaemonBackendFscache {
+		blobMetaPath = filepath.Join(fs.daemonCfg.Config.CacheConfig.WorkDir, fmt.Sprintf("%s.blob.meta", blobID))
+	}
+
 	options := []string{
 		"create",
 		"--source-type", "stargz_index",
