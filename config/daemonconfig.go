@@ -42,7 +42,7 @@ type FscacheDaemonConfig struct {
 		BackendConfig BackendConfig `json:"backend_config"`
 		CacheType     string        `json:"cache_type"`
 		CacheConfig   struct {
-			WorkDir string `json:"workdir"`
+			WorkDir string `json:"work_dir"`
 		} `json:"cache_config"`
 		MetadataPath string `json:"metadata_path"`
 	} `json:"config"`
