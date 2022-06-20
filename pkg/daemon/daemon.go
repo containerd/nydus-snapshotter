@@ -164,6 +164,10 @@ func (d *Daemon) sharedErofsMount() error {
 		return err
 	}
 
+	if err := os.MkdirAll(d.FscacheWorkDir(), 0755); err != nil {
+		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
+	}
+
 	if err := d.Client.FscacheBindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
