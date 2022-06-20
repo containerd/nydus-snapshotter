@@ -22,4 +22,9 @@ const (
 
 	NydusMetaLayer = "containerd.io/snapshot/nydus-bootstrap"
 	NydusDataLayer = "containerd.io/snapshot/nydus-blob"
+
+	// volatileOpt is a key of an optional lablel to each snapshot.
+	// If this optional label of a snapshot is specified, when mounted to rootdir
+	// this snapshot will include volatile option
+	VolatileOpt = "containerd.io/snapshot/overlay.volatile"
 )
