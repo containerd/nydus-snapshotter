@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 	"github.com/google/go-containerregistry/pkg/name"
+	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/pkg/errors"
 )
 
@@ -61,22 +62,26 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 		nref.Context().RepositoryStr(),
 		digest)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "faild to new http get %s", url)
 	}
 
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   time.Second * 30,
-	}
+	client := newRetryHTTPClient(tr)
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "faild to http get %s", url)
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to  GET request with code %d", res.StatusCode)
+		return nil, fmt.Errorf("failed to GET request with code %d", res.StatusCode)
 	}
 	return res.Body, nil
+}
+
+func newRetryHTTPClient(tr http.RoundTripper) *retryablehttp.Client {
+	retryClient := retryablehttp.NewClient()
+	retryClient.HTTPClient.Transport = tr
+	retryClient.HTTPClient.Timeout = time.Second * 30
+	return retryClient
 }

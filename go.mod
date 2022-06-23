@@ -11,6 +11,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-containerregistry v0.5.1
 	github.com/google/uuid v1.2.0
+	github.com/hashicorp/go-retryablehttp v0.7.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/pkg/errors v0.9.1
@@ -43,6 +44,7 @@ require (
 	github.com/docker/libcontainer v2.2.1+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.1 // indirect
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/moby/sys/mountinfo v0.5.0 // indirect

@@ -157,7 +157,7 @@ func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
-		log.G(ctx).Infof("total nydus prepare data layer duration %d", duration.Milliseconds())
+		log.G(ctx).Infof("total nydus prepare data layer duration %d ms", duration.Milliseconds())
 	}()
 
 	ref, layerDigest := registry.ParseLabels(labels)
