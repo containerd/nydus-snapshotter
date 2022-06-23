@@ -83,5 +83,6 @@ func newRetryHTTPClient(tr http.RoundTripper) *retryablehttp.Client {
 	retryClient := retryablehttp.NewClient()
 	retryClient.HTTPClient.Transport = tr
 	retryClient.HTTPClient.Timeout = time.Second * 30
+	retryClient.Logger = nil
 	return retryClient
 }
