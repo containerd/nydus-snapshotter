@@ -16,7 +16,7 @@ import (
 
 var logger = logrus.WithField("module", "builder")
 
-type ConvertOption struct {
+type PackOption struct {
 	BuilderPath string
 
 	BootstrapPath    string
@@ -36,7 +36,14 @@ type MergeOption struct {
 	PrefetchPatterns     string
 }
 
-func Convert(option ConvertOption) error {
+type UnpackOption struct {
+	BuilderPath   string
+	BootstrapPath string
+	BlobPath      string
+	TarPath       string
+}
+
+func Pack(option PackOption) error {
 	if option.RafsVersion == "" {
 		option.RafsVersion = "5"
 	}
@@ -104,6 +111,32 @@ func Merge(option MergeOption) error {
 	cmd.Stdout = logger.Writer()
 	cmd.Stderr = logger.Writer()
 	cmd.Stdin = strings.NewReader(option.PrefetchPatterns)
+
+	if err := cmd.Run(); err != nil {
+		logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		return err
+	}
+
+	return nil
+}
+
+func Unpack(option UnpackOption) error {
+	args := []string{
+		"unpack",
+		"--bootstrap",
+		option.BootstrapPath,
+		"--output",
+		option.TarPath,
+	}
+	if option.BlobPath != "" {
+		args = append(args, "--blob", option.BlobPath)
+	}
+
+	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
+
+	cmd := exec.Command(option.BuilderPath, args...)
+	cmd.Stdout = logger.Writer()
+	cmd.Stderr = logger.Writer()
 
 	if err := cmd.Run(); err != nil {
 		logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)

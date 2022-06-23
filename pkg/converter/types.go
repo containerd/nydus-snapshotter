@@ -18,7 +18,7 @@ type Layer struct {
 	ReaderAt content.ReaderAt
 }
 
-type ConvertOption struct {
+type PackOption struct {
 	// RafsVersion specifies nydus format version, possible values:
 	// `5`, `6` (EROFS-compatible), default is `5`.
 	RafsVersion string
@@ -36,3 +36,5 @@ type MergeOption struct {
 	// WithTar puts bootstrap into a tar stream (no gzip).
 	WithTar bool
 }
+
+type UnpackOption struct{}
