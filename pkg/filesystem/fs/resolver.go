@@ -21,6 +21,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const HTTPClientTimeOut = time.Second * 30
+
 type Resolver struct {
 	transport http.RoundTripper
 }
@@ -82,7 +84,7 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 func newRetryHTTPClient(tr http.RoundTripper) *retryablehttp.Client {
 	retryClient := retryablehttp.NewClient()
 	retryClient.HTTPClient.Transport = tr
-	retryClient.HTTPClient.Timeout = time.Second * 30
+	retryClient.HTTPClient.Timeout = HTTPClientTimeOut
 	retryClient.Logger = nil
 	return retryClient
 }
