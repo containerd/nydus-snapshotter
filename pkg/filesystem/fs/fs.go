@@ -47,7 +47,7 @@ const LayerAnnotationNydusBlobIDs = "containerd.io/snapshot/nydus-blob-ids"
 // So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
 const MaxSuperBlockSize = 8 * 1024
 const RafsV6Magic = 0xE0F5E1E2
-const ChunkInfoOffset = 1024 + 128 + 24
+const RafsV6ChunkInfoOffset = 1024 + 128 + 24
 const RafsV6SuppeOffset = 1024
 const BootstrapFile = "image/image.boot"
 const LegacyBootstrapFile = "image.boot"
@@ -148,15 +148,15 @@ func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, key string, async bo
 }
 
 func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
+	if fs.imageMode != PreLoad {
+		return nil
+	}
+
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
 		log.G(ctx).Infof("total nydus prepare data layer duration %d", duration.Milliseconds())
 	}()
-
-	if fs.imageMode == OnDemand {
-		return nil
-	}
 
 	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
@@ -180,12 +180,20 @@ func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 	}
 	defer readerCloser.Close()
 
-	blobFile, err := os.OpenFile(blobPath, os.O_CREATE|os.O_RDWR, 0755)
+	blobFile, err := os.OpenFile(blobPath, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
 		return errors.Wrap(err, "failed to create blob file")
 	}
 	defer blobFile.Close()
+
 	_, err = io.Copy(blobFile, readerCloser)
+	if err != nil {
+		if err := os.Remove(blobPath); err != nil {
+			log.G(ctx).Warnf("failed to remove blob file %s", blobPath)
+		}
+		return errors.Wrap(err, "write blob to local file")
+	}
+
 	return err
 }
 
@@ -323,7 +331,7 @@ func isRafsV6(buf []byte) bool {
 }
 
 func getBootstrapRealSizeInV6(buf []byte) uint64 {
-	return nativeEndian.Uint64(buf[ChunkInfoOffset:])
+	return nativeEndian.Uint64(buf[RafsV6ChunkInfoOffset:])
 }
 
 func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap *os.File) error {
