@@ -31,6 +31,8 @@ import (
 	"github.com/containerd/stargz-snapshotter/estargz"
 )
 
+const httpTimeout = 15 * time.Second
+
 const (
 	FooterSize  = 47
 	TocFileName = "stargz.index.json"
@@ -171,7 +173,7 @@ func (r *Resolver) resolve(ref, digest string, keychain authn.Keychain) (*io.Sec
 
 	sr := io.NewSectionReader(readerAtFunc(func(b []byte, offset int64) (int, error) {
 		length := len(b)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
 		defer cancel()
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
@@ -225,7 +227,7 @@ func (r *Resolver) resolveReference(ref name.Reference, digest string, keychain 
 }
 
 func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", endpointURL, nil)
 	if err != nil {
@@ -253,7 +255,7 @@ func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) 
 }
 
 func getSize(url string, tr http.RoundTripper) (int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
