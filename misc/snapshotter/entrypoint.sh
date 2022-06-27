@@ -13,6 +13,7 @@ if [ "$#" -eq 0 ]; then
 	    --address ${CONTAINERD_ROOT}/io.containerd.snapshotter.v1.nydus/containerd-nydus-grpc.sock \
 	    --enable-nydus-overlayfs \
 	    --daemon-mode shared \
+			--enable-stargz \
 	    --log-to-stdout
 fi
 

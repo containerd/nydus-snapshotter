@@ -59,13 +59,18 @@ func ParseLabels(labels map[string]string) (rRef, rDigest string) {
 }
 
 func AuthnTransport(ref name.Reference, tr http.RoundTripper, keychain authn.Keychain) (http.RoundTripper, error) {
+	var err error
+	var auth authn.Authenticator
+
 	if keychain == nil || (reflect.ValueOf(keychain).Kind() == reflect.Ptr && reflect.ValueOf(keychain).IsNil()) {
-		return nil, fmt.Errorf("keychain is required")
+		auth = authn.Anonymous
+	} else {
+		auth, err = keychain.Resolve(ref.Context())
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to resolve reference %q", ref)
+		}
 	}
-	auth, err := keychain.Resolve(ref.Context())
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to resolve reference %q", ref)
-	}
+
 	errCh := make(chan error)
 	var rTr http.RoundTripper
 	go func() {
