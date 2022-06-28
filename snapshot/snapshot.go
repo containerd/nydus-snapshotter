@@ -615,7 +615,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return nil, err
 	}
 
-	cfg, err := o.fs.NewDaemonConfig(labels)
+	cfg, err := o.fs.NewDaemonConfig(labels, id)
 	if err != nil {
 		return nil, errors.Wrapf(err, fmt.Sprintf("remoteMounts: failed to generate nydus config for snapshot %s, label: %v", id, labels))
 	}
