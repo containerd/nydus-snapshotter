@@ -13,6 +13,6 @@ func Umount(mountPoint string) error {
 	return fmt.Errorf("not implemented")
 }
 
-func FscacheID(imageID string) string {
+func FscacheID(snapshotID string) string {
 	panic("not implemented")
 }

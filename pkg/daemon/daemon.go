@@ -181,7 +181,7 @@ func (d *Daemon) sharedErofsMount() error {
 	if err != nil {
 		return err
 	}
-	fscacheID := erofs.FscacheID(d.ImageID)
+	fscacheID := erofs.FscacheID(d.SnapshotID)
 
 	if err := erofs.Mount(bootstrapPath, fscacheID, mountPoint); err != nil {
 		return errors.Wrapf(err, "mount erofs")

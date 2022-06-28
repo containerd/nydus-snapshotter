@@ -624,13 +624,13 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	return daemon.GetBootstrapFile(fs.SnapshotRoot(), id)
 }
 
-func (fs *Filesystem) NewDaemonConfig(labels map[string]string) (config.DaemonConfig, error) {
+func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID string) (config.DaemonConfig, error) {
 	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
 		return config.DaemonConfig{}, fmt.Errorf("no image ID found in label")
 	}
 
-	cfg, err := config.NewDaemonConfig(fs.daemonBackend, fs.daemonCfg, imageID, fs.vpcRegistry, labels)
+	cfg, err := config.NewDaemonConfig(fs.daemonBackend, fs.daemonCfg, imageID, snapshotID, fs.vpcRegistry, labels)
 	if err != nil {
 		return config.DaemonConfig{}, err
 	}
@@ -808,7 +808,7 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 
 // generateDaemonConfig generate Daemon configuration
 func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]string) error {
-	cfg, err := config.NewDaemonConfig(d.DaemonBackend, fs.daemonCfg, d.ImageID, fs.vpcRegistry, labels)
+	cfg, err := config.NewDaemonConfig(d.DaemonBackend, fs.daemonCfg, d.ImageID, d.SnapshotID, fs.vpcRegistry, labels)
 	if err != nil {
 		return errors.Wrapf(err, "failed to generate daemon config for daemon %s", d.ID)
 	}

@@ -132,7 +132,7 @@ func SaveConfig(c interface{}, configFile string) error {
 	return ioutil.WriteFile(configFile, b, 0755)
 }
 
-func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {
+func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {
 	image, err := registry.ParseImage(imageID)
 	if err != nil {
 		return DaemonConfig{}, errors.Wrapf(err, "failed to parse image %s", imageID)
@@ -159,7 +159,7 @@ func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID string, vpc
 		backendConfig := &cfg.Device.Backend.Config
 		if daemonBackend == DaemonBackendFscache {
 			backendConfig = &cfg.Config.BackendConfig
-			fscacheID := erofs.FscacheID(imageID)
+			fscacheID := erofs.FscacheID(snapshotID)
 			cfg.ID = fscacheID
 			cfg.DomainID = fscacheID
 			cfg.Config.ID = fscacheID

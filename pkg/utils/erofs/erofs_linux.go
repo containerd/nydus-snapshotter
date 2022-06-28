@@ -4,6 +4,8 @@
 package erofs
 
 import (
+	"fmt"
+
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -26,6 +28,6 @@ func Umount(mountPoint string) error {
 	return unix.Unmount(mountPoint, 0)
 }
 
-func FscacheID(imageID string) string {
-	return digest.FromString(imageID).Hex()
+func FscacheID(snapshotID string) string {
+	return digest.FromString(fmt.Sprintf("nydus-snapshot-%s", snapshotID)).Hex()
 }
