@@ -15,11 +15,13 @@ import (
 	"time"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -184,7 +186,14 @@ func (d *Daemon) sharedErofsMount() error {
 	fscacheID := erofs.FscacheID(d.SnapshotID)
 
 	if err := erofs.Mount(bootstrapPath, fscacheID, mountPoint); err != nil {
-		return errors.Wrapf(err, "mount erofs")
+		if !errdefs.IsErofsMounted(err) {
+			return errors.Wrapf(err, "mount erofs to %s", mountPoint)
+		}
+		// When snapshotter exits (either normally or abnormally), it will not have a
+		// chance to umount erofs mountpoint, so if snapshotter resumes running and mount
+		// again (by a new request to create container), it will need to ignore the mount
+		// error `device or resource busy`.
+		logrus.WithError(err).Warnf("erofs mountpoint %s has been mounted", mountPoint)
 	}
 
 	return nil

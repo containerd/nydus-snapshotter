@@ -7,7 +7,9 @@
 package errdefs
 
 import (
+	stderrors "errors"
 	"net"
+	"syscall"
 
 	"github.com/pkg/errors"
 )
@@ -30,4 +32,8 @@ func IsConnectionClosed(err error) bool {
 	default:
 		return false
 	}
+}
+
+func IsErofsMounted(err error) bool {
+	return stderrors.Is(err, syscall.EBUSY)
 }
