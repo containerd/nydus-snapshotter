@@ -97,7 +97,7 @@ func (d *Daemon) GetAPISock() string {
 }
 
 func (d *Daemon) FscacheWorkDir() string {
-	return filepath.Join(d.SnapshotDir, "fscache_workdir")
+	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
 }
 
 func (d *Daemon) LogFile() string {
