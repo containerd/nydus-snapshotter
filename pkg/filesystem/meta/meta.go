@@ -31,7 +31,3 @@ func (m FileSystemMeta) ConfigRoot() string {
 func (m FileSystemMeta) UpperPath(id string) string {
 	return filepath.Join(m.RootDir, "snapshots", id, "fs")
 }
-
-func (m FileSystemMeta) FscacheWorkDir() string {
-	return filepath.Join(m.RootDir, "snapshots", "fscache_workdir")
-}

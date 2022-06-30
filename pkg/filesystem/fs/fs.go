@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -264,7 +265,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 	}
 
 	bootstraps := []string{}
-	for _, snapshotID := range s.ParentIDs {
+	for idx, snapshotID := range s.ParentIDs {
 		files, err := ioutil.ReadDir(fs.UpperPath(snapshotID))
 		if err != nil {
 			if err != nil {
@@ -273,14 +274,43 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 		}
 
 		bootstrapName := ""
+		blobMetaName := ""
 		for _, file := range files {
 			if digest.Digest(fmt.Sprintf("sha256:%s", file.Name())).Validate() == nil {
 				bootstrapName = file.Name()
-				break
+			}
+			if strings.HasSuffix(file.Name(), "blob.meta") {
+				blobMetaName = file.Name()
 			}
 		}
 		if bootstrapName == "" {
 			return fmt.Errorf("can't find bootstrap for snapshot %s", snapshotID)
+		}
+		// The blob meta file is generated in corresponding snapshot dir for each layer,
+		// but we need copy them to fscache work dir for nydusd use. This is not an
+		// efficient method, but currently nydusd only supports reading blob meta files
+		// from the same dir, so it is a workaround. If performance is a concern, it is
+		// best to convert the estargz image TOC file to a bootstrap / blob meta file
+		// at build time.
+		if blobMetaName != "" && idx != 0 {
+			sourcePath := filepath.Join(fs.UpperPath(snapshotID), blobMetaName)
+			sourceFile, err := os.Open(sourcePath)
+			if err != nil {
+				return errors.Wrapf(err, "open source blob meta file %s", sourcePath)
+			}
+			defer sourceFile.Close()
+
+			// This path is same with `d.FscacheWorkDir()`, it's for fscache work dir.
+			targetPath := filepath.Join(fs.UpperPath(s.ParentIDs[0]), blobMetaName)
+			targetFile, err := os.Create(targetPath)
+			if err != nil {
+				return errors.Wrapf(err, "create target blob meta file %s", targetPath)
+			}
+			defer targetFile.Close()
+
+			if _, err := io.Copy(targetFile, sourceFile); err != nil {
+				return errors.Wrap(err, "copy source blob meta to target")
+			}
 		}
 
 		bootstrapPath := filepath.Join(fs.UpperPath(snapshotID), bootstrapName)
@@ -305,7 +335,6 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	if fs.stargzResolver == nil {
 		return fmt.Errorf("stargz is not enabled")
 	}
-
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
@@ -339,11 +368,11 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 
 	if fs.daemonBackend == config.DaemonBackendFscache {
-		fscacheWorkdir := fs.FscacheWorkDir()
-		if err := os.MkdirAll(fscacheWorkdir, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create fscache work dir %s", fscacheWorkdir)
+		blobMetaDir := fs.UpperPath(s.ID)
+		if err := os.MkdirAll(blobMetaDir, 0755); err != nil {
+			return errors.Wrapf(err, "failed to create fscache work dir %s", blobMetaDir)
 		}
-		blobMetaPath = filepath.Join(fscacheWorkdir, fmt.Sprintf("%s.blob.meta", blobID))
+		blobMetaPath = filepath.Join(blobMetaDir, fmt.Sprintf("%s.blob.meta", blobID))
 	}
 
 	options := []string{
