@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  NYDUS_VERSION: v2.1.0-alpha.0
+  NYDUS_VERSION: v2.1.0-alpha.3
 
 jobs:
   build:

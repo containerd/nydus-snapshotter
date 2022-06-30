@@ -27,6 +27,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
 )
@@ -150,12 +151,20 @@ func buildOCILowerTar(t *testing.T) io.ReadCloser {
 	return pr
 }
 
-func buildOCIUpperTar(t *testing.T) io.ReadCloser {
+func buildOCIUpperTar(t *testing.T, teePath string) io.ReadCloser {
 	pr, pw := io.Pipe()
-	tw := tar.NewWriter(pw)
 
 	go func() {
+		tw := tar.NewWriter(pw)
 		defer pw.Close()
+
+		if len(teePath) > 0 {
+			teew, err := os.OpenFile(teePath, os.O_WRONLY|os.O_CREATE, 0644)
+			require.NoError(t, err)
+			defer teew.Close()
+
+			tw = tar.NewWriter(io.MultiWriter(pw, teew))
+		}
 
 		writeDirToTar(t, tw, "dir-1")
 		writeFileToTar(t, tw, "dir-1/.wh.file-1", "")
@@ -176,7 +185,7 @@ func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string,
 	var data bytes.Buffer
 	writer := bufio.NewWriter(&data)
 
-	twc, err := converter.Convert(context.TODO(), writer, converter.ConvertOption{
+	twc, err := converter.Pack(context.TODO(), writer, converter.PackOption{
 		ChunkDictPath: chunkDict,
 		RafsVersion:   fsVersion,
 	})
@@ -196,6 +205,24 @@ func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string,
 	writeToFile(t, bytes.NewReader(data.Bytes()), tarBlobFilePath)
 
 	return tarBlobFilePath, blobDigest
+}
+
+func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt) (string, digest.Digest) {
+	var data bytes.Buffer
+	writer := bufio.NewWriter(&data)
+
+	err := converter.Unpack(context.TODO(), ra, writer, converter.UnpackOption{})
+	require.NoError(t, err)
+
+	digester := digest.Canonical.Digester()
+	_, err = digester.Hash().Write(data.Bytes())
+	require.NoError(t, err)
+	digest := digester.Digest()
+
+	tarPath := filepath.Join(workDir, digest.Hex())
+	writeToFile(t, bytes.NewReader(data.Bytes()), tarPath)
+
+	return tarPath, digest
 }
 
 func verify(t *testing.T, workDir string) {
@@ -308,7 +335,7 @@ func TestConverter(t *testing.T) {
 	defer os.RemoveAll(workDir)
 
 	lowerOCITarReader := buildOCILowerTar(t)
-	upperOCITarReader := buildOCIUpperTar(t)
+	upperOCITarReader := buildOCIUpperTar(t, "")
 
 	blobDir := filepath.Join(workDir, "blobs")
 	err = os.MkdirAll(blobDir, 0755)
@@ -363,4 +390,27 @@ func TestConverter(t *testing.T) {
 	ensureFile(t, filepath.Join(cacheDir, chunkDictBlobHash)+".chunk_map")
 	ensureNoFile(t, filepath.Join(cacheDir, lowerNydusBlobDigest.Hex())+".chunk_map")
 	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".chunk_map")
+}
+
+func TestUnpack(t *testing.T) {
+	workDir, err := ioutil.TempDir("", "nydus-converter-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+
+	ociTar := filepath.Join(workDir, "oci.tar")
+	ociTarReader := buildOCIUpperTar(t, ociTar)
+	nydusTar, _ := convertLayer(t, ociTarReader, "", workDir, *fsVersion)
+
+	tarTa, err := local.OpenReader(nydusTar)
+	require.NoError(t, err)
+	defer tarTa.Close()
+
+	_, newTarDigest := unpackLayer(t, workDir, tarTa)
+
+	ociTarReader, err = os.OpenFile(ociTar, os.O_RDONLY, 0644)
+	require.NoError(t, err)
+	ociTarDigest, err := digest.Canonical.FromReader(ociTarReader)
+	require.NoError(t, err)
+
+	require.Equal(t, ociTarDigest, newTarDigest)
 }

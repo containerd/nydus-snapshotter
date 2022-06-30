@@ -30,6 +30,7 @@ import (
 )
 
 const bootstrapNameInTar = "image.boot"
+const blobNameInTar = "image.blob"
 
 const envNydusBuilder = "NYDUS_BUILDER"
 const envNydusWorkdir = "NYDUS_WORKDIR"
@@ -46,7 +47,7 @@ func getBuilder() string {
 func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 	ds, err := compression.DecompressStream(reader)
 	if err != nil {
-		return errors.Wrap(err, "decompress stream")
+		return errors.Wrap(err, "unpack stream")
 	}
 	defer ds.Close()
 
@@ -60,6 +61,31 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 		}),
 	); err != nil {
 		return errors.Wrap(err, "apply with convert whiteout")
+	}
+
+	return nil
+}
+
+// Unpack a Nydus formatted tar stream into a directory.
+func unpackNydusTar(ctx context.Context, bootDst, blobDst string, ra content.ReaderAt) error {
+	boot, err := os.OpenFile(bootDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return errors.Wrapf(err, "write to bootstrap %s", bootDst)
+	}
+	defer boot.Close()
+
+	if err = unpackBootstrapFromNydusTar(ctx, ra, boot); err != nil {
+		return errors.Wrap(err, "unpack bootstrap from nydus")
+	}
+
+	blob, err := os.OpenFile(blobDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return errors.Wrapf(err, "write to blob %s", blobDst)
+	}
+	defer blob.Close()
+
+	if err = unpackBlobFromNydusTar(ctx, ra, blob); err != nil {
+		return errors.Wrap(err, "unpack blob from nydus")
 	}
 
 	return nil
@@ -124,7 +150,60 @@ func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, targe
 	return fmt.Errorf("can't find bootstrap in nydus tar")
 }
 
-// Convert converts a OCI formatted tar stream to a nydus formatted tar stream
+func unpackBlobFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.Writer) error {
+	cur := ra.Size()
+	reader := newSeekReader(ra)
+
+	const headerSize = 512
+
+	// Seek from tail to head of nydus formatted tar stream to find nydus
+	// bootstrap data.
+	for {
+		if headerSize > cur {
+			break
+		}
+
+		// Try to seek to the part of tar header.
+		var err error
+		cur, err = reader.Seek(cur-headerSize, io.SeekStart)
+		if err != nil {
+			return errors.Wrapf(err, "seek to %d for tar header", cur-headerSize)
+		}
+
+		tr := tar.NewReader(reader)
+		// Parse tar header.
+		hdr, err := tr.Next()
+		if err != nil {
+			return errors.Wrap(err, "parse tar header")
+		}
+
+		if hdr.Name == bootstrapNameInTar {
+			if hdr.Size > cur {
+				return fmt.Errorf("invalid tar format at pos %d", cur)
+			}
+			cur, err = reader.Seek(cur-hdr.Size, io.SeekStart)
+			if err != nil {
+				return errors.Wrap(err, "seek to bootstrap data offset")
+			}
+		} else if hdr.Name == blobNameInTar {
+			if hdr.Size > cur {
+				return fmt.Errorf("invalid tar format at pos %d", cur)
+			}
+			_, err = reader.Seek(cur-hdr.Size, io.SeekStart)
+			if err != nil {
+				return errors.Wrap(err, "seek to blob data offset")
+			}
+			if _, err := io.CopyN(target, reader, hdr.Size); err != nil {
+				return errors.Wrap(err, "copy blob data to reader")
+			}
+			return nil
+		}
+	}
+
+	return nil
+}
+
+// Pack converts a OCI formatted tar stream to a nydus formatted tar stream
 //
 // The nydus blob tar stream contains blob and bootstrap files with the following
 // file tree structure:
@@ -138,7 +217,7 @@ func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, targe
 //
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
 // the conversion workflow is finish.
-func Convert(ctx context.Context, dest io.Writer, opt ConvertOption) (io.WriteCloser, error) {
+func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
 	workDir, err := ioutil.TempDir(os.Getenv(envNydusWorkdir), "nydus-converter-")
 	if err != nil {
 		return nil, errors.Wrap(err, "create work directory")
@@ -184,7 +263,7 @@ func Convert(ctx context.Context, dest io.Writer, opt ConvertOption) (io.WriteCl
 		defer blobFifo.Close()
 
 		go func() {
-			err := tool.Convert(tool.ConvertOption{
+			err := tool.Pack(tool.PackOption{
 				BuilderPath: getBuilder(),
 
 				BlobPath:         blobPath,
@@ -275,6 +354,52 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 
 	if _, err = io.Copy(dest, rc); err != nil {
 		return errors.Wrap(err, "copy merged bootstrap")
+	}
+
+	return nil
+}
+
+func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt UnpackOption) error {
+	workDir, err := ioutil.TempDir(os.Getenv(envNydusWorkdir), "nydus-converter-")
+	if err != nil {
+		return errors.Wrap(err, "create work directory")
+	}
+	defer func() {
+		os.RemoveAll(workDir)
+	}()
+
+	bootPath, blobPath := filepath.Join(workDir, bootstrapNameInTar), filepath.Join(workDir, blobNameInTar)
+	if err = unpackNydusTar(ctx, bootPath, blobPath, ia); err != nil {
+		return errors.Wrap(err, "unpack nydus tar")
+	}
+
+	tarPath := filepath.Join(workDir, "oci.tar")
+	blobFifo, err := fifo.OpenFifo(ctx, tarPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+	if err != nil {
+		return errors.Wrapf(err, "create fifo file")
+	}
+	defer blobFifo.Close()
+
+	unpackErrChan := make(chan error)
+	go func() {
+		defer close(unpackErrChan)
+		err := tool.Unpack(tool.UnpackOption{
+			BuilderPath:   getBuilder(),
+			BootstrapPath: bootPath,
+			BlobPath:      blobPath,
+			TarPath:       tarPath,
+		})
+		if err != nil {
+			blobFifo.Close()
+			unpackErrChan <- err
+		}
+	}()
+
+	if _, err := io.Copy(dest, blobFifo); err != nil {
+		if unpackErr := <-unpackErrChan; unpackErr != nil {
+			return errors.Wrap(unpackErr, "unpack")
+		}
+		return errors.Wrap(err, "copy oci tar")
 	}
 
 	return nil
