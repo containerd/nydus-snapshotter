@@ -4,11 +4,15 @@
 
 Nydus-snapshotter is a **non-core** sub-project of containerd.
 
-Pulling and unpacking OCI container image are time consuming when start a container. [Nydus](https://github.com/dragonflyoss/image-service) is a vendor-neutral project aiming at mitigating the problem. It designs a new container image oriented and optimized file system format with capability of on-demand read. For instructions on how to build nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool.
+Nydus snapshotter is an external plugin of containerd for [Nydus image service](https://nydus.dev) which implements a chunk-based content-addressable filesystem on top of a called `RAFS (Registry Acceleration File System)` format that improves the current OCI image specification, in terms of container launching speed, image space, and network bandwidth efficiency, as well as data integrity with several runtime backends: FUSE, virtiofs and in-kernel [EROFS](https://www.kernel.org/doc/html/latest/filesystems/erofs.html).
+
+Nydus supports lazy pulling feature since pulling image is one of the time-consuming steps in the container lifecycle. Lazy pulling here means a container can run even the image is partially available and necessary chunks of the image are fetched on-demand. Apart from that, Nydus also supports [(e)Stargz](https://github.com/containerd/stargz-snapshotter) lazy pulling directly **WITHOUT** any explicit conversion.
+
+For more details about how to build Nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool and [acceld](https://github.com/goharbor/acceleration-service).
 
 ## Building
 
-Just invoke `make` and find output binary `./bin/containerd-nydus-grpc`
+Just invoke `make` and check out the output executable binary `./bin/containerd-nydus-grpc`
 
 ```bash
 make
@@ -16,8 +20,8 @@ make
 
 ## Integrate Nydus-snapshotter into Containerd
 
-Containerd provides a general mechanism to exploit different types of snapshotters. Please ensure your containerd's version is beyond 1.4.0.
-Add nydus as a proxy plugin into containerd's configuration file which may be located at `/etc/containerd/config.toml`.
+Containerd provides a general mechanism to exploit different types of snapshotters. Please ensure your containerd's version is 1.4.0 or above.
+Add Nydus as a proxy plugin into containerd's configuration file which may be located at `/etc/containerd/config.toml`.
 
 ```toml
 # The `address` field specifies through which socket snapshotter and containerd communicate.
@@ -37,13 +41,13 @@ systemctl restart containerd
 
 Find a suitable `nydusd` release for you from [nydus releases page](https://github.com/dragonflyoss/image-service/releases).
 
-`nydusd-fusedev` is FUSE userspace daemon handling linux kernel fuse requests from `/dev/fuse` frontend.
-`nydusd-virtiofs` is a virtiofs daemon handling guest kernel fuse requests.
+`nydusd-fusedev` is FUSE userspace daemon handling linux kernel FUSE requests from `/dev/fuse` frontend.
+`nydusd-virtiofs` is a virtiofs daemon handling guest kernel FUSE requests.
 
 ## Configure Nydus
 
-Nydus is configured by a json file which is required now. Because nydus container images are likely stored in a registry, where auth has to be provided.
-Please follow instructions to [configure nydus](./docs/configure_nydus.md) configure nydus making it work properly in your environment.
+Nydus is configured by a json file which is required now. Since Nydus container images are likely stored in a registry, where auth has to be provided.
+Please follow instructions to [configure nydus](./docs/configure_nydus.md) configure Nydus in order to make it work properly in your environment.
 
 ## Start Nydus Snapshotter
 
@@ -60,8 +64,8 @@ Or you can start nydus-snapshotter manually.
 ```bash
 # `nydusd-path` is the path to nydusd binary
 # `address` is the domain socket that you configured in containerd configuration file
-# `root` is the path to nydus snapshotter
-# `config-path` is the path to nydus configuration file
+# `root` is the path to Nydus snapshotter
+# `config-path` is the path to Nydus configuration file
 $ ./containerd-nydus-grpc \
     --config-path /etc/nydusd-config.json \
     --shared-daemon \
@@ -73,6 +77,8 @@ $ ./containerd-nydus-grpc \
     --nydusimg-path /usr/local/bin/nydus-image \
     --log-to-stdout
 ```
+
+You could append `--enable-stargz` to the command line above in order to enable (e)Stargz support.
 
 ### Validate Nydus-snapshotter Setup
 
@@ -88,8 +94,9 @@ io.containerd.snapshotter.v1    nydus                    -              ok
 
 ### Start Container on Node
 
-Containerd can start container with specified snapshotter, so legacy method like `nerdctl` or `ctr` needs to specify the `nydus` snapshotter when start container.
-A CLI tool [ctr-remote](https://github.com/dragonflyoss/image-service/tree/master/contrib/ctr-remote) is alongside. Use nydus `ctr-remote` to pull nydus image or start container based on nydus image.
+Containerd can start container with specified snapshotter, so `nerdctl` or `ctr` needs to specify the Nydus snapshotter when start container.
+
+A CLI tool [ctr-remote](https://github.com/dragonflyoss/image-service/tree/master/contrib/ctr-remote) is alongside. Use Nydus `ctr-remote` to pull Nydus image or start container based on nydus image.
 
 ```bash
 $ sudo ctr-remote image rpull ghcr.io/dragonflyoss/image-service/nginx:nydus-latest
@@ -102,6 +109,13 @@ $ sudo ctr-remote run --snapshotter nydus ghcr.io/dragonflyoss/image-service/ngi
 
 # Start container by `nerdctl`
 nerdctl --snapshotter nydus run ghcr.io/dragonflyoss/image-service/nginx:nydus-latest
+```
+
+In addition that, `nerdctl` can now directly pull Nydus or (e)Stargz images with Nydus snapshotter without `ctr-remote` involved:
+
+```bash
+# Start an eStargz container with Nydus snapshotter by `nerdctl`
+nerdctl --snapshotter nydus run -it --rm ghcr.io/stargz-containers/fedora:35-esgz
 ```
 
 ### Start Container in Kubernetes
@@ -117,7 +131,7 @@ nerdctl --snapshotter nydus run ghcr.io/dragonflyoss/image-service/nginx:nydus-l
 Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./docs/crictl_dry_run.md) of using `crictl` can be found in [documents](./docs).
 
 ### Setup with nydus-snapshotter image
-We can also use the `nydus-snapshotter` container image when we want to put nydus staff inside a container. See the [nydus-snapshotter exmple](./misc/example/README.md) for how to setup and use it.
+We can also use the `nydus-snapshotter` container image when we want to put Nydus stuffs inside a container. See the [nydus-snapshotter exmple](./misc/example/README.md) for how to setup and use it.
 
 ## Community
 
