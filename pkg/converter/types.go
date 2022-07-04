@@ -19,16 +19,26 @@ type Layer struct {
 }
 
 type PackOption struct {
-	// RafsVersion specifies nydus format version, possible values:
-	// `5`, `6` (EROFS-compatible), default is `5`.
-	RafsVersion string
+	// WorkDir is used as the work directory during layer pack.
+	WorkDir string
+	// BuilderPath holds the path of `nydus-image` binary tool.
+	BuilderPath string
+	// FsVersion specifies nydus RAFS format version, possible
+	// values: `5`, `6` (EROFS-compatible), default is `5`.
+	FsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
 	// PrefetchPatterns holds file path pattern list want to prefetch.
 	PrefetchPatterns string
+	// Compressor specifies nydus blob compression algorithm.
+	Compressor string
 }
 
 type MergeOption struct {
+	// WorkDir is used as the work directory during layer merge.
+	WorkDir string
+	// BuilderPath holds the path of `nydus-image` binary tool.
+	BuilderPath string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
 	// PrefetchPatterns holds file path pattern list want to prefetch.
@@ -37,4 +47,9 @@ type MergeOption struct {
 	WithTar bool
 }
 
-type UnpackOption struct{}
+type UnpackOption struct {
+	// WorkDir is used as the work directory during layer unpack.
+	WorkDir string
+	// BuilderPath holds the path of `nydus-image` binary tool.
+	BuilderPath string
+}
