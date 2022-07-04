@@ -35,12 +35,30 @@ const blobNameInTar = "image.blob"
 const envNydusBuilder = "NYDUS_BUILDER"
 const envNydusWorkdir = "NYDUS_WORKDIR"
 
-func getBuilder() string {
-	builderPath := os.Getenv(envNydusBuilder)
-	if builderPath == "" {
-		builderPath = "nydus-image"
+func getBuilder(specifiedPath string) string {
+	if specifiedPath != "" {
+		return specifiedPath
 	}
-	return builderPath
+
+	builderPath := os.Getenv(envNydusBuilder)
+	if builderPath != "" {
+		return builderPath
+	}
+
+	return "nydus-image"
+}
+
+func getWorkdir(specifiedPath string) string {
+	if specifiedPath != "" {
+		return specifiedPath
+	}
+
+	workdirPath := os.Getenv(envNydusWorkdir)
+	if workdirPath != "" {
+		return workdirPath
+	}
+
+	return os.TempDir()
 }
 
 // Unpack a OCI formatted tar stream into a directory.
@@ -218,7 +236,7 @@ func unpackBlobFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
 // the conversion workflow is finish.
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
-	workDir, err := ioutil.TempDir(os.Getenv(envNydusWorkdir), "nydus-converter-")
+	workDir, err := ioutil.TempDir(getWorkdir(opt.WorkDir), "nydus-converter-")
 	if err != nil {
 		return nil, errors.Wrap(err, "create work directory")
 	}
@@ -264,13 +282,14 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 
 		go func() {
 			err := tool.Pack(tool.PackOption{
-				BuilderPath: getBuilder(),
+				BuilderPath: getBuilder(opt.BuilderPath),
 
 				BlobPath:         blobPath,
-				RafsVersion:      opt.RafsVersion,
+				FsVersion:        opt.FsVersion,
 				SourcePath:       sourceDir,
 				ChunkDictPath:    opt.ChunkDictPath,
 				PrefetchPatterns: opt.PrefetchPatterns,
+				Compressor:       opt.Compressor,
 			})
 			if err != nil {
 				pw.CloseWithError(errors.Wrapf(err, "convert blob for %s", sourceDir))
@@ -290,7 +309,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 
 // Merge multiple nydus boostraps (from every layer of image) to a final boostrap.
 func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
-	workDir, err := ioutil.TempDir(os.Getenv(envNydusWorkdir), "nydus-converter-")
+	workDir, err := ioutil.TempDir(getWorkdir(opt.WorkDir), "nydus-converter-")
 	if err != nil {
 		return errors.Wrap(err, "create work directory")
 	}
@@ -327,7 +346,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	targetBootstrapPath := filepath.Join(workDir, "bootstrap")
 
 	if err := tool.Merge(tool.MergeOption{
-		BuilderPath: getBuilder(),
+		BuilderPath: getBuilder(opt.BuilderPath),
 
 		SourceBootstrapPaths: sourceBootstrapPaths,
 		TargetBootstrapPath:  targetBootstrapPath,
@@ -360,7 +379,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 }
 
 func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt UnpackOption) error {
-	workDir, err := ioutil.TempDir(os.Getenv(envNydusWorkdir), "nydus-converter-")
+	workDir, err := ioutil.TempDir(getWorkdir(opt.WorkDir), "nydus-converter-")
 	if err != nil {
 		return errors.Wrap(err, "create work directory")
 	}
@@ -384,7 +403,7 @@ func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt Unpack
 	go func() {
 		defer close(unpackErrChan)
 		err := tool.Unpack(tool.UnpackOption{
-			BuilderPath:   getBuilder(),
+			BuilderPath:   getBuilder(opt.BuilderPath),
 			BootstrapPath: bootPath,
 			BlobPath:      blobPath,
 			TarPath:       tarPath,

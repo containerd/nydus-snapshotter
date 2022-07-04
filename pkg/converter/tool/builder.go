@@ -21,10 +21,11 @@ type PackOption struct {
 
 	BootstrapPath    string
 	BlobPath         string
-	RafsVersion      string
+	FsVersion        string
 	SourcePath       string
 	ChunkDictPath    string
 	PrefetchPatterns string
+	Compressor       string
 }
 
 type MergeOption struct {
@@ -44,8 +45,8 @@ type UnpackOption struct {
 }
 
 func Pack(option PackOption) error {
-	if option.RafsVersion == "" {
-		option.RafsVersion = "5"
+	if option.FsVersion == "" {
+		option.FsVersion = "5"
 	}
 
 	args := []string{
@@ -61,7 +62,7 @@ func Pack(option PackOption) error {
 		"--whiteout-spec",
 		"none",
 		"--fs-version",
-		option.RafsVersion,
+		option.FsVersion,
 		"--inline-bootstrap",
 	}
 	if option.ChunkDictPath != "" {
@@ -69,6 +70,9 @@ func Pack(option PackOption) error {
 	}
 	if option.PrefetchPatterns == "" {
 		option.PrefetchPatterns = "/"
+	}
+	if option.Compressor != "" {
+		args = append(args, "--compressor", option.Compressor)
 	}
 	args = append(args, option.SourcePath)
 
