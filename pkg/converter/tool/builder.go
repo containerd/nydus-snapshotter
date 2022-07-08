@@ -127,6 +127,8 @@ func Merge(option MergeOption) error {
 func Unpack(option UnpackOption) error {
 	args := []string{
 		"unpack",
+		"--log-level",
+		"warn",
 		"--bootstrap",
 		option.BootstrapPath,
 		"--output",
