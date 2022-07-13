@@ -24,7 +24,7 @@ func main() {
 	flags := command.NewFlags()
 	app := &cli.App{
 		Name:    "containerd-nydus-grpc",
-		Usage:   "nydus containerd proxy snapshotter plugin",
+		Usage:   "Nydus remote snapshotter for containerd",
 		Version: Version,
 		Flags:   flags.F,
 		Action: func(c *cli.Context) error {
