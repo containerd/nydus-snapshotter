@@ -63,114 +63,40 @@ func buildFlags(args *Args) []cli.Flag {
 		&cli.StringFlag{
 			Name:        "address",
 			Value:       defaultAddress,
+			Usage:       "set `PATH` for gRPC socket",
 			Destination: &args.Address,
-		},
-		&cli.StringFlag{
-			Name:        "log-level",
-			Value:       defaultLogLevel.String(),
-			Usage:       "set the logging level [trace, debug, info, warn, error, fatal, panic]",
-			Destination: &args.LogLevel,
-		},
-		&cli.StringFlag{
-			Name:        "log-dir",
-			Value:       "",
-			Usage:       "path to the log dir",
-			Destination: &args.LogDir,
-		},
-		&cli.StringFlag{
-			Name:        "config-path",
-			Required:    true,
-			Usage:       "path to the configuration file",
-			Destination: &args.ConfigPath,
-		},
-		&cli.StringFlag{
-			Name:        "root",
-			Value:       defaultRootDir,
-			Usage:       "path to the root directory for this snapshotter",
-			Destination: &args.RootDir,
 		},
 		&cli.StringFlag{
 			Name:        "cache-dir",
 			Value:       "",
-			Usage:       "path to the cache dir",
+			Aliases:     []string{"C"},
+			Usage:       "set `DIRECTORY` to store/cache downloaded image data",
 			Destination: &args.CacheDir,
 		},
-		&cli.StringFlag{
-			Name:        "gc-period",
-			Value:       defaultGCPeriod,
-			Usage:       "period for gc blob cache, duration string(for example, 1m, 2h)",
-			Destination: &args.GCPeriod,
-		},
 		&cli.BoolFlag{
-			Name:        "validate-signature",
-			Usage:       "whether force validate image bootstrap",
-			Destination: &args.ValidateSignature,
+			Name:        "cleanup-on-close",
+			Value:       false,
+			Usage:       "whether to clean up on exit",
+			Destination: &args.CleanupOnClose,
 		},
 		&cli.StringFlag{
-			Name:        "publickey-file",
-			Value:       defaultPublicKey,
-			Usage:       "path to publickey file of signature validation",
-			Destination: &args.PublicKeyFile,
-		},
-		&cli.StringFlag{
-			Name:        "nydusd-path",
-			Value:       "",
-			Usage:       "path to nydusd binary, if not set will lookup in $PATH",
-			Destination: &args.NydusdBinaryPath,
-		},
-		&cli.StringFlag{
-			Name:        "nydusimg-path",
-			Value:       "",
-			Usage:       "path to nydus-img binary path, if not set will lookup in $PATH",
-			Destination: &args.NydusImageBinaryPath,
+			Name:        "config-path",
+			Required:    true,
+			Aliases:     []string{"c", "config"},
+			Usage:       "path to the configuration `FILE`",
+			Destination: &args.ConfigPath,
 		},
 		&cli.BoolFlag{
 			Name:        "convert-vpc-registry",
-			Usage:       "whether automatically convert the image to vpc registry to accelerate image pulling",
+			Usage:       "whether to automatically convert the image to vpc registry to accelerate image pulling",
 			Destination: &args.ConvertVpcRegistry,
-		},
-		&cli.BoolFlag{
-			Name:        "shared-daemon",
-			Usage:       "Deprecated, equivalent to \"--daemon-mode shared\"",
-			Destination: &args.SharedDaemon,
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
 			Value:       config.DefaultDaemonMode,
-			Usage:       "daemon mode to use, could be \"multiple\", \"shared\" or \"none\"",
+			Aliases:     []string{"M"},
+			Usage:       "set daemon working `MODE`, one of \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
-		},
-		&cli.StringFlag{
-			Name:        "daemon-backend",
-			Value:       config.FsDriverFusedev,
-			Usage:       "DEPRECATED! Daemon fs backend, could be \"fusedev\", \"fscache\"",
-			Destination: &args.FsDriver,
-		},
-		&cli.StringFlag{
-			Name:        "fs-driver",
-			Value:       config.FsDriverFusedev,
-			Usage:       "FS device driver, could be \"fusedev\", \"fscache\"",
-			Destination: &args.FsDriver,
-		},
-		&cli.BoolFlag{
-			Name:        "sync-remove",
-			Usage:       "whether to cleanup snapshots synchronously, default is asynchronous",
-			Destination: &args.SyncRemove,
-		},
-		&cli.BoolFlag{
-			Name:        "enable-metrics",
-			Usage:       "whether to collect metrics",
-			Destination: &args.EnableMetrics,
-		},
-		&cli.StringFlag{
-			Name:        "metrics-file",
-			Usage:       "file path to output metrics",
-			Destination: &args.MetricsFile,
-		},
-		&cli.BoolFlag{
-			Name:        "enable-stargz",
-			Usage:       "whether to support stargz image (experimental)",
-			Destination: &args.EnableStargz,
 		},
 		&cli.BoolFlag{
 			Name:        "disable-cache-manager",
@@ -178,25 +104,103 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.DisableCacheManager,
 		},
 		&cli.BoolFlag{
-			Name:        "log-to-stdout",
-			Usage:       "Print logs to standard out rather than files.",
-			Destination: &args.LogToStdout,
+			Name:        "enable-metrics",
+			Usage:       "whether to collect metrics",
+			Destination: &args.EnableMetrics,
 		},
 		&cli.BoolFlag{
 			Name:        "enable-nydus-overlayfs",
-			Usage:       "whether to enable nydus-overlayfs to mount",
+			Usage:       "whether to enable nydus-overlayfs",
 			Destination: &args.EnableNydusOverlayFS,
+		},
+		&cli.BoolFlag{
+			Name:        "enable-stargz",
+			Usage:       "whether to enable support of estargz image (experimental)",
+			Destination: &args.EnableStargz,
+		},
+		&cli.StringFlag{
+			Name:        "fs-driver",
+			Value:       config.FsDriverFusedev,
+			Aliases:     []string{"daemon-backend"},
+			Usage:       "backend `DRIVER` to serve the filesystem, one of \"fusedev\", \"fscache\"",
+			Destination: &args.FsDriver,
+		},
+		&cli.StringFlag{
+			Name:        "gc-period",
+			Value:       defaultGCPeriod,
+			Usage:       "blob cache garbage collection `INTERVAL`, duration string(for example, 1m, 2h)",
+			Destination: &args.GCPeriod,
+		},
+		&cli.StringFlag{
+			Name:        "log-dir",
+			Value:       "",
+			Aliases:     []string{"L"},
+			Usage:       "set `DIRECTORY` to store log files",
+			Destination: &args.LogDir,
+		},
+		&cli.StringFlag{
+			Name:        "log-level",
+			Value:       defaultLogLevel.String(),
+			Aliases:     []string{"l"},
+			Usage:       "set the logging `LEVEL` [trace, debug, info, warn, error, fatal, panic]",
+			Destination: &args.LogLevel,
+		},
+		&cli.BoolFlag{
+			Name:        "log-to-stdout",
+			Usage:       "log messages to standard out rather than files.",
+			Destination: &args.LogToStdout,
+		},
+		&cli.StringFlag{
+			Name:        "metrics-file",
+			Usage:       "path to the metrics output `FILE`",
+			Destination: &args.MetricsFile,
+		},
+		&cli.StringFlag{
+			Name:        "nydus-image",
+			Value:       "",
+			Aliases:     []string{"nydusimg-path"},
+			Usage:       "set `PATH` to the nydus-image binary, default to lookup nydus-image in $PATH",
+			Destination: &args.NydusImageBinaryPath,
+		},
+		&cli.StringFlag{
+			Name:        "nydusd",
+			Value:       "",
+			Aliases:     []string{"nydusd-path"},
+			Usage:       "set `PATH` to the nydusd binary, default to lookup nydusd in $PATH",
+			Destination: &args.NydusdBinaryPath,
 		},
 		&cli.IntFlag{
 			Name:        "nydusd-thread-num",
-			Usage:       "Nydusd daemon thread-num, default will be set to the number of CPUs",
+			Usage:       "set worker thread number for nydusd, default to the number of CPUs",
 			Destination: &args.NydusdThreadNum,
 		},
+		&cli.StringFlag{
+			Name:        "publickey-file",
+			Value:       defaultPublicKey,
+			Usage:       "path to the publickey `FILE` for signature validation",
+			Destination: &args.PublicKeyFile,
+		},
+		&cli.StringFlag{
+			Name:        "root",
+			Value:       defaultRootDir,
+			Aliases:     []string{"R"},
+			Usage:       "set `DIRECTORY` to store snapshotter working state",
+			Destination: &args.RootDir,
+		},
 		&cli.BoolFlag{
-			Name:        "cleanup-on-close",
-			Value:       false,
-			Usage:       "whether to do cleanup when close snapshotter",
-			Destination: &args.CleanupOnClose,
+			Name:        "shared-daemon",
+			Usage:       "Deprecated, equivalent to \"--daemon-mode shared\"",
+			Destination: &args.SharedDaemon,
+		},
+		&cli.BoolFlag{
+			Name:        "sync-remove",
+			Usage:       "whether to clean up snapshots in synchronous mode, default to asynchronous mode",
+			Destination: &args.SyncRemove,
+		},
+		&cli.BoolFlag{
+			Name:        "validate-signature",
+			Usage:       "whether to validate integrity of image bootstrap",
+			Destination: &args.ValidateSignature,
 		},
 	}
 }
@@ -214,56 +218,64 @@ func Validate(args *Args, cfg *config.Config) error {
 	if err := config.LoadConfig(args.ConfigPath, &daemonCfg); err != nil {
 		return errors.Wrapf(err, "failed to load config file %q", args.ConfigPath)
 	}
+	cfg.DaemonCfg = daemonCfg
 
-	if args.ValidateSignature && args.PublicKeyFile != "" {
-		if _, err := os.Stat(args.PublicKeyFile); err != nil {
+	if args.ValidateSignature {
+		if args.PublicKeyFile == "" {
+			return errors.New("need to specify publicKey file for signature validation")
+		} else if _, err := os.Stat(args.PublicKeyFile); err != nil {
 			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
 		}
 	}
+	cfg.PublicKeyFile = args.PublicKeyFile
+	cfg.ValidateSignature = args.ValidateSignature
 
+	// Give --shared-daemon higher priority
+	if args.SharedDaemon {
+		cfg.DaemonMode = config.DaemonModeShared
+	}
 	if args.FsDriver == config.FsDriverFscache && args.DaemonMode != config.DaemonModeShared {
-		return errors.New("file system driver `fscache` must work under `shared` daemon mode")
+		return errors.New("`fscache` backend driver only supports `shared` daemon mode")
 	}
 
-	cfg.LogLevel = args.LogLevel
-	cfg.DaemonCfg = daemonCfg
 	cfg.RootDir = args.RootDir
+	if len(cfg.RootDir) == 0 {
+		return errors.New("invalid empty root directory")
+	}
 
 	cfg.CacheDir = args.CacheDir
 	if len(cfg.CacheDir) == 0 {
 		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
 	}
-	cfg.LogDir = args.LogDir
+
+	cfg.LogLevel = args.LogLevel
 	// Always let options from CLI override those from configuration file.
 	cfg.LogToStdout = args.LogToStdout
+	cfg.LogDir = args.LogDir
 	if len(cfg.LogDir) == 0 {
 		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
-	cfg.ValidateSignature = args.ValidateSignature
-	cfg.PublicKeyFile = args.PublicKeyFile
-	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
-	cfg.Address = args.Address
-	cfg.NydusdBinaryPath = args.NydusdBinaryPath
-	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
-	cfg.DaemonMode = args.DaemonMode
-	// Give --shared-daemon higher priority
-	if args.SharedDaemon {
-		cfg.DaemonMode = config.DaemonModeShared
-	}
-	cfg.SyncRemove = args.SyncRemove
-	cfg.EnableMetrics = args.EnableMetrics
-	cfg.MetricsFile = args.MetricsFile
-	cfg.EnableStargz = args.EnableStargz
-	cfg.DisableCacheManager = args.DisableCacheManager
-	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
-	cfg.NydusdThreadNum = args.NydusdThreadNum
-	cfg.CleanupOnClose = args.CleanupOnClose
-	cfg.FsDriver = args.FsDriver
 
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {
 		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
 	}
 	cfg.GCPeriod = d
+
+	cfg.Address = args.Address
+	cfg.CleanupOnClose = args.CleanupOnClose
+	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
+	cfg.DaemonMode = args.DaemonMode
+	cfg.DisableCacheManager = args.DisableCacheManager
+	cfg.EnableMetrics = args.EnableMetrics
+	cfg.EnableStargz = args.EnableStargz
+	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	cfg.FsDriver = args.FsDriver
+	cfg.MetricsFile = args.MetricsFile
+	cfg.NydusdBinaryPath = args.NydusdBinaryPath
+	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
+	cfg.NydusdThreadNum = args.NydusdThreadNum
+	cfg.SyncRemove = args.SyncRemove
+
 	return cfg.SetupNydusBinaryPaths()
 }

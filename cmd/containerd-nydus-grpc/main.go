@@ -24,7 +24,7 @@ func main() {
 	flags := command.NewFlags()
 	app := &cli.App{
 		Name:    "containerd-nydus-grpc",
-		Usage:   "nydus containerd proxy snapshotter plugin",
+		Usage:   "Nydus remote snapshotter for containerd",
 		Version: Version,
 		Flags:   flags.F,
 		Action: func(c *cli.Context) error {
@@ -43,9 +43,9 @@ func main() {
 	}
 	if err := app.Run(os.Args); err != nil {
 		if errdefs.IsConnectionClosed(err) {
-			log.L.Info("snapshotter exited")
-			return
+			log.L.Info("nydus snapshotter exited")
+		} else {
+			log.L.WithError(err).Fatal("failed to start nydus snapshotter:\n\r")
 		}
-		log.L.WithError(err).Fatal("failed to start nydus snapshotter")
 	}
 }
