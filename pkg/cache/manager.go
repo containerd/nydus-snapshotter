@@ -11,19 +11,19 @@ import (
 )
 
 type Manager struct {
-	db            DB
-	store         *Store
-	cacheDir      string
-	period        time.Duration
-	eventCh       chan struct{}
-	daemonBackend string
+	db       DB
+	store    *Store
+	cacheDir string
+	period   time.Duration
+	eventCh  chan struct{}
+	fsDriver string
 }
 
 type Opt struct {
-	CacheDir      string
-	Period        time.Duration
-	Database      *store.Database
-	DaemonBackend string
+	CacheDir string
+	Period   time.Duration
+	Database *store.Database
+	FsDriver string
 }
 
 func NewManager(opt Opt) (*Manager, error) {
@@ -40,18 +40,18 @@ func NewManager(opt Opt) (*Manager, error) {
 
 	eventCh := make(chan struct{})
 	m := &Manager{
-		db:            db,
-		store:         s,
-		cacheDir:      opt.CacheDir,
-		period:        opt.Period,
-		eventCh:       eventCh,
-		daemonBackend: opt.DaemonBackend,
+		db:       db,
+		store:    s,
+		cacheDir: opt.CacheDir,
+		period:   opt.Period,
+		eventCh:  eventCh,
+		fsDriver: opt.FsDriver,
 	}
 
 	// For fscache backend, the cache is maintained by the kernel fscache module,
 	// so here we ignore gc for now, and in the future we need another design
 	// to remove the cache.
-	if opt.DaemonBackend == config.DaemonBackendFscache {
+	if opt.FsDriver == config.FsDriverFscache {
 		return m, nil
 	}
 
@@ -66,7 +66,7 @@ func (m *Manager) CacheDir() string {
 }
 
 func (m *Manager) SchedGC() {
-	if m.daemonBackend == config.DaemonBackendFscache {
+	if m.fsDriver == config.FsDriverFscache {
 		return
 	}
 	m.eventCh <- struct{}{}

@@ -132,14 +132,14 @@ func SaveConfig(c interface{}, configFile string) error {
 	return ioutil.WriteFile(configFile, b, 0755)
 }
 
-func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {
+func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {
 	image, err := registry.ParseImage(imageID)
 	if err != nil {
 		return DaemonConfig{}, errors.Wrapf(err, "failed to parse image %s", imageID)
 	}
 
 	backend := cfg.Device.Backend.BackendType
-	if daemonBackend == DaemonBackendFscache {
+	if fsDriver == FsDriverFscache {
 		backend = cfg.Config.BackendType
 	}
 
@@ -157,7 +157,7 @@ func NewDaemonConfig(daemonBackend string, cfg DaemonConfig, imageID, snapshotID
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		backendConfig := &cfg.Device.Backend.Config
-		if daemonBackend == DaemonBackendFscache {
+		if fsDriver == FsDriverFscache {
 			backendConfig = &cfg.Config.BackendConfig
 			fscacheID := erofs.FscacheID(snapshotID)
 			cfg.ID = fscacheID
