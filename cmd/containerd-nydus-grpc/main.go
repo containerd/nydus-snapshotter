@@ -43,9 +43,9 @@ func main() {
 	}
 	if err := app.Run(os.Args); err != nil {
 		if errdefs.IsConnectionClosed(err) {
-			log.L.Info("snapshotter exited")
-			return
+			log.L.Info("nydus snapshotter exited")
+		} else {
+			log.L.WithError(err).Fatal("failed to start nydus snapshotter:\n\r")
 		}
-		log.L.WithError(err).Fatal("failed to start nydus snapshotter")
 	}
 }
