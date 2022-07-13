@@ -43,7 +43,7 @@ type Daemon struct {
 	Pid              int
 	ImageID          string
 	DaemonMode       string
-	DaemonBackend    string
+	FsDriver         string
 	APISock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
@@ -135,7 +135,7 @@ func (d *Daemon) SharedMount() error {
 	if err := d.ensureClient("share mount"); err != nil {
 		return err
 	}
-	if d.DaemonBackend == config.DaemonBackendFscache {
+	if d.FsDriver == config.FsDriverFscache {
 		if err := d.sharedErofsMount(); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
@@ -152,7 +152,7 @@ func (d *Daemon) SharedUmount() error {
 	if err := d.ensureClient("share umount"); err != nil {
 		return err
 	}
-	if d.DaemonBackend == config.DaemonBackendFscache {
+	if d.FsDriver == config.FsDriverFscache {
 		if err := d.sharedErofsUmount(); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}

@@ -114,7 +114,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
 		fspkg.WithVerifier(verifier),
 		fspkg.WithDaemonMode(cfg.DaemonMode),
-		fspkg.WithDaemonBackend(cfg.DaemonBackend),
+		fspkg.WithFsDriver(cfg.FsDriver),
 		fspkg.WithLogLevel(cfg.LogLevel),
 		fspkg.WithLogDir(cfg.LogDir),
 		fspkg.WithLogToStdout(cfg.LogToStdout),
@@ -125,10 +125,10 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	if !cfg.DisableCacheManager {
 		cacheMgr, err := cache.NewManager(cache.Opt{
-			Database:      db,
-			Period:        cfg.GCPeriod,
-			CacheDir:      cfg.CacheDir,
-			DaemonBackend: cfg.DaemonBackend,
+			Database: db,
+			Period:   cfg.GCPeriod,
+			CacheDir: cfg.CacheDir,
+			FsDriver: cfg.FsDriver,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to new cache manager")

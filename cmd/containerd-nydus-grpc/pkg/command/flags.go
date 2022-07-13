@@ -41,7 +41,7 @@ type Args struct {
 	NydusImageBinaryPath string
 	SharedDaemon         bool
 	DaemonMode           string
-	DaemonBackend        string
+	FsDriver             string
 	SyncRemove           bool
 	EnableMetrics        bool
 	MetricsFile          string
@@ -142,9 +142,15 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "daemon-backend",
-			Value:       config.DaemonBackendFusedev,
-			Usage:       "daemon fs backend, could be \"fusedev\", \"fscache\"",
-			Destination: &args.DaemonBackend,
+			Value:       config.FsDriverFusedev,
+			Usage:       "DEPRECATED! Daemon fs backend, could be \"fusedev\", \"fscache\"",
+			Destination: &args.FsDriver,
+		},
+		&cli.StringFlag{
+			Name:        "fs-driver",
+			Value:       config.FsDriverFusedev,
+			Usage:       "FS device driver, could be \"fusedev\", \"fscache\"",
+			Destination: &args.FsDriver,
 		},
 		&cli.BoolFlag{
 			Name:        "sync-remove",
@@ -214,6 +220,11 @@ func Validate(args *Args, cfg *config.Config) error {
 			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
 		}
 	}
+
+	if args.FsDriver == config.FsDriverFscache && args.DaemonMode != config.DaemonModeShared {
+		return errors.New("file system driver `fscache` must work under `shared` daemon mode")
+	}
+
 	cfg.LogLevel = args.LogLevel
 	cfg.DaemonCfg = daemonCfg
 	cfg.RootDir = args.RootDir
@@ -247,7 +258,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
 	cfg.NydusdThreadNum = args.NydusdThreadNum
 	cfg.CleanupOnClose = args.CleanupOnClose
-	cfg.DaemonBackend = args.DaemonBackend
+	cfg.FsDriver = args.FsDriver
 
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {

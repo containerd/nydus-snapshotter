@@ -96,7 +96,7 @@ type Filesystem struct {
 	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
 	vpcRegistry          bool
-	daemonBackend        string
+	fsDriver             string
 	nydusdBinaryPath     string
 	nydusImageBinaryPath string
 	mode                 Mode
@@ -215,7 +215,7 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 		daemon.WithLogLevel(fs.logLevel),
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
-		daemon.WithDaemonBackend(fs.daemonBackend),
+		daemon.WithFsDriver(fs.fsDriver),
 		modeOpt,
 	)
 	if err != nil {
@@ -367,7 +367,7 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	blobID := digest.Digest(layerDigest).Hex()
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 
-	if fs.daemonBackend == config.DaemonBackendFscache {
+	if fs.fsDriver == config.FsDriverFscache {
 		blobMetaDir := fs.UpperPath(s.ID)
 		if err := os.MkdirAll(blobMetaDir, 0755); err != nil {
 			return errors.Wrapf(err, "failed to create fscache work dir %s", blobMetaDir)
@@ -659,7 +659,7 @@ func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID strin
 		return config.DaemonConfig{}, fmt.Errorf("no image ID found in label")
 	}
 
-	cfg, err := config.NewDaemonConfig(fs.daemonBackend, fs.daemonCfg, imageID, snapshotID, fs.vpcRegistry, labels)
+	cfg, err := config.NewDaemonConfig(fs.fsDriver, fs.daemonCfg, imageID, snapshotID, fs.vpcRegistry, labels)
 	if err != nil {
 		return config.DaemonConfig{}, err
 	}
@@ -787,7 +787,7 @@ func (fs *Filesystem) createNewDaemon(snapshotID string, imageID string) (*daemo
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithCustomMountPoint(customMountPoint),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
-		daemon.WithDaemonBackend(fs.daemonBackend),
+		daemon.WithFsDriver(fs.fsDriver),
 	); err != nil {
 		return nil, err
 	}
@@ -825,7 +825,7 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 		daemon.WithLogLevel(fs.logLevel),
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
-		daemon.WithDaemonBackend(fs.daemonBackend),
+		daemon.WithFsDriver(fs.fsDriver),
 	); err != nil {
 		return nil, err
 	}
@@ -837,12 +837,12 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 
 // generateDaemonConfig generate Daemon configuration
 func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]string) error {
-	cfg, err := config.NewDaemonConfig(d.DaemonBackend, fs.daemonCfg, d.ImageID, d.SnapshotID, fs.vpcRegistry, labels)
+	cfg, err := config.NewDaemonConfig(d.FsDriver, fs.daemonCfg, d.ImageID, d.SnapshotID, fs.vpcRegistry, labels)
 	if err != nil {
 		return errors.Wrapf(err, "failed to generate daemon config for daemon %s", d.ID)
 	}
 
-	if d.DaemonBackend == config.DaemonBackendFscache {
+	if d.FsDriver == config.FsDriverFscache {
 		cfg.Config.CacheConfig.WorkDir = d.FscacheWorkDir()
 		bootstrapPath, err := d.BootstrapFile()
 		if err != nil {

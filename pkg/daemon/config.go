@@ -139,9 +139,9 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewDaemonOpt {
 	}
 }
 
-func WithDaemonBackend(daemonBackend string) NewDaemonOpt {
+func WithFsDriver(fsDriver string) NewDaemonOpt {
 	return func(d *Daemon) error {
-		d.DaemonBackend = daemonBackend
+		d.FsDriver = fsDriver
 		return nil
 	}
 }
