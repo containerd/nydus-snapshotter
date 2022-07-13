@@ -218,56 +218,64 @@ func Validate(args *Args, cfg *config.Config) error {
 	if err := config.LoadConfig(args.ConfigPath, &daemonCfg); err != nil {
 		return errors.Wrapf(err, "failed to load config file %q", args.ConfigPath)
 	}
+	cfg.DaemonCfg = daemonCfg
 
-	if args.ValidateSignature && args.PublicKeyFile != "" {
-		if _, err := os.Stat(args.PublicKeyFile); err != nil {
+	if args.ValidateSignature {
+		if args.PublicKeyFile == "" {
+			return errors.New("need to specify publicKey file for signature validation")
+		} else if _, err := os.Stat(args.PublicKeyFile); err != nil {
 			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
 		}
 	}
+	cfg.PublicKeyFile = args.PublicKeyFile
+	cfg.ValidateSignature = args.ValidateSignature
 
+	// Give --shared-daemon higher priority
+	if args.SharedDaemon {
+		cfg.DaemonMode = config.DaemonModeShared
+	}
 	if args.FsDriver == config.FsDriverFscache && args.DaemonMode != config.DaemonModeShared {
-		return errors.New("file system driver `fscache` must work under `shared` daemon mode")
+		return errors.New("`fscache` backend driver only supports `shared` daemon mode")
 	}
 
-	cfg.LogLevel = args.LogLevel
-	cfg.DaemonCfg = daemonCfg
 	cfg.RootDir = args.RootDir
+	if len(cfg.RootDir) == 0 {
+		return errors.New("invalid empty root directory")
+	}
 
 	cfg.CacheDir = args.CacheDir
 	if len(cfg.CacheDir) == 0 {
 		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
 	}
-	cfg.LogDir = args.LogDir
+
+	cfg.LogLevel = args.LogLevel
 	// Always let options from CLI override those from configuration file.
 	cfg.LogToStdout = args.LogToStdout
+	cfg.LogDir = args.LogDir
 	if len(cfg.LogDir) == 0 {
 		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
-	cfg.ValidateSignature = args.ValidateSignature
-	cfg.PublicKeyFile = args.PublicKeyFile
-	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
-	cfg.Address = args.Address
-	cfg.NydusdBinaryPath = args.NydusdBinaryPath
-	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
-	cfg.DaemonMode = args.DaemonMode
-	// Give --shared-daemon higher priority
-	if args.SharedDaemon {
-		cfg.DaemonMode = config.DaemonModeShared
-	}
-	cfg.SyncRemove = args.SyncRemove
-	cfg.EnableMetrics = args.EnableMetrics
-	cfg.MetricsFile = args.MetricsFile
-	cfg.EnableStargz = args.EnableStargz
-	cfg.DisableCacheManager = args.DisableCacheManager
-	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
-	cfg.NydusdThreadNum = args.NydusdThreadNum
-	cfg.CleanupOnClose = args.CleanupOnClose
-	cfg.FsDriver = args.FsDriver
 
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {
 		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
 	}
 	cfg.GCPeriod = d
+
+	cfg.Address = args.Address
+	cfg.CleanupOnClose = args.CleanupOnClose
+	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
+	cfg.DaemonMode = args.DaemonMode
+	cfg.DisableCacheManager = args.DisableCacheManager
+	cfg.EnableMetrics = args.EnableMetrics
+	cfg.EnableStargz = args.EnableStargz
+	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	cfg.FsDriver = args.FsDriver
+	cfg.MetricsFile = args.MetricsFile
+	cfg.NydusdBinaryPath = args.NydusdBinaryPath
+	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
+	cfg.NydusdThreadNum = args.NydusdThreadNum
+	cfg.SyncRemove = args.SyncRemove
+
 	return cfg.SetupNydusBinaryPaths()
 }
