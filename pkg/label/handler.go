@@ -34,21 +34,21 @@ func AppendLabelsHandlerWrapper(ref string) func(f images.Handler) images.Handle
 						if c.Annotations == nil {
 							c.Annotations = make(map[string]string)
 						}
-						c.Annotations[CRIImageRef] = ref
-						c.Annotations[CRILayerDigest] = c.Digest.String()
 						var layers string
 						for _, l := range children[i:] {
 							if images.IsLayerType(l.MediaType) {
 								ls := fmt.Sprintf("%s,", l.Digest.String())
 								// This avoids the label hits the size limitation.
 								// Skipping layers is allowed here and only affects performance.
-								if err := labels.Validate(NydusDataLayer, layers+ls); err != nil {
+								if err := labels.Validate(CRIImageLayers, layers+ls); err != nil {
 									break
 								}
 								layers += ls
 							}
 						}
 						c.Annotations[CRIImageLayers] = strings.TrimSuffix(layers, ",")
+						c.Annotations[CRIImageRef] = ref
+						c.Annotations[CRILayerDigest] = c.Digest.String()
 						c.Annotations[CRIManifestDigest] = desc.Digest.String()
 					}
 				}
