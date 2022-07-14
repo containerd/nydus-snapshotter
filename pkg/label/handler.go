@@ -49,7 +49,7 @@ func AppendLabelsHandlerWrapper(ref string) func(f images.Handler) images.Handle
 							}
 						}
 						c.Annotations[CRIImageLayers] = strings.TrimSuffix(layers, ",")
-						c.Annotations[TargetManifestDigestLabel] = desc.Digest.String()
+						c.Annotations[CRIManifestDigest] = desc.Digest.String()
 					}
 				}
 			}

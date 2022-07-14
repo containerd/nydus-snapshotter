@@ -72,7 +72,7 @@ func (v *Verifier) Verify(label map[string]string, bootstrapFile string) error {
 }
 
 func getFromLabel(labels map[string]string) ([]byte, error) {
-	if s, ok := labels[label.Signature]; ok {
+	if s, ok := labels[label.NydusSignature]; ok {
 		res, err := base64.StdEncoding.DecodeString(s)
 		if err != nil {
 			return nil, err

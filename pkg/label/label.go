@@ -7,21 +7,24 @@
 package label
 
 const (
-	Signature = "containerd.io/snapshot/nydus-signature"
+	// Labels defined by CRI
+	CRIImageRef       = "containerd.io/snapshot/cri.image-ref"
+	CRIImageLayers    = "containerd.io/snapshot/cri.image-layers"
+	CRILayerDigest    = "containerd.io/snapshot/cri.layer-digest"
+	CRIManifestDigest = "containerd.io/snapshot/cri.manifest-digest"
 
-	CRIImageRef    = "containerd.io/snapshot/cri.image-ref"
-	CRIImageLayers = "containerd.io/snapshot/cri.image-layers"
-	CRILayerDigest = "containerd.io/snapshot/cri.layer-digest"
+	// Labels defined by containerd
+	TargetSnapshotRef = "containerd.io/snapshot.ref"
 
-	ImagePullSecret   = "containerd.io/snapshot/pullsecret"
-	ImagePullUsername = "containerd.io/snapshot/pullusername"
+	// Labels defined by nydus
+	NydusDataLayer         = "containerd.io/snapshot/nydus-blob"
+	NydusMetaLayer         = "containerd.io/snapshot/nydus-bootstrap"
+	NydusImagePullSecret   = "containerd.io/snapshot/pullsecret"
+	NydusImagePullUsername = "containerd.io/snapshot/pullusername"
+	NydusSignature         = "containerd.io/snapshot/nydus-signature"
 
-	TargetSnapshotLabel       = "containerd.io/snapshot.ref"
-	TargetManifestDigestLabel = "containerd.io/snapshot/cri.manifest-digest"
-	StargzLayer               = "containerd.io/snapshot/stargz"
-
-	NydusMetaLayer = "containerd.io/snapshot/nydus-bootstrap"
-	NydusDataLayer = "containerd.io/snapshot/nydus-blob"
+	// Labels defined by estargz
+	StargzLayer = "containerd.io/snapshot/stargz"
 
 	// volatileOpt is a key of an optional lablel to each snapshot.
 	// If this optional label of a snapshot is specified, when mounted to rootdir
