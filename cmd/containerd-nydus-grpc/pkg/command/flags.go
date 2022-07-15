@@ -231,6 +231,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.ValidateSignature = args.ValidateSignature
 
 	// Give --shared-daemon higher priority
+	cfg.DaemonMode = args.DaemonMode
 	if args.SharedDaemon {
 		cfg.DaemonMode = config.DaemonModeShared
 	}
@@ -265,7 +266,6 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.Address = args.Address
 	cfg.CleanupOnClose = args.CleanupOnClose
 	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
-	cfg.DaemonMode = args.DaemonMode
 	cfg.DisableCacheManager = args.DisableCacheManager
 	cfg.EnableMetrics = args.EnableMetrics
 	cfg.EnableStargz = args.EnableStargz
