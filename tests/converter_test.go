@@ -243,7 +243,7 @@ func verify(t *testing.T, workDir string) {
 		EnablePrefetch: true,
 		NydusdPath:     nydusdPath,
 		BootstrapPath:  filepath.Join(workDir, "bootstrap"),
-		ConfigPath:     filepath.Join(workDir, "nydusd-config.json"),
+		ConfigPath:     filepath.Join(workDir, "nydusd-config.fusedev.json"),
 		BackendType:    "localfs",
 		BackendConfig:  fmt.Sprintf(`{"dir": "%s"}`, blobDir),
 		BlobCacheDir:   filepath.Join(workDir, "cache"),
