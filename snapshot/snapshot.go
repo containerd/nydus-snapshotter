@@ -260,7 +260,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	}
 
 	logCtx.Infof("Preparing. Key=%s, Parent=%s, Labels %v", key, parent, base.Labels)
-	if target, ok := base.Labels[label.TargetSnapshotLabel]; ok {
+	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
 		// check if image layer is nydus layer
 		if o.fs.Support(ctx, base.Labels) {
 			logCtx.Infof("nydus data/meta layer, skip download and unpack %s", key)
@@ -272,8 +272,8 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 					return nil, err
 				}
 			}
-			_, isDataLater := base.Labels[label.NydusDataLayer]
-			if isDataLater {
+			_, isDataLayer := base.Labels[label.NydusDataLayer]
+			if isDataLayer {
 				err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
 				if err != nil {
 					logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
