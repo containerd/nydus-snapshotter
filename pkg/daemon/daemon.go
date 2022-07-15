@@ -103,7 +103,7 @@ func (d *Daemon) FscacheWorkDir() string {
 }
 
 func (d *Daemon) LogFile() string {
-	return filepath.Join(d.LogDir, "stderr.log")
+	return filepath.Join(d.LogDir, "nydusd.log")
 }
 
 func (d *Daemon) CheckStatus() (*model.DaemonInfo, error) {
