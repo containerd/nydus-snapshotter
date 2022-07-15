@@ -88,7 +88,11 @@ func GetRegistryKeyChain(host string, labels map[string]string) *PassKeyChain {
 	if kc != nil {
 		return kc
 	}
-	return FromDockerConfig(host)
+	kc = FromDockerConfig(host)
+	if kc != nil {
+		return kc
+	}
+	return FromKubeSecretDockerConfig(host)
 }
 
 func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {
