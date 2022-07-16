@@ -112,14 +112,6 @@ type Filesystem struct {
 	imageMode            ImageMode
 }
 
-func getBlobPath(dir string, blobDigest string) (string, error) {
-	digest, err := digest.Parse(blobDigest)
-	if err != nil {
-		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
-	}
-	return filepath.Join(dir, digest.Encoded()), nil
-}
-
 // NewFileSystem initialize Filesystem instance
 func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	var fs Filesystem
@@ -154,7 +146,7 @@ func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, key string, async bo
 }
 
 func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
-	if fs.imageMode != PreLoad {
+	if fs.blobMgr == nil {
 		return nil
 	}
 
@@ -186,21 +178,36 @@ func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 	}
 	defer readerCloser.Close()
 
-	blobFile, err := os.OpenFile(blobPath, os.O_CREATE|os.O_RDWR, 0666)
+	blobFile, err := ioutil.TempFile(fs.blobMgr.GetBlobDir(), "downloading-")
 	if err != nil {
-		return errors.Wrap(err, "failed to create blob file")
+		return errors.Wrap(err, "create temp file for downloading blob")
 	}
-	defer blobFile.Close()
+	defer func() {
+		if err != nil {
+			os.Remove(blobFile.Name())
+		}
+		blobFile.Close()
+	}()
 
 	_, err = io.Copy(blobFile, readerCloser)
 	if err != nil {
-		if err := os.Remove(blobPath); err != nil {
-			log.G(ctx).Warnf("failed to remove blob file %s", blobPath)
-		}
 		return errors.Wrap(err, "write blob to local file")
 	}
+	err = os.Rename(blobFile.Name(), blobPath)
+	if err != nil {
+		return errors.Wrap(err, "rename temp file as blob file")
+	}
+	os.Chmod(blobFile.Name(), 0440)
 
-	return err
+	return nil
+}
+
+func getBlobPath(dir string, blobDigest string) (string, error) {
+	digest, err := digest.Parse(blobDigest)
+	if err != nil {
+		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
+	}
+	return filepath.Join(dir, digest.Encoded()), nil
 }
 
 func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
@@ -265,7 +272,8 @@ func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]strin
 }
 
 func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapshot) error {
-	mergedBootstrap := filepath.Join(fs.UpperPath(s.ParentIDs[0]), "image.boot")
+	mergedDir := fs.UpperPath(s.ParentIDs[0])
+	mergedBootstrap := filepath.Join(mergedDir, "image.boot")
 	if _, err := os.Stat(mergedBootstrap); err == nil {
 		return nil
 	}
@@ -317,30 +325,60 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 			if _, err := io.Copy(targetFile, sourceFile); err != nil {
 				return errors.Wrap(err, "copy source blob meta to target")
 			}
+			os.Chmod(targetPath, 0440)
 		}
 
 		bootstrapPath := filepath.Join(fs.UpperPath(snapshotID), bootstrapName)
 		bootstraps = append([]string{bootstrapPath}, bootstraps...)
 	}
 
+	tf, err := ioutil.TempFile(mergedDir, "merging-stargz")
+	if err != nil {
+		return errors.Wrap(err, "create temp file for merging stargz layers")
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(tf.Name())
+		}
+		tf.Close()
+	}()
+
 	options := []string{
 		"merge",
-		"--bootstrap", mergedBootstrap,
+		"--bootstrap", tf.Name(),
 	}
 	options = append(options, bootstraps...)
-	log.G(ctx).Infof("nydus image command %v", options)
-
 	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	log.G(ctx).Infof("nydus image command %v", options)
+	err = cmd.Run()
+	if err != nil {
+		return errors.Wrap(err, "merging stargz layers")
+	}
 
-	return cmd.Run()
+	err = os.Rename(tf.Name(), mergedBootstrap)
+	if err != nil {
+		return errors.Wrap(err, "rename merged stargz layers")
+	}
+	os.Chmod(mergedBootstrap, 0440)
+
+	return nil
 }
 
 func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.Blob, ref, layerDigest string, s storage.Snapshot, labels map[string]string) error {
 	if fs.stargzResolver == nil {
 		return fmt.Errorf("stargz is not enabled")
 	}
+
+	upperPath := fs.UpperPath(s.ID)
+	blobID := digest.Digest(layerDigest).Hex()
+	convertedBootstrap := filepath.Join(upperPath, blobID)
+	stargzFile := filepath.Join(upperPath, stargz.TocFileName)
+	if _, err := os.Stat(convertedBootstrap); err == nil {
+		return nil
+	}
+
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
@@ -351,7 +389,7 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	if err != nil {
 		return errors.Wrapf(err, "failed to read toc from ref %s, digest %s", ref, layerDigest)
 	}
-	starGzToc, err := os.OpenFile(filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName), os.O_CREATE|os.O_RDWR, 0755)
+	starGzToc, err := os.OpenFile(stargzFile, os.O_CREATE|os.O_RDWR, 0640)
 	if err != nil {
 		return errors.Wrap(err, "failed to create stargz index")
 	}
@@ -359,21 +397,33 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	if err != nil {
 		return errors.Wrap(err, "failed to save stargz index")
 	}
+	os.Chmod(stargzFile, 0440)
 
-	blobID := digest.Digest(layerDigest).Hex()
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 	if fs.fsDriver == config.FsDriverFscache {
-		blobMetaDir := fs.UpperPath(s.ID)
-		if err := os.MkdirAll(blobMetaDir, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create fscache work dir %s", blobMetaDir)
+		// For fscache, the cache directory is managed linux fscache driver, so the blob.meta file
+		// can't be stored there.
+		if err := os.MkdirAll(upperPath, 0750); err != nil {
+			return errors.Wrapf(err, "failed to create fscache work dir %s", upperPath)
 		}
-		blobMetaPath = filepath.Join(blobMetaDir, fmt.Sprintf("%s.blob.meta", blobID))
+		blobMetaPath = filepath.Join(upperPath, fmt.Sprintf("%s.blob.meta", blobID))
 	}
+
+	tf, err := ioutil.TempFile(upperPath, "converting-stargz")
+	if err != nil {
+		return errors.Wrap(err, "create temp file for merging stargz layers")
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(tf.Name())
+		}
+		tf.Close()
+	}()
 
 	options := []string{
 		"create",
 		"--source-type", "stargz_index",
-		"--bootstrap", filepath.Join(fs.UpperPath(s.ID), blobID),
+		"--bootstrap", tf.Name(),
 		"--blob-id", blobID,
 		"--repeatable",
 		"--disable-check",
@@ -384,13 +434,22 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 		"--blob-meta", blobMetaPath,
 	}
 	options = append(options, filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName))
-	log.G(ctx).Infof("nydus image command %v", options)
-
 	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	log.G(ctx).Infof("nydus image command %v", options)
+	err = cmd.Run()
+	if err != nil {
+		return errors.Wrap(err, "converting stargz layer")
+	}
 
-	return cmd.Run()
+	err = os.Rename(tf.Name(), convertedBootstrap)
+	if err != nil {
+		return errors.Wrap(err, "rename converted stargz layer")
+	}
+	os.Chmod(convertedBootstrap, 0440)
+
+	return nil
 }
 
 func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
