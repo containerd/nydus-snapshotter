@@ -92,24 +92,24 @@ func init() {
 
 type Filesystem struct {
 	meta.FileSystemMeta
+	blobMgr              *BlobManager
 	manager              *process.Manager
 	cacheMgr             *cache.Manager
-	verifier             *signature.Verifier
 	sharedDaemon         *daemon.Daemon
 	daemonCfg            config.DaemonConfig
 	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
-	vpcRegistry          bool
+	verifier             *signature.Verifier
 	fsDriver             string
 	nydusdBinaryPath     string
 	nydusImageBinaryPath string
-	mode                 Mode
+	nydusdThreadNum      int
 	logLevel             string
 	logDir               string
 	logToStdout          bool
-	nydusdThreadNum      int
+	vpcRegistry          bool
+	mode                 Mode
 	imageMode            ImageMode
-	blobMgr              *BlobManager
 }
 
 func getBlobPath(dir string, blobDigest string) (string, error) {
@@ -323,7 +323,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 
 	options := []string{
 		"merge",
-		"--bootstrap", filepath.Join(fs.UpperPath(s.ParentIDs[0]), "image.boot"),
+		"--bootstrap", mergedBootstrap,
 	}
 	options = append(options, bootstraps...)
 	log.G(ctx).Infof("nydus image command %v", options)
@@ -368,9 +368,9 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	if err != nil {
 		return errors.Wrap(err, "failed to save stargz index")
 	}
+
 	blobID := digest.Digest(layerDigest).Hex()
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
-
 	if fs.fsDriver == config.FsDriverFscache {
 		blobMetaDir := fs.UpperPath(s.ID)
 		if err := os.MkdirAll(blobMetaDir, 0755); err != nil {
@@ -402,13 +402,13 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	return cmd.Run()
 }
 
+func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
+	return labels[label.StargzLayer] != ""
+}
+
 func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
 	_, dataOk := labels[label.NydusDataLayer]
 	return dataOk
-}
-
-func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
-	return labels[label.StargzLayer] != ""
 }
 
 func isRafsV6(buf []byte) bool {
@@ -553,6 +553,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	if !ok {
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
+
 	d, err := fs.newDaemon(ctx, snapshotID, imageID)
 	// if daemon already exists for snapshotID, just return
 	if err != nil {
@@ -566,11 +567,12 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			_ = fs.manager.DestroyDaemon(d)
 		}
 	}()
-	// if publicKey is not empty we should verify bootstrap file of image
+
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to find bootstrap file of daemon %s", d.ID))
 	}
+	// if publicKey is not empty we should verify bootstrap file of image
 	err = fs.verifier.Verify(labels, bootstrap)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to verify signature of daemon %s", d.ID))
@@ -580,6 +582,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		log.G(ctx).Errorf("failed to mount %s, %v", d.MountPoint(), err)
 		return errors.Wrap(err, fmt.Sprintf("failed to mount daemon %s", d.ID))
 	}
+
 	return nil
 }
 
@@ -620,6 +623,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 		log.L.Debugf("remove snapshot %s\n", daemon.ImageID)
 		fs.cacheMgr.SchedGC()
 	}
+
 	return nil
 }
 
@@ -639,8 +643,7 @@ func (fs *Filesystem) Cleanup(ctx context.Context) error {
 
 func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 	if !fs.hasDaemon() {
-		// For NoneDaemon mode, just return error to use snapshotter
-		// default mount point path
+		// For NoneDaemon mode, just return error to use snapshotter default mount point path
 		return "", fmt.Errorf("don't need nydus daemon of snapshot %s", snapshotID)
 	}
 
@@ -682,13 +685,10 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 		return err
 	}
 	if fs.mode == SharedInstance || fs.mode == PrefetchInstance {
-		err = d.SharedMount()
-		if err != nil {
+		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
 		}
-		return fs.addSnapshot(d.ImageID, labels)
-	}
-	if err := fs.manager.StartDaemon(d); err != nil {
+	} else if err := fs.manager.StartDaemon(d); err != nil {
 		return errors.Wrapf(err, "start daemon err")
 	}
 	return fs.addSnapshot(d.ImageID, labels)
@@ -870,20 +870,21 @@ func (fs *Filesystem) hasDaemon() bool {
 }
 
 func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
-	idStr, ok := labels[label.NydusDataBlobIDs]
-	if !ok {
-		// FIXME: for stargz layer, just return empty blobs here, we
-		// need to rethink how to implement blob cache GC for stargz.
-		if fs.StargzLayer(labels) {
-			return nil, nil
-		}
-		return nil, errors.New("no blob ids found")
-	}
 	var result []string
-	if err := json.Unmarshal([]byte(idStr), &result); err != nil {
-		return nil, err
+	if idStr, ok := labels[label.NydusDataBlobIDs]; ok {
+		if err := json.Unmarshal([]byte(idStr), &result); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
-	return result, nil
+
+	// FIXME: for stargz layer, just return empty blobs here, we
+	// need to rethink how to implement blob cache GC for stargz.
+	if fs.StargzLayer(labels) {
+		return nil, nil
+	}
+
+	return nil, errors.New("no blob ids found")
 }
 
 func DetectFsVersion(header []byte) (string, error) {
