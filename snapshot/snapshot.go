@@ -701,7 +701,7 @@ func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storag
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
-		if _, ok := info.Labels[label.VolatileOpt]; ok {
+		if _, ok := info.Labels[label.OverlayfsVolatileOpt]; ok {
 			options = append(options, "volatile")
 		}
 	} else if len(s.ParentIDs) == 1 {

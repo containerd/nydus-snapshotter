@@ -41,16 +41,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
-// TODO: Move snapshotter needed all image annotations to nydus-snapshotter.
-const LayerAnnotationNydusBlobIDs = "containerd.io/snapshot/nydus-blob-ids"
-
 // RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtener(256)
 // RafsV5 layout: 8K superblock
 // So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
 const MaxSuperBlockSize = 8 * 1024
 const RafsV6Magic = 0xE0F5E1E2
 const RafsV6ChunkInfoOffset = 1024 + 128 + 24
-const RafsV6SuppeOffset = 1024
+const RafsV6SuperBlockOffset = 1024
 const BootstrapFile = "image/image.boot"
 const LegacyBootstrapFile = "image.boot"
 
@@ -408,7 +405,7 @@ func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
 }
 
 func isRafsV6(buf []byte) bool {
-	return nativeEndian.Uint32(buf[RafsV6SuppeOffset:]) == RafsV6Magic
+	return nativeEndian.Uint32(buf[RafsV6SuperBlockOffset:]) == RafsV6Magic
 }
 
 func getBootstrapRealSizeInV6(buf []byte) uint64 {
@@ -866,7 +863,7 @@ func (fs *Filesystem) hasDaemon() bool {
 }
 
 func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
-	idStr, ok := labels[LayerAnnotationNydusBlobIDs]
+	idStr, ok := labels[label.NydusDataBlobIDs]
 	if !ok {
 		// FIXME: for stargz layer, just return empty blobs here, we
 		// need to rethink how to implement blob cache GC for stargz.
