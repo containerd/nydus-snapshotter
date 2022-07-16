@@ -10,7 +10,6 @@ package snapshot
 import (
 	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -39,13 +38,6 @@ import (
 	// Import the converter package so that it can be compiled during
 	// `go build` to ensure cross-compilation compatibility.
 	_ "github.com/containerd/nydus-snapshotter/pkg/converter"
-)
-
-const (
-	NydusRootfsV5      string = "v5"
-	NydusRootfsV6      string = "v6"
-	RafsV5SuperMagic   uint32 = 0x5241_4653
-	RafsSuperVersionV5 uint32 = 0x500
 )
 
 var _ snapshots.Snapshotter = &snapshotter{}
@@ -636,18 +628,14 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	}
 	defer f.Close()
 
-	header := make([]byte, 8)
-	_, err = f.Read(header)
+	header := make([]byte, 4096)
+	sz, err := f.Read(header)
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to read bootstrap")
 	}
-	magic := binary.LittleEndian.Uint32(header[0:4])
-	fsVersion := binary.LittleEndian.Uint32(header[4:8])
-	var version string
-	if magic == RafsV5SuperMagic && fsVersion == RafsSuperVersionV5 {
-		version = NydusRootfsV5
-	} else {
-		version = NydusRootfsV6
+	version, err := fspkg.DetectFsVersion(header[0:sz])
+	if err != nil {
+		return nil, errors.Wrapf(err, "remoteMounts: failed to detect filesystem version")
 	}
 	// when enable nydus-overlayfs, return unified mount slice for runc and kata
 	extraOption := &ExtraOption{

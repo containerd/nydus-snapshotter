@@ -45,11 +45,18 @@ import (
 // RafsV5 layout: 8K superblock
 // So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
 const MaxSuperBlockSize = 8 * 1024
-const RafsV6Magic = 0xE0F5E1E2
-const RafsV6ChunkInfoOffset = 1024 + 128 + 24
-const RafsV6SuperBlockOffset = 1024
-const BootstrapFile = "image/image.boot"
-const LegacyBootstrapFile = "image.boot"
+const (
+	RafsV5                 string = "v5"
+	RafsV6                 string = "v6"
+	RafsV5SuperVersion     uint32 = 0x500
+	RafsV5SuperMagic       uint32 = 0x5241_4653
+	RafsV6SuperMagic       uint32 = 0xE0F5_E1E2
+	RafsV6SuperBlockSize   uint32 = 1024 + 128 + 256
+	RafsV6SuperBlockOffset uint32 = 1024
+	RafsV6ChunkInfoOffset  uint32 = 1024 + 128 + 24
+	BootstrapFile          string = "image/image.boot"
+	LegacyBootstrapFile    string = "image.boot"
+)
 
 var nativeEndian binary.ByteOrder
 
@@ -405,7 +412,7 @@ func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
 }
 
 func isRafsV6(buf []byte) bool {
-	return nativeEndian.Uint32(buf[RafsV6SuperBlockOffset:]) == RafsV6Magic
+	return nativeEndian.Uint32(buf[RafsV6SuperBlockOffset:]) == RafsV6SuperMagic
 }
 
 func getBootstrapRealSizeInV6(buf []byte) uint64 {
@@ -877,4 +884,22 @@ func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func DetectFsVersion(header []byte) (string, error) {
+	if len(header) < 8 {
+		return "", errors.New("header buffer to DetectFsVersion is too small")
+	}
+	magic := binary.LittleEndian.Uint32(header[0:4])
+	fsVersion := binary.LittleEndian.Uint32(header[4:8])
+	if magic == RafsV5SuperMagic && fsVersion == RafsV5SuperVersion {
+		return RafsV5, nil
+	}
+
+	// FIXME: detech more magic numbers to reduce collision
+	if len(header) >= int(RafsV6SuperBlockSize) && isRafsV6(header) {
+		return RafsV6, nil
+	}
+
+	return "", errors.New("unknown file system header")
 }
