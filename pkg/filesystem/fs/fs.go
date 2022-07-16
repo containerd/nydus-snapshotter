@@ -231,35 +231,37 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	return d, nil
 }
 
-func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) bool {
+func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
 	if fs.stargzResolver == nil {
-		return false
+		return false, "", "", nil
 	}
 	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
-		return false
+		return false, "", "", nil
 	}
+
 	log.G(ctx).Infof("image ref %s digest %s", ref, layerDigest)
 	keychain, err := auth.GetKeyChainByRef(ref, labels)
 	if err != nil {
 		logrus.WithError(err).Warn("get key chain by ref")
-		return false
+		return false, ref, layerDigest, nil
 	}
 	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
 	if err != nil {
 		logrus.WithError(err).Warn("get stargz blob")
-		return false
+		return false, ref, layerDigest, nil
 	}
 	off, err := blob.GetTocOffset()
 	if err != nil {
 		logrus.WithError(err).Warn("get toc offset")
-		return false
+		return false, ref, layerDigest, nil
 	}
 	if off <= 0 {
 		logrus.WithError(err).Warnf("invalid stargz toc offset %d", off)
-		return false
+		return false, ref, layerDigest, nil
 	}
-	return true
+
+	return true, ref, layerDigest, blob
 }
 
 func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapshot) error {
@@ -335,7 +337,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 	return cmd.Run()
 }
 
-func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
+func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.Blob, ref, layerDigest string, s storage.Snapshot, labels map[string]string) error {
 	if fs.stargzResolver == nil {
 		return fmt.Errorf("stargz is not enabled")
 	}
@@ -344,18 +346,7 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 		duration := time.Since(start)
 		log.G(ctx).Infof("total stargz prepare layer duration %d", duration.Milliseconds())
 	}()
-	ref, layerDigest := registry.ParseLabels(labels)
-	if ref == "" || layerDigest == "" {
-		return fmt.Errorf("can not find ref and digest from label %+v", labels)
-	}
-	keychain, err := auth.GetKeyChainByRef(ref, labels)
-	if err != nil {
-		return errors.Wrap(err, "get key chain")
-	}
-	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get blob from ref %s, digest %s", ref, layerDigest)
-	}
+
 	r, err := blob.ReadToc()
 	if err != nil {
 		return errors.Wrapf(err, "failed to read toc from ref %s, digest %s", ref, layerDigest)

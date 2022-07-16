@@ -282,8 +282,8 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		}
 
 		// Check if image layer is estargz layer
-		if o.fs.SupportStargz(ctx, base.Labels) {
-			err = o.fs.PrepareStargzMetaLayer(ctx, s, base.Labels)
+		if ok, ref, layerDigest, blob := o.fs.SupportStargz(ctx, base.Labels); ok {
+			err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, base.Labels)
 			if err != nil {
 				logCtx.Errorf("failed to prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
 			} else {
