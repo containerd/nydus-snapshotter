@@ -254,27 +254,17 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		return nil, err
 	}
 
-	logCtx.Infof("Preparing. Key=%s, Parent=%s, Labels %v", key, parent, base.Labels)
+	logCtx.Infof("Preparing snapshot with labels %v", base.Labels)
 	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
-		// check if image layer is nydus layer
+		// check if image layer is nydus data layer
 		if o.fs.Support(ctx, base.Labels) {
-			logCtx.Infof("nydus data/meta layer, skip download and unpack %s", key)
-			_, isBootstrapLayer := base.Labels[label.NydusMetaLayer]
-			if isBootstrapLayer {
-				err = o.fs.PrepareMetaLayer(ctx, s, base.Labels)
-				if err != nil {
-					logCtx.Errorf("failed to prepare nydus layer of snapshot ID %s, err: %v", s.ID, err)
-					return nil, err
-				}
+			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
+			err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
+			if err != nil {
+				logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
+				return nil, err
 			}
-			_, isDataLayer := base.Labels[label.NydusDataLayer]
-			if isDataLayer {
-				err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
-				if err != nil {
-					logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
-					return nil, err
-				}
-			}
+
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)

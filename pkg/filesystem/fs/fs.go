@@ -7,8 +7,6 @@
 package fs
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -461,136 +459,6 @@ func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) boo
 	return dataOk
 }
 
-func isRafsV6(buf []byte) bool {
-	return nativeEndian.Uint32(buf[RafsV6SuperBlockOffset:]) == RafsV6SuperMagic
-}
-
-func getBootstrapRealSizeInV6(buf []byte) uint64 {
-	return nativeEndian.Uint64(buf[RafsV6ChunkInfoOffset:])
-}
-
-func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap *os.File) error {
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		log.L.Infof("read bootstrap duration %d", duration.Milliseconds())
-	}()
-	rd, err := gzip.NewReader(reader)
-	if err != nil {
-		return errors.Wrap(err, "gzip new reader faield")
-	}
-	found := false
-	tr := tar.NewReader(rd)
-	var finalBootstarp *os.File
-	for {
-		h, err := tr.Next()
-		if err != nil {
-			return errors.Wrap(err, "can't get next tar entry")
-		}
-		if h.Name == BootstrapFile {
-			found = true
-			finalBootstarp = bootstrap
-			break
-		}
-
-		if h.Name == LegacyBootstrapFile {
-			found = true
-			finalBootstarp = LegacyBootstrap
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("not found file image.boot in targz")
-	}
-	buf := make([]byte, MaxSuperBlockSize)
-	_, err = tr.Read(buf)
-	if err != nil {
-		return errors.Wrap(err, "read max super block size from bootstrap file failed")
-	}
-	_, err = finalBootstarp.Write(buf)
-
-	if err != nil {
-		return errors.Wrap(err, "write to bootstrap file failed")
-	}
-
-	if isRafsV6(buf) {
-		size := getBootstrapRealSizeInV6(buf)
-		if size < MaxSuperBlockSize {
-			return fmt.Errorf("invalid bootstrap size %d", size)
-		}
-		// The content of the chunkinfo part is not needed in the v6 format, so it is discarded here.
-		_, err := io.CopyN(finalBootstarp, tr, int64(size-MaxSuperBlockSize))
-		return err
-	}
-
-	// Copy remain data to bootstrap file
-	_, err = io.Copy(finalBootstarp, tr)
-	return err
-}
-
-func (fs *Filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		log.G(ctx).Infof("total nydus prepare layer duration %d", duration.Milliseconds())
-	}()
-	ref, layerDigest := registry.ParseLabels(labels)
-	if ref == "" || layerDigest == "" {
-		return fmt.Errorf("can not find ref and digest from label %+v", labels)
-	}
-
-	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
-	if err != nil {
-		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
-	}
-	defer readerCloser.Close()
-
-	workdir := filepath.Join(fs.UpperPath(s.ID), BootstrapFile)
-	legacy := filepath.Join(fs.UpperPath(s.ID), LegacyBootstrapFile)
-	err = os.Mkdir(filepath.Dir(workdir), 0755)
-	if err != nil {
-		return errors.Wrap(err, "failed to create bootstrap dir")
-	}
-	nydusBootstrap, err := os.OpenFile(workdir, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
-		return errors.Wrap(err, "failed to create bootstrap file")
-	}
-
-	legacyNydusBootstrap, err := os.OpenFile(legacy, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
-		return errors.Wrap(err, "failed to create legacy bootstrap file")
-	}
-
-	defer func() {
-		closeEmptyFile := []struct {
-			file *os.File
-			path string
-		}{
-			{
-				file: nydusBootstrap,
-				path: workdir,
-			},
-			{
-				file: legacyNydusBootstrap,
-				path: legacy,
-			},
-		}
-		for _, in := range closeEmptyFile {
-			size, err := in.file.Seek(0, io.SeekEnd)
-			if err != nil {
-				log.G(ctx).Warnf("failed to seek bootstrap %s file, error %s", workdir, err)
-			}
-			in.file.Close()
-			if size == 0 {
-				os.Remove(in.path)
-			}
-		}
-	}()
-	log.G(ctx).Infof("prepare write to bootstrap to %s", workdir)
-	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
-}
-
 // Mount will be called when containerd snapshotter prepare remote snapshotter
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) (err error) {
@@ -935,6 +803,10 @@ func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
 	}
 
 	return nil, errors.New("no blob ids found")
+}
+
+func isRafsV6(buf []byte) bool {
+	return nativeEndian.Uint32(buf[RafsV6SuperBlockOffset:]) == RafsV6SuperMagic
 }
 
 func DetectFsVersion(header []byte) (string, error) {
