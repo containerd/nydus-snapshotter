@@ -248,13 +248,13 @@ func (o *snapshotter) prepareRemoteSnapshot(ctx context.Context, id string, labe
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
 	logCtx := log.G(ctx).WithField("key", key).WithField("parent", parent)
-
 	base, s, err := o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
 	if err != nil {
 		return nil, err
 	}
+	logCtx.Infof("prepare snapshot with labels %v", base.Labels)
 
-	logCtx.Infof("Preparing snapshot with labels %v", base.Labels)
+	// Handle nydus/stargz image layers.
 	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
 		// check if image layer is nydus data layer
 		if o.fs.Support(ctx, base.Labels) {
@@ -275,7 +275,8 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		if ok, ref, layerDigest, blob := o.fs.SupportStargz(ctx, base.Labels); ok {
 			err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, base.Labels)
 			if err != nil {
-				logCtx.Errorf("failed to prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
+				logCtx.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
+				// fallback to default OCIv1 handler
 			} else {
 				// Mark this snapshot as stargz layer
 				base.Labels[label.StargzLayer] = "true"
@@ -316,14 +317,14 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			return o.remoteMounts(ctx, s, id, info.Labels)
 		}
 	}
+
 	return o.mounts(ctx, base, s)
 }
 
 func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
 	return snapshot.FindSnapshot(ctx, o.ms, key, func(info snapshots.Info) bool {
 		_, ok := info.Labels[label.NydusMetaLayer]
-		if !ok {
-			// For stargz support
+		if !ok && o.fs.StargzEnabled() {
 			_, ok = info.Labels[label.StargzLayer]
 		}
 		return ok
@@ -586,12 +587,13 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	} else if len(s.ParentIDs) == 1 {
 		return bindMount(o.upperPath(s.ParentIDs[0])), nil
 	}
+
 	lowerDirOption := fmt.Sprintf("lowerdir=%s", o.upperPath(id))
 	overlayOptions = append(overlayOptions, lowerDirOption)
 
 	// when hasDaemon and not enableNydusOverlayFS, return overlayfs mount slice
 	if !o.enableNydusOverlayFS && o.hasDaemon {
-		log.G(ctx).Infof("mount options %v", overlayOptions)
+		log.G(ctx).Infof("remote mount options %v", overlayOptions)
 		return overlayMount(overlayOptions), nil
 	}
 
@@ -648,7 +650,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal NydusOption")
 	}
 	// XXX: Log options without extraoptions as it might contain secrets.
-	log.G(ctx).Infof("mount options %v", overlayOptions)
+	log.G(ctx).Infof("fuse.nydus-overlayfs mount options %v", overlayOptions)
 	// base64 to filter easily in `nydus-overlayfs`
 	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
 	options := append(overlayOptions, opt)
@@ -725,7 +727,7 @@ func (o *snapshotter) prepareDirectory(ctx context.Context, snapshotDir string, 
 		return "", errors.Wrap(err, "failed to create temp dir")
 	}
 
-	if err := os.Mkdir(filepath.Join(td, "fs"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(td, "fs"), 0750); err != nil {
 		return td, err
 	}
 

@@ -236,8 +236,12 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	return d, nil
 }
 
+func (fs *Filesystem) StargzEnabled() bool {
+	return fs.stargzResolver != nil
+}
+
 func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
-	if fs.stargzResolver == nil {
+	if !fs.StargzEnabled() {
 		return false, "", "", nil
 	}
 	ref, layerDigest := registry.ParseLabels(labels)
@@ -365,7 +369,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 }
 
 func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.Blob, ref, layerDigest string, s storage.Snapshot, labels map[string]string) error {
-	if fs.stargzResolver == nil {
+	if !fs.StargzEnabled() {
 		return fmt.Errorf("stargz is not enabled")
 	}
 
@@ -526,6 +530,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	}
 
 	id := filepath.Base(mountPoint)
+	log.L.Logger.Debugf("umount snapshot %s", id)
 	daemon, err := fs.manager.GetBySnapshotID(id)
 	if err != nil {
 		return err
