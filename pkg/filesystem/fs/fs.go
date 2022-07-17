@@ -463,7 +463,7 @@ func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) boo
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) (err error) {
 	// If NoneDaemon mode, we don't mount nydus on host
-	if fs.mode == NoneInstance {
+	if !fs.hasDaemon() {
 		return nil
 	}
 
@@ -521,7 +521,7 @@ func (fs *Filesystem) WaitUntilReady(ctx context.Context, snapshotID string) err
 }
 
 func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
-	if fs.mode == NoneInstance {
+	if !fs.hasDaemon() {
 		return nil
 	}
 
