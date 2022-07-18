@@ -50,9 +50,12 @@ func ensureSocketNotExists(listeningSocketPath string) error {
 	if err := os.MkdirAll(filepath.Dir(listeningSocketPath), 0700); err != nil {
 		return errors.Wrapf(err, "failed to create directory %q", filepath.Dir(listeningSocketPath))
 	}
-	_, err := os.Stat(listeningSocketPath)
+	finfo, err := os.Stat(listeningSocketPath)
 	// err is nil means listening socket path exists, remove before serve
 	if err == nil {
+		if finfo.Mode()&os.ModeSocket == 0 {
+			return errors.Errorf("file %s is not a socket", listeningSocketPath)
+		}
 		err := os.Remove(listeningSocketPath)
 		if err != nil {
 			return err

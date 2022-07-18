@@ -140,22 +140,17 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	if d.FsDriver == config.FsDriverFscache {
 		args = []string{
 			"daemon",
-			"--apisock", d.GetAPISock(),
 			"--fscache", m.cacheDir,
-			"--log-level", d.LogLevel,
-		}
-	} else {
-		args = []string{
-			"--apisock", d.GetAPISock(),
-			"--log-level", d.LogLevel,
 		}
 		nydusdThreadNum := d.NydusdThreadNum()
 		if nydusdThreadNum != "" {
-			args = append(args, "--thread-num", nydusdThreadNum)
+			args = append(args, "--fscache-threads", nydusdThreadNum)
 		}
-
-		if !d.LogToStdout {
-			args = append(args, "--log-file", d.LogFile())
+	} else {
+		args = []string{"fuse"}
+		nydusdThreadNum := d.NydusdThreadNum()
+		if nydusdThreadNum != "" {
+			args = append(args, "--thread-num", nydusdThreadNum)
 		}
 		if d.IsMultipleDaemon() {
 			bootstrap, err := d.BootstrapFile()
@@ -178,6 +173,12 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		} else {
 			return nil, errors.Errorf("DaemonMode %s doesn't have daemon configured", d.DaemonMode)
 		}
+	}
+
+	args = append(args, "--apisock", d.GetAPISock())
+	args = append(args, "--log-level", d.LogLevel)
+	if !d.LogToStdout {
+		args = append(args, "--log-file", d.LogFile())
 	}
 
 	log.L.Infof("start nydus daemon: %s %s", m.nydusdBinaryPath, strings.Join(args, " "))

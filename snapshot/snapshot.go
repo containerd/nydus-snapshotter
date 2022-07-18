@@ -55,11 +55,11 @@ type snapshotter struct {
 	root                 string
 	nydusdPath           string
 	ms                   *storage.MetaStore
-	syncRemove           bool
 	fs                   *fspkg.Filesystem
 	manager              *process.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
+	syncRemove           bool
 	cleanupOnClose       bool
 }
 
@@ -487,6 +487,14 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	if err != nil {
 		return nil, storage.Snapshot{}, err
 	}
+	rollback := true
+	defer func() {
+		if rollback {
+			if rerr := t.Rollback(); rerr != nil {
+				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
+			}
+		}
+	}()
 
 	var base snapshots.Info
 	for _, opt := range opts {
@@ -497,36 +505,23 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 
 	var td, path string
 	defer func() {
-		if err != nil {
-			if td != "" {
-				if err1 := o.cleanupSnapshotDirectory(ctx, td); err1 != nil {
-					log.G(ctx).WithError(err1).Warn("failed to cleanup temp snapshot directory")
-				}
+		if td != "" {
+			if err1 := o.cleanupSnapshotDirectory(ctx, td); err1 != nil {
+				log.G(ctx).WithError(err1).Warn("failed to cleanup temp snapshot directory")
 			}
-			if path != "" {
-				if err1 := o.cleanupSnapshotDirectory(ctx, path); err1 != nil {
-					log.G(ctx).WithError(err1).WithField("path", path).Error("failed to reclaim snapshot directory, directory may need removal")
-					err = errors.Wrapf(err, "failed to remove path: %v", err1)
-				}
+		}
+		if path != "" {
+			if err1 := o.cleanupSnapshotDirectory(ctx, path); err1 != nil {
+				log.G(ctx).WithError(err1).WithField("path", path).Error("failed to reclaim snapshot directory, directory may need removal")
+				err = errors.Wrapf(err, "failed to remove path: %v", err1)
 			}
 		}
 	}()
 
 	td, err = o.prepareDirectory(ctx, o.snapshotRoot(), kind)
 	if err != nil {
-		if rerr := t.Rollback(); rerr != nil {
-			log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
-		}
 		return nil, storage.Snapshot{}, errors.Wrap(err, "failed to create prepare snapshot dir")
 	}
-	rollback := true
-	defer func() {
-		if rollback {
-			if rerr := t.Rollback(); rerr != nil {
-				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
-			}
-		}
-	}()
 
 	s, err := storage.CreateSnapshot(ctx, kind, key, parent, opts...)
 	if err != nil {
@@ -539,10 +534,8 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 			return nil, storage.Snapshot{}, errors.Wrap(err, "failed to stat parent")
 		}
 
+		// FIXME: Why only change owner of having parent?
 		if err := lchown(filepath.Join(td, "fs"), st); err != nil {
-			if rerr := t.Rollback(); rerr != nil {
-				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
-			}
 			return nil, storage.Snapshot{}, errors.Wrap(err, "failed to chown")
 		}
 	}
@@ -557,6 +550,7 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	if err = t.Commit(); err != nil {
 		return nil, storage.Snapshot{}, errors.Wrap(err, "commit failed")
 	}
+	path = ""
 
 	return &base, s, nil
 }
