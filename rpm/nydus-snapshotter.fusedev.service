@@ -1,0 +1,24 @@
+[Unit]
+Description=nydus snapshotter
+After=network.target
+Before=containerd.service
+
+[Service]
+Type=simple
+Environment=HOME=/root
+ExecStart=/usr/bin/containerd-nydus-grpc --config-path /etc/nydus/config.json \
+    --log-to-stdout --daemon-mode none --root /home/t4/containerd/io.containerd.snapshotter.v1.nydus \
+    --address /var/run/nydus_sn.sock \
+    --cache-dir /home/t4/containerd/io.containerd.snapshotter.v1.nydus/cache \
+    --enable-nydus-overlayfs \
+    --containerd-sock-address /var/run/containerd/containerd.sock \
+    --log-level info
+Restart=always
+RestartSec=1
+KillMode=process
+OOMScoreAdjust=-999
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

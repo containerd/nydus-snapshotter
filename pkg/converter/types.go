@@ -14,9 +14,9 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-type Layer struct {
+type BlobLayer struct {
 	// Digest represents the hash of whole tar blob.
-	Digest digest.Digest
+	Name string
 	// ReaderAt holds the reader of whole tar blob.
 	ReaderAt content.ReaderAt
 }

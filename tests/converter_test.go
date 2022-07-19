@@ -314,9 +314,9 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	require.NoError(t, err)
 	defer ra.Close()
 
-	layers := []converter.Layer{
+	layers := []converter.BlobLayer{
 		{
-			Digest:   lowerNydusBlobDigest,
+			Name:     lowerNydusBlobDigest.Encoded(),
 			ReaderAt: ra,
 		},
 	}
@@ -377,13 +377,13 @@ func TestConverter(t *testing.T) {
 	require.NoError(t, err)
 	defer upperTarRa.Close()
 
-	layers := []converter.Layer{
+	layers := []converter.BlobLayer{
 		{
-			Digest:   lowerNydusBlobDigest,
+			Name:     lowerNydusBlobDigest.Encoded(),
 			ReaderAt: lowerTarRa,
 		},
 		{
-			Digest:   upperNydusBlobDigest,
+			Name:     upperNydusBlobDigest.Encoded(),
 			ReaderAt: upperTarRa,
 		},
 	}

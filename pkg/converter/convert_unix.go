@@ -333,7 +333,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 }
 
 // Merge multiple nydus bootstraps (from each blob layer of image) to a final bootstrap.
-func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
+func Merge(ctx context.Context, layers []BlobLayer, dest io.Writer, opt MergeOption) error {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return errors.Wrap(err, "ensure work directory")
@@ -343,13 +343,13 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	eg, ctx := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
 	for idx := range layers {
-		sourceBootstrapPaths = append(sourceBootstrapPaths, filepath.Join(workDir, layers[idx].Digest.Hex()))
+		sourceBootstrapPaths = append(sourceBootstrapPaths, filepath.Join(workDir, layers[idx].Name))
 		eg.Go(func(idx int) func() error {
 			return func() error {
 				layer := layers[idx]
 
-				// Use the hex hash string of whole tar blob as the bootstrap name.
-				bootstrap, err := os.Create(filepath.Join(workDir, layer.Digest.Hex()))
+				// Use the hex hash string of whole tar blob as the boostrap name.
+				bootstrap, err := os.Create(filepath.Join(workDir, layer.Name))
 				if err != nil {
 					return errors.Wrap(err, "create source bootstrap")
 				}
@@ -653,7 +653,7 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 // The media type of the nydus bootstrap layer is "application/vnd.oci.image.layer.v1.tar+gzip".
 func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
 	// Extracts nydus bootstrap from nydus format for each layer.
-	layers := []Layer{}
+	layers := []BlobLayer{}
 	blobIDs := []string{}
 
 	var chainID digest.Digest
@@ -664,8 +664,8 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		}
 		defer ra.Close()
 		blobIDs = append(blobIDs, blobDesc.Digest.Hex())
-		layers = append(layers, Layer{
-			Digest:   blobDesc.Digest,
+		layers = append(layers, BlobLayer{
+			Name:     blobDesc.Digest.Encoded(),
 			ReaderAt: ra,
 		})
 		if chainID == "" {

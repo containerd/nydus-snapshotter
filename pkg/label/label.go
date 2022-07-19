@@ -30,6 +30,8 @@ const (
 	NydusImagePullUsername = "containerd.io/snapshot/pullusername"
 	// A bool flag to enable integrity verification of meta data blob
 	NydusSignature = "containerd.io/snapshot/nydus-signature"
+	// Annotation containing the blob name (actually chainID of source OCI image) converted by the snapshotter.
+	NydusConvertedLayer = "containerd.io/snapshot/nydus-converted-blob"
 
 	// A bool flag to mark the blob as a estargz data blob, set by the snapshotter.
 	StargzLayer = "containerd.io/snapshot/stargz"

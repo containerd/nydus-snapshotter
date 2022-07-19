@@ -116,7 +116,7 @@ type Filesystem struct {
 	logToStdout          bool
 	vpcRegistry          bool
 	mode                 Mode
-	imageMode            ImageMode
+	ImageMode            ImageMode
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -128,7 +128,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			return nil, err
 		}
 	}
-	if fs.imageMode == PreLoad {
+	if fs.ImageMode == PreLoad {
 		fs.blobMgr = NewBlobManager(fs.daemonCfg.Device.Backend.Config.Dir)
 		go func() {
 			err := fs.blobMgr.Run(ctx)
@@ -172,7 +172,7 @@ func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 		log.G(ctx).Infof("total nydus prepare data layer duration %d ms", duration.Milliseconds())
 	}()
 
-	ref, layerDigest := registry.ParseLabels(labels)
+	ref, _, layerDigest, _ := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return fmt.Errorf("can not find ref and digest from label %+v", labels)
 	}
@@ -262,7 +262,7 @@ func (fs *Filesystem) IsStargzDataLayer(ctx context.Context, labels map[string]s
 	if !fs.StargzEnabled() {
 		return false, "", "", nil
 	}
-	ref, layerDigest := registry.ParseLabels(labels)
+	ref, _, layerDigest, _ := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
 		return false, "", "", nil
 	}
@@ -547,7 +547,7 @@ func (fs *Filesystem) DelSnapshot(imageID string) error {
 	if err := fs.cacheMgr.DelSnapshot(imageID); err != nil {
 		return errors.Wrap(err, "del snapshot err")
 	}
-	log.L.Debugf("remove snapshot %s\n", imageID)
+	log.L.Debugf("cache manager: remove snapshot %s\n", imageID)
 	fs.cacheMgr.SchedGC()
 	return nil
 }
@@ -648,16 +648,10 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 	return nil
 }
 
-func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
+func (fs *Filesystem) AddSnapshot(imageID string, blobs []string) error {
 	// Do nothing if there's no cacheMgr
 	if fs.cacheMgr == nil {
 		return nil
-	}
-
-	imageID, _ := registry.ParseLabels(labels)
-	blobs, err := fs.getBlobIDs(labels)
-	if err != nil {
-		return err
 	}
 	log.L.Infof("image %s with blob caches %v", imageID, blobs)
 	return fs.cacheMgr.AddSnapshot(imageID, blobs)
@@ -824,7 +818,7 @@ func (fs *Filesystem) hasDaemon() bool {
 	return fs.mode != NoneInstance && fs.mode != PrefetchInstance
 }
 
-func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
+func (fs *Filesystem) GetBlobIDs(labels map[string]string) ([]string, error) {
 	var result []string
 	if idStr, ok := labels[label.NydusDataBlobIDs]; ok {
 		if err := json.Unmarshal([]byte(idStr), &result); err != nil {

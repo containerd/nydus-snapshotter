@@ -60,6 +60,8 @@ type Args struct {
 	CleanupOnClose           bool
 	KubeconfigPath           string
 	EnableKubeconfigKeychain bool
+	ContainerdAddress        string
+	ConverterTimeout         time.Duration
 }
 
 type Flags struct {
@@ -94,6 +96,16 @@ func buildFlags(args *Args) []cli.Flag {
 			Aliases:     []string{"c", "config"},
 			Usage:       "path to the configuration `FILE`",
 			Destination: &args.ConfigPath,
+		},
+		&cli.StringFlag{
+			Name:        "containerd-sock-address",
+			Usage:       "path to the containerd socket address",
+			Destination: &args.ContainerdAddress,
+		},
+		&cli.DurationFlag{
+			Name:        "converter-timeout",
+			Usage:       "exec timeout of oci to nydus converter",
+			Destination: &args.ConverterTimeout,
 		},
 		&cli.BoolFlag{
 			Name:        "convert-vpc-registry",
@@ -300,6 +312,8 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.Address = args.Address
 	cfg.CleanupOnClose = args.CleanupOnClose
 	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
+	cfg.ContainerdAddress = args.ContainerdAddress
+	cfg.ConverterTimeout = args.ConverterTimeout
 	cfg.DisableCacheManager = args.DisableCacheManager
 	cfg.EnableMetrics = args.EnableMetrics
 	cfg.EnableStargz = args.EnableStargz

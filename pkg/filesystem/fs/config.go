@@ -166,7 +166,7 @@ func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
 	return func(d *Filesystem) error {
 		if cfg.Device.Backend.BackendType == "localfs" &&
 			len(cfg.Device.Backend.Config.Dir) != 0 {
-			d.imageMode = PreLoad
+			d.ImageMode = PreLoad
 		}
 		return nil
 	}

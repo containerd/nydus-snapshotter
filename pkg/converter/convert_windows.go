@@ -22,7 +22,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	panic("not implemented")
 }
 
-func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
+func Merge(ctx context.Context, layers []BlobLayer, dest io.Writer, opt MergeOption) error {
 	panic("not implemented")
 }
 

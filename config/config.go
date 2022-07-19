@@ -66,6 +66,8 @@ type Config struct {
 	RotateLogMaxAge          int           `toml:"log_rotate_max_age"`
 	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
 	RotateLogCompress        bool          `toml:"log_rotate_compress"`
+	ContainerdAddress        string        `toml:"containerd_sock_address"`
+	ConverterTimeout         time.Duration `toml:"converter_timeout"`
 }
 
 func (c *Config) FillupWithDefaults() error {
