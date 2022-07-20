@@ -12,24 +12,23 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/transport"
 	"github.com/google/go-containerregistry/pkg/name"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/pkg/errors"
 )
 
-const HTTPClientTimeOut = time.Second * 30
+const HTTPClientTimeOut = time.Second * 60
 
 type Resolver struct {
-	transport http.RoundTripper
+	res transport.Resolve
 }
 
 func NewResolver() *Resolver {
 	resolver := Resolver{
-		transport: http.DefaultTransport,
+		res: transport.NewPool(),
 	}
 	return &resolver
 }
@@ -48,21 +47,11 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 	keychain := auth.GetRegistryKeyChain(host, labels)
 
 	var tr http.RoundTripper
-	if keychain == nil {
-		// Fallback to use no auth RoundTripper
-		log.L.Infof("fallback to use no auth round tripper")
-		tr = r.transport
-	} else {
-		tr, err = registry.AuthnTransport(nref, r.transport, keychain)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failt to create authn transport %v", keychain)
-		}
+	url, tr, err := r.res.Resolve(nref, digest, keychain)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to create authn transport %v", keychain)
 	}
-	url := fmt.Sprintf("%s://%s/v2/%s/blobs/%s",
-		nref.Context().Registry.Scheme(),
-		nref.Context().RegistryStr(),
-		nref.Context().RepositoryStr(),
-		digest)
 
 	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
