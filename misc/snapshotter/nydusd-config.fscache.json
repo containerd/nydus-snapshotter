@@ -1,0 +1,10 @@
+{
+    "type": "bootstrap",
+    "config": {
+        "backend_type": "registry",
+        "backend_config": {
+            "scheme": "https"
+        },
+        "cache_type": "fscache"
+    }
+}
