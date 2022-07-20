@@ -7,8 +7,6 @@
 package fs
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -41,18 +39,22 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
-// TODO: Move snapshotter needed all image annotations to nydus-snapshotter.
-const LayerAnnotationNydusBlobIDs = "containerd.io/snapshot/nydus-blob-ids"
-
 // RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtener(256)
 // RafsV5 layout: 8K superblock
 // So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
 const MaxSuperBlockSize = 8 * 1024
-const RafsV6Magic = 0xE0F5E1E2
-const RafsV6ChunkInfoOffset = 1024 + 128 + 24
-const RafsV6SuppeOffset = 1024
-const BootstrapFile = "image/image.boot"
-const LegacyBootstrapFile = "image.boot"
+const (
+	RafsV5                 string = "v5"
+	RafsV6                 string = "v6"
+	RafsV5SuperVersion     uint32 = 0x500
+	RafsV5SuperMagic       uint32 = 0x5241_4653
+	RafsV6SuperMagic       uint32 = 0xE0F5_E1E2
+	RafsV6SuperBlockSize   uint32 = 1024 + 128 + 256
+	RafsV6SuperBlockOffset uint32 = 1024
+	RafsV6ChunkInfoOffset  uint32 = 1024 + 128 + 24
+	BootstrapFile          string = "image/image.boot"
+	LegacyBootstrapFile    string = "image.boot"
+)
 
 var nativeEndian binary.ByteOrder
 
@@ -88,32 +90,24 @@ func init() {
 
 type Filesystem struct {
 	meta.FileSystemMeta
+	blobMgr              *BlobManager
 	manager              *process.Manager
 	cacheMgr             *cache.Manager
-	verifier             *signature.Verifier
 	sharedDaemon         *daemon.Daemon
 	daemonCfg            config.DaemonConfig
 	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
-	vpcRegistry          bool
+	verifier             *signature.Verifier
 	fsDriver             string
 	nydusdBinaryPath     string
 	nydusImageBinaryPath string
-	mode                 Mode
+	nydusdThreadNum      int
 	logLevel             string
 	logDir               string
 	logToStdout          bool
-	nydusdThreadNum      int
+	vpcRegistry          bool
+	mode                 Mode
 	imageMode            ImageMode
-	blobMgr              *BlobManager
-}
-
-func getBlobPath(dir string, blobDigest string) (string, error) {
-	digest, err := digest.Parse(blobDigest)
-	if err != nil {
-		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
-	}
-	return filepath.Join(dir, digest.Encoded()), nil
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -150,7 +144,7 @@ func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, key string, async bo
 }
 
 func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
-	if fs.imageMode != PreLoad {
+	if fs.blobMgr == nil {
 		return nil
 	}
 
@@ -182,21 +176,36 @@ func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 	}
 	defer readerCloser.Close()
 
-	blobFile, err := os.OpenFile(blobPath, os.O_CREATE|os.O_RDWR, 0666)
+	blobFile, err := ioutil.TempFile(fs.blobMgr.GetBlobDir(), "downloading-")
 	if err != nil {
-		return errors.Wrap(err, "failed to create blob file")
+		return errors.Wrap(err, "create temp file for downloading blob")
 	}
-	defer blobFile.Close()
+	defer func() {
+		if err != nil {
+			os.Remove(blobFile.Name())
+		}
+		blobFile.Close()
+	}()
 
 	_, err = io.Copy(blobFile, readerCloser)
 	if err != nil {
-		if err := os.Remove(blobPath); err != nil {
-			log.G(ctx).Warnf("failed to remove blob file %s", blobPath)
-		}
 		return errors.Wrap(err, "write blob to local file")
 	}
+	err = os.Rename(blobFile.Name(), blobPath)
+	if err != nil {
+		return errors.Wrap(err, "rename temp file as blob file")
+	}
+	os.Chmod(blobFile.Name(), 0440)
 
-	return err
+	return nil
+}
+
+func getBlobPath(dir string, blobDigest string) (string, error) {
+	digest, err := digest.Parse(blobDigest)
+	if err != nil {
+		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
+	}
+	return filepath.Join(dir, digest.Encoded()), nil
 }
 
 func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
@@ -227,39 +236,46 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	return d, nil
 }
 
-func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) bool {
-	if fs.stargzResolver == nil {
-		return false
+func (fs *Filesystem) StargzEnabled() bool {
+	return fs.stargzResolver != nil
+}
+
+func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
+	if !fs.StargzEnabled() {
+		return false, "", "", nil
 	}
 	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
-		return false
+		return false, "", "", nil
 	}
+
 	log.G(ctx).Infof("image ref %s digest %s", ref, layerDigest)
 	keychain, err := auth.GetKeyChainByRef(ref, labels)
 	if err != nil {
 		logrus.WithError(err).Warn("get key chain by ref")
-		return false
+		return false, ref, layerDigest, nil
 	}
 	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
 	if err != nil {
 		logrus.WithError(err).Warn("get stargz blob")
-		return false
+		return false, ref, layerDigest, nil
 	}
 	off, err := blob.GetTocOffset()
 	if err != nil {
 		logrus.WithError(err).Warn("get toc offset")
-		return false
+		return false, ref, layerDigest, nil
 	}
 	if off <= 0 {
 		logrus.WithError(err).Warnf("invalid stargz toc offset %d", off)
-		return false
+		return false, ref, layerDigest, nil
 	}
-	return true
+
+	return true, ref, layerDigest, blob
 }
 
 func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapshot) error {
-	mergedBootstrap := filepath.Join(fs.UpperPath(s.ParentIDs[0]), "image.boot")
+	mergedDir := fs.UpperPath(s.ParentIDs[0])
+	mergedBootstrap := filepath.Join(mergedDir, "image.boot")
 	if _, err := os.Stat(mergedBootstrap); err == nil {
 		return nil
 	}
@@ -311,52 +327,71 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 			if _, err := io.Copy(targetFile, sourceFile); err != nil {
 				return errors.Wrap(err, "copy source blob meta to target")
 			}
+			os.Chmod(targetPath, 0440)
 		}
 
 		bootstrapPath := filepath.Join(fs.UpperPath(snapshotID), bootstrapName)
 		bootstraps = append([]string{bootstrapPath}, bootstraps...)
 	}
 
+	tf, err := ioutil.TempFile(mergedDir, "merging-stargz")
+	if err != nil {
+		return errors.Wrap(err, "create temp file for merging stargz layers")
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(tf.Name())
+		}
+		tf.Close()
+	}()
+
 	options := []string{
 		"merge",
-		"--bootstrap", filepath.Join(fs.UpperPath(s.ParentIDs[0]), "image.boot"),
+		"--bootstrap", tf.Name(),
 	}
 	options = append(options, bootstraps...)
-	log.G(ctx).Infof("nydus image command %v", options)
-
 	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	log.G(ctx).Infof("nydus image command %v", options)
+	err = cmd.Run()
+	if err != nil {
+		return errors.Wrap(err, "merging stargz layers")
+	}
 
-	return cmd.Run()
+	err = os.Rename(tf.Name(), mergedBootstrap)
+	if err != nil {
+		return errors.Wrap(err, "rename merged stargz layers")
+	}
+	os.Chmod(mergedBootstrap, 0440)
+
+	return nil
 }
 
-func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
-	if fs.stargzResolver == nil {
+func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.Blob, ref, layerDigest string, s storage.Snapshot, labels map[string]string) error {
+	if !fs.StargzEnabled() {
 		return fmt.Errorf("stargz is not enabled")
 	}
+
+	upperPath := fs.UpperPath(s.ID)
+	blobID := digest.Digest(layerDigest).Hex()
+	convertedBootstrap := filepath.Join(upperPath, blobID)
+	stargzFile := filepath.Join(upperPath, stargz.TocFileName)
+	if _, err := os.Stat(convertedBootstrap); err == nil {
+		return nil
+	}
+
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
 		log.G(ctx).Infof("total stargz prepare layer duration %d", duration.Milliseconds())
 	}()
-	ref, layerDigest := registry.ParseLabels(labels)
-	if ref == "" || layerDigest == "" {
-		return fmt.Errorf("can not find ref and digest from label %+v", labels)
-	}
-	keychain, err := auth.GetKeyChainByRef(ref, labels)
-	if err != nil {
-		return errors.Wrap(err, "get key chain")
-	}
-	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get blob from ref %s, digest %s", ref, layerDigest)
-	}
+
 	r, err := blob.ReadToc()
 	if err != nil {
 		return errors.Wrapf(err, "failed to read toc from ref %s, digest %s", ref, layerDigest)
 	}
-	starGzToc, err := os.OpenFile(filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName), os.O_CREATE|os.O_RDWR, 0755)
+	starGzToc, err := os.OpenFile(stargzFile, os.O_CREATE|os.O_RDWR, 0640)
 	if err != nil {
 		return errors.Wrap(err, "failed to create stargz index")
 	}
@@ -364,21 +399,33 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 	if err != nil {
 		return errors.Wrap(err, "failed to save stargz index")
 	}
-	blobID := digest.Digest(layerDigest).Hex()
-	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
+	os.Chmod(stargzFile, 0440)
 
+	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 	if fs.fsDriver == config.FsDriverFscache {
-		blobMetaDir := fs.UpperPath(s.ID)
-		if err := os.MkdirAll(blobMetaDir, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create fscache work dir %s", blobMetaDir)
+		// For fscache, the cache directory is managed linux fscache driver, so the blob.meta file
+		// can't be stored there.
+		if err := os.MkdirAll(upperPath, 0750); err != nil {
+			return errors.Wrapf(err, "failed to create fscache work dir %s", upperPath)
 		}
-		blobMetaPath = filepath.Join(blobMetaDir, fmt.Sprintf("%s.blob.meta", blobID))
+		blobMetaPath = filepath.Join(upperPath, fmt.Sprintf("%s.blob.meta", blobID))
 	}
+
+	tf, err := ioutil.TempFile(upperPath, "converting-stargz")
+	if err != nil {
+		return errors.Wrap(err, "create temp file for merging stargz layers")
+	}
+	defer func() {
+		if err != nil {
+			os.Remove(tf.Name())
+		}
+		tf.Close()
+	}()
 
 	options := []string{
 		"create",
 		"--source-type", "stargz_index",
-		"--bootstrap", filepath.Join(fs.UpperPath(s.ID), blobID),
+		"--bootstrap", tf.Name(),
 		"--blob-id", blobID,
 		"--repeatable",
 		"--disable-check",
@@ -389,13 +436,26 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, s storage.Snap
 		"--blob-meta", blobMetaPath,
 	}
 	options = append(options, filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName))
-	log.G(ctx).Infof("nydus image command %v", options)
-
 	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	log.G(ctx).Infof("nydus image command %v", options)
+	err = cmd.Run()
+	if err != nil {
+		return errors.Wrap(err, "converting stargz layer")
+	}
 
-	return cmd.Run()
+	err = os.Rename(tf.Name(), convertedBootstrap)
+	if err != nil {
+		return errors.Wrap(err, "rename converted stargz layer")
+	}
+	os.Chmod(convertedBootstrap, 0440)
+
+	return nil
+}
+
+func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
+	return labels[label.StargzLayer] != ""
 }
 
 func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
@@ -403,145 +463,11 @@ func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) boo
 	return dataOk
 }
 
-func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
-	return labels[label.StargzLayer] != ""
-}
-
-func isRafsV6(buf []byte) bool {
-	return nativeEndian.Uint32(buf[RafsV6SuppeOffset:]) == RafsV6Magic
-}
-
-func getBootstrapRealSizeInV6(buf []byte) uint64 {
-	return nativeEndian.Uint64(buf[RafsV6ChunkInfoOffset:])
-}
-
-func writeBootstrapToFile(reader io.Reader, bootstrap *os.File, LegacyBootstrap *os.File) error {
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		log.L.Infof("read bootstrap duration %d", duration.Milliseconds())
-	}()
-	rd, err := gzip.NewReader(reader)
-	if err != nil {
-		return errors.Wrap(err, "gzip new reader faield")
-	}
-	found := false
-	tr := tar.NewReader(rd)
-	var finalBootstarp *os.File
-	for {
-		h, err := tr.Next()
-		if err != nil {
-			return errors.Wrap(err, "can't get next tar entry")
-		}
-		if h.Name == BootstrapFile {
-			found = true
-			finalBootstarp = bootstrap
-			break
-		}
-
-		if h.Name == LegacyBootstrapFile {
-			found = true
-			finalBootstarp = LegacyBootstrap
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("not found file image.boot in targz")
-	}
-	buf := make([]byte, MaxSuperBlockSize)
-	_, err = tr.Read(buf)
-	if err != nil {
-		return errors.Wrap(err, "read max super block size from bootstrap file failed")
-	}
-	_, err = finalBootstarp.Write(buf)
-
-	if err != nil {
-		return errors.Wrap(err, "write to bootstrap file failed")
-	}
-
-	if isRafsV6(buf) {
-		size := getBootstrapRealSizeInV6(buf)
-		if size < MaxSuperBlockSize {
-			return fmt.Errorf("invalid bootstrap size %d", size)
-		}
-		// The content of the chunkinfo part is not needed in the v6 format, so it is discarded here.
-		_, err := io.CopyN(finalBootstarp, tr, int64(size-MaxSuperBlockSize))
-		return err
-	}
-
-	// Copy remain data to bootstrap file
-	_, err = io.Copy(finalBootstarp, tr)
-	return err
-}
-
-func (fs *Filesystem) PrepareMetaLayer(ctx context.Context, s storage.Snapshot, labels map[string]string) error {
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		log.G(ctx).Infof("total nydus prepare layer duration %d", duration.Milliseconds())
-	}()
-	ref, layerDigest := registry.ParseLabels(labels)
-	if ref == "" || layerDigest == "" {
-		return fmt.Errorf("can not find ref and digest from label %+v", labels)
-	}
-
-	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
-	if err != nil {
-		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
-	}
-	defer readerCloser.Close()
-
-	workdir := filepath.Join(fs.UpperPath(s.ID), BootstrapFile)
-	legacy := filepath.Join(fs.UpperPath(s.ID), LegacyBootstrapFile)
-	err = os.Mkdir(filepath.Dir(workdir), 0755)
-	if err != nil {
-		return errors.Wrap(err, "failed to create bootstrap dir")
-	}
-	nydusBootstrap, err := os.OpenFile(workdir, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
-		return errors.Wrap(err, "failed to create bootstrap file")
-	}
-
-	legacyNydusBootstrap, err := os.OpenFile(legacy, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
-		return errors.Wrap(err, "failed to create legacy bootstrap file")
-	}
-
-	defer func() {
-		closeEmptyFile := []struct {
-			file *os.File
-			path string
-		}{
-			{
-				file: nydusBootstrap,
-				path: workdir,
-			},
-			{
-				file: legacyNydusBootstrap,
-				path: legacy,
-			},
-		}
-		for _, in := range closeEmptyFile {
-			size, err := in.file.Seek(0, io.SeekEnd)
-			if err != nil {
-				log.G(ctx).Warnf("failed to seek bootstrap %s file, error %s", workdir, err)
-			}
-			in.file.Close()
-			if size == 0 {
-				os.Remove(in.path)
-			}
-		}
-	}()
-	log.G(ctx).Infof("prepare write to bootstrap to %s", workdir)
-	return writeBootstrapToFile(readerCloser, nydusBootstrap, legacyNydusBootstrap)
-}
-
 // Mount will be called when containerd snapshotter prepare remote snapshotter
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) (err error) {
 	// If NoneDaemon mode, we don't mount nydus on host
-	if fs.mode == NoneInstance {
+	if !fs.hasDaemon() {
 		return nil
 	}
 
@@ -549,6 +475,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	if !ok {
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
+
 	d, err := fs.newDaemon(ctx, snapshotID, imageID)
 	// if daemon already exists for snapshotID, just return
 	if err != nil {
@@ -562,11 +489,12 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			_ = fs.manager.DestroyDaemon(d)
 		}
 	}()
-	// if publicKey is not empty we should verify bootstrap file of image
+
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to find bootstrap file of daemon %s", d.ID))
 	}
+	// if publicKey is not empty we should verify bootstrap file of image
 	err = fs.verifier.Verify(labels, bootstrap)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to verify signature of daemon %s", d.ID))
@@ -576,6 +504,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		log.G(ctx).Errorf("failed to mount %s, %v", d.MountPoint(), err)
 		return errors.Wrap(err, fmt.Sprintf("failed to mount daemon %s", d.ID))
 	}
+
 	return nil
 }
 
@@ -596,11 +525,12 @@ func (fs *Filesystem) WaitUntilReady(ctx context.Context, snapshotID string) err
 }
 
 func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
-	if fs.mode == NoneInstance {
+	if !fs.hasDaemon() {
 		return nil
 	}
 
 	id := filepath.Base(mountPoint)
+	log.L.Logger.Debugf("umount snapshot %s", id)
 	daemon, err := fs.manager.GetBySnapshotID(id)
 	if err != nil {
 		return err
@@ -616,6 +546,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 		log.L.Debugf("remove snapshot %s\n", daemon.ImageID)
 		fs.cacheMgr.SchedGC()
 	}
+
 	return nil
 }
 
@@ -635,8 +566,7 @@ func (fs *Filesystem) Cleanup(ctx context.Context) error {
 
 func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 	if !fs.hasDaemon() {
-		// For NoneDaemon mode, just return error to use snapshotter
-		// default mount point path
+		// For NoneDaemon mode, just return error to use snapshotter default mount point path
 		return "", fmt.Errorf("don't need nydus daemon of snapshot %s", snapshotID)
 	}
 
@@ -678,13 +608,10 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 		return err
 	}
 	if fs.mode == SharedInstance || fs.mode == PrefetchInstance {
-		err = d.SharedMount()
-		if err != nil {
+		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
 		}
-		return fs.addSnapshot(d.ImageID, labels)
-	}
-	if err := fs.manager.StartDaemon(d); err != nil {
+	} else if err := fs.manager.StartDaemon(d); err != nil {
 		return errors.Wrapf(err, "start daemon err")
 	}
 	return fs.addSnapshot(d.ImageID, labels)
@@ -866,18 +793,41 @@ func (fs *Filesystem) hasDaemon() bool {
 }
 
 func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
-	idStr, ok := labels[LayerAnnotationNydusBlobIDs]
-	if !ok {
-		// FIXME: for stargz layer, just return empty blobs here, we
-		// need to rethink how to implement blob cache GC for stargz.
-		if fs.StargzLayer(labels) {
-			return nil, nil
-		}
-		return nil, errors.New("no blob ids found")
-	}
 	var result []string
-	if err := json.Unmarshal([]byte(idStr), &result); err != nil {
-		return nil, err
+	if idStr, ok := labels[label.NydusDataBlobIDs]; ok {
+		if err := json.Unmarshal([]byte(idStr), &result); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
-	return result, nil
+
+	// FIXME: for stargz layer, just return empty blobs here, we
+	// need to rethink how to implement blob cache GC for stargz.
+	if fs.StargzLayer(labels) {
+		return nil, nil
+	}
+
+	return nil, errors.New("no blob ids found")
+}
+
+func isRafsV6(buf []byte) bool {
+	return nativeEndian.Uint32(buf[RafsV6SuperBlockOffset:]) == RafsV6SuperMagic
+}
+
+func DetectFsVersion(header []byte) (string, error) {
+	if len(header) < 8 {
+		return "", errors.New("header buffer to DetectFsVersion is too small")
+	}
+	magic := binary.LittleEndian.Uint32(header[0:4])
+	fsVersion := binary.LittleEndian.Uint32(header[4:8])
+	if magic == RafsV5SuperMagic && fsVersion == RafsV5SuperVersion {
+		return RafsV5, nil
+	}
+
+	// FIXME: detech more magic numbers to reduce collision
+	if len(header) >= int(RafsV6SuperBlockSize) && isRafsV6(header) {
+		return RafsV6, nil
+	}
+
+	return "", errors.New("unknown file system header")
 }
