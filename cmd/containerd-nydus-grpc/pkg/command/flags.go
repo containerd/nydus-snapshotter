@@ -51,6 +51,7 @@ type Args struct {
 	EnableNydusOverlayFS bool
 	NydusdThreadNum      int
 	CleanupOnClose       bool
+	KubeconfigPath       string
 }
 
 type Flags struct {
@@ -201,6 +202,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "validate-signature",
 			Usage:       "whether to validate integrity of image bootstrap",
 			Destination: &args.ValidateSignature,
+		},
+		&cli.StringFlag{
+			Name:        "kubeconfig-path",
+			Value:       "",
+			Usage:       "path to the kubeconfig file",
+			Destination: &args.KubeconfigPath,
 		},
 	}
 }

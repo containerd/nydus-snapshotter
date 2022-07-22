@@ -59,6 +59,7 @@ type Config struct {
 	EnableNydusOverlayFS bool          `toml:"enable_nydus_overlayfs"`
 	NydusdThreadNum      int           `toml:"nydusd_thread_num"`
 	CleanupOnClose       bool          `toml:"cleanup_on_close"`
+	KubeconfigPath       string        `toml:"kubeconfig_path"`
 }
 
 func (c *Config) FillupWithDefaults() error {
