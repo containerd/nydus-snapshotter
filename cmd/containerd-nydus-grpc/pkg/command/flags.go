@@ -51,6 +51,7 @@ type Args struct {
 	EnableNydusOverlayFS bool
 	NydusdThreadNum      int
 	CleanupOnClose       bool
+	KubeconfigPath       string
 }
 
 type Flags struct {
@@ -192,6 +193,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to do cleanup when close snapshotter",
 			Destination: &args.CleanupOnClose,
 		},
+		&cli.StringFlag{
+			Name:        "kubeconfig-path",
+			Value:       "",
+			Usage:       "path to the kubeconfig file",
+			Destination: &args.KubeconfigPath,
+		},
 	}
 }
 
@@ -248,7 +255,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.NydusdThreadNum = args.NydusdThreadNum
 	cfg.CleanupOnClose = args.CleanupOnClose
 	cfg.DaemonBackend = args.DaemonBackend
-
+	cfg.KubeconfigPath = args.KubeconfigPath
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {
 		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
