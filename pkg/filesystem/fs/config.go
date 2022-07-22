@@ -115,13 +115,13 @@ func WithDaemonMode(daemonMode string) NewFSOpt {
 	}
 }
 
-func WithDaemonBackend(daemonBackend string) NewFSOpt {
+func WithFsDriver(fsDriver string) NewFSOpt {
 	return func(d *Filesystem) error {
-		switch daemonBackend {
-		case config.DaemonBackendFscache:
-			d.daemonBackend = config.DaemonBackendFscache
+		switch fsDriver {
+		case config.FsDriverFscache:
+			d.fsDriver = config.FsDriverFscache
 		default:
-			d.daemonBackend = config.DaemonBackendFusedev
+			d.fsDriver = config.FsDriverFusedev
 		}
 		return nil
 	}

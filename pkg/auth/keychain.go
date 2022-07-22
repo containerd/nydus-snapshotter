@@ -64,12 +64,12 @@ func (kc PassKeyChain) TokenBase() bool {
 // Returned `nil` means no validated username and secrect are passed, it should
 // not override input nydusd configuration.
 func FromLabels(labels map[string]string) *PassKeyChain {
-	u, found := labels[label.ImagePullUsername]
+	u, found := labels[label.NydusImagePullUsername]
 	if !found || u == "" {
 		return nil
 	}
 
-	p, found := labels[label.ImagePullSecret]
+	p, found := labels[label.NydusImagePullSecret]
 	if !found || p == "" {
 		return nil
 	}

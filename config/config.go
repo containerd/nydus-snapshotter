@@ -30,8 +30,8 @@ const (
 )
 
 const (
-	DaemonBackendFusedev string = "fusedev"
-	DaemonBackendFscache string = "fscache"
+	FsDriverFusedev string = "fusedev"
+	FsDriverFscache string = "fscache"
 )
 
 type Config struct {
@@ -47,7 +47,7 @@ type Config struct {
 	NydusdBinaryPath     string        `toml:"nydusd_binary_path"`
 	NydusImageBinaryPath string        `toml:"nydus_image_binary"`
 	DaemonMode           string        `toml:"daemon_mode"`
-	DaemonBackend        string        `toml:"daemon_backend"`
+	FsDriver             string        `toml:"daemon_backend"`
 	SyncRemove           bool          `toml:"sync_remove"`
 	EnableMetrics        bool          `toml:"enable_metrics"`
 	MetricsFile          string        `toml:"metrics_file"`
