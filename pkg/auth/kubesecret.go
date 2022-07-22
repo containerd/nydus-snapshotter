@@ -29,11 +29,11 @@ type KubeSecretListener struct {
 
 func InitKubeSecretListener(ctx context.Context, kubeconfigPath string) {
 	if kubeSecretListener == nil {
-		kubeSecretListener = NewKubeSecretListener(kubeconfigPath, ctx)
+		kubeSecretListener = NewKubeSecretListener(ctx, kubeconfigPath)
 	}
 }
 
-func NewKubeSecretListener(kubeconfigPath string, ctx context.Context) *KubeSecretListener {
+func NewKubeSecretListener(ctx context.Context, kubeconfigPath string) *KubeSecretListener {
 	listener := &KubeSecretListener{
 		dockerConfigs: make(map[string]*configfile.ConfigFile),
 	}
@@ -63,7 +63,7 @@ func NewKubeSecretListener(kubeconfigPath string, ctx context.Context) *KubeSecr
 			logrus.WithError(err).Infof("failed to create kubernetes client")
 			return
 		}
-		if err := listener.SyncKubeSecrets(clientset, ctx); err != nil {
+		if err := listener.SyncKubeSecrets(ctx, clientset); err != nil {
 			logrus.WithError(err).Infof("failed to sync secrets")
 			return
 		}
@@ -71,7 +71,7 @@ func NewKubeSecretListener(kubeconfigPath string, ctx context.Context) *KubeSecr
 	return listener
 }
 
-func (kubelistener *KubeSecretListener) SyncKubeSecrets(clientset *kubernetes.Clientset, ctx context.Context) error {
+func (kubelistener *KubeSecretListener) SyncKubeSecrets(ctx context.Context, clientset *kubernetes.Clientset) error {
 	if kubelistener.informer == nil {
 		informer := cache.NewSharedIndexInformer(
 			&cache.ListWatch{
