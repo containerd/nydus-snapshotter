@@ -15,7 +15,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/golang/groupcache/lru"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -25,8 +26,7 @@ import (
 func TestResolver_resolve(t *testing.T) {
 
 	resolver := Resolver{
-		transport: &mockRoundTripper{},
-		trPool:    lru.New(3000),
+		res: &MockResolver{},
 	}
 	keychain, err := auth.FromBase64("dGVzdDp0ZXN0Cg==")
 	require.Nil(t, err)
@@ -50,6 +50,13 @@ func TestResolver_resolve(t *testing.T) {
 	h, err := tr.Next()
 	assert.Nil(t, err)
 	assert.Equal(t, "stargz.index.json", h.Name)
+}
+
+type MockResolver struct {
+}
+
+func (res *MockResolver) Resolve(ref name.Reference, digest string, keychain authn.Keychain) (string, http.RoundTripper, error) {
+	return "http://oss.com/v2/test/myserver/blobs/sha256:mock", &mockRoundTripper{}, nil
 }
 
 type mockRoundTripper struct{}

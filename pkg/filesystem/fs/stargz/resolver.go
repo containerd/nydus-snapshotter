@@ -17,13 +17,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/reference/docker"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
-	"github.com/golang/groupcache/lru"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/transport"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/pkg/errors"
@@ -39,15 +37,12 @@ const (
 )
 
 type Resolver struct {
-	trPoolMu  sync.Mutex
-	trPool    *lru.Cache
-	transport http.RoundTripper
+	res transport.Resolve
 }
 
 func NewResolver() *Resolver {
 	resolver := Resolver{
-		transport: http.DefaultTransport,
-		trPool:    lru.New(3000),
+		res: transport.NewPool(),
 	}
 	return &resolver
 }
@@ -160,7 +155,7 @@ func (r *Resolver) resolve(ref, digest string, keychain authn.Keychain) (*io.Sec
 		return nil, errors.Wrapf(err, "failed to parse ref %q (%q)", sref, digest)
 	}
 
-	url, tr, err := r.resolveReference(nref, digest, keychain)
+	url, tr, err := r.res.Resolve(nref, digest, keychain)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve reference of %q, %q", nref, digest)
 	}
@@ -197,61 +192,6 @@ func (r *Resolver) resolve(ref, digest string, keychain authn.Keychain) (*io.Sec
 	}), 0, size)
 
 	return sr, nil
-}
-
-func (r *Resolver) resolveReference(ref name.Reference, digest string, keychain authn.Keychain) (string, http.RoundTripper, error) {
-	r.trPoolMu.Lock()
-	defer r.trPoolMu.Unlock()
-	endpointURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s",
-		ref.Context().Registry.Scheme(),
-		ref.Context().RegistryStr(),
-		ref.Context().RepositoryStr(),
-		digest)
-
-	if tr, ok := r.trPool.Get(ref.Name()); ok {
-		if url, err := redirect(endpointURL, tr.(http.RoundTripper)); err != nil {
-			return url, tr.(http.RoundTripper), nil
-		}
-	}
-	r.trPool.Remove(ref.Name())
-	tr, err := registry.AuthnTransport(ref, r.transport, keychain)
-	if err != nil {
-		return "", nil, err
-	}
-	url, err := redirect(endpointURL, tr)
-	if err != nil {
-		return "", nil, err
-	}
-	r.trPool.Add(ref.Name(), tr)
-	return url, tr, nil
-}
-
-func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", endpointURL, nil)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to request to the registry")
-	}
-	req.Close = false
-	req.Header.Set("Range", "bytes=0-0")
-	res, err := tr.RoundTrip(req)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to request to %q", endpointURL)
-	}
-	defer func() {
-		io.Copy(ioutil.Discard, res.Body)
-		res.Body.Close()
-	}()
-
-	if res.StatusCode/100 == 2 {
-		url = endpointURL
-	} else if redir := res.Header.Get("Location"); redir != "" && res.StatusCode/100 == 3 {
-		url = redir
-	} else {
-		return "", fmt.Errorf("failed to access to %q with code %v", endpointURL, res.StatusCode)
-	}
-	return
 }
 
 func getSize(url string, tr http.RoundTripper) (int64, error) {
