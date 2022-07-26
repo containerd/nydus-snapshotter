@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 )
 
@@ -25,7 +24,7 @@ func main() {
 	flags := command.NewFlags()
 	app := &cli.App{
 		Name:    "containerd-nydus-grpc",
-		Usage:   "nydus containerd proxy snapshotter plugin",
+		Usage:   "Nydus remote snapshotter for containerd",
 		Version: Version,
 		Flags:   flags.F,
 		Action: func(c *cli.Context) error {
@@ -33,20 +32,18 @@ func main() {
 			if err := command.Validate(flags.Args, &cfg); err != nil {
 				return errors.Wrap(err, "invalid argument")
 			}
-
 			ctx := logging.WithContext()
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir); err != nil {
 				return errors.Wrap(err, "failed to prepare logger")
 			}
-			auth.InitKubeSecretListener(ctx, flags.Args.KubeconfigPath)
 			return snapshotter.Start(ctx, cfg)
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
 		if errdefs.IsConnectionClosed(err) {
-			log.L.Info("snapshotter exited")
-			return
+			log.L.Info("nydus snapshotter exited")
+		} else {
+			log.L.WithError(err).Fatal("failed to start nydus snapshotter:\n\r")
 		}
-		log.L.WithError(err).Fatal("failed to start nydus snapshotter")
 	}
 }

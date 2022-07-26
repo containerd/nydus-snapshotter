@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/docker/cli/cli/config/configfile"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,13 +29,10 @@ type KubeSecretListener struct {
 }
 
 func InitKubeSecretListener(ctx context.Context, kubeconfigPath string) {
-	if kubeSecretListener == nil {
-		kubeSecretListener = NewKubeSecretListener(ctx, kubeconfigPath)
+	if kubeSecretListener != nil {
+		return
 	}
-}
-
-func NewKubeSecretListener(ctx context.Context, kubeconfigPath string) *KubeSecretListener {
-	listener := &KubeSecretListener{
+	kubeSecretListener = &KubeSecretListener{
 		dockerConfigs: make(map[string]*configfile.ConfigFile),
 	}
 	go func() {
@@ -63,98 +61,107 @@ func NewKubeSecretListener(ctx context.Context, kubeconfigPath string) *KubeSecr
 			logrus.WithError(err).Infof("failed to create kubernetes client")
 			return
 		}
-		if err := listener.SyncKubeSecrets(ctx, clientset); err != nil {
+		if err := kubeSecretListener.SyncKubeSecrets(ctx, clientset); err != nil {
 			logrus.WithError(err).Infof("failed to sync secrets")
 			return
 		}
 	}()
-	return listener
+}
+
+func (kubelistener *KubeSecretListener) addDockerConfig(key string, obj interface{}) error {
+	data, ok := obj.(*corev1.Secret).Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("failed to get data from new object")
+	}
+	dockerConfig := configfile.ConfigFile{}
+	if err := dockerConfig.LoadFromReader(bytes.NewReader(data)); err != nil {
+		return errors.Wrap(err, "failed to load docker config json from secret")
+	}
+	kubelistener.configMu.Lock()
+	kubelistener.dockerConfigs[key] = &dockerConfig
+	kubelistener.configMu.Unlock()
+	return nil
+}
+
+func (kubelistener *KubeSecretListener) deleteDockerConfig(key string) error {
+	kubelistener.configMu.Lock()
+	delete(kubelistener.dockerConfigs, key)
+	kubelistener.configMu.Unlock()
+	_, exists := kubelistener.dockerConfigs[key]
+	if exists {
+		return fmt.Errorf("failed to delete docker config")
+	}
+	return nil
 }
 
 func (kubelistener *KubeSecretListener) SyncKubeSecrets(ctx context.Context, clientset *kubernetes.Clientset) error {
-	if kubelistener.informer == nil {
-		informer := cache.NewSharedIndexInformer(
-			&cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = "type=" + string(corev1.SecretTypeDockerConfigJson)
-					return clientset.CoreV1().Secrets(metav1.NamespaceAll).List(context.Background(), options)
-				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = "type=" + string(corev1.SecretTypeDockerConfigJson)
-					return clientset.CoreV1().Secrets(metav1.NamespaceAll).Watch(context.Background(), options)
-				}},
-			&corev1.Secret{},
-			0,
-			cache.Indexers{},
-		)
-		kubelistener.informer = informer
-		kubelistener.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				key, err := cache.MetaNamespaceKeyFunc(obj)
-				if err != nil {
-					logrus.WithError(err).Errorf("failed to get key for secret from cache")
-					return
-				}
-				data, ok := obj.(*corev1.Secret).Data[corev1.DockerConfigJsonKey]
-				if !ok {
-					logrus.Infof("failed to get data from secret")
-					return
-				}
-				dockerConfig := configfile.ConfigFile{}
-				err = dockerConfig.LoadFromReader(bytes.NewReader(data))
-				if err != nil {
-					logrus.WithError(err).Infof("failed to load docker config json from secret")
-					return
-				}
-				kubelistener.configMu.Lock()
-				kubelistener.dockerConfigs[key] = &dockerConfig
-				kubelistener.configMu.Unlock()
+	if kubelistener.informer != nil {
+		return nil
+	}
+	informer := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				options.FieldSelector = "type=" + string(corev1.SecretTypeDockerConfigJson)
+				return clientset.CoreV1().Secrets(metav1.NamespaceAll).List(context.Background(), options)
 			},
-			UpdateFunc: func(old, new interface{}) {
-				key, err := cache.MetaNamespaceKeyFunc(new)
-				if err != nil {
-					logrus.WithError(err).Errorf("failed to get key for secret from cache")
-					return
-				}
-				data, ok := new.(*corev1.Secret).Data[corev1.DockerConfigJsonKey]
-				if !ok {
-					logrus.Infof("failed to get data from secret")
-					return
-				}
-				dockerConfig := configfile.ConfigFile{}
-				err = dockerConfig.LoadFromReader(bytes.NewReader(data))
-				if err != nil {
-					logrus.WithError(err).Infof("failed to load docker config json from secre")
-					return
-				}
-				kubelistener.configMu.Lock()
-				kubelistener.dockerConfigs[key] = &dockerConfig
-				kubelistener.configMu.Unlock()
-			},
-			DeleteFunc: func(obj interface{}) {
-				key, err := cache.MetaNamespaceKeyFunc(obj)
-				if err != nil {
-					logrus.WithError(err).Errorf("failed to get key for secret from cache")
-					return
-				}
-				kubelistener.configMu.Lock()
-				delete(kubelistener.dockerConfigs, key)
-				kubelistener.configMu.Unlock()
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				options.FieldSelector = "type=" + string(corev1.SecretTypeDockerConfigJson)
+				return clientset.CoreV1().Secrets(metav1.NamespaceAll).Watch(context.Background(), options)
 			}},
-		)
-		go kubelistener.informer.Run(ctx.Done())
-		if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
-			return fmt.Errorf("timed out for syncing cache")
-		}
+		&corev1.Secret{},
+		0,
+		cache.Indexers{},
+	)
+	kubelistener.informer = informer
+	kubelistener.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			key, err := cache.MetaNamespaceKeyFunc(obj)
+			if err != nil {
+				logrus.WithError(err).Infof("failed to get key for secret from cache")
+				return
+			}
+			if err := kubelistener.addDockerConfig(key, obj); err != nil {
+				logrus.WithError(err).Errorf("failed to add a new dockerconfigjson")
+				return
+			}
+		},
+		UpdateFunc: func(old, new interface{}) {
+			key, err := cache.MetaNamespaceKeyFunc(new)
+			if err != nil {
+				logrus.WithError(err).Infof("failed to get key for secret from cache")
+				return
+			}
+			if err := kubelistener.addDockerConfig(key, new); err != nil {
+				logrus.WithError(err).Errorf("failed to add a new dockerconfigjson")
+				return
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			key, err := cache.MetaNamespaceKeyFunc(obj)
+			if err != nil {
+				logrus.WithError(err).Infof("failed to get key for secret from cache")
+			}
+			if err := kubelistener.deleteDockerConfig(key); err != nil {
+				logrus.WithError(err).Errorf("failed to delete docker config")
+				return
+			}
+		}},
+	)
+	go kubelistener.informer.Run(ctx.Done())
+	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
+		return fmt.Errorf("timed out for syncing cache")
 	}
 	return nil
 }
 
 func (kubelistener *KubeSecretListener) GetCredentialsStore(host string) *PassKeyChain {
+	kubelistener.configMu.Lock()
+	defer kubelistener.configMu.Unlock()
 	for _, dockerConfig := range kubelistener.dockerConfigs {
 		// Find the auth for the host.
 		authConfig, err := dockerConfig.GetAuthConfig(host)
 		if err != nil {
+			logrus.WithError(err).Infof("failed to get auth config for host %s", host)
 			continue
 		}
 		if len(authConfig.Username) != 0 && len(authConfig.Password) != 0 {

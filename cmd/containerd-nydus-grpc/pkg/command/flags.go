@@ -283,6 +283,6 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
 	cfg.NydusdThreadNum = args.NydusdThreadNum
 	cfg.SyncRemove = args.SyncRemove
-
+	cfg.KubeconfigPath = args.KubeconfigPath
 	return cfg.SetupNydusBinaryPaths()
 }
