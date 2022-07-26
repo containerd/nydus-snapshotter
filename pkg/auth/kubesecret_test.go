@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	testDockerConfigJsonFmt = `
+	testDockerConfigJSONFmt = `
 {
         "auths": {
                 "%s": {
@@ -37,7 +37,7 @@ func TestGetCredentialsStore(t *testing.T) {
 
 	var obj interface{} = &corev1.Secret{
 		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: []byte(fmt.Sprintf(testDockerConfigJsonFmt, extraHost, registryUser,
+			corev1.DockerConfigJsonKey: []byte(fmt.Sprintf(testDockerConfigJSONFmt, extraHost, registryUser,
 				registryPass, registryEmail, base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", registryUser, registryPass))))),
 		},
 	}
