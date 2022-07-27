@@ -16,8 +16,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// AppendLabelsHandlerWrapper returns a function which can wraps a handler by appending
-// image's basic informations to each layer descriptor as annotations during unpack.
+// AppendLabelsHandlerWrapper returns a function which can wrap a handler by appending
+// image's basic information to each layer descriptor as annotations during unpack.
 // These annotations will be passed to this nydus snapshotter as labels.
 func AppendLabelsHandlerWrapper(ref string) func(f images.Handler) images.Handler {
 	return func(f images.Handler) images.Handler {
