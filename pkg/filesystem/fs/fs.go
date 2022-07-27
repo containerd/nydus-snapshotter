@@ -240,7 +240,7 @@ func (fs *Filesystem) StargzEnabled() bool {
 	return fs.stargzResolver != nil
 }
 
-func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
+func (fs *Filesystem) IsStargzDataLayer(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
 	if !fs.StargzEnabled() {
 		return false, "", "", nil
 	}
@@ -458,8 +458,13 @@ func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
 	return labels[label.StargzLayer] != ""
 }
 
-func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
+func (fs *Filesystem) IsNydusDataLayer(ctx context.Context, labels map[string]string) bool {
 	_, dataOk := labels[label.NydusDataLayer]
+	return dataOk
+}
+
+func (fs *Filesystem) IsNydusMetaLayer(ctx context.Context, labels map[string]string) bool {
+	_, dataOk := labels[label.NydusMetaLayer]
 	return dataOk
 }
 

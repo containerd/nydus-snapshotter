@@ -254,10 +254,10 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	}
 	logCtx.Infof("prepare snapshot with labels %v", base.Labels)
 
-	// Handle nydus/stargz image layers.
+	// Handle nydus/stargz image data layers.
 	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
 		// check if image layer is nydus data layer
-		if o.fs.Support(ctx, base.Labels) {
+		if o.fs.IsNydusDataLayer(ctx, base.Labels) {
 			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
 			err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
 			if err != nil {
@@ -269,20 +269,20 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 			}
-		}
-
-		// Check if image layer is estargz layer
-		if ok, ref, layerDigest, blob := o.fs.SupportStargz(ctx, base.Labels); ok {
-			err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, base.Labels)
-			if err != nil {
-				logCtx.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
-				// fallback to default OCIv1 handler
-			} else {
-				// Mark this snapshot as stargz layer
-				base.Labels[label.StargzLayer] = "true"
-				err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
-				if err == nil || errdefs.IsAlreadyExists(err) {
-					return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
+		} else if !o.fs.IsNydusMetaLayer(ctx, base.Labels) {
+			// Check if image layer is estargz layer
+			if ok, ref, layerDigest, blob := o.fs.IsStargzDataLayer(ctx, base.Labels); ok {
+				err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, base.Labels)
+				if err != nil {
+					logCtx.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
+					// fallback to default OCIv1 handler
+				} else {
+					// Mark this snapshot as stargz layer
+					base.Labels[label.StargzLayer] = "true"
+					err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
+					if err == nil || errdefs.IsAlreadyExists(err) {
+						return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
+					}
 				}
 			}
 		}
@@ -337,7 +337,7 @@ func prepareForContainer(info snapshots.Info) bool {
 }
 
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	log.G(ctx).Infof("review snapshot with key %s", key)
+	log.G(ctx).Infof("view snapshot with key %s", key)
 	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
 	if err != nil {
 		return nil, err
