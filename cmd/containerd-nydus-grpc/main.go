@@ -9,10 +9,10 @@ package main
 import (
 	"os"
 
-	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/app/snapshotter"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
@@ -32,12 +32,10 @@ func main() {
 			if err := command.Validate(flags.Args, &cfg); err != nil {
 				return errors.Wrap(err, "invalid argument")
 			}
-
 			ctx := logging.WithContext()
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir); err != nil {
 				return errors.Wrap(err, "failed to prepare logger")
 			}
-
 			return snapshotter.Start(ctx, cfg)
 		},
 	}
