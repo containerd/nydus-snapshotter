@@ -9,6 +9,7 @@ import (
 
 const (
 	chunkMapFileSuffix = ".chunk_map"
+	metaFileSuffix     = ".blob.meta"
 )
 
 type Store struct {
@@ -35,6 +36,11 @@ func (cs *Store) DelBlob(blob string) error {
 	// Then remove the blob file named $blob_id.
 	if err := os.Remove(blobPath); err != nil {
 		return errors.Wrapf(err, "remove blob %v err", blobPath)
+	}
+
+	metaPath := blobPath + metaFileSuffix
+	if err := os.Remove(metaPath); err != nil {
+		return errors.Wrapf(err, "remove blob meta file %v err", metaPath)
 	}
 
 	return nil
