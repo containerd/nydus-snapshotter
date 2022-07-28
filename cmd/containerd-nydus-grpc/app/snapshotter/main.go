@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/signals"
 	"github.com/containerd/nydus-snapshotter/snapshot"
 )
@@ -28,5 +29,6 @@ func Start(ctx context.Context, cfg config.Config) error {
 	opt := ServeOptions{
 		ListeningSocketPath: cfg.Address,
 	}
+	auth.InitKubeSecretListener(ctx, cfg.KubeconfigPath)
 	return Serve(ctx, rs, opt, stopSignal)
 }

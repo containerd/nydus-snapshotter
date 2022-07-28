@@ -9,10 +9,10 @@ package main
 import (
 	"os"
 
-	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/app/snapshotter"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"

@@ -15,6 +15,13 @@ ifdef GOPROXY
 PROXY := GOPROXY="${GOPROXY}"
 endif
 
+ifdef FS_CACHE
+FS_DRIVER = fscache
+else
+FS_DRIVER = fusedev
+endif
+
+
 .PHONY: build
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags="-s -w -X 'main.Version=${VERSION}'" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
@@ -30,8 +37,8 @@ clear:
 .PHONY: install
 install: static-release
 	sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
-	sudo install -D -m 755 misc/snapshotter/nydusd-config.json /etc/nydus/config.json
-	sudo install -D -m 644 misc/snapshotter/nydus-snapshotter.service /etc/systemd/system/nydus-snapshotter.service
+	sudo install -D -m 755 misc/snapshotter/nydusd-config.${FS_DRIVER}.json /etc/nydus/config.json
+	sudo install -D -m 644 misc/snapshotter/nydus-snapshotter.${FS_DRIVER}.service /etc/systemd/system/nydus-snapshotter.service
 	sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service
 
 .PHONY: vet

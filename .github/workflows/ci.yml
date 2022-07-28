@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  NYDUS_VERSION: v2.1.0-alpha.3
-
 jobs:
   build:
     name: Build
@@ -57,8 +54,9 @@ jobs:
       - name: Build
         run: |
           # Download nydus components
-          wget https://github.com/dragonflyoss/image-service/releases/download/${{ env.NYDUS_VERSION }}/nydus-static-${{ env.NYDUS_VERSION }}-linux-amd64.tgz
-          tar xzvf nydus-static-${{ env.NYDUS_VERSION }}-linux-amd64.tgz
+          NYDUS_VER=v$(curl -s "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+          tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
           mkdir -p /usr/bin
           sudo mv nydus-static/nydus-image nydus-static/nydusd-fusedev nydus-static/nydusify /usr/bin/
 

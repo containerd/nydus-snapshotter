@@ -51,6 +51,7 @@ type Args struct {
 	EnableNydusOverlayFS bool
 	NydusdThreadNum      int
 	CleanupOnClose       bool
+	KubeconfigPath       string
 }
 
 type Flags struct {
@@ -202,6 +203,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to validate integrity of image bootstrap",
 			Destination: &args.ValidateSignature,
 		},
+		&cli.StringFlag{
+			Name:        "kubeconfig-path",
+			Value:       "",
+			Usage:       "path to the kubeconfig file",
+			Destination: &args.KubeconfigPath,
+		},
 	}
 }
 
@@ -231,6 +238,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.ValidateSignature = args.ValidateSignature
 
 	// Give --shared-daemon higher priority
+	cfg.DaemonMode = args.DaemonMode
 	if args.SharedDaemon {
 		cfg.DaemonMode = config.DaemonModeShared
 	}
@@ -265,7 +273,6 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.Address = args.Address
 	cfg.CleanupOnClose = args.CleanupOnClose
 	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
-	cfg.DaemonMode = args.DaemonMode
 	cfg.DisableCacheManager = args.DisableCacheManager
 	cfg.EnableMetrics = args.EnableMetrics
 	cfg.EnableStargz = args.EnableStargz
@@ -276,6 +283,6 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
 	cfg.NydusdThreadNum = args.NydusdThreadNum
 	cfg.SyncRemove = args.SyncRemove
-
+	cfg.KubeconfigPath = args.KubeconfigPath
 	return cfg.SetupNydusBinaryPaths()
 }
