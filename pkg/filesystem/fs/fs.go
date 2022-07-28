@@ -133,6 +133,13 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	if err := fs.manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
+	// Try to bring up the shared daemon early.
+	if fs.mode == SharedInstance {
+		if _, e := fs.getSharedDaemon(); e != nil {
+			log.G(ctx).Warnf("initialize the shared nydus daemon")
+			fs.initSharedDaemon(ctx)
+		}
+	}
 	return &fs, nil
 }
 
@@ -240,7 +247,7 @@ func (fs *Filesystem) StargzEnabled() bool {
 	return fs.stargzResolver != nil
 }
 
-func (fs *Filesystem) SupportStargz(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
+func (fs *Filesystem) IsStargzDataLayer(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
 	if !fs.StargzEnabled() {
 		return false, "", "", nil
 	}
@@ -458,8 +465,13 @@ func (fs *Filesystem) StargzLayer(labels map[string]string) bool {
 	return labels[label.StargzLayer] != ""
 }
 
-func (fs *Filesystem) Support(ctx context.Context, labels map[string]string) bool {
+func (fs *Filesystem) IsNydusDataLayer(ctx context.Context, labels map[string]string) bool {
 	_, dataOk := labels[label.NydusDataLayer]
+	return dataOk
+}
+
+func (fs *Filesystem) IsNydusMetaLayer(ctx context.Context, labels map[string]string) bool {
+	_, dataOk := labels[label.NydusMetaLayer]
 	return dataOk
 }
 
