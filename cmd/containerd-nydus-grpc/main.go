@@ -32,12 +32,10 @@ func main() {
 			if err := command.Validate(flags.Args, &cfg); err != nil {
 				return errors.Wrap(err, "invalid argument")
 			}
-
 			ctx := logging.WithContext()
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir); err != nil {
 				return errors.Wrap(err, "failed to prepare logger")
 			}
-
 			return snapshotter.Start(ctx, cfg)
 		},
 	}
