@@ -133,6 +133,13 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	if err := fs.manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
+	// Try to bring up the shared daemon early.
+	if fs.mode == SharedInstance {
+		if _, e := fs.getSharedDaemon(); e != nil {
+			log.G(ctx).Warnf("initialize the shared nydus daemon")
+			fs.initSharedDaemon(ctx)
+		}
+	}
 	return &fs, nil
 }
 
