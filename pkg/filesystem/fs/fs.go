@@ -292,9 +292,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 	for idx, snapshotID := range s.ParentIDs {
 		files, err := ioutil.ReadDir(fs.UpperPath(snapshotID))
 		if err != nil {
-			if err != nil {
-				return errors.Wrap(err, "read snapshot dir")
-			}
+			return errors.Wrap(err, "read snapshot dir")
 		}
 
 		bootstrapName := ""
@@ -310,6 +308,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 		if bootstrapName == "" {
 			return fmt.Errorf("can't find bootstrap for snapshot %s", snapshotID)
 		}
+
 		// The blob meta file is generated in corresponding snapshot dir for each layer,
 		// but we need copy them to fscache work dir for nydusd use. This is not an
 		// efficient method, but currently nydusd only supports reading blob meta files
@@ -321,7 +320,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 			// This path is same with `d.FscacheWorkDir()`, it's for fscache work dir.
 			targetPath := filepath.Join(fs.UpperPath(s.ParentIDs[0]), blobMetaName)
 			if err := reflink.Auto(sourcePath, targetPath); err != nil {
-				return errors.Wrap(err, "copy source blob meta to target")
+				return errors.Wrap(err, "copy source blob.meta to target")
 			}
 		}
 
@@ -329,36 +328,42 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 		bootstraps = append([]string{bootstrapPath}, bootstraps...)
 	}
 
-	tf, err := ioutil.TempFile(mergedDir, "merging-stargz")
-	if err != nil {
-		return errors.Wrap(err, "create temp file for merging stargz layers")
-	}
-	defer func() {
-		if err != nil {
-			os.Remove(tf.Name())
+	if len(bootstraps) == 1 {
+		if err := reflink.Auto(bootstraps[0], mergedBootstrap); err != nil {
+			return errors.Wrap(err, "copy source meta blob to target")
 		}
-		tf.Close()
-	}()
+	} else {
+		tf, err := ioutil.TempFile(mergedDir, "merging-stargz")
+		if err != nil {
+			return errors.Wrap(err, "create temp file for merging stargz layers")
+		}
+		defer func() {
+			if err != nil {
+				os.Remove(tf.Name())
+			}
+			tf.Close()
+		}()
 
-	options := []string{
-		"merge",
-		"--bootstrap", tf.Name(),
-	}
-	options = append(options, bootstraps...)
-	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	log.G(ctx).Infof("nydus image command %v", options)
-	err = cmd.Run()
-	if err != nil {
-		return errors.Wrap(err, "merging stargz layers")
-	}
+		options := []string{
+			"merge",
+			"--bootstrap", tf.Name(),
+		}
+		options = append(options, bootstraps...)
+		cmd := exec.Command(fs.nydusImageBinaryPath, options...)
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		log.G(ctx).Infof("nydus image command %v", options)
+		err = cmd.Run()
+		if err != nil {
+			return errors.Wrap(err, "merging stargz layers")
+		}
 
-	err = os.Rename(tf.Name(), mergedBootstrap)
-	if err != nil {
-		return errors.Wrap(err, "rename merged stargz layers")
+		err = os.Rename(tf.Name(), mergedBootstrap)
+		if err != nil {
+			return errors.Wrap(err, "rename merged stargz layers")
+		}
+		os.Chmod(mergedBootstrap, 0440)
 	}
-	os.Chmod(mergedBootstrap, 0440)
 
 	return nil
 }
