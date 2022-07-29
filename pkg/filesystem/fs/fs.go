@@ -20,6 +20,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/KarpelesLab/reflink"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/opencontainers/go-digest"
@@ -317,24 +318,11 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 		// at build time.
 		if blobMetaName != "" && idx != 0 {
 			sourcePath := filepath.Join(fs.UpperPath(snapshotID), blobMetaName)
-			sourceFile, err := os.Open(sourcePath)
-			if err != nil {
-				return errors.Wrapf(err, "open source blob meta file %s", sourcePath)
-			}
-			defer sourceFile.Close()
-
 			// This path is same with `d.FscacheWorkDir()`, it's for fscache work dir.
 			targetPath := filepath.Join(fs.UpperPath(s.ParentIDs[0]), blobMetaName)
-			targetFile, err := os.Create(targetPath)
-			if err != nil {
-				return errors.Wrapf(err, "create target blob meta file %s", targetPath)
-			}
-			defer targetFile.Close()
-
-			if _, err := io.Copy(targetFile, sourceFile); err != nil {
+			if err := reflink.Auto(sourcePath, targetPath); err != nil {
 				return errors.Wrap(err, "copy source blob meta to target")
 			}
-			os.Chmod(targetPath, 0440)
 		}
 
 		bootstrapPath := filepath.Join(fs.UpperPath(snapshotID), bootstrapName)
