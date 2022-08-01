@@ -9,7 +9,7 @@ RUN mv nydus-static/* /; mv nydusd-fusedev nydusd
 FROM ubuntu:20.04
 
 WORKDIR /root/
-RUN mkdir -p /usr/local/bin/ /etc/nydus/ /var/lib/nydus/cache/
+RUN mkdir -p /usr/local/bin/ /etc/nydus/ /var/lib/nydus/cache/ /tmp/blobs/
 COPY --from=sourcer /nydusd /nydus-image /usr/local/bin/
 COPY containerd-nydus-grpc /usr/local/bin/
 COPY nydusd-config.fusedev.json /etc/nydus/config.json
