@@ -22,7 +22,8 @@
   "enable_xattr": true,
   "fs_prefetch": {
     "enable": true,
-    "threads_count": 2,
+    "threads_count": 8,
+    "merging_size": 1048576,
     "prefetch_all": true
   }
 }
