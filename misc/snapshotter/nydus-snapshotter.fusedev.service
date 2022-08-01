@@ -11,6 +11,8 @@ Restart=always
 RestartSec=1
 KillMode=process
 OOMScoreAdjust=-999
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
