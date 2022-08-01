@@ -50,12 +50,12 @@ func (r *Pool) Resolve(ref name.Reference, digest string, keychain authn.Keychai
 
 	if tr, ok := r.trPool.Get(ref.Name()); ok {
 		var err error
-		if url, err := redirect(endpointURL, tr.(http.RoundTripper)); err != nil {
+		if url, err := redirect(endpointURL, tr.(http.RoundTripper)); err == nil {
 			return url, tr.(http.RoundTripper), nil
 		}
+		r.trPool.Remove(ref.Name())
 		log.L.Warnf("redirect %s, failed, err: %s", endpointURL, err)
 	}
-	r.trPool.Remove(ref.Name())
 	tr, err := registry.AuthnTransport(ref, r.transport, keychain)
 	if err != nil {
 		return "", nil, errors.Wrapf(err, "failed to authn transport")
