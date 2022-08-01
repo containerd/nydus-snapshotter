@@ -184,10 +184,11 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	log.L.Infof("start nydus daemon: %s %s", m.nydusdBinaryPath, strings.Join(args, " "))
 
 	cmd := exec.Command(m.nydusdBinaryPath, args...)
-	if d.LogToStdout {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stdout
-	}
+	// nydusd standard output and standard error rather than its logs are
+	// always redirected to snapshotter's respectively
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
 	return cmd, nil
 }
 
