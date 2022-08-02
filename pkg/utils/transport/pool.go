@@ -82,7 +82,8 @@ func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) 
 		return "", errors.Wrapf(err, "failed to request to %q", endpointURL)
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, res.Body)
+		_, err := io.Copy(ioutil.Discard, res.Body)
+		log.L.Warnf("Discard body failed %s", err)
 		res.Body.Close()
 	}()
 
@@ -91,7 +92,10 @@ func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) 
 	} else if redir := res.Header.Get("Location"); redir != "" && res.StatusCode/100 == 3 {
 		url = redir
 	} else {
-		body, _ := io.ReadAll(res.Body)
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			return "", errors.Wrapf(err, "failed to get response body")
+		}
 		return "", fmt.Errorf("failed to access to %q with code %v, body: %s", endpointURL, res.StatusCode, body)
 	}
 	return
