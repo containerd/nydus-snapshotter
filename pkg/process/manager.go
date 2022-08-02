@@ -147,7 +147,7 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 			args = append(args, "--fscache-threads", nydusdThreadNum)
 		}
 	} else {
-		args = []string{}
+		args = []string{"fuse"}
 		nydusdThreadNum := d.NydusdThreadNum()
 		if nydusdThreadNum != "" {
 			args = append(args, "--thread-num", nydusdThreadNum)
