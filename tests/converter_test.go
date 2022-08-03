@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,12 +74,19 @@ func ensureNoFile(t *testing.T, name string) {
 }
 
 func writeFileToTar(t *testing.T, tw *tar.Writer, name string, data string) {
+	u, err := user.Current()
+	require.NoError(t, err)
+	g, err := user.LookupGroupId(u.Uid)
+	require.NoError(t, err)
+
 	hdr := &tar.Header{
-		Name: name,
-		Mode: 0444,
-		Size: int64(len(data)),
+		Name:  name,
+		Mode:  0444,
+		Size:  int64(len(data)),
+		Uname: u.Name,
+		Gname: g.Name,
 	}
-	err := tw.WriteHeader(hdr)
+	err = tw.WriteHeader(hdr)
 	require.NoError(t, err)
 
 	io.Copy(tw, bytes.NewReader([]byte(data)))
@@ -86,12 +94,19 @@ func writeFileToTar(t *testing.T, tw *tar.Writer, name string, data string) {
 }
 
 func writeDirToTar(t *testing.T, tw *tar.Writer, name string) {
+	u, err := user.Current()
+	require.NoError(t, err)
+	g, err := user.LookupGroupId(u.Uid)
+	require.NoError(t, err)
+
 	hdr := &tar.Header{
 		Name:     name,
 		Mode:     0444,
 		Typeflag: tar.TypeDir,
+		Uname:    u.Name,
+		Gname:    g.Name,
 	}
-	err := tw.WriteHeader(hdr)
+	err = tw.WriteHeader(hdr)
 	require.NoError(t, err)
 }
 
