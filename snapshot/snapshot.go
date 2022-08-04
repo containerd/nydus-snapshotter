@@ -300,6 +300,11 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			}
 
 			logCtx.Infof("found nydus meta layer id %s, parpare remote snapshot", id)
+
+			if err := o.fs.AddSnapshot(info.Labels); err != nil {
+				return nil, errors.Wrap(err, "cache manager failed to add snapshot")
+			}
+
 			if o.manager.IsPrefetchDaemon() {
 				// Prepare prefetch mount in background, so we could return Mounts
 				// info to containerd as soon as possible.
@@ -396,6 +401,16 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	_, snap, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
 		return errors.Wrap(err, "failed to get snapshot")
+	}
+
+	if snap.Labels != nil {
+		if imageID, ok := snap.Labels[label.CRIImageRef]; ok {
+			if err := o.fs.DelSnapshot(imageID); err != nil {
+				return errors.Wrap(err, "failed to delete snapshot in cache manager")
+			}
+		} else {
+			return fmt.Errorf("failed to get image ref from snapshot label %#v", snap.Labels)
+		}
 	}
 
 	_, _, err = storage.Remove(ctx, key)
