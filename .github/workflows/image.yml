@@ -119,6 +119,7 @@ jobs:
         run: |
           # start nydus-snapshotter
           docker run -d --name snapshotter --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e BACKEND_TYPE=localfs -e CONTAINERD_ROOT=/var/lib/containerd-test -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
+          docker_snapshotter=$(docker ps -q)
           # start containerd
           sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
           # wait for containerd to start up
@@ -133,6 +134,10 @@ jobs:
           sudo crictl exec $container ls
           echo "delete pod"
           sudo crictl rmp -fa
+          echo "delete nydus-latest image"
+          sudo crictl rmi ghcr.io/dragonflyoss/image-service/ubuntu:nydus-latest
+          echo "check whether the blobs of nydus-latest image has been deleted"
+          docker exec -i $docker_snapshotter sh -c 'if [ "`ls -A /tmp/blobs/`" != "" ]; then exit 1; fi'
       - name: Cleanup containerd and snapshotter
         if: ${{ github.event_name == 'pull_request' }}
         run: |

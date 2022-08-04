@@ -144,11 +144,11 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	return &fs, nil
 }
 
-func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, key string, async bool) error {
+func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, blobDigest string, async bool) error {
 	if fs.blobMgr == nil {
 		return nil
 	}
-	return fs.blobMgr.Remove(key, async)
+	return fs.blobMgr.Remove(blobDigest, async)
 }
 
 func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
