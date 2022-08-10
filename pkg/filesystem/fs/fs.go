@@ -529,6 +529,19 @@ func (fs *Filesystem) WaitUntilReady(ctx context.Context, snapshotID string) err
 	return d.WaitUntilReady()
 }
 
+func (fs *Filesystem) DelSnapshot(imageID string) error {
+	if fs.cacheMgr == nil {
+		return nil
+	}
+
+	if err := fs.cacheMgr.DelSnapshot(imageID); err != nil {
+		return errors.Wrap(err, "del snapshot err")
+	}
+	log.L.Debugf("remove snapshot %s\n", imageID)
+	fs.cacheMgr.SchedGC()
+	return nil
+}
+
 func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	if !fs.hasDaemon() {
 		return nil
@@ -542,14 +555,6 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	}
 	if err := fs.manager.DestroyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
-	}
-
-	if fs.cacheMgr != nil {
-		if err := fs.cacheMgr.DelSnapshot(daemon.ImageID); err != nil {
-			return errors.Wrap(err, "del snapshot err")
-		}
-		log.L.Debugf("remove snapshot %s\n", daemon.ImageID)
-		fs.cacheMgr.SchedGC()
 	}
 
 	return nil
@@ -619,15 +624,16 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 	} else if err := fs.manager.StartDaemon(d); err != nil {
 		return errors.Wrapf(err, "start daemon err")
 	}
-	return fs.addSnapshot(d.ImageID, labels)
+	return nil
 }
 
-func (fs *Filesystem) addSnapshot(imageID string, labels map[string]string) error {
+func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
 	// Do nothing if there's no cacheMgr
 	if fs.cacheMgr == nil {
 		return nil
 	}
 
+	imageID, _ := registry.ParseLabels(labels)
 	blobs, err := fs.getBlobIDs(labels)
 	if err != nil {
 		return err
