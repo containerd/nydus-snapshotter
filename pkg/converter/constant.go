@@ -13,6 +13,7 @@ const (
 
 	ManifestNydusCache = "containerd.io/snapshot/nydus-cache"
 
+	LayerAnnotationFSVersion          = "containerd.io/snapshot/nydus-fs-version"
 	LayerAnnotationNydusBlob          = "containerd.io/snapshot/nydus-blob"
 	LayerAnnotationNydusBlobDigest    = "containerd.io/snapshot/nydus-blob-digest"
 	LayerAnnotationNydusBlobSize      = "containerd.io/snapshot/nydus-blob-size"

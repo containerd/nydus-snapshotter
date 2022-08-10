@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/KarpelesLab/reflink v0.0.2
+	github.com/aliyun/aliyun-oss-go-sdk v0.0.0-20190307165228-86c17b95fcd5
 	github.com/containerd/containerd v1.6.6
 	github.com/containerd/continuity v0.2.2
 	github.com/containerd/fifo v1.0.0
@@ -32,9 +33,9 @@ require (
 )
 
 require (
-	github.com/KarpelesLab/reflink v0.0.2 // indirect
 	github.com/Microsoft/go-winio v0.5.1 // indirect
 	github.com/Microsoft/hcsshim v0.9.3 // indirect
+	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/containerd/cgroups v1.0.3 // indirect
