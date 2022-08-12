@@ -123,7 +123,7 @@ func unpackNydusTar(ctx context.Context, bootDst, blobDst string, ra content.Rea
 // The nydus formatted tar stream is a tar-like structure that arranges the
 // data as follows:
 //
-// `blob_data | blob_tar_header | bootstrap_data | boostrap_tar_header`
+// `blob_data | blob_tar_header | bootstrap_data | bootstrap_tar_header`
 func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.Writer) error {
 	cur := ra.Size()
 	reader := newSeekReader(ra)
@@ -231,20 +231,17 @@ func unpackBlobFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.
 	return nil
 }
 
-// Pack converts a OCI formatted tar stream to a nydus formatted tar stream
+// Pack converts an OCI tar stream to nydus formatted stream with a tar-like
+// structure that arranges the data as follows:
 //
-// The nydus blob tar stream contains blob and bootstrap files with the following
-// file tree structure:
+// `blob_data | blob_tar_header | bootstrap_data | bootstrap_tar_header`
 //
-// /image
-// ├── image.blob
-// ├── image.boot
-//
-// So for the chunk of files in the nydus boostreap, a blob compressed offset
-// of 1024 (size_of(tar_header) * 2) is required.
+// The caller should write OCI tar stream into the returned `io.WriteCloser`,
+// then the Pack method will write the nydus formatted stream to `dest`
+// provided by the caller.
 //
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
-// the conversion workflow is finish.
+// the conversion workflow is finished.
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
 	workDir, err := ioutil.TempDir(getWorkdir(opt.WorkDir), "nydus-converter-")
 	if err != nil {
@@ -317,7 +314,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
-// Merge multiple nydus boostraps (from every layer of image) to a final boostrap.
+// Merge multiple nydus bootstraps (from each layer of image) to a final bootstrap.
 func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
 	workDir, err := ioutil.TempDir(getWorkdir(opt.WorkDir), "nydus-converter-")
 	if err != nil {
@@ -333,7 +330,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 			return func() error {
 				layer := layers[idx]
 
-				// Use the hex hash string of whole tar blob as the boostrap name.
+				// Use the hex hash string of whole tar blob as the bootstrap name.
 				bootstrap, err := os.Create(filepath.Join(workDir, layer.Digest.Hex()))
 				if err != nil {
 					return errors.Wrap(err, "create source bootstrap")
@@ -434,7 +431,8 @@ func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt Unpack
 	return nil
 }
 
-// LayerConvertFunc returns a function which converts an OCI image layer to a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
+// LayerConvertFunc returns a function which converts an OCI image layer to
+// a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
 func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if !images.IsLayerType(desc.MediaType) {
@@ -521,9 +519,10 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 	}
 }
 
-// ConvertHookFunc returns a function which will be used as a callback called for each blob after conversion is done.
-// The function only hooks the manifest conversion.
-// The function merges all the nydus blob layers into a nydus bootstrap layer and modify the config.
+// ConvertHookFunc returns a function which will be used as a callback
+// called for each blob after conversion is done. The function only hooks
+// the manifest conversion and merges all the nydus blob layers into a
+// nydus bootstrap layer and update the image config.
 func ConvertHookFunc(opt PackOption) converter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if !images.IsManifestType(newDesc.MediaType) {
@@ -599,7 +598,7 @@ func ConvertHookFunc(opt PackOption) converter.ConvertHookFunc {
 	}
 }
 
-// mergeLayers merege a list of ndyus blob layer into a nydus bootstrap layer.
+// mergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
 // The media type of the nydus bootstrap layer is "application/vnd.oci.image.layer.v1.tar+gzip".
 func mergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption, fsVersion string) (*ocispec.Descriptor, error) {
 	// Extracts nydus bootstrap from nydus format for each layer.
