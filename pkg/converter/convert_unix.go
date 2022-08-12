@@ -123,7 +123,7 @@ func unpackNydusTar(ctx context.Context, bootDst, blobDst string, ra content.Rea
 // The nydus formatted tar stream is a tar-like structure that arranges the
 // data as follows:
 //
-// `blob_data | blob_tar_header | bootstrap_data | boostrap_tar_header`
+// `blob_data | blob_tar_header | bootstrap_data | bootstrap_tar_header`
 func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.Writer) error {
 	cur := ra.Size()
 	reader := newSeekReader(ra)
@@ -265,8 +265,17 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 
 	unpackDone := make(chan bool, 1)
 	go func() {
-		if err := unpackOciTar(ctx, sourceDir, pr); err != nil {
-			pr.CloseWithError(errors.Wrapf(err, "unpack to %s", sourceDir))
+		var err error
+
+		defer func() {
+			if err != nil {
+				pr.CloseWithError(errors.Wrapf(err, "unpack to %s", sourceDir))
+			} else {
+				pr.Close()
+			}
+		}()
+
+		if err = unpackOciTar(ctx, sourceDir, pr); err != nil {
 			close(unpackDone)
 			return
 		}
@@ -291,7 +300,17 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 		defer blobFifo.Close()
 
 		go func() {
-			err := tool.Pack(tool.PackOption{
+			var err error
+
+			defer func() {
+				if err != nil {
+					pw.CloseWithError(errors.Wrapf(err, "convert blob for %s", sourceDir))
+				} else {
+					pw.Close()
+				}
+			}()
+
+			err = tool.Pack(tool.PackOption{
 				BuilderPath: getBuilder(opt.BuilderPath),
 
 				BlobPath:         blobPath,
@@ -302,7 +321,6 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 				Compressor:       opt.Compressor,
 			})
 			if err != nil {
-				pw.CloseWithError(errors.Wrapf(err, "convert blob for %s", sourceDir))
 				blobFifo.Close()
 			}
 		}()
@@ -317,7 +335,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
-// Merge multiple nydus boostraps (from every layer of image) to a final boostrap.
+// Merge multiple nydus bootstraps (from every layer of image) to a final bootstrap.
 func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
 	workDir, err := ioutil.TempDir(getWorkdir(opt.WorkDir), "nydus-converter-")
 	if err != nil {
@@ -333,7 +351,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 			return func() error {
 				layer := layers[idx]
 
-				// Use the hex hash string of whole tar blob as the boostrap name.
+				// Use the hex hash string of whole tar blob as the bootstrap name.
 				bootstrap, err := os.Create(filepath.Join(workDir, layer.Digest.Hex()))
 				if err != nil {
 					return errors.Wrap(err, "create source bootstrap")
@@ -376,7 +394,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	} else {
 		rc, err = os.Open(targetBootstrapPath)
 		if err != nil {
-			return errors.Wrap(err, "open targe bootstrap")
+			return errors.Wrap(err, "open target bootstrap")
 		}
 	}
 	defer rc.Close()
