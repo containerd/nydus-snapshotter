@@ -67,16 +67,17 @@ func (d *Daemon) SharedAbsMountPoint() string {
 	return filepath.Join(*d.RootMountPoint, d.SharedMountPoint())
 }
 
+// Mountpoint of per-image nydusd/rafs. It is a kernel mountpoint for each
+// nydus meta layer. Each meta layer is associated with a nydusd.
 func (d *Daemon) MountPoint() string {
-	if d.RootMountPoint != nil {
-		return filepath.Join("/", d.SnapshotID, "fs")
-	}
 	if d.CustomMountPoint != nil {
 		return *d.CustomMountPoint
 	}
-	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
+
+	return filepath.Join(d.SnapshotDir, d.SnapshotID, "mnt")
 }
 
+// Keep this for backwards compatibility
 func (d *Daemon) OldMountPoint() string {
 	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
 }
