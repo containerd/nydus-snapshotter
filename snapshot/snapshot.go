@@ -299,7 +299,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				}
 			}
 
-			logCtx.Infof("found nydus meta layer id %s, parpare remote snapshot", id)
+			logCtx.Infof("found nydus meta layer id %s, prepare remote snapshot", id)
 
 			if err := o.fs.AddSnapshot(info.Labels); err != nil {
 				return nil, errors.Wrap(err, "cache manager failed to add snapshot")

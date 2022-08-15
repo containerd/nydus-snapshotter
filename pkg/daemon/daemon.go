@@ -54,8 +54,17 @@ type Daemon struct {
 	Once   *sync.Once         `json:"-"`
 }
 
+// Mountpoint for nydusd within single kernel mountpoint(FUSE mount). Each mountpoint
+// is create by API based pseudo mount. `RootMountPoint` is real mountpoint
+// where to perform the kernel mount.
+// Nydusd API based mountpoint must start with "/", otherwise nydusd API server returns error.
 func (d *Daemon) SharedMountPoint() string {
-	return filepath.Join(*d.RootMountPoint, d.SnapshotID, "fs")
+	return filepath.Join("/", d.SnapshotID)
+}
+
+// This is generally used for overlayfs lower dir path.
+func (d *Daemon) SharedAbsMountPoint() string {
+	return filepath.Join(*d.RootMountPoint, d.SharedMountPoint())
 }
 
 func (d *Daemon) MountPoint() string {
@@ -145,20 +154,23 @@ func (d *Daemon) SharedMount() error {
 	if err != nil {
 		return err
 	}
-	return d.Client.SharedMount(d.MountPoint(), bootstrap, d.ConfigFile())
+
+	return d.Client.SharedMount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
 }
 
 func (d *Daemon) SharedUmount() error {
 	if err := d.ensureClient("share umount"); err != nil {
 		return err
 	}
+
 	if d.FsDriver == config.FsDriverFscache {
 		if err := d.sharedErofsUmount(); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
 		return nil
 	}
-	return d.Client.Umount(d.MountPoint())
+
+	return d.Client.Umount(d.SharedMountPoint())
 }
 
 func (d *Daemon) sharedErofsMount() error {
