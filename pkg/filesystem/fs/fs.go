@@ -587,6 +587,12 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 	}
 
 	if d, err := fs.manager.GetBySnapshotID(snapshotID); err == nil {
+		// Working for fscache driver, only one nydusd with multiple mountpoints.
+		// So it is not ordinary SharedMode.
+		if d.FsDriver == config.FsDriverFscache {
+			return d.MountPoint(), nil
+		}
+
 		if fs.mode == SharedInstance {
 			return d.SharedMountPoint(), nil
 		}
