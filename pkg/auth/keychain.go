@@ -61,7 +61,7 @@ func (kc PassKeyChain) TokenBase() bool {
 }
 
 // FromLabels finds image pull username and secret from snapshot labels.
-// Returned `nil` means no validated username and secrect are passed, it should
+// Returned `nil` means no valid username and secret is passed, it should
 // not override input nydusd configuration.
 func FromLabels(labels map[string]string) *PassKeyChain {
 	u, found := labels[label.NydusImagePullUsername]
