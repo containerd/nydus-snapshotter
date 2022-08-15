@@ -594,8 +594,9 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 		}
 
 		if fs.mode == SharedInstance {
-			return d.SharedMountPoint(), nil
+			return d.SharedAbsMountPoint(), nil
 		}
+
 		return d.MountPoint(), nil
 	}
 	return "", fmt.Errorf("failed to find nydus mountpoint of snapshot %s", snapshotID)

@@ -77,8 +77,7 @@ func WithLogLevel(logLevel string) NewDaemonOpt {
 	}
 }
 
-// In Shared mode, it is the mountpoint where single nydusd mounts fusedev. It has nothing
-// with fscache driver.
+// In Shared mode, it is the mountpoint where single nydusd mounts
 func WithRootMountPoint(rootMountPoint string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		if err := os.MkdirAll(rootMountPoint, 0755); err != nil {
