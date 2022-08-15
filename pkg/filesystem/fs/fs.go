@@ -62,9 +62,15 @@ var nativeEndian binary.ByteOrder
 type Mode int
 
 const (
+	// A single nydusd serves all container images
 	SharedInstance Mode = iota
+	// One container image one nydusd topology
 	MultiInstance
+	// Nydusd is not needed to work as FUSE server (fusedev) or other fs drivers,
+	// just provide the mount slices to containerd, and do real mount by other components
 	NoneInstance
+	// Nydusd does not fulfill any lazy-load (on-daemon) ability but only
+	// prefetches image data into local blob cache for other components
 	PrefetchInstance
 )
 
