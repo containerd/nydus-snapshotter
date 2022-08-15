@@ -187,7 +187,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
-	mountPoint := d.SharedMountPoint()
+	mountPoint := d.MountPoint()
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
 	}
@@ -221,7 +221,7 @@ func (d *Daemon) sharedErofsUmount() error {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
-	mountPoint := d.SharedMountPoint()
+	mountPoint := d.MountPoint()
 	if err := erofs.Umount(mountPoint); err != nil {
 		return errors.Wrapf(err, "umount erofs")
 	}
