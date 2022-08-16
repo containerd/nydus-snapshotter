@@ -11,12 +11,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
+)
+
+const (
+	splitPartsCount = 4
+	// Blob size bigger than 100MB, apply multiparts upload.
+	multipartsUploadThreshold = 100 * 1024 * 1024
 )
 
 type OSSBackend struct {
@@ -60,24 +68,123 @@ func newOSSBackend(rawConfig []byte) (*OSSBackend, error) {
 	}, nil
 }
 
+// Ported from https://github.com/aliyun/aliyun-oss-go-sdk/blob/c82fb81e272d84f716d3f13c36fe0542a49adfeb/oss/utils.go#L207.
+func splitBlobByPartNum(blobSize int64, chunkNum int) ([]oss.FileChunk, error) {
+	if chunkNum <= 0 || chunkNum > 10000 {
+		return nil, errors.New("chunkNum invalid")
+	}
+
+	if int64(chunkNum) > blobSize {
+		return nil, errors.New("oss: chunkNum invalid")
+	}
+
+	var chunks []oss.FileChunk
+	var chunk = oss.FileChunk{}
+	var chunkN = (int64)(chunkNum)
+	for i := int64(0); i < chunkN; i++ {
+		chunk.Number = int(i + 1)
+		chunk.Offset = i * (blobSize / chunkN)
+		if i == chunkN-1 {
+			chunk.Size = blobSize/chunkN + blobSize%chunkN
+		} else {
+			chunk.Size = blobSize / chunkN
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks, nil
+}
+
 // Upload nydus blob to oss storage backend.
-func (b *OSSBackend) Push(ctx context.Context, blobReader io.Reader, blobDigest digest.Digest) error {
+func (b *OSSBackend) push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
 	blobID := blobDigest.Hex()
 	blobObjectKey := b.objectPrefix + blobID
 
 	if exist, err := b.bucket.IsObjectExist(blobObjectKey); err != nil {
 		return errors.Wrap(err, "check object existence")
 	} else if exist {
-		logrus.Infof("skip upload because blob exists: %s", blobID)
 		return nil
 	}
 
-	// FIXME: handle large blob over 5GB.
-	if err := b.bucket.PutObject(blobObjectKey, blobReader); err != nil {
-		return errors.Wrap(err, "put blob object")
+	blobSize := ra.Size()
+	var needMultiparts = false
+	// Blob size bigger than 100MB, apply multiparts upload.
+	if blobSize >= multipartsUploadThreshold {
+		needMultiparts = true
+	}
+
+	if needMultiparts {
+		chunks, err := splitBlobByPartNum(blobSize, splitPartsCount)
+		if err != nil {
+			return errors.Wrap(err, "split blob by part num")
+		}
+
+		imur, err := b.bucket.InitiateMultipartUpload(blobObjectKey)
+		if err != nil {
+			return errors.Wrap(err, "initiate multipart upload")
+		}
+
+		// It always splits the blob into splitPartsCount=4 parts
+		partsChan := make(chan oss.UploadPart, splitPartsCount)
+
+		g := new(errgroup.Group)
+		for _, chunk := range chunks {
+			ck := chunk
+			g.Go(func() error {
+				p, err := b.bucket.UploadPart(imur, io.NewSectionReader(ra, ck.Offset, ck.Size), ck.Size, ck.Number)
+				if err != nil {
+					return errors.Wrap(err, "upload part")
+				}
+				partsChan <- p
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			b.bucket.AbortMultipartUpload(imur)
+			close(partsChan)
+			return errors.Wrap(err, "upload parts")
+		}
+
+		close(partsChan)
+
+		var parts []oss.UploadPart
+		for p := range partsChan {
+			parts = append(parts, p)
+		}
+
+		if _, err = b.bucket.CompleteMultipartUpload(imur, parts); err != nil {
+			return errors.Wrap(err, "complete multipart upload")
+		}
+	} else {
+		reader := content.NewReader(ra)
+		if err := b.bucket.PutObject(blobObjectKey, reader); err != nil {
+			return errors.Wrap(err, "put blob object")
+		}
 	}
 
 	return nil
+}
+
+func (b *OSSBackend) Push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
+	backoff := time.Second
+	for {
+		err := b.push(ctx, ra, blobDigest)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return err
+			default:
+			}
+		} else {
+			return nil
+		}
+		if backoff >= 8*time.Second {
+			return err
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
 }
 
 func (b *OSSBackend) Check(blobDigest digest.Digest) (string, error) {
