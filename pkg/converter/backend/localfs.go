@@ -14,13 +14,10 @@ import (
 	"os"
 	"path"
 
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-)
-
-const (
-	BackendTypeLocalFS = "localfs"
 )
 
 type LocalFSBackend struct {
@@ -47,7 +44,7 @@ func (b *LocalFSBackend) dstPath(blobID string) string {
 	return path.Join(b.dir, blobID)
 }
 
-func (b *LocalFSBackend) Push(ctx context.Context, blobReader io.Reader, blobDigest digest.Digest) error {
+func (b *LocalFSBackend) Push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
 	if err := os.MkdirAll(b.dir, 0755); err != nil {
 		return errors.Wrap(err, "create directory in localfs backend")
 	}
@@ -61,7 +58,8 @@ func (b *LocalFSBackend) Push(ctx context.Context, blobReader io.Reader, blobDig
 	}
 	defer dstFile.Close()
 
-	if _, err := io.Copy(dstFile, blobReader); err != nil {
+	sr := io.NewSectionReader(ra, 0, ra.Size())
+	if _, err := io.Copy(dstFile, sr); err != nil {
 		return errors.Wrapf(err, "copy blob to %s", dstPath)
 	}
 
