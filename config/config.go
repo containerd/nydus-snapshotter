@@ -35,31 +35,32 @@ const (
 )
 
 type Config struct {
-	Address              string        `toml:"-"`
-	ConvertVpcRegistry   bool          `toml:"-"`
-	DaemonCfgPath        string        `toml:"daemon_cfg_path"`
-	DaemonCfg            DaemonConfig  `toml:"-"`
-	PublicKeyFile        string        `toml:"-"`
-	RootDir              string        `toml:"-"`
-	CacheDir             string        `toml:"cache_dir"`
-	GCPeriod             time.Duration `toml:"gc_period"`
-	ValidateSignature    bool          `toml:"validate_signature"`
-	NydusdBinaryPath     string        `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath string        `toml:"nydus_image_binary"`
-	DaemonMode           string        `toml:"daemon_mode"`
-	FsDriver             string        `toml:"daemon_backend"`
-	SyncRemove           bool          `toml:"sync_remove"`
-	EnableMetrics        bool          `toml:"enable_metrics"`
-	MetricsFile          string        `toml:"metrics_file"`
-	EnableStargz         bool          `toml:"enable_stargz"`
-	LogLevel             string        `toml:"-"`
-	LogDir               string        `toml:"log_dir"`
-	LogToStdout          bool          `toml:"log_to_stdout"`
-	DisableCacheManager  bool          `toml:"disable_cache_manager"`
-	EnableNydusOverlayFS bool          `toml:"enable_nydus_overlayfs"`
-	NydusdThreadNum      int           `toml:"nydusd_thread_num"`
-	CleanupOnClose       bool          `toml:"cleanup_on_close"`
-	KubeconfigPath       string        `toml:"kubeconfig_path"`
+	Address                  string        `toml:"-"`
+	ConvertVpcRegistry       bool          `toml:"-"`
+	DaemonCfgPath            string        `toml:"daemon_cfg_path"`
+	DaemonCfg                DaemonConfig  `toml:"-"`
+	PublicKeyFile            string        `toml:"-"`
+	RootDir                  string        `toml:"-"`
+	CacheDir                 string        `toml:"cache_dir"`
+	GCPeriod                 time.Duration `toml:"gc_period"`
+	ValidateSignature        bool          `toml:"validate_signature"`
+	NydusdBinaryPath         string        `toml:"nydusd_binary_path"`
+	NydusImageBinaryPath     string        `toml:"nydus_image_binary"`
+	DaemonMode               string        `toml:"daemon_mode"`
+	FsDriver                 string        `toml:"daemon_backend"`
+	SyncRemove               bool          `toml:"sync_remove"`
+	EnableMetrics            bool          `toml:"enable_metrics"`
+	MetricsFile              string        `toml:"metrics_file"`
+	EnableStargz             bool          `toml:"enable_stargz"`
+	LogLevel                 string        `toml:"-"`
+	LogDir                   string        `toml:"log_dir"`
+	LogToStdout              bool          `toml:"log_to_stdout"`
+	DisableCacheManager      bool          `toml:"disable_cache_manager"`
+	EnableNydusOverlayFS     bool          `toml:"enable_nydus_overlayfs"`
+	NydusdThreadNum          int           `toml:"nydusd_thread_num"`
+	CleanupOnClose           bool          `toml:"cleanup_on_close"`
+	KubeconfigPath           string        `toml:"kubeconfig_path"`
+	EnableKubeconfigKeychain bool          `toml:"enable_kubeconfig_keychain"`
 }
 
 func (c *Config) FillupWithDefaults() error {

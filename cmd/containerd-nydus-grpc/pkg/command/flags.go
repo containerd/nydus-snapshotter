@@ -27,31 +27,32 @@ const (
 )
 
 type Args struct {
-	Address              string
-	LogLevel             string
-	LogDir               string
-	ConfigPath           string
-	RootDir              string
-	CacheDir             string
-	GCPeriod             string
-	ValidateSignature    bool
-	PublicKeyFile        string
-	ConvertVpcRegistry   bool
-	NydusdBinaryPath     string
-	NydusImageBinaryPath string
-	SharedDaemon         bool
-	DaemonMode           string
-	FsDriver             string
-	SyncRemove           bool
-	EnableMetrics        bool
-	MetricsFile          string
-	EnableStargz         bool
-	DisableCacheManager  bool
-	LogToStdout          bool
-	EnableNydusOverlayFS bool
-	NydusdThreadNum      int
-	CleanupOnClose       bool
-	KubeconfigPath       string
+	Address                  string
+	LogLevel                 string
+	LogDir                   string
+	ConfigPath               string
+	RootDir                  string
+	CacheDir                 string
+	GCPeriod                 string
+	ValidateSignature        bool
+	PublicKeyFile            string
+	ConvertVpcRegistry       bool
+	NydusdBinaryPath         string
+	NydusImageBinaryPath     string
+	SharedDaemon             bool
+	DaemonMode               string
+	FsDriver                 string
+	SyncRemove               bool
+	EnableMetrics            bool
+	MetricsFile              string
+	EnableStargz             bool
+	DisableCacheManager      bool
+	LogToStdout              bool
+	EnableNydusOverlayFS     bool
+	NydusdThreadNum          int
+	CleanupOnClose           bool
+	KubeconfigPath           string
+	EnableKubeconfigKeychain bool
 }
 
 type Flags struct {
@@ -209,6 +210,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "path to the kubeconfig file",
 			Destination: &args.KubeconfigPath,
 		},
+		&cli.BoolFlag{
+			Name:        "enable-kubeconfig-keychain",
+			Value:       false,
+			Usage:       "synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with provided `--kubeconfig-path` (default `$KUBECONFIG` or `~/.kube/config`)",
+			Destination: &args.EnableKubeconfigKeychain,
+		},
 	}
 }
 
@@ -284,5 +291,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.NydusdThreadNum = args.NydusdThreadNum
 	cfg.SyncRemove = args.SyncRemove
 	cfg.KubeconfigPath = args.KubeconfigPath
+	cfg.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
+
 	return cfg.SetupNydusBinaryPaths()
 }

@@ -29,6 +29,10 @@ func Start(ctx context.Context, cfg config.Config) error {
 	opt := ServeOptions{
 		ListeningSocketPath: cfg.Address,
 	}
-	auth.InitKubeSecretListener(ctx, cfg.KubeconfigPath)
+
+	if cfg.EnableKubeconfigKeychain {
+		auth.InitKubeSecretListener(ctx, cfg.KubeconfigPath)
+	}
+
 	return Serve(ctx, rs, opt, stopSignal)
 }
