@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -21,7 +22,16 @@ const (
 	defaultLogFileName = "nydus-snapshotter.log"
 )
 
-func SetUp(logLevel string, logToStdout bool, logDir string, rootDir string) error {
+type RotateLogArgs struct {
+	RotateLogMaxSize    int
+	RotateLogMaxBackups int
+	RotateLogMaxAge     int
+	RotateLogLocalTime  bool
+	RotateLogCompress   bool
+}
+
+func SetUp(logLevel string, logToStdout bool, logDir string,
+	rootDir string, logRotateArgs *RotateLogArgs) error {
 	lvl, err := logrus.ParseLevel(logLevel)
 	if err != nil {
 		return err
@@ -31,6 +41,9 @@ func SetUp(logLevel string, logToStdout bool, logDir string, rootDir string) err
 	if logToStdout {
 		logrus.SetOutput(os.Stdout)
 	} else {
+		if logRotateArgs == nil {
+			return errors.New("logRotateArgs is needed when logToStdout is false")
+		}
 		if len(logDir) == 0 {
 			logDir = filepath.Join(rootDir, DefaultLogDirName)
 		}
@@ -38,11 +51,16 @@ func SetUp(logLevel string, logToStdout bool, logDir string, rootDir string) err
 			return errors.Wrapf(err, "create log dir %s", logDir)
 		}
 		logFile := filepath.Join(logDir, defaultLogFileName)
-		f, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0755)
-		if err != nil {
-			return errors.Wrapf(err, "open log file %s", logFile)
+
+		lumberjackLogger := &lumberjack.Logger{
+			Filename:   logFile,
+			MaxSize:    logRotateArgs.RotateLogMaxSize,
+			MaxBackups: logRotateArgs.RotateLogMaxBackups,
+			MaxAge:     logRotateArgs.RotateLogMaxAge,
+			Compress:   logRotateArgs.RotateLogCompress,
+			LocalTime:  logRotateArgs.RotateLogLocalTime,
 		}
-		logrus.SetOutput(f)
+		logrus.SetOutput(lumberjackLogger)
 	}
 
 	logrus.SetFormatter(&logrus.TextFormatter{

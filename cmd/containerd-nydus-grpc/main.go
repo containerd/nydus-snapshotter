@@ -34,7 +34,14 @@ func main() {
 			}
 
 			ctx := logging.WithContext()
-			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir); err != nil {
+			logRotateArgs := &logging.RotateLogArgs{
+				RotateLogMaxSize:    cfg.RotateLogMaxSize,
+				RotateLogMaxBackups: cfg.RotateLogMaxBackups,
+				RotateLogMaxAge:     cfg.RotateLogMaxAge,
+				RotateLogLocalTime:  cfg.RotateLogLocalTime,
+				RotateLogCompress:   cfg.RotateLogCompress,
+			}
+			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir, logRotateArgs); err != nil {
 				return errors.Wrap(err, "failed to prepare logger")
 			}
 
