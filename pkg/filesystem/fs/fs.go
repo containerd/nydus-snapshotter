@@ -62,9 +62,15 @@ var nativeEndian binary.ByteOrder
 type Mode int
 
 const (
+	// A single nydusd serves all container images
 	SharedInstance Mode = iota
+	// One container image one nydusd topology
 	MultiInstance
+	// Nydusd is not needed to work as FUSE server (fusedev) or other fs drivers,
+	// just provide the mount slices to containerd, and do real mount by other components
 	NoneInstance
+	// Nydusd does not fulfill any lazy-load (on-daemon) ability but only
+	// prefetches image data into local blob cache for other components
 	PrefetchInstance
 )
 
@@ -581,9 +587,16 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 	}
 
 	if d, err := fs.manager.GetBySnapshotID(snapshotID); err == nil {
-		if fs.mode == SharedInstance {
-			return d.SharedMountPoint(), nil
+		// Working for fscache driver, only one nydusd with multiple mountpoints.
+		// So it is not ordinary SharedMode.
+		if d.FsDriver == config.FsDriverFscache {
+			return d.MountPoint(), nil
 		}
+
+		if fs.mode == SharedInstance {
+			return d.SharedAbsMountPoint(), nil
+		}
+
 		return d.MountPoint(), nil
 	}
 	return "", fmt.Errorf("failed to find nydus mountpoint of snapshot %s", snapshotID)

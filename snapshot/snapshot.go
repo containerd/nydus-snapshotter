@@ -299,7 +299,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				}
 			}
 
-			logCtx.Infof("found nydus meta layer id %s, parpare remote snapshot", id)
+			logCtx.Infof("found nydus meta layer id %s, prepare remote snapshot", id)
 
 			if err := o.fs.AddSnapshot(info.Labels); err != nil {
 				return nil, errors.Wrap(err, "cache manager failed to add snapshot")
@@ -479,11 +479,15 @@ func (o *snapshotter) Close() error {
 }
 
 func (o *snapshotter) upperPath(id string) string {
+	return filepath.Join(o.root, "snapshots", id, "fs")
+}
+
+func (o *snapshotter) lowerPath(id string) string {
 	if mnt, err := o.fs.MountPoint(id); err == nil {
 		return mnt
 	}
 
-	return filepath.Join(o.root, "snapshots", id, "fs")
+	return ""
 }
 
 func (o *snapshotter) workPath(id string) string {
@@ -604,7 +608,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return bindMount(o.upperPath(s.ParentIDs[0])), nil
 	}
 
-	lowerDirOption := fmt.Sprintf("lowerdir=%s", o.upperPath(id))
+	lowerDirOption := fmt.Sprintf("lowerdir=%s", o.lowerPath(id))
 	overlayOptions = append(overlayOptions, lowerDirOption)
 
 	// when hasDaemon and not enableNydusOverlayFS, return overlayfs mount slice

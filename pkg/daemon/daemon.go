@@ -54,20 +54,30 @@ type Daemon struct {
 	Once   *sync.Once         `json:"-"`
 }
 
+// Mountpoint for nydusd within single kernel mountpoint(FUSE mount). Each mountpoint
+// is create by API based pseudo mount. `RootMountPoint` is real mountpoint
+// where to perform the kernel mount.
+// Nydusd API based mountpoint must start with "/", otherwise nydusd API server returns error.
 func (d *Daemon) SharedMountPoint() string {
-	return filepath.Join(*d.RootMountPoint, d.SnapshotID, "fs")
+	return filepath.Join("/", d.SnapshotID)
 }
 
+// This is generally used for overlayfs lower dir path.
+func (d *Daemon) SharedAbsMountPoint() string {
+	return filepath.Join(*d.RootMountPoint, d.SharedMountPoint())
+}
+
+// Mountpoint of per-image nydusd/rafs. It is a kernel mountpoint for each
+// nydus meta layer. Each meta layer is associated with a nydusd.
 func (d *Daemon) MountPoint() string {
-	if d.RootMountPoint != nil {
-		return filepath.Join("/", d.SnapshotID, "fs")
-	}
 	if d.CustomMountPoint != nil {
 		return *d.CustomMountPoint
 	}
-	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
+
+	return filepath.Join(d.SnapshotDir, d.SnapshotID, "mnt")
 }
 
+// Keep this for backwards compatibility
 func (d *Daemon) OldMountPoint() string {
 	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
 }
@@ -145,20 +155,23 @@ func (d *Daemon) SharedMount() error {
 	if err != nil {
 		return err
 	}
-	return d.Client.SharedMount(d.MountPoint(), bootstrap, d.ConfigFile())
+
+	return d.Client.SharedMount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
 }
 
 func (d *Daemon) SharedUmount() error {
 	if err := d.ensureClient("share umount"); err != nil {
 		return err
 	}
+
 	if d.FsDriver == config.FsDriverFscache {
 		if err := d.sharedErofsUmount(); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
 		return nil
 	}
-	return d.Client.Umount(d.MountPoint())
+
+	return d.Client.Umount(d.SharedMountPoint())
 }
 
 func (d *Daemon) sharedErofsMount() error {
@@ -174,7 +187,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
-	mountPoint := d.SharedMountPoint()
+	mountPoint := d.MountPoint()
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
 	}
@@ -208,7 +221,7 @@ func (d *Daemon) sharedErofsUmount() error {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
-	mountPoint := d.SharedMountPoint()
+	mountPoint := d.MountPoint()
 	if err := erofs.Umount(mountPoint); err != nil {
 		return errors.Wrapf(err, "umount erofs")
 	}
