@@ -3,12 +3,12 @@ name: nydus-snapshotter image
 on:
   push:
     branches:
-      - 'main'
+      - "main"
     tags:
       - v[0-9]+.[0-9]+.[0-9]+
   pull_request:
     branches:
-      - 'main'
+      - "main"
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17'
+          go-version: "1.17"
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: cache go mod
@@ -113,6 +113,36 @@ jobs:
           # so we need to umount it here, otherwise you cannot delete this directory. 
           # Frankly, I don't know why Nydusd didn't clean up these resources.
           sudo umount -f /var/lib/containerd-test/io.containerd.snapshotter.v1.nydus/mnt
+          sudo rm -rf /var/lib/containerd-test/*
+      - name: Test nydus-snapshotter with multiple daemon mode
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          # start nydus-snapshotter
+          docker run -d --name snapshotter --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined -e CONTAINERD_ROOT=/var/lib/containerd-test -e NYDUSD_DAEMON_MODE=multiple -v /var/lib/containerd-test:/var/lib/containerd-test:shared -v ~/.docker/config.json:/root/.docker/config.json:shared ${{ env.REGISTRY }}/${{ env.ORGANIZATION }}/nydus-snapshotter:local
+          # start containerd
+          sudo /usr/local/bin/containerd --config /etc/containerd/containerd-test-config.toml -l debug &
+          # wait for containerd to start up
+          sleep 10
+          echo "Pull nydus-latest image"
+          sudo crictl pull ghcr.io/dragonflyoss/image-service/ubuntu:nydus-latest
+          docker logs `docker ps |grep  "nydus-snapshotter"|cut -d ' ' -f1`
+          echo "create new pod with nydus snapshotter"
+          sudo crictl run misc/example/container.yaml misc/example/pod.yaml
+          container=$(sudo crictl ps -q)
+          echo "check container liveness"
+          sudo crictl exec $container ls
+          echo "delete pod"
+          sudo crictl rmp -fa
+          sudo crictl rmi --all --prune
+      - name: Cleanup containerd and snapshotter
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          echo "stop snapshotter"
+          docker stop snapshotter
+          docker rm snapshotter
+          echo "stop containerd"
+          sudo pkill -f /usr/local/bin/containerd
+          echo "delete containerd dir"
           sudo rm -rf /var/lib/containerd-test/*
       - name: Test nydus-snapshotter image in localfs mode
         if: ${{ github.event_name == 'pull_request' }}
