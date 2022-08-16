@@ -61,6 +61,11 @@ type Config struct {
 	CleanupOnClose           bool          `toml:"cleanup_on_close"`
 	KubeconfigPath           string        `toml:"kubeconfig_path"`
 	EnableKubeconfigKeychain bool          `toml:"enable_kubeconfig_keychain"`
+	RotateLogMaxSize         int           `toml:"log_rotate_max_size"`
+	RotateLogMaxBackups      int           `toml:"log_rotate_max_backups"`
+	RotateLogMaxAge          int           `toml:"log_rotate_max_age"`
+	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
+	RotateLogCompress        bool          `toml:"log_rotate_compress"`
 }
 
 func (c *Config) FillupWithDefaults() error {

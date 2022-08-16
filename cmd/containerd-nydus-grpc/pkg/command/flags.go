@@ -19,11 +19,16 @@ import (
 )
 
 const (
-	defaultAddress   = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultLogLevel  = logrus.InfoLevel
-	defaultRootDir   = "/var/lib/containerd-nydus-grpc"
-	defaultGCPeriod  = "24h"
-	defaultPublicKey = "/signing/nydus-image-signing-public.key"
+	defaultAddress             = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+	defaultLogLevel            = logrus.InfoLevel
+	defaultRootDir             = "/var/lib/containerd-nydus-grpc"
+	defaultGCPeriod            = "24h"
+	defaultPublicKey           = "/signing/nydus-image-signing-public.key"
+	defaultRotateLogMaxSize    = 200 // 200 megabytes
+	defaultRotateLogMaxBackups = 10
+	defaultRotateLogMaxAge     = 0 // days
+	defaultRotateLogLocalTime  = true
+	defaultRotateLogCompress   = true
 )
 
 type Args struct {
@@ -270,6 +275,11 @@ func Validate(args *Args, cfg *config.Config) error {
 	if len(cfg.LogDir) == 0 {
 		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
+	cfg.RotateLogMaxSize = defaultRotateLogMaxSize
+	cfg.RotateLogMaxBackups = defaultRotateLogMaxBackups
+	cfg.RotateLogMaxAge = defaultRotateLogMaxAge
+	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
+	cfg.RotateLogCompress = defaultRotateLogCompress
 
 	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {
