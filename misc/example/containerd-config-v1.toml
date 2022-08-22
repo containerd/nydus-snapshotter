@@ -22,7 +22,9 @@ oom_score = 0
     [plugins.cri.cni]
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
+
 [proxy_plugins]
   [proxy_plugins.nydus]
       type = "snapshot"
       address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+

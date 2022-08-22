@@ -23,3 +23,4 @@ oom_score = 0
   [proxy_plugins.nydus]
       type = "snapshot"
       address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+
