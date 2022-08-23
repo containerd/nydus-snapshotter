@@ -8,7 +8,7 @@ GO_EXECUTABLE_PATH ?= $(shell which go)
 NYDUS_BUILDER ?= /usr/bin/nydus-image
 NYDUS_NYDUSD ?= /usr/bin/nydusd-fusedev
 GOOS ?= linux
-GOARCH ?= amd64
+GOARCH ?= $(shell go env GOARCH)
 #GOPROXY ?= https://goproxy.io
 
 ifdef GOPROXY
