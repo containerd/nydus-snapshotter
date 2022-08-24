@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/pkg/errors"
@@ -21,7 +22,8 @@ import (
 const (
 	defaultAddress             = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 	defaultLogLevel            = logrus.InfoLevel
-	defaultRootDir             = "/var/lib/containerd-nydus-grpc"
+	defaultRootDir             = "/var/lib/containerd-nydus"
+	oldDefaultRootDir          = "/var/lib/containerd-nydus-grpc"
 	defaultGCPeriod            = "24h"
 	defaultPublicKey           = "/signing/nydus-image-signing-public.key"
 	defaultRotateLogMaxSize    = 200 // 200 megabytes
@@ -255,12 +257,20 @@ func Validate(args *Args, cfg *config.Config) error {
 		cfg.DaemonMode = config.DaemonModeShared
 	}
 	if args.FsDriver == config.FsDriverFscache && args.DaemonMode != config.DaemonModeShared {
-		return errors.New("`fscache` backend driver only supports `shared` daemon mode")
+		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
 	cfg.RootDir = args.RootDir
 	if len(cfg.RootDir) == 0 {
 		return errors.New("invalid empty root directory")
+	}
+
+	if args.RootDir == defaultRootDir {
+		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
+			if len(entries) != 0 {
+				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
+			}
+		}
 	}
 
 	cfg.CacheDir = args.CacheDir
