@@ -42,7 +42,7 @@ func main() {
 				RotateLogCompress:   cfg.RotateLogCompress,
 			}
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir, logRotateArgs); err != nil {
-				return errors.Wrap(err, "failed to prepare logger")
+				return errors.Wrap(err, "failed to set up logger")
 			}
 
 			return snapshotter.Start(ctx, cfg)
@@ -50,9 +50,9 @@ func main() {
 	}
 	if err := app.Run(os.Args); err != nil {
 		if errdefs.IsConnectionClosed(err) {
-			log.L.Info("nydus snapshotter exited")
+			log.L.Info("nydus-snapshotter exited")
 		} else {
-			log.L.WithError(err).Fatal("failed to start nydus snapshotter:\n\r")
+			log.L.WithError(err).Fatal("failed to start nydus-snapshotter")
 		}
 	}
 }

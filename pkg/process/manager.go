@@ -270,7 +270,7 @@ func (m *Manager) IsPrefetchDaemon() bool {
 	return m.daemonMode == config.DaemonModePrefetch
 }
 
-// Reconnect already running daemons，and rebuild daemons management structs.
+// Reconnect running daemons and rebuild daemons management states
 func (m *Manager) Reconnect(ctx context.Context) error {
 	var (
 		daemons      []*daemon.Daemon
@@ -296,6 +296,22 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+
+			if d.ID == daemon.SharedNydusDaemonID {
+				// The only reason that nydusd can't be connected is it's not running.
+				// Moreover, snapshotter is restarting. So no nydusd states can be returned to each nydusd.
+				// Nyudsd can't do failover any more.
+				// We can safely try to umount its mountpoint to avoid nydusd pausing in INIT state.
+				log.L.Warnf("Nydusd died somehow. Clean up its vestige!")
+
+				mounter := mount.Mounter{}
+				// This is best effort. So no need to handle its error.
+				mounter.Umount(*d.RootMountPoint)
+				// Nydusd judges if it should enter failover phrase by checking if unix sockt is existed and it
+				// can't be connected.
+				os.Remove(d.GetAPISock())
+			}
+
 			return nil
 		}
 		if !info.Running() {
