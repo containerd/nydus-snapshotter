@@ -111,12 +111,6 @@ func (m *Manager) CleanUpDaemonResource(d *daemon.Daemon) {
 }
 
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
-	// if cg != nil {
-	// 	err := cg(d)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
 	cmd, err := m.buildStartCommand(d)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to create start command for daemon %s", d.ID))
@@ -241,7 +235,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 			log.L.Errorf("failed to process wait, %v", err)
 		}
 	}
-	// for backward compatible, here umount <snapshotdir>/<id>/fs and <snapshotdir>/<id>/mnt
+	// for backward compatible, here umount <snapshot_dir>/<id>/fs and <snapshot_dir>/<id>/mnt
 	// if mountpoint not exist, Umount will return nil
 	mps := []string{d.MountPoint(), d.OldMountPoint()}
 	for _, mp := range mps {
@@ -270,7 +264,7 @@ func (m *Manager) IsPrefetchDaemon() bool {
 	return m.daemonMode == config.DaemonModePrefetch
 }
 
-// Reconnect already running daemons，and rebuild daemons management structs.
+// Reconnect running daemons and rebuild daemons management states
 func (m *Manager) Reconnect(ctx context.Context) error {
 	var (
 		daemons      []*daemon.Daemon
@@ -296,6 +290,26 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+
+			if d.ID == daemon.SharedNydusDaemonID {
+				// The only reason that nydusd can't be connected is it's not running.
+				// Moreover, snapshotter is restarting. So no nydusd states can be returned to each nydusd.
+				// Nydusd can't do failover any more.
+				// We can safely try to umount its mountpoint to avoid nydusd pausing in INIT state.
+				log.L.Warnf("Nydusd died somehow. Clean up its vestige!")
+
+				mounter := mount.Mounter{}
+				// This is best effort. So no need to handle its error.
+				if err := mounter.Umount(*d.RootMountPoint); err != nil {
+					log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
+				}
+				// Nydusd judges if it should enter failover phrase by checking
+				// if unix socket is existed and it can't be connected.
+				if err := os.Remove(d.GetAPISock()); err != nil {
+					log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
+				}
+			}
+
 			return nil
 		}
 		if !info.Running() {

@@ -288,7 +288,7 @@ func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 }
 
 func GetBootstrapFile(dir, id string) (string, error) {
-	// meta files are stored at <snapshotid>/image/image.boot
+	// meta files are stored at <snapshot_id>/fs/image/image.boot
 	bootstrap := filepath.Join(dir, id, "fs", "image", "image.boot")
 	_, err := os.Stat(bootstrap)
 	if err == nil {
