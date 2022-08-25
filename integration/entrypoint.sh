@@ -17,10 +17,12 @@ SNAPSHOTTER_CACHE_DIR=${REMOTE_SNAPSHOTTER_ROOT}/cache
 JAVA_IMAGE=${JAVA_IMAGE:-ghcr.io/dragonflyoss/image-service/java:nydus-nightly-v6}
 WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-ghcr.io/dragonflyoss/image-service/wordpress:nydus-nightly-v6}
 TOMCAT_IMAGE=${TOMCAT_IMAGE:-ghcr.io/dragonflyoss/image-service/tomcat:nydus-nightly-v5}
+STARGZ_IMAGE=${TOMCAT_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
 
 # JAVA_IMAGE=${JAVA_IMAGE:-hub.byted.org/gechangwei/java:latest-nydus-v6}
 # WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-hub.byted.org/gechangwei/wordpress:latest-nydus-v6}
 # TOMCAT_IMAGE=${TOMCAT_IMAGE:-hub.byted.org/gechangwei/tomcat:latest-nydus-v5}
+# STARGZ_IMAGE=${TOMCAT_IMAGE:-hub.byted.org/gechangwei/java:latest-stargz}
 
 PLUGIN=nydus
 
@@ -168,7 +170,7 @@ function start_single_container_on_stargz {
     nerdctl_prune_images
     reboot_containerd shared
 
-    nerdctl --snapshotter nydus run -d --net none ghcr.io/stargz-containers/wordpress:5.9.2-esgz
+    nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
 }
 
 function pull_reomve_one_image {
@@ -203,4 +205,4 @@ start_multiple_containers_shared_daemon
 pull_reomve_one_image
 pull_reomve_multiple_images shared
 pull_reomve_multiple_images mutiple
-# start_single_container_on_stargz
+start_single_container_on_stargz
