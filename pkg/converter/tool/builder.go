@@ -7,10 +7,13 @@
 package tool
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/sirupsen/logrus"
 )
 
@@ -26,6 +29,7 @@ type PackOption struct {
 	ChunkDictPath    string
 	PrefetchPatterns string
 	Compressor       string
+	Timeout          *time.Duration
 }
 
 type MergeOption struct {
@@ -35,6 +39,7 @@ type MergeOption struct {
 	TargetBootstrapPath  string
 	ChunkDictPath        string
 	PrefetchPatterns     string
+	Timeout              *time.Duration
 }
 
 type UnpackOption struct {
@@ -42,6 +47,7 @@ type UnpackOption struct {
 	BootstrapPath string
 	BlobPath      string
 	TarPath       string
+	Timeout       *time.Duration
 }
 
 func Pack(option PackOption) error {
@@ -76,15 +82,26 @@ func Pack(option PackOption) error {
 	}
 	args = append(args, option.SourcePath)
 
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if option.Timeout != nil {
+		ctx, cancel = context.WithTimeout(ctx, *option.Timeout)
+		defer cancel()
+	}
+
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
 
-	cmd := exec.Command(option.BuilderPath, args...)
+	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
 	cmd.Stdout = logger.Writer()
 	cmd.Stderr = logger.Writer()
 	cmd.Stdin = strings.NewReader(option.PrefetchPatterns)
 
 	if err := cmd.Run(); err != nil {
-		logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
+		} else {
+			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		}
 		return err
 	}
 
@@ -109,15 +126,25 @@ func Merge(option MergeOption) error {
 	}
 	args = append(args, option.SourceBootstrapPaths...)
 
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if option.Timeout != nil {
+		ctx, cancel = context.WithTimeout(ctx, *option.Timeout)
+		defer cancel()
+	}
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
 
-	cmd := exec.Command(option.BuilderPath, args...)
+	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
 	cmd.Stdout = logger.Writer()
 	cmd.Stderr = logger.Writer()
 	cmd.Stdin = strings.NewReader(option.PrefetchPatterns)
 
 	if err := cmd.Run(); err != nil {
-		logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
+		} else {
+			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		}
 		return err
 	}
 
@@ -138,14 +165,25 @@ func Unpack(option UnpackOption) error {
 		args = append(args, "--blob", option.BlobPath)
 	}
 
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if option.Timeout != nil {
+		ctx, cancel = context.WithTimeout(ctx, *option.Timeout)
+		defer cancel()
+	}
+
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
 
-	cmd := exec.Command(option.BuilderPath, args...)
+	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
 	cmd.Stdout = logger.Writer()
 	cmd.Stderr = logger.Writer()
 
 	if err := cmd.Run(); err != nil {
-		logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
+		} else {
+			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		}
 		return err
 	}
 
