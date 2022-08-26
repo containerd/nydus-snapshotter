@@ -1,0 +1,45 @@
+name: integration test
+
+on:
+  push:
+    branches:
+      - "main"
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+  pull_request:
+    branches:
+      - "main"
+
+env:
+  CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+
+jobs:
+  run-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.17.13"
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: cache go mod
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go
+      - name: Log in to container registry
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run e2e test
+        run: |
+          TAG=$GITHUB_REF_NAME
+          [ "$TAG" == "main" ] && TAG="latest"
+          [ "$GITHUB_EVENT_NAME" == "pull_request" ] && TAG="local"
+          make integration

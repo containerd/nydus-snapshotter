@@ -1,4 +1,4 @@
-## Example to setup and test nydus-snapshoter
+## Example to setup and test nydus-snapshotter
 
 The directory holds a few example config files to setup a nydus POC environment that saves its all state files in `/var/lib/containerd-test`, as specified in `containerd-test-config.toml`.
 For now it contains following files:
