@@ -308,6 +308,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 				ChunkDictPath:    opt.ChunkDictPath,
 				PrefetchPatterns: opt.PrefetchPatterns,
 				Compressor:       opt.Compressor,
+				Timeout:          opt.Timeout,
 			})
 			if err != nil {
 				pw.CloseWithError(errors.Wrapf(err, "convert blob for %s", sourceDir))
@@ -370,6 +371,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		TargetBootstrapPath:  targetBootstrapPath,
 		ChunkDictPath:        opt.ChunkDictPath,
 		PrefetchPatterns:     opt.PrefetchPatterns,
+		Timeout:              opt.Timeout,
 	}); err != nil {
 		return errors.Wrap(err, "merge bootstrap")
 	}
@@ -423,6 +425,7 @@ func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt Unpack
 			BootstrapPath: bootPath,
 			BlobPath:      blobPath,
 			TarPath:       tarPath,
+			Timeout:       opt.Timeout,
 		})
 		if err != nil {
 			blobFifo.Close()
