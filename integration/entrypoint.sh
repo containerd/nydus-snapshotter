@@ -9,7 +9,7 @@ set -euo pipefail
 CONTAINERD_ROOT=/var/lib/containerd/
 CONTAINERD_STATUS=/run/containerd/
 REMOTE_SNAPSHOTTER_SOCKET=/run/containerd-nydus/containerd-nydus-grpc.sock
-REMOTE_SNAPSHOTTER_ROOT=/var/lib/containerd-nydus-grpc
+REMOTE_SNAPSHOTTER_ROOT=/var/lib/containerd-nydus
 CONTAINERD_SOCKET=/run/containerd/containerd.sock
 SNAPSHOTTER_SHARED_MNT=${REMOTE_SNAPSHOTTER_ROOT}/mnt
 SNAPSHOTTER_CACHE_DIR=${REMOTE_SNAPSHOTTER_ROOT}/cache
