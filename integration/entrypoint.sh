@@ -87,6 +87,17 @@ function can_erofs_ondemand_read {
     return $?
 }
 
+function validate_mnt_number {
+    expected="${1}"
+    found=$(mount -t fuse | wc -l)
+    if [[ $found != "$expected" ]]; then
+        echo "expecting $expected mountpoints, but found $found"
+        return 1
+    else
+        return 0
+    fi
+}
+
 function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
@@ -185,7 +196,7 @@ function start_single_container_on_stargz {
     nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
 }
 
-function pull_reomve_one_image {
+function pull_remove_one_image {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
     reboot_containerd mutiple
@@ -194,7 +205,7 @@ function pull_reomve_one_image {
     nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
 }
 
-function pull_reomve_multiple_images {
+function pull_remove_multiple_images {
     local daemon_mode=$1
     echo "testing $FUNCNAME"
     nerdctl_prune_images
@@ -259,14 +270,18 @@ function only_restart_snapshotter {
     c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
     c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
 
-    sleep 1
-
     echo "killing nydusd"
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
     containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/config.json &
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
+
+    if [[ "${daemon_mode}" == "shared" ]]; then
+        validate_mnt_number 1
+    else
+        validate_mnt_number 2
+    fi
 
     echo "start new containers"
     nerdctl --snapshotter nydus start "$c1"
@@ -278,11 +293,15 @@ reboot_containerd mutiples
 start_single_container_multiple_daemons
 start_multiple_containers_multiple_daemons
 start_multiple_containers_shared_daemon
-pull_reomve_one_image
-pull_reomve_multiple_images shared
-pull_reomve_multiple_images multiple
+pull_remove_one_image
+pull_remove_multiple_images shared
+pull_remove_multiple_images multiple
 start_single_container_on_stargz
 only_restart_snapshotter shared
 only_restart_snapshotter multiple
 kill_snapshotter_and_nydusd_recover shared
 kill_snapshotter_and_nydusd_recover multiple
+
+if [[ $(can_erofs_ondemand_read) == 0 ]]; then
+    start_multiple_containers_shared_daemon_erofs
+fi
