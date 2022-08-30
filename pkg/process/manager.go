@@ -109,7 +109,7 @@ func (s *DaemonStates) RecoverDaemonState(d *daemon.Daemon) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.L.Errorf("Recovering snapshot ID %s daemon ID %s", d.SnapshotID, d.ID)
+	log.L.Infof("Recovering snapshot ID %s daemon ID %s", d.SnapshotID, d.ID)
 
 	s.daemons = append(s.daemons, d)
 	s.idxBySnapshotID[d.SnapshotID] = d

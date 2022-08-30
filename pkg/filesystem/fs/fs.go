@@ -120,6 +120,8 @@ type Filesystem struct {
 }
 
 // NewFileSystem initialize Filesystem instance
+// TODO(chge): `Filesystem` abstraction is not suggestive. A snapshotter
+// can mount many Rafs/Erofs file systems
 func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	var fs Filesystem
 	for _, o := range opt {
@@ -138,17 +140,35 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		}()
 	}
 	fs.resolver = NewResolver()
+
+	var recoveringDaemons []*daemon.Daemon
+	var err error
+
 	// Try to reconnect to running daemons
-	if err := fs.manager.Reconnect(ctx); err != nil {
+	if recoveringDaemons, err = fs.manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
 	// Try to bring up the shared daemon early.
 	if fs.mode == SharedInstance {
-		if _, e := fs.getSharedDaemon(); e != nil {
-			log.G(ctx).Warnf("initialize the shared nydus daemon")
+		if d, _ := fs.getSharedDaemon(); d != nil {
+			log.G(ctx).Infof("initialize the shared nydus daemon")
 			fs.initSharedDaemon(ctx)
 		}
 	}
+
+	// Try to bring all persisted and stopped nydusd up and remount Rafs
+	if len(recoveringDaemons) != 0 {
+		for _, d := range recoveringDaemons {
+			if fs.mode == SharedInstance {
+				if d.ID != daemon.SharedNydusDaemonID {
+					if err := d.SharedMount(); err != nil {
+						return nil, errors.Errorf("failed to mount rafs when recovering, %v", err)
+					}
+				}
+			}
+		}
+	}
+
 	return &fs, nil
 }
 
@@ -248,9 +268,13 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err := fs.manager.NewDaemon(d); err != nil {
-		return nil, err
+		if !errdefs.IsAlreadyExists(err) {
+			return nil, err
+		}
 	}
+
 	return d, nil
 }
 
@@ -559,10 +583,13 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 
 	id := filepath.Base(mountPoint)
 	log.L.Logger.Debugf("umount snapshot %s", id)
-	daemon, err := fs.manager.GetBySnapshotID(id)
-	if err != nil {
-		return err
+	daemon, _ := fs.manager.GetBySnapshotID(id)
+
+	if daemon == nil {
+		log.L.Infof("snapshot %s does not correspond to a nydusd", id)
+		return nil
 	}
+
 	if err := fs.manager.DestroyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
 	}
@@ -756,9 +783,9 @@ func (fs *Filesystem) createNewDaemon(snapshotID string, imageID string) (*daemo
 	return d, nil
 }
 
-// createSharedDaemon create an virtual daemon from global shared daemon instance
-// the global shared daemon with an special ID "shared_daemon", all virtual daemons are
-// created from this daemon with api invocation
+// Create a virtual daemon as placeholder in DB and daemon states cache to represent a Rafs mount.
+// It does not fork any new nydusd process. The rafs umount is always done by requesting to the running
+// nydusd API server.
 func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
 	var (
 		sharedDaemon *daemon.Daemon
@@ -813,7 +840,7 @@ func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 	}
 
 	if fs.cacheMgr != nil {
-		// Overriding work_dir option of nyudsd config as we want to set it
+		// Overriding work_dir option of nydusd config as we want to set it
 		// via snapshotter config option to let snapshotter handle blob cache GC.
 		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
 	}

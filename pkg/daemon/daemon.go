@@ -31,6 +31,7 @@ const (
 
 type NewDaemonOpt func(d *Daemon) error
 
+// TODO: Record queried nydusd state
 type Daemon struct {
 	ID               string
 	SnapshotID       string

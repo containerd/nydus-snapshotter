@@ -805,7 +805,7 @@ func (o *snapshotter) cleanupDirectories(ctx context.Context) ([]string, error) 
 }
 
 func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) error {
-	// On a remote snapshot, the layer is mounted on the "fs" directory.
+	// On a remote snapshot, the layer is mounted on the "mnt" directory.
 	// We use Filesystem's Unmount API so that it can do necessary finalization
 	// before/after the unmount.
 	log.G(ctx).WithField("dir", dir).Infof("cleanupSnapshotDirectory %s", dir)
