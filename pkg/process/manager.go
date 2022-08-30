@@ -433,14 +433,19 @@ func (m *Manager) IsPrefetchDaemon() bool {
 }
 
 // Reconnect running daemons and rebuild daemons management states
-func (m *Manager) Reconnect(ctx context.Context) error {
+// 1. Don't erase ever written record
+// 2. Just recover nydusd daemon states to manager's memory part.
+// 3. Manager in SharedDaemon mode should starts a nydusd when recovering
+func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 	var (
 		daemons      []*daemon.Daemon
 		sharedDaemon *daemon.Daemon
+		// Collected deserialized daemons that need to be recovered.
+		recoveringDaemons []*daemon.Daemon
 	)
 
 	if m.isNoneDaemon() {
-		return nil
+		return nil, nil
 	}
 
 	if err := m.store.WalkDaemons(ctx, func(d *daemon.Daemon) error {
@@ -448,11 +453,15 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 			WithField("mode", d.DaemonMode).
 			Info("found daemon in database")
 
+		m.daemonStates.RecoverDaemonState(d)
+
 		d.Once = &sync.Once{}
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 			daemons = append(daemons, d)
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
+			recoveringDaemons = append(recoveringDaemons, d)
+
 			return nil
 		}
 		info, err := d.CheckStatus()
@@ -476,8 +485,9 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 				if err := os.Remove(d.GetAPISock()); err != nil {
 					log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 				}
-			}
 
+			}
+			recoveringDaemons = append(recoveringDaemons, d)
 			return nil
 		}
 		if !info.Running() {
@@ -495,30 +505,12 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 
 		return nil
 	}); err != nil {
-		return errors.Wrapf(err, "failed to walk daemons to reconnect")
+		return nil, errors.Wrapf(err, "failed to walk daemons to reconnect")
 	}
 
 	if !m.isOneDaemon() && sharedDaemon != nil {
-		return errors.Errorf("SharedDaemon or PrefetchDaemon disabled, but shared daemon is found")
+		return nil, errors.Errorf("SharedDaemon or PrefetchDaemon disabled, but shared daemon is found")
 	}
 
-	if m.isOneDaemon() && sharedDaemon == nil && len(daemons) > 0 {
-		log.L.Warnf("SharedDaemon or PrefetchDaemon enabled, but cannot find alive shared daemon")
-		// Clear daemon list to skip adding them into daemon store
-		daemons = nil
-	}
-
-	// cleanup database so that we'll have a clean database for this snapshotter process lifetime
-	log.L.Infof("found %d daemons running", len(daemons))
-	if err := m.store.CleanupDaemons(ctx); err != nil {
-		return errors.Wrapf(err, "failed to cleanup database")
-	}
-
-	for _, d := range daemons {
-		if err := m.NewDaemon(d); err != nil {
-			return errors.Wrapf(err, "failed to add daemon(%s) to daemon store", d.ID)
-		}
-	}
-
-	return nil
+	return recoveringDaemons, nil
 }
