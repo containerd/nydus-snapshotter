@@ -26,6 +26,145 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
 
+type DaemonStates struct {
+	mu              sync.Mutex
+	idxBySnapshotID map[string]*daemon.Daemon // index by snapshot ID
+	idxByDaemonID   map[string]*daemon.Daemon // index by ID
+	daemons         []*daemon.Daemon          // all daemon
+}
+
+func newDaemonStates() *DaemonStates {
+	return &DaemonStates{
+		idxBySnapshotID: make(map[string]*daemon.Daemon),
+		idxByDaemonID:   make(map[string]*daemon.Daemon),
+	}
+}
+
+// Return nil if the daemon is never inserted or managed,
+// otherwise returns the previously inserted daemon pointer.
+// Allowing replace an existed daemon since some fields in Daemon can change after restarting nydusd.
+func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	old, ok := s.idxByDaemonID[daemon.ID]
+
+	// TODO: No need to retain all daemons in the slice, just use the map indexed by DaemonID
+	if ok {
+		for i, d := range s.daemons {
+			if d.ID == daemon.ID {
+				s.daemons[i] = daemon
+			}
+		}
+	} else {
+		s.daemons = append(s.daemons, daemon)
+	}
+
+	s.idxByDaemonID[daemon.ID] = daemon
+	s.idxBySnapshotID[daemon.SnapshotID] = daemon
+
+	if ok {
+		return old
+	}
+
+	return nil
+}
+
+func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
+	delete(s.idxBySnapshotID, d.SnapshotID)
+	delete(s.idxByDaemonID, d.ID)
+
+	var deleted *daemon.Daemon
+
+	ds := s.daemons[:0]
+	for _, remained := range s.daemons {
+		if remained == d {
+			deleted = remained
+			continue
+		}
+		ds = append(ds, remained)
+	}
+
+	s.daemons = ds
+
+	return deleted
+}
+
+func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
+	s.mu.Lock()
+	old := s.removeUnlocked(d)
+	s.mu.Unlock()
+
+	return old
+}
+
+func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
+	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
+}
+func (s *DaemonStates) RemoveBySnapshotID(id string) *daemon.Daemon {
+	return s.GetBySnapshotID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
+}
+
+func (s *DaemonStates) RecoverDaemonState(d *daemon.Daemon) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	log.L.Errorf("Recovering snapshot ID %s daemon ID %s", d.SnapshotID, d.ID)
+
+	s.daemons = append(s.daemons, d)
+	s.idxBySnapshotID[d.SnapshotID] = d
+	s.idxByDaemonID[d.ID] = d
+}
+
+func (s *DaemonStates) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daemon.Daemon {
+	var daemon *daemon.Daemon
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	daemon = s.idxByDaemonID[id]
+
+	if daemon != nil && op != nil {
+		op(daemon)
+	} else if daemon == nil {
+		log.L.Warnf("daemon daemon_id=%s is not found", id)
+	}
+
+	return daemon
+}
+
+func (s *DaemonStates) GetBySnapshotID(id string, op func(d *daemon.Daemon)) *daemon.Daemon {
+	var daemon *daemon.Daemon
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	daemon = s.idxBySnapshotID[id]
+
+	if daemon != nil && op != nil {
+		op(daemon)
+	} else if daemon == nil {
+		log.L.Warnf("daemon snapshot_id=%s is not found", id)
+	}
+
+	return daemon
+}
+
+func (s *DaemonStates) List() []*daemon.Daemon {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.daemons) == 0 {
+		return nil
+	}
+
+	listed := make([]*daemon.Daemon, len(s.daemons))
+	copy(listed, s.daemons)
+
+	return listed
+}
+
+func (s *DaemonStates) Size() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.daemons)
+}
 type Manager struct {
 	store            Store
 	nydusdBinaryPath string
