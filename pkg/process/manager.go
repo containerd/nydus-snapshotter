@@ -468,7 +468,15 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 
+			var mnt string
+
 			if d.ID == daemon.SharedNydusDaemonID {
+				mnt = *d.RootMountPoint
+			} else if !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
+				mnt = d.MountPoint()
+			}
+
+			if mnt != "" {
 				// The only reason that nydusd can't be connected is it's not running.
 				// Moreover, snapshotter is restarting. So no nydusd states can be returned to each nydusd.
 				// Nydusd can't do failover any more.
@@ -477,7 +485,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 				mounter := mount.Mounter{}
 				// This is best effort. So no need to handle its error.
-				if err := mounter.Umount(*d.RootMountPoint); err != nil {
+				if err := mounter.Umount(mnt); err != nil {
 					log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
 				}
 				// Nydusd judges if it should enter failover phrase by checking
@@ -485,8 +493,8 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 				if err := os.Remove(d.GetAPISock()); err != nil {
 					log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 				}
-
 			}
+
 			recoveringDaemons = append(recoveringDaemons, d)
 			return nil
 		}

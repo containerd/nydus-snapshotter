@@ -165,6 +165,8 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 						return nil, errors.Errorf("failed to mount rafs when recovering, %v", err)
 					}
 				}
+			} else {
+				fs.manager.StartDaemon(d)
 			}
 		}
 	}
