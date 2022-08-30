@@ -207,6 +207,9 @@ function pull_reomve_multiple_images {
     nerdctl --snapshotter nydus image rm "${TOMCAT_IMAGE}"
     nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus image rm "${WORDPRESS_IMAGE}"
+
+    # TODO: Validate running nydusd number
+
 }
 
 function start_multiple_containers_shared_daemon_erofs {

@@ -252,17 +252,21 @@ func (m *Manager) GetByID(id string) (*daemon.Daemon, error) {
 	return m.daemonStates.GetByDaemonID(id, nil), nil
 }
 
-func (m *Manager) DeleteDaemon(daemon *daemon.Daemon) {
+func (m *Manager) DeleteDaemon(daemon *daemon.Daemon) error {
 	if daemon == nil {
-		return
+		return nil
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.store.Delete(daemon)
+	if err := m.store.Delete(daemon); err != nil {
+		return errors.Wrapf(err, "delete daemon state for %s", daemon.ID)
+	}
 
 	m.daemonStates.Remove(daemon)
+
+	return nil
 }
 
 func (m *Manager) ListDaemons() []*daemon.Daemon {
@@ -369,8 +373,8 @@ func (m *Manager) DestroyBySnapshotID(id string) error {
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	cleanup := func() error {
 		m.CleanUpDaemonResources(d)
-		if err := m.store.Delete(d); err != nil {
-			return errors.Wrap(err, "delete daemon in store")
+		if err := m.DeleteDaemon(d); err != nil {
+			return errors.Wrap(err, "delete daemon")
 		}
 		return nil
 	}
@@ -498,10 +502,14 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 			recoveringDaemons = append(recoveringDaemons, d)
 			return nil
 		}
+
+		d.Connected = true
+
 		if !info.Running() {
 			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", info)
 			return nil
 		}
+
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
 		daemons = append(daemons, d)
 

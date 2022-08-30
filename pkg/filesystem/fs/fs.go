@@ -148,25 +148,32 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	if recoveringDaemons, err = fs.manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
+
+	var sharedDaemonConnected = false
+
 	// Try to bring up the shared daemon early.
 	if fs.mode == SharedInstance {
-		if d, _ := fs.getSharedDaemon(); d != nil {
+		if d, _ := fs.getSharedDaemon(); d != nil && !d.Connected {
 			log.G(ctx).Infof("initialize the shared nydus daemon")
 			fs.initSharedDaemon(ctx)
+
+			sharedDaemonConnected = true
 		}
 	}
 
-	// Try to bring all persisted and stopped nydusd up and remount Rafs
+	// Try to bring all persisted and stopped nydusds up and remount Rafs
 	if len(recoveringDaemons) != 0 {
 		for _, d := range recoveringDaemons {
 			if fs.mode == SharedInstance {
-				if d.ID != daemon.SharedNydusDaemonID {
+				if d.ID != daemon.SharedNydusDaemonID && sharedDaemonConnected {
 					if err := d.SharedMount(); err != nil {
 						return nil, errors.Errorf("failed to mount rafs when recovering, %v", err)
 					}
 				}
 			} else {
-				fs.manager.StartDaemon(d)
+				if !d.Connected {
+					fs.manager.StartDaemon(d)
+				}
 			}
 		}
 	}
@@ -700,9 +707,12 @@ func (fs *Filesystem) initSharedDaemon(ctx context.Context) (_ *daemon.Daemon, r
 
 	defer func() {
 		if retErr != nil {
-			fs.manager.DeleteDaemon(d)
+			if err := fs.manager.DeleteDaemon(d); err != nil {
+				log.L.Errorf("%v", err)
+			}
 		}
 	}()
+
 	if err := fs.manager.StartDaemon(d); err != nil {
 		return nil, errors.Wrap(err, "failed to start shared daemon")
 	}
