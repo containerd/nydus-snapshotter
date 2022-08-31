@@ -209,21 +209,24 @@ func NewManager(opt Opt) (*Manager, error) {
 	}, nil
 }
 
+// Put a instantiated daemon into states manager. The damon state is
+// put to both states cache and DB. If the daemon with the same
+// daemon ID is already stored, return error ErrAlreadyExists
 func (m *Manager) NewDaemon(daemon *daemon.Daemon) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	old := m.daemonStates.GetByDaemonID(daemon.ID, nil)
-
-	if old != nil {
+	if old := m.daemonStates.GetByDaemonID(daemon.ID, nil); old != nil {
 		return errdefs.ErrAlreadyExists
 	}
 
-	d, err := m.store.GetBySnapshotID(daemon.SnapshotID)
-	if err == nil && d != nil {
+	if d, err := m.store.GetBySnapshotID(daemon.SnapshotID); err != nil {
+		return err
+	} else if d != nil {
 		return errdefs.ErrAlreadyExists
 	}
 
+	// Notice: updating daemon states cache and DB should be protect by `mu` lock
 	m.daemonStates.Add(daemon)
 
 	return m.store.Add(daemon)
@@ -234,7 +237,7 @@ func (m *Manager) DeleteBySnapshotID(id string) {
 	defer m.mu.Unlock()
 
 	// FIXME: it will introduce deserialization.
-	// We should not use pointer of daemon to operate DB.
+	// We should not use pointer of daemon as KEY to operate DB.
 	if d, err := m.store.GetBySnapshotID(id); err == nil {
 		m.store.Delete(d)
 	} else {
@@ -244,12 +247,16 @@ func (m *Manager) DeleteBySnapshotID(id string) {
 	m.daemonStates.RemoveBySnapshotID(id)
 }
 
-func (m *Manager) GetBySnapshotID(id string) (*daemon.Daemon, error) {
-	return m.daemonStates.GetBySnapshotID(id, nil), nil
+// Daemon state should always be fetched from states cache. DB is only
+// the persistence storage. Daemons manager should never try to read
+// serialized daemon state from DB when running normally. To the function
+// does not try to read DB when daemon is not found.
+func (m *Manager) GetBySnapshotID(id string) *daemon.Daemon {
+	return m.daemonStates.GetBySnapshotID(id, nil)
 }
 
-func (m *Manager) GetByID(id string) (*daemon.Daemon, error) {
-	return m.daemonStates.GetByDaemonID(id, nil), nil
+func (m *Manager) GetByDaemonID(id string) *daemon.Daemon {
+	return m.daemonStates.GetByDaemonID(id, nil)
 }
 
 func (m *Manager) DeleteDaemon(daemon *daemon.Daemon) error {

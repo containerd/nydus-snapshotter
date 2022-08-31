@@ -153,9 +153,11 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 
 	// Try to bring up the shared daemon early.
 	if fs.mode == SharedInstance {
-		if d, _ := fs.getSharedDaemon(); d != nil && !d.Connected {
-			log.G(ctx).Infof("initialize the shared nydus daemon")
-			fs.initSharedDaemon(ctx)
+		if d := fs.getSharedDaemon(); d != nil && !d.Connected {
+			log.G(ctx).Infof("initializing the shared nydus daemon")
+			if _, err := fs.initSharedDaemon(ctx); err != nil {
+				return nil, errors.Wrap(err, "start shared nydusd daemon")
+			}
 
 			sharedDaemonConnected = true
 		}
@@ -167,12 +169,14 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			if fs.mode == SharedInstance {
 				if d.ID != daemon.SharedNydusDaemonID && sharedDaemonConnected {
 					if err := d.SharedMount(); err != nil {
-						return nil, errors.Errorf("failed to mount rafs when recovering, %v", err)
+						return nil, errors.Wrap(err, "mount rafs when recovering")
 					}
 				}
 			} else {
 				if !d.Connected {
-					fs.manager.StartDaemon(d)
+					if err := fs.manager.StartDaemon(d); err != nil {
+						return nil, errors.Wrapf(err, "start nydusd %s", d.ID)
+					}
 				}
 			}
 		}
@@ -564,9 +568,9 @@ func (fs *Filesystem) WaitUntilReady(ctx context.Context, snapshotID string) err
 		return nil
 	}
 
-	d, err := fs.manager.GetBySnapshotID(snapshotID)
-	if err != nil {
-		return err
+	d := fs.manager.GetBySnapshotID(snapshotID)
+	if d == nil {
+		return errdefs.ErrNotFound
 	}
 
 	return d.WaitUntilReady()
@@ -592,7 +596,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 
 	id := filepath.Base(mountPoint)
 	log.L.Logger.Debugf("umount snapshot %s", id)
-	daemon, _ := fs.manager.GetBySnapshotID(id)
+	daemon := fs.manager.GetBySnapshotID(id)
 
 	if daemon == nil {
 		log.L.Infof("snapshot %s does not correspond to a nydusd", id)
@@ -629,7 +633,7 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 		return DummyMountpoint, nil
 	}
 
-	if d, err := fs.manager.GetBySnapshotID(snapshotID); err == nil {
+	if d := fs.manager.GetBySnapshotID(snapshotID); d != nil {
 		// Working for fscache driver, only one nydusd with multiple mountpoints.
 		// So it is not ordinary SharedMode.
 		if d.FsDriver == config.FsDriverFscache {
@@ -724,14 +728,14 @@ func (fs *Filesystem) initSharedDaemon(ctx context.Context) (_ *daemon.Daemon, r
 func (fs *Filesystem) newDaemon(ctx context.Context, snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
 	if fs.mode == SharedInstance || fs.mode == PrefetchInstance {
 		// Check if daemon is already running
-		d, err := fs.getSharedDaemon()
-		if err == nil && d != nil {
+		d := fs.getSharedDaemon()
+		if d != nil {
 			if fs.sharedDaemon == nil {
 				fs.sharedDaemon = d
 				log.G(ctx).Infof("daemon(ID=%s) is already running and reconnected", daemon.SharedNydusDaemonID)
 			}
 		} else {
-			_, err = fs.initSharedDaemon(ctx)
+			_, err := fs.initSharedDaemon(ctx)
 			if err != nil {
 				// AlreadyExists means someone else has initialized shared daemon.
 				if !errdefs.IsAlreadyExists(err) {
@@ -750,30 +754,34 @@ func (fs *Filesystem) newDaemon(ctx context.Context, snapshotID string, imageID 
 		}
 		return fs.createSharedDaemon(snapshotID, imageID)
 	}
-	return fs.createNewDaemon(snapshotID, imageID)
+	return fs.createDaemon(snapshotID, imageID)
 }
 
 // Find saved sharedDaemon first, if not found then find it in db
-func (fs *Filesystem) getSharedDaemon() (*daemon.Daemon, error) {
+func (fs *Filesystem) getSharedDaemon() *daemon.Daemon {
+
 	if fs.sharedDaemon != nil {
-		return fs.sharedDaemon, nil
+		return fs.sharedDaemon
 	}
 
-	d, err := fs.manager.GetByID(daemon.SharedNydusDaemonID)
-	return d, err
+	d := fs.manager.GetByDaemonID(daemon.SharedNydusDaemonID)
+	return d
 }
 
-// createNewDaemon create new nydus daemon by snapshotID and imageID
-func (fs *Filesystem) createNewDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
+// createDaemon create new nydus daemon by snapshotID and imageID
+func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
 	var (
 		d   *daemon.Daemon
 		err error
 	)
-	d, _ = fs.manager.GetBySnapshotID(snapshotID)
+
+	d = fs.manager.GetBySnapshotID(snapshotID)
 	if d != nil {
 		return nil, errdefs.ErrAlreadyExists
 	}
+
 	customMountPoint := filepath.Join(fs.SnapshotRoot(), snapshotID, "mnt")
+
 	if d, err = daemon.NewDaemon(
 		daemon.WithSnapshotID(snapshotID),
 		daemon.WithSocketDir(fs.SocketRoot()),
@@ -789,9 +797,11 @@ func (fs *Filesystem) createNewDaemon(snapshotID string, imageID string) (*daemo
 	); err != nil {
 		return nil, err
 	}
+
 	if err = fs.manager.NewDaemon(d); err != nil {
 		return nil, err
 	}
+
 	return d, nil
 }
 
@@ -804,14 +814,17 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 		d            *daemon.Daemon
 		err          error
 	)
-	d, _ = fs.manager.GetBySnapshotID(snapshotID)
+
+	d = fs.manager.GetBySnapshotID(snapshotID)
 	if d != nil {
 		return nil, errdefs.ErrAlreadyExists
 	}
-	sharedDaemon, err = fs.getSharedDaemon()
-	if err != nil {
-		return nil, err
+
+	sharedDaemon = fs.getSharedDaemon()
+	if sharedDaemon == nil {
+		return nil, errdefs.ErrNotFound
 	}
+
 	if d, err = daemon.NewDaemon(
 		daemon.WithSnapshotID(snapshotID),
 		daemon.WithRootMountPoint(*sharedDaemon.RootMountPoint),
@@ -827,9 +840,11 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 	); err != nil {
 		return nil, err
 	}
+
 	if err = fs.manager.NewDaemon(d); err != nil {
 		return nil, err
 	}
+
 	return d, nil
 }
 
@@ -895,7 +910,7 @@ func DetectFsVersion(header []byte) (string, error) {
 		return RafsV5, nil
 	}
 
-	// FIXME: detech more magic numbers to reduce collision
+	// FIXME: detect more magic numbers to reduce collision
 	if len(header) >= int(RafsV6SuperBlockSize) && isRafsV6(header) {
 		return RafsV6, nil
 	}
