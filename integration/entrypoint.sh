@@ -77,6 +77,11 @@ function retry {
     fi
 }
 
+function can_erofs_ondemand_read {
+    grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config
+    return $?
+}
+
 function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
@@ -91,6 +96,7 @@ function reboot_containerd {
     fi
 
     local daemon_mode=${1}
+    local fs_driver=${2:-fusedev}
 
     if [ -d "${REMOTE_SNAPSHOTTER_ROOT:?}/snapshotter/snapshots/" ]; then
         umount -t fuse --all
@@ -98,7 +104,7 @@ function reboot_containerd {
 
     rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/*
 
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/config.json &
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --log-to-stdout --config-path /etc/nydus/config.json &
 
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
     containerd --log-level info --config=/etc/containerd/config.toml &
@@ -197,6 +203,16 @@ function pull_reomve_multiple_images {
     nerdctl --snapshotter nydus image rm "${WORDPRESS_IMAGE}"
 }
 
+function start_multiple_containers_shared_daemon_erofs {
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd shared fscache
+
+    nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+}
+
 reboot_containerd mutiples
 
 start_single_container_multiple_daemons
@@ -206,3 +222,7 @@ pull_reomve_one_image
 pull_reomve_multiple_images shared
 pull_reomve_multiple_images mutiple
 start_single_container_on_stargz
+
+if [[ $(can_erofs_ondemand_read) == 0 ]]; then
+    start_multiple_containers_shared_daemon_erofs
+fi
