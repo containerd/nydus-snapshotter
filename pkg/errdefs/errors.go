@@ -19,11 +19,17 @@ const signalKilled = "signal: killed"
 
 var (
 	ErrAlreadyExists = errors.New("already exists")
+	ErrNotFound      = errors.New("not found")
 )
 
 // IsAlreadyExists returns true if the error is due to already exists
 func IsAlreadyExists(err error) bool {
 	return errors.Is(err, ErrAlreadyExists)
+}
+
+// IsNotFound returns true if the error is due to a missing object
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
 }
 
 // IsSignalKilled returns true if the error is signal killed
