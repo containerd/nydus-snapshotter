@@ -5,6 +5,11 @@
         "backend_config": {
             "scheme": "https"
         },
-        "cache_type": "fscache"
+        "cache_type": "fscache",
+        "prefetch_config": {
+            "enable": true,
+            "threads_count": 8,
+            "merging_size": 1048576
+        }
     }
 }
