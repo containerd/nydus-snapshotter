@@ -190,6 +190,11 @@ func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, targe
 	return fmt.Errorf("can't find bootstrap in nydus tar")
 }
 
+// Unpack the blob from nydus formatted tar stream (blob + bootstrap).
+// The nydus formatted tar stream is a tar-like structure that arranges the
+// data as follows:
+//
+// `blob_data | blob_tar_header | bootstrap_data | bootstrap_tar_header`
 func unpackBlobFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.Writer) error {
 	cur := ra.Size()
 	reader := newSeekReader(ra)
@@ -327,7 +332,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
-// Merge multiple nydus bootstraps (from each layer of image) to a final bootstrap.
+// Merge multiple nydus bootstraps (from each blob layer of image) to a final bootstrap.
 func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
@@ -399,7 +404,8 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	return nil
 }
 
-func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt UnpackOption) error {
+// Unpack converts a nydus blob layer to OCI formatted tar stream.
+func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt UnpackOption) error {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return errors.Wrap(err, "ensure work directory")
@@ -407,7 +413,7 @@ func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt Unpack
 	defer os.RemoveAll(workDir)
 
 	bootPath, blobPath := filepath.Join(workDir, bootstrapNameInTar), filepath.Join(workDir, blobNameInTar)
-	if err = unpackNydusTar(ctx, bootPath, blobPath, ia); err != nil {
+	if err = unpackNydusTar(ctx, bootPath, blobPath, ra); err != nil {
 		return errors.Wrap(err, "unpack nydus tar")
 	}
 
@@ -547,7 +553,7 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 // called for each blob after conversion is done. The function only hooks
 // the manifest conversion and merges all the nydus blob layers into a
 // nydus bootstrap layer and update the image config.
-func ConvertHookFunc(opt PackOption) converter.ConvertHookFunc {
+func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if !images.IsManifestType(newDesc.MediaType) {
 			// Only need to hook manifest conversion
@@ -568,7 +574,7 @@ func ConvertHookFunc(opt PackOption) converter.ConvertHookFunc {
 			WorkDir:       opt.WorkDir,
 			ChunkDictPath: opt.ChunkDictPath,
 			WithTar:       true,
-		}, opt.FsVersion)
+		})
 		if err != nil {
 			return nil, errors.Wrap(err, "merge nydus layers")
 		}
@@ -624,7 +630,7 @@ func ConvertHookFunc(opt PackOption) converter.ConvertHookFunc {
 
 // mergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
 // The media type of the nydus bootstrap layer is "application/vnd.oci.image.layer.v1.tar+gzip".
-func mergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption, fsVersion string) (*ocispec.Descriptor, error) {
+func mergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
 	// Extracts nydus bootstrap from nydus format for each layer.
 	layers := []Layer{}
 	blobIDs := []string{}
@@ -696,13 +702,17 @@ func mergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		return nil, errors.Wrap(err, "marshal blob ids")
 	}
 
+	if opt.FsVersion == "" {
+		opt.FsVersion = "5"
+	}
+
 	desc := ocispec.Descriptor{
 		Digest:    compressedDgst,
 		Size:      info.Size,
 		MediaType: ocispec.MediaTypeImageLayerGzip,
 		Annotations: map[string]string{
 			LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
-			LayerAnnotationFSVersion:    fsVersion,
+			LayerAnnotationFSVersion:    opt.FsVersion,
 			// Use this annotation to identify nydus bootstrap layer.
 			LayerAnnotationNydusBootstrap: "true",
 			// Track all blob digests for nydus snapshotter.
