@@ -482,12 +482,12 @@ func (o *snapshotter) upperPath(id string) string {
 	return filepath.Join(o.root, "snapshots", id, "fs")
 }
 
-func (o *snapshotter) lowerPath(id string) string {
-	if mnt, err := o.fs.MountPoint(id); err == nil {
-		return mnt
+func (o *snapshotter) lowerPath(id string) (mnt string, err error) {
+	if mnt, err = o.fs.MountPoint(id); err == nil {
+		return mnt, nil
 	}
 
-	return ""
+	return "", err
 }
 
 func (o *snapshotter) workPath(id string) string {
@@ -608,7 +608,12 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return bindMount(o.upperPath(s.ParentIDs[0])), nil
 	}
 
-	lowerDirOption := fmt.Sprintf("lowerdir=%s", o.lowerPath(id))
+	lowerPath, err := o.lowerPath(id)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to locate overlay lowerdir")
+	}
+
+	lowerDirOption := fmt.Sprintf("lowerdir=%s", lowerPath)
 	overlayOptions = append(overlayOptions, lowerDirOption)
 
 	// when hasDaemon and not enableNydusOverlayFS, return overlayfs mount slice
