@@ -11,20 +11,41 @@ package converter
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/images/converter"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
-	return nil, fmt.Errorf("not implemented")
+	panic("not implemented")
 }
 
 func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
-	return fmt.Errorf("not implemented")
+	panic("not implemented")
 }
 
 func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt UnpackOption) error {
-	return fmt.Errorf("not implemented")
+	panic("not implemented")
+}
+
+func IsNydusBlobAndExists(ctx context.Context, cs content.Store, desc ocispec.Descriptor) bool {
+	panic("not implemented")
+}
+
+func IsNydusBlob(ctx context.Context, desc ocispec.Descriptor) bool {
+	panic("not implemented")
+}
+
+func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
+	panic("not implemented")
+}
+
+func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
+	panic("not implemented")
+}
+
+func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
+	panic("not implemented")
 }

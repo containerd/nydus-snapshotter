@@ -450,6 +450,27 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 	return nil
 }
 
+// IsNydusBlobAndExists returns true when the specified digest of content exists in
+// the content store and it's nydus blob format.
+func IsNydusBlobAndExists(ctx context.Context, cs content.Store, desc ocispec.Descriptor) bool {
+	_, err := cs.Info(ctx, desc.Digest)
+	if err != nil {
+		return false
+	}
+
+	return IsNydusBlob(ctx, desc)
+}
+
+// IsNydusBlob returns true when the specified descriptor is nydus blob format.
+func IsNydusBlob(ctx context.Context, desc ocispec.Descriptor) bool {
+	if desc.Annotations == nil {
+		return false
+	}
+
+	_, hasAnno := desc.Annotations[LayerAnnotationNydusBlob]
+	return hasAnno
+}
+
 // LayerConvertFunc returns a function which converts an OCI image layer to
 // a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
 func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
@@ -569,7 +590,7 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 		}
 
 		// Append bootstrap layer to manifest.
-		bootstrapDesc, err := mergeLayers(ctx, cs, manifest.Layers, MergeOption{
+		bootstrapDesc, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
 			BuilderPath:   opt.BuilderPath,
 			WorkDir:       opt.WorkDir,
 			ChunkDictPath: opt.ChunkDictPath,
@@ -628,9 +649,9 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 	}
 }
 
-// mergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
+// MergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
 // The media type of the nydus bootstrap layer is "application/vnd.oci.image.layer.v1.tar+gzip".
-func mergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
+func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
 	// Extracts nydus bootstrap from nydus format for each layer.
 	layers := []Layer{}
 	blobIDs := []string{}
