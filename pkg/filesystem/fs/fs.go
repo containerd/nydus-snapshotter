@@ -55,6 +55,7 @@ const (
 	RafsV6ChunkInfoOffset  uint32 = 1024 + 128 + 24
 	BootstrapFile          string = "image/image.boot"
 	LegacyBootstrapFile    string = "image.boot"
+	DummyMountpoint        string = "/dummy"
 )
 
 var nativeEndian binary.ByteOrder
@@ -67,7 +68,8 @@ const (
 	// One container image one nydusd topology
 	MultiInstance
 	// Nydusd is not needed to work as FUSE server (fusedev) or other fs drivers,
-	// just provide the mount slices to containerd, and do real mount by other components
+	// just provide the mount slices to containerd via API `Mounts` in mount options,
+	// and do real mount by other components.
 	NoneInstance
 	// Nydusd does not fulfill any lazy-load (on-daemon) ability but only
 	// prefetches image data into local blob cache for other components
@@ -157,6 +159,8 @@ func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, blobDigest string, a
 	return fs.blobMgr.Remove(blobDigest, async)
 }
 
+// Download blobs and bootstrap in nydus-snapshotter for preheating container image usage. It has to
+// enable blobs manager when start nydus-snapshotter
 func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
 	if fs.blobMgr == nil {
 		return nil
@@ -582,8 +586,11 @@ func (fs *Filesystem) Cleanup(ctx context.Context) error {
 
 func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 	if !fs.hasDaemon() {
-		// For NoneDaemon mode, just return error to use snapshotter default mount point path
-		return "", fmt.Errorf("don't need nydus daemon of snapshot %s", snapshotID)
+		// For NoneDaemon mode, return a dummy mountpoint which is very likely not
+		// existed on host. NoneDaemon mode does not start nydusd, so NO fuse mount is
+		// ever performed. Only mount option carries meaningful info to containerd and
+		// finally passes to shim.
+		return DummyMountpoint, nil
 	}
 
 	if d, err := fs.manager.GetBySnapshotID(snapshotID); err == nil {
@@ -599,6 +606,7 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 
 		return d.MountPoint(), nil
 	}
+
 	return "", fmt.Errorf("failed to find nydus mountpoint of snapshot %s", snapshotID)
 }
 
