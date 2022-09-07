@@ -176,6 +176,12 @@ function start_multiple_containers_multiple_daemons {
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+
+    nerdctl_prune_images
+
+    nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
 }
 
 function start_multiple_containers_shared_daemon {
