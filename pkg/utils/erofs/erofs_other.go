@@ -5,6 +5,8 @@ package erofs
 
 import "fmt"
 
+const GlobalDomainName = ""
+
 func Mount(bootstrapPath, fsID, mountPoint string) error {
 	return fmt.Errorf("not implemented")
 }
