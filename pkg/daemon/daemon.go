@@ -57,6 +57,7 @@ type Daemon struct {
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
+	domainID  string     `json:"-"`
 }
 
 func (d *Daemon) Lock() {
@@ -250,7 +251,7 @@ func (d *Daemon) sharedErofsMount() error {
 	}
 	fscacheID := erofs.FscacheID(d.SnapshotID)
 
-	if err := erofs.Mount(bootstrapPath, fscacheID, mountPoint); err != nil {
+	if err := erofs.Mount(bootstrapPath, d.domainID, fscacheID, mountPoint); err != nil {
 		if !errdefs.IsErofsMounted(err) {
 			return errors.Wrapf(err, "mount erofs to %s", mountPoint)
 		}

@@ -168,7 +168,9 @@ func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID stri
 			backendConfig = &cfg.Config.BackendConfig
 			fscacheID := erofs.FscacheID(snapshotID)
 			cfg.ID = fscacheID
-			cfg.DomainID = fscacheID
+			if len(cfg.DomainID) == 0 {
+				cfg.DomainID = fscacheID
+			}
 			cfg.Config.ID = fscacheID
 		}
 		if keyChain != nil {

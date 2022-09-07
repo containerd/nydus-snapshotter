@@ -12,12 +12,22 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func Mount(bootstrapPath, fsID, mountPoint string) error {
+func Mount(bootstrapPath, domainID, fscacheID, mountPoint string) error {
 	mount := unix.Mount
+	var opts string
 
-	opts := "fsid=" + fsID
+	if domainID != "" {
+		opts = fmt.Sprintf("domain_id=%s,fsid=%s", domainID, fscacheID)
+	} else {
+		opts = "fsid=" + fscacheID
+	}
 	logrus.Infof("Mount erofs to %s with options %s", mountPoint, opts)
+
 	if err := mount("erofs", mountPoint, "erofs", 0, opts); err != nil {
+		if errors.Is(err, unix.EINVAL) && domainID != "" {
+			logrus.Errorf("mount erofs with shared domain failed," +
+				"If using this feature, make sure your Linux kernel version >= 6.1")
+		}
 		return errors.Wrapf(err, "failed to mount erofs")
 	}
 
