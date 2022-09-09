@@ -13,11 +13,19 @@ linters:
     - vet
     - unused
     - misspell
-  disable:
     - errcheck
+    - bodyclose
+    - cyclop
+    - dogsled
+    - nilnil
+    - unparam
+    - unused
+    - nilerr
+    - goerr113
+  disable:
+    - godox
 
 run:
   deadline: 4m
   skip-dirs:
     - misc
-
