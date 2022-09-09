@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -19,8 +18,6 @@ import (
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/pkg/errors"
 )
-
-const HTTPClientTimeOut = time.Second * 60
 
 type Resolver struct {
 	res transport.Resolve
@@ -73,7 +70,6 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 func newRetryHTTPClient(tr http.RoundTripper) *retryablehttp.Client {
 	retryClient := retryablehttp.NewClient()
 	retryClient.HTTPClient.Transport = tr
-	retryClient.HTTPClient.Timeout = HTTPClientTimeOut
 	retryClient.Logger = nil
 	return retryClient
 }
