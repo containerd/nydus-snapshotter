@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
@@ -82,7 +81,7 @@ func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) 
 		return "", errors.Wrapf(err, "failed to request to %q", endpointURL)
 	}
 	defer func() {
-		_, err := io.Copy(ioutil.Discard, res.Body)
+		_, err := io.Copy(io.Discard, res.Body)
 		log.L.Warnf("Discard body failed %s", err)
 		res.Body.Close()
 	}()

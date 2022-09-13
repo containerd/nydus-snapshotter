@@ -11,8 +11,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -66,7 +67,7 @@ func (tr *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 	if url == "https://example.com/v2/" {
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       ioutil.NopCloser(bytes.NewReader([]byte{})),
+			Body:       io.NopCloser(bytes.NewReader([]byte{})),
 		}, nil
 	}
 	if url == "https://example.com/v2/test/myserver/blobs/sha256:mock" {
@@ -75,7 +76,7 @@ func (tr *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		return &http.Response{
 			StatusCode: http.StatusMovedPermanently,
 			Header:     header,
-			Body:       ioutil.NopCloser(bytes.NewReader([]byte{})),
+			Body:       io.NopCloser(bytes.NewReader([]byte{})),
 		}, nil
 	}
 	if url == "http://oss.com/v2/test/myserver/blobs/sha256:mock" {
@@ -87,22 +88,22 @@ func (tr *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			return &http.Response{
 				StatusCode: http.StatusPartialContent,
 				Header:     header,
-				Body:       ioutil.NopCloser(bytes.NewReader([]byte{})),
+				Body:       io.NopCloser(bytes.NewReader([]byte{})),
 			}, nil
 		}
 		// get footer
 		if rangeHeader == "bytes=24613139-24613185" {
-			footer, _ := ioutil.ReadFile("testdata/stargzfooter.bin")
+			footer, _ := os.ReadFile("testdata/stargzfooter.bin")
 			return &http.Response{
 				StatusCode: http.StatusPartialContent,
-				Body:       ioutil.NopCloser(bytes.NewReader(footer[:])),
+				Body:       io.NopCloser(bytes.NewReader(footer[:])),
 			}, nil
 		}
 		if rangeHeader == "bytes=24442675-24613138" {
-			toc, _ := ioutil.ReadFile("testdata/stargztoc.bin")
+			toc, _ := os.ReadFile("testdata/stargztoc.bin")
 			return &http.Response{
 				StatusCode: http.StatusPartialContent,
-				Body:       ioutil.NopCloser(bytes.NewReader(toc[:])),
+				Body:       io.NopCloser(bytes.NewReader(toc[:])),
 			}, nil
 		}
 	}

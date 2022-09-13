@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -227,7 +226,7 @@ func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Sna
 	}
 	defer readerCloser.Close()
 
-	blobFile, err := ioutil.TempFile(fs.blobMgr.GetBlobDir(), "downloading-")
+	blobFile, err := os.CreateTemp(fs.blobMgr.GetBlobDir(), "downloading-")
 	if err != nil {
 		return errors.Wrap(err, "create temp file for downloading blob")
 	}
@@ -337,7 +336,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 
 	bootstraps := []string{}
 	for idx, snapshotID := range s.ParentIDs {
-		files, err := ioutil.ReadDir(fs.UpperPath(snapshotID))
+		files, err := os.ReadDir(fs.UpperPath(snapshotID))
 		if err != nil {
 			return errors.Wrap(err, "read snapshot dir")
 		}
@@ -380,7 +379,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 			return errors.Wrap(err, "copy source meta blob to target")
 		}
 	} else {
-		tf, err := ioutil.TempFile(mergedDir, "merging-stargz")
+		tf, err := os.CreateTemp(mergedDir, "merging-stargz")
 		if err != nil {
 			return errors.Wrap(err, "create temp file for merging stargz layers")
 		}
@@ -458,7 +457,7 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 		blobMetaPath = filepath.Join(upperPath, fmt.Sprintf("%s.blob.meta", blobID))
 	}
 
-	tf, err := ioutil.TempFile(upperPath, "converting-stargz")
+	tf, err := os.CreateTemp(upperPath, "converting-stargz")
 	if err != nil {
 		return errors.Wrap(err, "create temp file for merging stargz layers")
 	}

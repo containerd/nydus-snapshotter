@@ -9,7 +9,6 @@ package signature
 import (
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/pkg/errors"
@@ -36,7 +35,7 @@ func NewVerifier(publicKeyFile string, validateSignature bool) (*Verifier, error
 	if _, err := os.Stat(publicKeyFile); err != nil {
 		return nil, fmt.Errorf("failed to find publicKeyFile %q", publicKeyFile)
 	}
-	publicKeyByte, err := ioutil.ReadFile(publicKeyFile)
+	publicKeyByte, err := os.ReadFile(publicKeyFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read from publicKeyFile %q", publicKeyFile)
 	}
