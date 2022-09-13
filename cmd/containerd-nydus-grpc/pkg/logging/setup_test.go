@@ -35,6 +35,7 @@ func GetRotateLogFileNumbers(testLogDir string, suffix string) int {
 }
 
 func TestSetUp(t *testing.T) {
+	// Try to clean previously created test directory.
 	os.RemoveAll(TestLogDirName)
 
 	logRotateArgs := &RotateLogArgs{
@@ -58,4 +59,6 @@ func TestSetUp(t *testing.T) {
 		log.L.Infof("test log, now: %s", time.Now().Format("2006-01-02 15:04:05"))
 	}
 	assert.Equal(t, GetRotateLogFileNumbers(TestLogDirName, "log.gz"), logRotateArgs.RotateLogMaxBackups)
+
+	os.RemoveAll(TestLogDirName)
 }
