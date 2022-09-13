@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -68,7 +67,7 @@ func (c *NydusClient) CheckStatus() (*model.DaemonInfo, error) {
 		return nil, errors.Wrapf(err, "failed to do HTTP GET from %s", addr)
 	}
 	defer resp.Body.Close()
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read status response")
 	}
@@ -127,7 +126,7 @@ func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetri
 
 func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error {
 	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", mountEndpoint, sharedMountPoint)
-	content, err := ioutil.ReadFile(daemonConfig)
+	content, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
 	}
@@ -149,7 +148,7 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 func (c NydusClient) FscacheBindBlob(daemonConfig string) error {
 	log.L.Infof("requesting daemon to bind fscache blob with config %s", daemonConfig)
 
-	body, err := ioutil.ReadFile(daemonConfig)
+	body, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
 	}
@@ -174,7 +173,7 @@ func (c NydusClient) FscacheBindBlob(daemonConfig string) error {
 }
 
 func (c NydusClient) FscacheUnbindBlob(daemonConfig string) error {
-	body, err := ioutil.ReadFile(daemonConfig)
+	body, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
 	}
@@ -234,7 +233,7 @@ func buildTransport(sock string) (http.RoundTripper, error) {
 
 func handleMountError(resp *http.Response) error {
 	var r io.Reader = resp.Body
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return errors.Wrap(err, "failed to read from reader")
 	}

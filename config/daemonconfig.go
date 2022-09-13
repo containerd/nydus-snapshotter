@@ -8,7 +8,7 @@ package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 
 	"github.com/pkg/errors"
 
@@ -114,7 +114,7 @@ type DeviceConfig struct {
 }
 
 func LoadConfig(configFile string, cfg *DaemonConfig) error {
-	b, err := ioutil.ReadFile(configFile)
+	b, err := os.ReadFile(configFile)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func SaveConfig(c interface{}, configFile string) error {
 	if err != nil {
 		return nil
 	}
-	return ioutil.WriteFile(configFile, b, 0755)
+	return os.WriteFile(configFile, b, 0755)
 }
 
 func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {

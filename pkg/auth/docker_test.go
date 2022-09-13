@@ -9,7 +9,6 @@ package auth
 import (
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,13 +41,13 @@ const (
 var oldDockerConfig = os.Getenv("DOCKER_CONFIG")
 
 func setupDockerConfig() (string, error) {
-	dir, err := ioutil.TempDir("", "testdocker-")
+	dir, err := os.MkdirTemp("", "testdocker-")
 	if err != nil {
 		return "", err
 	}
 	os.Setenv("DOCKER_CONFIG", dir)
 
-	err = ioutil.WriteFile(filepath.Join(dir, configFile),
+	err = os.WriteFile(filepath.Join(dir, configFile),
 		[]byte(fmt.Sprintf(testConfigFmt, dockerHost, base64.StdEncoding.EncodeToString([]byte(dockerUser+":"+dockerPass)),
 			extraHost, base64.StdEncoding.EncodeToString([]byte(extraUser+":"+extraPass)))),
 		0600)

@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -75,7 +74,7 @@ func ensureWorkDir(specifiedBasePath string) (string, error) {
 		return "", errors.Wrapf(err, "create base directory %s", baseWorkDir)
 	}
 
-	workDirPath, err := ioutil.TempDir(baseWorkDir, "nydus-converter-")
+	workDirPath, err := os.MkdirTemp(baseWorkDir, "nydus-converter-")
 	if err != nil {
 		return "", errors.Wrap(err, "create work directory")
 	}

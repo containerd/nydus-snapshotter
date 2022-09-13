@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -292,7 +291,7 @@ func verify(t *testing.T, workDir string) {
 			file, err := os.Open(path)
 			require.NoError(t, err)
 			defer file.Close()
-			_data, err := ioutil.ReadAll(file)
+			_data, err := io.ReadAll(file)
 			require.NoError(t, err)
 			data = string(_data)
 		}
@@ -345,7 +344,7 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 
 // sudo go test -v -count=1 -run TestConverter ./pkg/nydusify
 func TestConverter(t *testing.T) {
-	workDir, err := ioutil.TempDir("", "nydus-converter-test-")
+	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
 
@@ -408,7 +407,7 @@ func TestConverter(t *testing.T) {
 }
 
 func TestUnpack(t *testing.T) {
-	workDir, err := ioutil.TempDir("", "nydus-converter-test-")
+	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
 

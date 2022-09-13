@@ -11,7 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -86,7 +86,7 @@ func makeConfig(conf NydusdConfig) error {
 		return errors.New("prepare config template for Nydusd")
 	}
 
-	if err := ioutil.WriteFile(conf.ConfigPath, ret.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(conf.ConfigPath, ret.Bytes(), 0644); err != nil {
 		return errors.New("write config file for Nydusd")
 	}
 
@@ -129,7 +129,7 @@ func checkReady(ctx context.Context, sock string) (<-chan bool, error) {
 			}
 			defer resp.Body.Close()
 
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				continue
 			}
