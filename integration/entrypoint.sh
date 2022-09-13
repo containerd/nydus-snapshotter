@@ -43,6 +43,11 @@ function stop_all_containers {
     fi
 }
 
+function pause {
+    echo "I am going to wait for ${1} seconds only ..."
+    sleep "${1}"
+}
+
 function func_retry {
     local SUCCESS=false
     for i in $(seq ${RETRYNUM}); do
@@ -82,11 +87,23 @@ function can_erofs_ondemand_read {
     return $?
 }
 
+function validate_mnt_number {
+    expected="${1}"
+    found=$(mount -t fuse | wc -l)
+    if [[ $found != "$expected" ]]; then
+        echo "expecting $expected mountpoints, but found $found"
+        return 1
+    else
+        return 0
+    fi
+}
+
 function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
 
     # FIXME
+    echo "umount globally shared mountpoint"
     umount_global_shared_mnt
 
     rm -rf "${CONTAINERD_STATUS}"*
@@ -159,6 +176,12 @@ function start_multiple_containers_multiple_daemons {
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+
+    nerdctl_prune_images
+
+    nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
 }
 
 function start_multiple_containers_shared_daemon {
@@ -179,7 +202,7 @@ function start_single_container_on_stargz {
     nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
 }
 
-function pull_reomve_one_image {
+function pull_remove_one_image {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
     reboot_containerd mutiple
@@ -188,7 +211,7 @@ function pull_reomve_one_image {
     nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
 }
 
-function pull_reomve_multiple_images {
+function pull_remove_multiple_images {
     local daemon_mode=$1
     echo "testing $FUNCNAME"
     nerdctl_prune_images
@@ -201,6 +224,9 @@ function pull_reomve_multiple_images {
     nerdctl --snapshotter nydus image rm "${TOMCAT_IMAGE}"
     nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus image rm "${WORDPRESS_IMAGE}"
+
+    # TODO: Validate running nydusd number
+
 }
 
 function start_multiple_containers_shared_daemon_erofs {
@@ -213,15 +239,74 @@ function start_multiple_containers_shared_daemon_erofs {
     nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
 }
 
+function kill_snapshotter_and_nydusd_recover {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd "${daemon_mode}"
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+    sleep 1
+
+    echo "killing nydusd"
+    killall -9 nydusd || true
+    killall -9 containerd-nydus-grpc || true
+
+    rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/config.json &
+    retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+}
+
+function only_restart_snapshotter {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME ${daemon_mode}"
+    nerdctl_prune_images
+    reboot_containerd "${daemon_mode}"
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+    echo "killing nydusd"
+    killall -9 containerd-nydus-grpc || true
+
+    rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/config.json &
+    retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
+
+    if [[ "${daemon_mode}" == "shared" ]]; then
+        validate_mnt_number 1
+    else
+        validate_mnt_number 2
+    fi
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+}
+
 reboot_containerd mutiples
 
 start_single_container_multiple_daemons
 start_multiple_containers_multiple_daemons
 start_multiple_containers_shared_daemon
-pull_reomve_one_image
-pull_reomve_multiple_images shared
-pull_reomve_multiple_images mutiple
+pull_remove_one_image
+pull_remove_multiple_images shared
+pull_remove_multiple_images multiple
 start_single_container_on_stargz
+only_restart_snapshotter shared
+only_restart_snapshotter multiple
+kill_snapshotter_and_nydusd_recover shared
+kill_snapshotter_and_nydusd_recover multiple
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
     start_multiple_containers_shared_daemon_erofs

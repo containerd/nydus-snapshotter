@@ -26,14 +26,164 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
 
+type DaemonStates struct {
+	mu              sync.Mutex
+	idxBySnapshotID map[string]*daemon.Daemon // index by snapshot ID
+	idxByDaemonID   map[string]*daemon.Daemon // index by ID
+	daemons         []*daemon.Daemon          // all daemon
+}
+
+func newDaemonStates() *DaemonStates {
+	return &DaemonStates{
+		idxBySnapshotID: make(map[string]*daemon.Daemon),
+		idxByDaemonID:   make(map[string]*daemon.Daemon),
+	}
+}
+
+// Return nil if the daemon is never inserted or managed,
+// otherwise returns the previously inserted daemon pointer.
+// Allowing replace an existed daemon since some fields in Daemon can change after restarting nydusd.
+func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	old, ok := s.idxByDaemonID[daemon.ID]
+
+	// TODO: No need to retain all daemons in the slice, just use the map indexed by DaemonID
+	if ok {
+		for i, d := range s.daemons {
+			if d.ID == daemon.ID {
+				s.daemons[i] = daemon
+			}
+		}
+	} else {
+		s.daemons = append(s.daemons, daemon)
+	}
+
+	s.idxByDaemonID[daemon.ID] = daemon
+	s.idxBySnapshotID[daemon.SnapshotID] = daemon
+
+	if ok {
+		return old
+	}
+
+	return nil
+}
+
+func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
+	delete(s.idxBySnapshotID, d.SnapshotID)
+	delete(s.idxByDaemonID, d.ID)
+
+	var deleted *daemon.Daemon
+
+	ds := s.daemons[:0]
+	for _, remained := range s.daemons {
+		if remained == d {
+			deleted = remained
+			continue
+		}
+		ds = append(ds, remained)
+	}
+
+	s.daemons = ds
+
+	return deleted
+}
+
+func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
+	s.mu.Lock()
+	old := s.removeUnlocked(d)
+	s.mu.Unlock()
+
+	return old
+}
+
+func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
+	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
+}
+func (s *DaemonStates) RemoveBySnapshotID(id string) *daemon.Daemon {
+	return s.GetBySnapshotID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
+}
+
+func (s *DaemonStates) RecoverDaemonState(d *daemon.Daemon) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	log.L.Infof("Recovering snapshot ID %s daemon ID %s", d.SnapshotID, d.ID)
+
+	s.daemons = append(s.daemons, d)
+	s.idxBySnapshotID[d.SnapshotID] = d
+	s.idxByDaemonID[d.ID] = d
+}
+
+func (s *DaemonStates) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daemon.Daemon {
+	var daemon *daemon.Daemon
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	daemon = s.idxByDaemonID[id]
+
+	if daemon != nil && op != nil {
+		op(daemon)
+	} else if daemon == nil {
+		log.L.Warnf("daemon daemon_id=%s is not found", id)
+	}
+
+	return daemon
+}
+
+func (s *DaemonStates) GetBySnapshotID(id string, op func(d *daemon.Daemon)) *daemon.Daemon {
+	var daemon *daemon.Daemon
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	daemon = s.idxBySnapshotID[id]
+
+	if daemon != nil && op != nil {
+		op(daemon)
+	} else if daemon == nil {
+		log.L.Warnf("daemon snapshot_id=%s is not found", id)
+	}
+
+	return daemon
+}
+
+func (s *DaemonStates) List() []*daemon.Daemon {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.daemons) == 0 {
+		return nil
+	}
+
+	listed := make([]*daemon.Daemon, len(s.daemons))
+	copy(listed, s.daemons)
+
+	return listed
+}
+
+func (s *DaemonStates) Size() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.daemons)
+}
+
+// Manage all nydusd daemons. Provide a daemon states cache
+// to avoid frequently operating DB
 type Manager struct {
 	store            Store
 	nydusdBinaryPath string
 	daemonMode       string
 	cacheDir         string
+	// Daemon states are inserted when creating snapshots and nydusd and
+	// removed when snapshot is deleted and nydusd is stopped. The persisted
+	// daemon state should be updated respectively. For fetch daemon state, it
+	// should never read a daemon from DB. Because the daemon states cache is
+	// supposed to refilled when nydus-snapshotter restarting.
+	daemonStates *DaemonStates
 
 	mounter mount.Interface
-	mu      sync.Mutex
+
+	// Protects updating states cache and DB
+	mu sync.Mutex
 }
 
 type Opt struct {
@@ -55,50 +205,82 @@ func NewManager(opt Opt) (*Manager, error) {
 		nydusdBinaryPath: opt.NydusdBinaryPath,
 		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
+		daemonStates:     newDaemonStates(),
 	}, nil
 }
 
+// Put a instantiated daemon into states manager. The damon state is
+// put to both states cache and DB. If the daemon with the same
+// daemon ID is already stored, return error ErrAlreadyExists
 func (m *Manager) NewDaemon(daemon *daemon.Daemon) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	d, err := m.store.GetBySnapshot(daemon.SnapshotID)
-	if err == nil && d != nil {
+
+	if old := m.daemonStates.GetByDaemonID(daemon.ID, nil); old != nil {
 		return errdefs.ErrAlreadyExists
 	}
+
+	if d, err := m.store.GetBySnapshotID(daemon.SnapshotID); err != nil {
+		return err
+	} else if d != nil {
+		return errdefs.ErrAlreadyExists
+	}
+
+	// Notice: updating daemon states cache and DB should be protect by `mu` lock
+	m.daemonStates.Add(daemon)
+
 	return m.store.Add(daemon)
 }
 
-func (m *Manager) DeleteBySnapshotID(id string) (*daemon.Daemon, error) {
+func (m *Manager) DeleteBySnapshotID(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s, err := m.store.GetBySnapshot(id)
-	if err != nil {
-		return nil, err
+
+	// FIXME: it will introduce deserialization.
+	// We should not use pointer of daemon as KEY to operate DB.
+	if d, err := m.store.GetBySnapshotID(id); err == nil {
+		m.store.Delete(d)
+	} else {
+		log.L.Warnf("Failed to find daemon %s in DB", id)
 	}
-	m.store.Delete(s)
-	return s, nil
+
+	m.daemonStates.RemoveBySnapshotID(id)
 }
 
-func (m *Manager) GetBySnapshotID(id string) (*daemon.Daemon, error) {
-	return m.store.GetBySnapshot(id)
+// Daemon state should always be fetched from states cache. DB is only
+// the persistence storage. Daemons manager should never try to read
+// serialized daemon state from DB when running normally. To the function
+// does not try to read DB when daemon is not found.
+func (m *Manager) GetBySnapshotID(id string) *daemon.Daemon {
+	return m.daemonStates.GetBySnapshotID(id, nil)
 }
 
-func (m *Manager) GetByID(id string) (*daemon.Daemon, error) {
-	return m.store.Get(id)
+func (m *Manager) GetByDaemonID(id string) *daemon.Daemon {
+	return m.daemonStates.GetByDaemonID(id, nil)
 }
 
-func (m *Manager) DeleteDaemon(daemon *daemon.Daemon) {
+func (m *Manager) DeleteDaemon(daemon *daemon.Daemon) error {
 	if daemon == nil {
-		return
+		return nil
 	}
-	m.store.Delete(daemon)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.store.Delete(daemon); err != nil {
+		return errors.Wrapf(err, "delete daemon state for %s", daemon.ID)
+	}
+
+	m.daemonStates.Remove(daemon)
+
+	return nil
 }
 
 func (m *Manager) ListDaemons() []*daemon.Daemon {
-	return m.store.List()
+	return m.daemonStates.List()
 }
 
-func (m *Manager) CleanUpDaemonResource(d *daemon.Daemon) {
+func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	resource := []string{d.ConfigDir, d.LogDir}
 	if d.IsMultipleDaemon() {
 		resource = append(resource, d.SocketDir)
@@ -189,10 +371,7 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 func (m *Manager) DestroyBySnapshotID(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	d, err := m.store.GetBySnapshot(id)
-	if err != nil {
-		return err
-	}
+	d := m.daemonStates.GetBySnapshotID(id, nil)
 	return m.DestroyDaemon(d)
 }
 
@@ -200,9 +379,9 @@ func (m *Manager) DestroyBySnapshotID(id string) error {
 // in the function that returns an error.
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	cleanup := func() error {
-		m.CleanUpDaemonResource(d)
-		if err := m.store.Delete(d); err != nil {
-			return errors.Wrap(err, "delete daemon in store")
+		m.CleanUpDaemonResources(d)
+		if err := m.DeleteDaemon(d); err != nil {
+			return errors.Wrap(err, "delete daemon")
 		}
 		return nil
 	}
@@ -265,14 +444,19 @@ func (m *Manager) IsPrefetchDaemon() bool {
 }
 
 // Reconnect running daemons and rebuild daemons management states
-func (m *Manager) Reconnect(ctx context.Context) error {
+// 1. Don't erase ever written record
+// 2. Just recover nydusd daemon states to manager's memory part.
+// 3. Manager in SharedDaemon mode should starts a nydusd when recovering
+func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 	var (
 		daemons      []*daemon.Daemon
 		sharedDaemon *daemon.Daemon
+		// Collected deserialized daemons that need to be recovered.
+		recoveringDaemons []*daemon.Daemon
 	)
 
 	if m.isNoneDaemon() {
-		return nil
+		return nil, nil
 	}
 
 	if err := m.store.WalkDaemons(ctx, func(d *daemon.Daemon) error {
@@ -280,18 +464,30 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 			WithField("mode", d.DaemonMode).
 			Info("found daemon in database")
 
+		m.daemonStates.RecoverDaemonState(d)
+
 		d.Once = &sync.Once{}
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 			daemons = append(daemons, d)
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
+			recoveringDaemons = append(recoveringDaemons, d)
+
 			return nil
 		}
 		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 
+			var mnt string
+
 			if d.ID == daemon.SharedNydusDaemonID {
+				mnt = *d.RootMountPoint
+			} else if !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
+				mnt = d.MountPoint()
+			}
+
+			if mnt != "" {
 				// The only reason that nydusd can't be connected is it's not running.
 				// Moreover, snapshotter is restarting. So no nydusd states can be returned to each nydusd.
 				// Nydusd can't do failover any more.
@@ -300,7 +496,7 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 
 				mounter := mount.Mounter{}
 				// This is best effort. So no need to handle its error.
-				if err := mounter.Umount(*d.RootMountPoint); err != nil {
+				if err := mounter.Umount(mnt); err != nil {
 					log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
 				}
 				// Nydusd judges if it should enter failover phrase by checking
@@ -310,12 +506,17 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 				}
 			}
 
+			recoveringDaemons = append(recoveringDaemons, d)
 			return nil
 		}
+
+		d.Connected = true
+
 		if !info.Running() {
 			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", info)
 			return nil
 		}
+
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
 		daemons = append(daemons, d)
 
@@ -327,30 +528,12 @@ func (m *Manager) Reconnect(ctx context.Context) error {
 
 		return nil
 	}); err != nil {
-		return errors.Wrapf(err, "failed to walk daemons to reconnect")
+		return nil, errors.Wrapf(err, "failed to walk daemons to reconnect")
 	}
 
 	if !m.isOneDaemon() && sharedDaemon != nil {
-		return errors.Errorf("SharedDaemon or PrefetchDaemon disabled, but shared daemon is found")
+		return nil, errors.Errorf("SharedDaemon or PrefetchDaemon disabled, but shared daemon is found")
 	}
 
-	if m.isOneDaemon() && sharedDaemon == nil && len(daemons) > 0 {
-		log.L.Warnf("SharedDaemon or PrefetchDaemon enabled, but cannot find alive shared daemon")
-		// Clear daemon list to skip adding them into daemon store
-		daemons = nil
-	}
-
-	// cleanup database so that we'll have a clean database for this snapshotter process lifetime
-	log.L.Infof("found %d daemons running", len(daemons))
-	if err := m.store.CleanupDaemons(ctx); err != nil {
-		return errors.Wrapf(err, "failed to cleanup database")
-	}
-
-	for _, d := range daemons {
-		if err := m.NewDaemon(d); err != nil {
-			return errors.Wrapf(err, "failed to add daemon(%s) to daemon store", d.ID)
-		}
-	}
-
-	return nil
+	return recoveringDaemons, nil
 }

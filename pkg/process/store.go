@@ -13,14 +13,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 )
 
+// Nydus daemons and snapshots persistence storage.
 type Store interface {
-	Get(id string) (*daemon.Daemon, error)
-	GetBySnapshot(snapshotID string) (*daemon.Daemon, error)
+	GetByDaemonID(id string) (*daemon.Daemon, error)
+	GetBySnapshotID(snapshotID string) (*daemon.Daemon, error)
 	Add(*daemon.Daemon) error
 	Update(d *daemon.Daemon) error
 	Delete(*daemon.Daemon) error
-	List() []*daemon.Daemon
-	Size() int
 	WalkDaemons(ctx context.Context, cb func(*daemon.Daemon) error) error
 	CleanupDaemons(ctx context.Context) error
 }
