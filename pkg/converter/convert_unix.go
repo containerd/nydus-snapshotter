@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"github.com/containerd/containerd/archive"
@@ -44,6 +45,13 @@ const envNydusBuilder = "NYDUS_BUILDER"
 const envNydusWorkdir = "NYDUS_WORKDIR"
 
 const configGCLabelKey = "containerd.io/gc.ref.content.config"
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		buffer := make([]byte, 1<<20)
+		return &buffer
+	},
+}
 
 func getBuilder(specifiedPath string) string {
 	if specifiedPath != "" {
@@ -304,7 +312,9 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 			}
 		}()
 
-		if _, err := io.Copy(dest, blobFifo); err != nil {
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(dest, blobFifo, *buffer); err != nil {
 			return errors.Wrap(err, "pack nydus tar")
 		}
 
@@ -378,7 +388,9 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	}
 	defer rc.Close()
 
-	if _, err = io.Copy(dest, rc); err != nil {
+	buffer := bufPool.Get().(*[]byte)
+	defer bufPool.Put(buffer)
+	if _, err = io.CopyBuffer(dest, rc, *buffer); err != nil {
 		return errors.Wrap(err, "copy merged bootstrap")
 	}
 
@@ -421,7 +433,9 @@ func Unpack(ctx context.Context, ia content.ReaderAt, dest io.Writer, opt Unpack
 		}
 	}()
 
-	if _, err := io.Copy(dest, blobFifo); err != nil {
+	buffer := bufPool.Get().(*[]byte)
+	defer bufPool.Put(buffer)
+	if _, err := io.CopyBuffer(dest, blobFifo, *buffer); err != nil {
 		if unpackErr := <-unpackErrChan; unpackErr != nil {
 			return errors.Wrap(unpackErr, "unpack")
 		}
@@ -467,7 +481,9 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 
 		go func() {
 			defer pw.Close()
-			if _, err := io.Copy(tw, tr); err != nil {
+			buffer := bufPool.Get().(*[]byte)
+			defer bufPool.Put(buffer)
+			if _, err := io.CopyBuffer(tw, tr, *buffer); err != nil {
 				pw.CloseWithError(err)
 				return
 			}
@@ -643,7 +659,9 @@ func mergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	gw := gzip.NewWriter(cw)
 	uncompressedDgst := digest.SHA256.Digester()
 	compressed := io.MultiWriter(gw, uncompressedDgst.Hash())
-	if _, err := io.Copy(compressed, pr); err != nil {
+	buffer := bufPool.Get().(*[]byte)
+	defer bufPool.Put(buffer)
+	if _, err := io.CopyBuffer(compressed, pr, *buffer); err != nil {
 		return nil, errors.Wrapf(err, "copy bootstrap targz into content store")
 	}
 	if err := gw.Close(); err != nil {

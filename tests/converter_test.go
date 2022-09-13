@@ -8,7 +8,6 @@ package tests
 
 import (
 	"archive/tar"
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -198,7 +197,7 @@ func buildOCIUpperTar(t *testing.T, teePath string) io.ReadCloser {
 
 func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fsVersion string) (string, digest.Digest) {
 	var data bytes.Buffer
-	writer := bufio.NewWriter(&data)
+	writer := io.Writer(&data)
 
 	twc, err := converter.Pack(context.TODO(), writer, converter.PackOption{
 		ChunkDictPath: chunkDict,
@@ -224,7 +223,7 @@ func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string,
 
 func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt) (string, digest.Digest) {
 	var data bytes.Buffer
-	writer := bufio.NewWriter(&data)
+	writer := io.Writer(&data)
 
 	err := converter.Unpack(context.TODO(), ra, writer, converter.UnpackOption{})
 	require.NoError(t, err)
@@ -343,7 +342,7 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	return bootstrapPath, filepath.Base(dictBlobPath)
 }
 
-// sudo go test -v -count=1 -run TestConverter ./pkg/nydusify
+// sudo go test -v -count=1 -run TestConverter ./tests
 func TestConverter(t *testing.T) {
 	workDir, err := ioutil.TempDir("", "nydus-converter-test-")
 	require.NoError(t, err)
