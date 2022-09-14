@@ -325,12 +325,15 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		return err
 	}
 	d.Pid = cmd.Process.Pid
+
+	// Update both states cache and DB
+	// TODO: Is it right to commit daemon before nydusd successfully started?
+	m.daemonStates.Add(d)
 	err = m.store.Update(d)
 	if err != nil {
 		// Nothing we can do, just ignore it for now
-		log.L.Errorf("fail to update daemon info (%+v) to db: %v", d, err)
+		log.L.Errorf("fail to update daemon info (%+v) to DB: %v", d, err)
 	}
-	// process wait when destroy daemon and kill process
 
 	// If nydusd fails startup, manager can't subscribe its death event.
 	// So we can ignore the subscribing error.
