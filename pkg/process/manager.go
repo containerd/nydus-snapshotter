@@ -201,6 +201,17 @@ type Opt struct {
 func (m *Manager) handleDaemonDeathEvent() {
 	for event := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
+
+func clearDaemonVestige(d *daemon.Daemon) {
+	mounter := mount.Mounter{}
+	// This is best effort. So no need to handle its error.
+	if err := mounter.Umount(d.HostMountPoint()); err != nil {
+		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
+	}
+	// Nydusd judges if it should enter failover phrase by checking
+	// if unix socket is existed and it can't be connected.
+	if err := os.Remove(d.GetAPISock()); err != nil {
+		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 	}
 }
 
@@ -521,31 +532,14 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 
-			var mnt string
-
-			if d.ID == daemon.SharedNydusDaemonID {
-				mnt = *d.RootMountPoint
-			} else if !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
-				mnt = d.MountPoint()
-			}
-
-			if mnt != "" {
+			// Skip so-called virtual daemon :-(
+			if d.ID == daemon.SharedNydusDaemonID || !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 				// The only reason that nydusd can't be connected is it's not running.
 				// Moreover, snapshotter is restarting. So no nydusd states can be returned to each nydusd.
 				// Nydusd can't do failover any more.
 				// We can safely try to umount its mountpoint to avoid nydusd pausing in INIT state.
 				log.L.Warnf("Nydusd died somehow. Clean up its vestige!")
-
-				mounter := mount.Mounter{}
-				// This is best effort. So no need to handle its error.
-				if err := mounter.Umount(mnt); err != nil {
-					log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
-				}
-				// Nydusd judges if it should enter failover phrase by checking
-				// if unix socket is existed and it can't be connected.
-				if err := os.Remove(d.GetAPISock()); err != nil {
-					log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
-				}
+				clearDaemonVestige(d)
 			}
 
 			recoveringDaemons = append(recoveringDaemons, d)
