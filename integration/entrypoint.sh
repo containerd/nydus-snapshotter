@@ -128,6 +128,7 @@ function reboot_containerd {
 
     local daemon_mode=${1}
     local fs_driver=${2:-fusedev}
+    local recover_policy=${3:-none}
 
     if [ -d "${REMOTE_SNAPSHOTTER_ROOT:?}/snapshotter/snapshots/" ]; then
         umount -t fuse --all
@@ -135,7 +136,7 @@ function reboot_containerd {
 
     rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/*
 
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --log-to-stdout --config-path /etc/nydus/config.json &
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path /etc/nydus/config.json &
 
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
     containerd --log-level info --config=/etc/containerd/config.toml &
@@ -219,8 +220,10 @@ function start_single_container_on_stargz {
     nerdctl_prune_images
     reboot_containerd shared
 
-    nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
+    containerd-nydus-grpc --enable-stargz --daemon-mode multiple --fs-driver fusedev \
+        --recover-policy none --log-to-stdout --config-path /etc/nydus/config.json &
 
+    nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
     detect_go_race
 }
 
@@ -325,20 +328,53 @@ function only_restart_snapshotter {
     detect_go_race
 }
 
+function kill_nydusd_recover_nydusd {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd "${daemon_mode}" restart
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+    pause 1
+
+    echo "killing nydusd"
+    killall -9 nydusd || true
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+
+    detect_go_race
+}
+
 reboot_containerd mutiples
 
 start_single_container_multiple_daemons
 start_multiple_containers_multiple_daemons
 start_multiple_containers_shared_daemon
+
 pull_remove_one_image
+
 pull_remove_multiple_images shared
 pull_remove_multiple_images multiple
+
 start_single_container_on_stargz
+
 only_restart_snapshotter shared
 only_restart_snapshotter multiple
+
 kill_snapshotter_and_nydusd_recover shared
 kill_snapshotter_and_nydusd_recover multiple
+
+kill_nydusd_recover_nydusd shared
+kill_nydusd_recover_nydusd multiple
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
     start_multiple_containers_shared_daemon_erofs
 fi
+
+# trap "{ pause 1000; }" ERR
