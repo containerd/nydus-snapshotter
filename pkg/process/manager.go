@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
@@ -182,6 +183,10 @@ type Manager struct {
 
 	mounter mount.Interface
 
+	monitor LivenessMonitor
+	// TODO: Close me
+	LivenessNotifier chan deathEvent
+
 	// Protects updating states cache and DB
 	mu sync.Mutex
 }
@@ -193,20 +198,39 @@ type Opt struct {
 	CacheDir         string
 }
 
+func (m *Manager) handleDaemonDeathEvent() {
+	for event := range m.LivenessNotifier {
+		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
+	}
+}
+
 func NewManager(opt Opt) (*Manager, error) {
 	s, err := store.NewDaemonStore(opt.Database)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Manager{
+	monitor, err := newMonitor()
+	if err != nil {
+		return nil, errors.Wrap(err, "create daemons liveness monitor")
+	}
+
+	mgr := &Manager{
 		store:            s,
 		mounter:          &mount.Mounter{},
 		nydusdBinaryPath: opt.NydusdBinaryPath,
 		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
 		daemonStates:     newDaemonStates(),
-	}, nil
+		monitor:          monitor,
+		LivenessNotifier: make(chan deathEvent, 32),
+	}
+
+	// FIXME: How to get error if monitor goroutine terminates with error?
+	mgr.monitor.Run()
+	go mgr.handleDaemonDeathEvent()
+
+	return mgr, nil
 }
 
 // Put a instantiated daemon into states manager. The damon state is
@@ -307,8 +331,23 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		log.L.Errorf("fail to update daemon info (%+v) to db: %v", d, err)
 	}
 	// process wait when destroy daemon and kill process
-	return nil
 
+	// If nydusd fails startup, manager can't subscribe its death event.
+	// So we can ignore the subscribing error.
+	go func() {
+		if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+			log.L.Errorf("Nydusd %s probably not started", d.ID)
+			return
+		}
+
+		// TODO: It's better to subscribe death event when snapshotter
+		// has set daemon's state to RUNNING or READY.
+		if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
+			log.L.Errorf("Nydusd %s probably not started", d.ID)
+		}
+	}()
+
+	return nil
 }
 
 func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {

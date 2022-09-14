@@ -42,9 +42,10 @@ import (
 var _ snapshots.Snapshotter = &snapshotter{}
 
 type snapshotter struct {
-	context              context.Context
-	root                 string
-	nydusdPath           string
+	context    context.Context
+	root       string
+	nydusdPath string
+	// Storing snapshots' state, parentage ant other metadata
 	ms                   *storage.MetaStore
 	fs                   *fspkg.Filesystem
 	manager              *process.Manager
@@ -80,6 +81,8 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new process manager")
 	}
+
+	// FIXME: How to get event goroutine has exited with error?
 
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithProcessManager(pm),
@@ -437,6 +440,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		// Remove directories after the transaction is closed, failures must not
 		// return error since the transaction is committed with the removal
 		// key no longer available.
+		// FIXME: deferred snapshot directory cleanup could delete a newly created snapshot's dir since snapshot ID can be reused.
 		defer func() {
 			if err == nil {
 				for _, dir := range removals {
