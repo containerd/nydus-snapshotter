@@ -202,6 +202,16 @@ func (m *Manager) handleDaemonDeathEvent() {
 	for event := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
 
+		// We can't restart nydusd for now fuse connection
+		d := m.GetByDaemonID(event.daemonID)
+		// TODO: Handle error
+		waitDaemon(d)
+		clearDaemonVestige(d)
+		// FIXME: handle shared mode recovery
+		m.StartDaemon(d)
+	}
+}
+
 func clearDaemonVestige(d *daemon.Daemon) {
 	mounter := mount.Mounter{}
 	// This is best effort. So no need to handle its error.
