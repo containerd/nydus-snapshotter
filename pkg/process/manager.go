@@ -186,6 +186,7 @@ type Manager struct {
 	monitor LivenessMonitor
 	// TODO: Close me
 	LivenessNotifier chan deathEvent
+	RecoverPolicy    string
 
 	// Protects updating states cache and DB
 	mu sync.Mutex
@@ -196,19 +197,31 @@ type Opt struct {
 	Database         *store.Database
 	DaemonMode       string
 	CacheDir         string
+	RecoverPolicy    string
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
 	for event := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
 
-		// We can't restart nydusd for now fuse connection
-		d := m.GetByDaemonID(event.daemonID)
-		// TODO: Handle error
-		waitDaemon(d)
-		clearDaemonVestige(d)
-		// FIXME: handle shared mode recovery
-		m.StartDaemon(d)
+		if m.RecoverPolicy == "restart" {
+			// We can't restart nydusd for now fuse connection
+			d := m.GetByDaemonID(event.daemonID)
+
+			if err := waitDaemon(d); err != nil {
+				log.L.Warnf("fails to wait for daemon")
+			}
+
+			if err := m.monitor.Unsubscribe(d.ID); err != nil {
+				log.L.Warnf("fails to unsubscribe")
+			}
+
+			clearDaemonVestige(d)
+			// FIXME: handle shared mode recovery
+			m.StartDaemon(d)
+		} else if m.RecoverPolicy == "failover" {
+			log.L.Warnf("failover is not implemented now!")
+		}
 	}
 }
 
@@ -245,6 +258,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		daemonStates:     newDaemonStates(),
 		monitor:          monitor,
 		LivenessNotifier: make(chan deathEvent, 32),
+		RecoverPolicy:    opt.RecoverPolicy,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
@@ -356,6 +370,7 @@ func terminateDaemon(d *daemon.Daemon) error {
 func waitDaemon(d *daemon.Daemon) error {
 	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
 	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+	// FIXME: reading Pid may race with other places setting Pid. Try to sync them.
 	if d.Pid > 0 {
 		p, err := os.FindProcess(d.Pid)
 		if err != nil {

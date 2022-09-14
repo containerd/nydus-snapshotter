@@ -77,6 +77,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
 		CacheDir:         cfg.CacheDir,
+		RecoverPolicy:    cfg.RecoverPolicy,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new process manager")
