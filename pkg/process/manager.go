@@ -327,6 +327,41 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	}
 }
 
+func terminateDaemon(d *daemon.Daemon) error {
+	//  if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
+	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+	if d.Pid > 0 {
+		p, err := os.FindProcess(d.Pid)
+		if err != nil {
+			return errors.Wrapf(err, "find process %d", d.Pid)
+		}
+		if err = p.Signal(syscall.SIGTERM); err != nil {
+			return errors.Wrapf(err, "send SIGTERM signal to process %d", d.Pid)
+		}
+	}
+
+	return nil
+}
+
+func waitDaemon(d *daemon.Daemon) error {
+	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
+	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+	if d.Pid > 0 {
+		p, err := os.FindProcess(d.Pid)
+		if err != nil {
+			return errors.Wrapf(err, "find process %d", d.Pid)
+		}
+
+		// if nydus-snapshotter restarts, it will break the relationship between nydusd and
+		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
+		if _, err = p.Wait(); err != nil && !stderrors.Is(err, syscall.ECHILD) {
+			log.L.Errorf("failed to process wait, %v", err)
+		}
+	}
+
+	return nil
+}
+
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.buildStartCommand(d)
 	if err != nil {
@@ -451,22 +486,19 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	}
 
 	log.L.Infof("umount remote snapshot, mountpoint %s", d.MountPoint())
-	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
-	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
-	if d.Pid > 0 {
-		p, err := os.FindProcess(d.Pid)
-		if err != nil {
-			return errors.Wrapf(err, "find process %d", d.Pid)
-		}
-		if err = p.Signal(syscall.SIGTERM); err != nil {
-			return errors.Wrapf(err, "send SIGTERM signal to process %d", d.Pid)
-		}
-		// if nydus-snapshotter restart, it will break the relationship between nydusd and
-		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
-		if _, err = p.Wait(); err != nil && !stderrors.Is(err, syscall.ECHILD) {
-			log.L.Errorf("failed to process wait, %v", err)
-		}
+
+	if err := m.monitor.Unsubscribe(d.ID); err != nil {
+		log.L.Warnf("Unable to unsubscribe, daemon ID %s", d.ID)
 	}
+
+	if err := terminateDaemon(d); err != nil {
+		log.L.Warnf("Fails to terminate daemon, %v", err)
+	}
+
+	if err := waitDaemon(d); err != nil {
+		log.L.Warnf("Fails to wait for daemon, %v", err)
+	}
+
 	// for backward compatible, here umount <snapshot_dir>/<id>/fs and <snapshot_dir>/<id>/mnt
 	// if mountpoint not exist, Umount will return nil
 	mps := []string{d.MountPoint(), d.OldMountPoint()}

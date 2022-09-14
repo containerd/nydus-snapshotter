@@ -440,7 +440,6 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		// Remove directories after the transaction is closed, failures must not
 		// return error since the transaction is committed with the removal
 		// key no longer available.
-		// FIXME: deferred snapshot directory cleanup could delete a newly created snapshot's dir since snapshot ID can be reused.
 		defer func() {
 			if err == nil {
 				for _, dir := range removals {
