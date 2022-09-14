@@ -80,6 +80,17 @@ func (d *Daemon) MountPoint() string {
 	return filepath.Join(d.SnapshotDir, d.SnapshotID, "mnt")
 }
 
+func (d *Daemon) HostMountPoint() (mnt string) {
+	// Identify a shared nydusd for multiple rafs instances.
+	if d.ID == SharedNydusDaemonID {
+		mnt = *d.RootMountPoint
+	} else {
+		mnt = d.MountPoint()
+	}
+
+	return
+}
+
 // Keep this for backwards compatibility
 func (d *Daemon) OldMountPoint() string {
 	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
