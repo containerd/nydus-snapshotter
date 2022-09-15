@@ -30,6 +30,20 @@ RETRYNUM=30
 RETRYINTERVAL=1
 TIMEOUTSEC=180
 
+GORACE_REPORT="$(pwd)/go_race_report"
+export GORACE="log_path=${GORACE_REPORT}"
+
+function detect_go_race {
+    if [ -n "$(ls -A ${GORACE_REPORT}.* 2>/dev/null)" ]; then
+        echo "go race detected"
+        reports=$(ls -A ${GORACE_REPORT}.* 2>/dev/null)
+        for r in ${reports}; do
+            cat "$r"
+        done
+        exit 1
+    fi
+}
+
 function stop_all_containers {
     containers=$(nerdctl ps -q | tr '\n' ' ')
     if [[ ${containers} == "" ]]; then
@@ -166,6 +180,8 @@ function start_single_container_multiple_daemons {
     reboot_containerd mutiple
 
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
+
+    detect_go_race
 }
 
 function start_multiple_containers_multiple_daemons {
@@ -182,6 +198,8 @@ function start_multiple_containers_multiple_daemons {
     nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
+
+    detect_go_race
 }
 
 function start_multiple_containers_shared_daemon {
@@ -192,6 +210,8 @@ function start_multiple_containers_shared_daemon {
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+
+    detect_go_race
 }
 
 function start_single_container_on_stargz {
@@ -200,6 +220,8 @@ function start_single_container_on_stargz {
     reboot_containerd shared
 
     nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
+
+    detect_go_race
 }
 
 function pull_remove_one_image {
@@ -209,6 +231,8 @@ function pull_remove_one_image {
 
     nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
+
+    detect_go_race
 }
 
 function pull_remove_multiple_images {
@@ -227,6 +251,7 @@ function pull_remove_multiple_images {
 
     # TODO: Validate running nydusd number
 
+    detect_go_race
 }
 
 function start_multiple_containers_shared_daemon_erofs {
@@ -237,6 +262,8 @@ function start_multiple_containers_shared_daemon_erofs {
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
+
+    detect_go_race
 }
 
 function kill_snapshotter_and_nydusd_recover {
@@ -263,6 +290,8 @@ function kill_snapshotter_and_nydusd_recover {
     echo "start new containers"
     nerdctl --snapshotter nydus start "$c1"
     nerdctl --snapshotter nydus start "$c2"
+
+    detect_go_race
 }
 
 function only_restart_snapshotter {
@@ -292,6 +321,8 @@ function only_restart_snapshotter {
     echo "start new containers"
     nerdctl --snapshotter nydus start "$c1"
     nerdctl --snapshotter nydus start "$c2"
+
+    detect_go_race
 }
 
 reboot_containerd mutiples
