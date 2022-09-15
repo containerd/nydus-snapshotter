@@ -402,13 +402,18 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		return errors.Wrap(err, "failed to get snapshot")
 	}
 
+	// workaround for cacheMgr
+	// It is not necessary to execute successfully, even if it fails, it does not affect removing snapshot
 	if snap.Labels != nil {
-		if imageID, ok := snap.Labels[label.CRIImageRef]; ok {
-			if err := o.fs.DelSnapshot(imageID); err != nil {
-				return errors.Wrap(err, "failed to delete snapshot in cache manager")
+		if _, ok := snap.Labels[label.TargetSnapshotRef]; ok {
+			if imageID, ok := snap.Labels[label.CRIImageRef]; ok {
+				if err := o.fs.DelSnapshot(imageID); err != nil {
+					log.G(ctx).WithError(err).Warn("failed to delete snapshot in cache manager")
+				}
+			} else {
+				log.G(ctx).WithError(err).Warnf("failed to get image ref from snapshot label %#v", snap.Labels)
+
 			}
-		} else {
-			return fmt.Errorf("failed to get image ref from snapshot label %#v", snap.Labels)
 		}
 	}
 
