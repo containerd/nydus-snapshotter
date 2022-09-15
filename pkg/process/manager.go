@@ -50,7 +50,8 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 
 	old, ok := s.idxByDaemonID[daemon.ID]
 
-	// TODO: No need to retain all daemons in the slice, just use the map indexed by DaemonID
+	// TODO: No need to retain all daemons in the slice,
+	// just use the map indexed by DaemonID
 	if ok {
 		for i, d := range s.daemons {
 			if d.ID == daemon.ID {
@@ -59,6 +60,10 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 		}
 	} else {
 		s.daemons = append(s.daemons, daemon)
+	}
+
+	if ok && old.SnapshotID != daemon.SnapshotID {
+		log.L.Panicf("same daemon ID with different snapshot ID")
 	}
 
 	s.idxByDaemonID[daemon.ID] = daemon
