@@ -102,6 +102,7 @@ func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
 func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
 	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
 }
+
 func (s *DaemonStates) RemoveBySnapshotID(id string) *daemon.Daemon {
 	return s.GetBySnapshotID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
 }
@@ -352,8 +353,12 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 }
 
 func terminateDaemon(d *daemon.Daemon) error {
-	//  if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
+	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
 	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+
+	d.Lock()
+	defer d.Unlock()
+
 	if d.Pid > 0 {
 		p, err := os.FindProcess(d.Pid)
 		if err != nil {
@@ -370,7 +375,10 @@ func terminateDaemon(d *daemon.Daemon) error {
 func waitDaemon(d *daemon.Daemon) error {
 	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
 	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
-	// FIXME: reading Pid may race with other places setting Pid. Try to sync them.
+
+	d.Lock()
+	defer d.Unlock()
+
 	if d.Pid > 0 {
 		p, err := os.FindProcess(d.Pid)
 		if err != nil {
@@ -390,11 +398,15 @@ func waitDaemon(d *daemon.Daemon) error {
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.buildStartCommand(d)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to create start command for daemon %s", d.ID))
+		return errors.Wrapf(err, "failed to create command for daemon %s", d.ID)
 	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+
+	d.Lock()
+	defer d.Unlock()
+
 	d.Pid = cmd.Process.Pid
 
 	// Update both states cache and DB

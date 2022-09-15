@@ -54,7 +54,16 @@ type Daemon struct {
 	Client nydussdk.Interface `json:"-"`
 	Once   *sync.Once         `json:"-"`
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
-	Connected bool `json:"-"`
+	Connected bool       `json:"-"`
+	mu        sync.Mutex `json:"-"`
+}
+
+func (d *Daemon) Lock() {
+	d.mu.Lock()
+}
+
+func (d *Daemon) Unlock() {
+	d.mu.Unlock()
 }
 
 // Mountpoint for nydusd within single kernel mountpoint(FUSE mount). Each mountpoint
