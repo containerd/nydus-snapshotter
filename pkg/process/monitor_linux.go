@@ -23,12 +23,14 @@ import (
 	"net"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
 // LivenessMonitor liveness of a nydusd daemon.
@@ -101,11 +103,21 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 		rawConn syscall.RawConn
 	)
 
-	// Don't forget close me!
-	if c, err = net.Dial("unix", path); err != nil {
-		log.L.Errorf("Fails to connect to %s, %v", path, err)
-		return
-		q
+	err = retry.Do(func() (err error) {
+		// Don't forget close me!
+		if c, err = net.Dial("unix", path); err != nil {
+			log.L.Errorf("Fails to connect to %s, %v", path, err)
+			return
+		}
+
+		return nil
+	},
+		retry.Attempts(4),
+		retry.LastErrorOnly(true),
+		retry.Delay(100*time.Millisecond))
+
+	if err != nil {
+		return err
 	}
 
 	uc, ok := c.(*net.UnixConn)
