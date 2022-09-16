@@ -218,13 +218,25 @@ func (m *Manager) handleDaemonDeathEvent() {
 				log.L.Warnf("fails to wait for daemon")
 			}
 
+			// Starting a new nydusd will re-subscribe
 			if err := m.monitor.Unsubscribe(d.ID); err != nil {
 				log.L.Warnf("fails to unsubscribe")
 			}
 
 			clearDaemonVestige(d)
-			// FIXME: handle shared mode recovery
+
 			m.StartDaemon(d)
+
+			if d.IsSharedDaemon() {
+				daemons := m.daemonStates.List()
+				for _, d := range daemons {
+					if d.ID != daemon.SharedNydusDaemonID {
+						if err := d.SharedMount(); err != nil {
+							log.L.Warnf("fail to mount rafs, %v", err)
+						}
+					}
+				}
+			}
 		} else if m.RecoverPolicy == "failover" {
 			log.L.Warnf("failover is not implemented now!")
 		}
@@ -268,6 +280,7 @@ func NewManager(opt Opt) (*Manager, error) {
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
+	// TODO: Shutdown monitor immediately after snapshotter receive Exit signal
 	mgr.monitor.Run()
 	go mgr.handleDaemonDeathEvent()
 
