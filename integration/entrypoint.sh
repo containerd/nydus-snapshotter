@@ -52,6 +52,7 @@ function stop_all_containers {
         echo "Killing containers ${containers}"
         for C in ${containers}; do
             nerdctl kill "${C}"
+            nerdctl rm "${C}"
         done
         return 1
     fi
@@ -116,6 +117,9 @@ function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
 
+    # Let snapshotter shutdown all its services.
+    sleep 0.5
+
     # FIXME
     echo "umount globally shared mountpoint"
     umount_global_shared_mnt
@@ -134,8 +138,8 @@ function reboot_containerd {
         umount -t fuse --all
     fi
 
+    # rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/* || fuser -m "${REMOTE_SNAPSHOTTER_ROOT}/mnt" && false
     rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/*
-
     containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path /etc/nydus/config.json &
 
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
@@ -153,7 +157,7 @@ function restart_snapshotter {
 }
 
 function umount_global_shared_mnt {
-    umount -f "${SNAPSHOTTER_SHARED_MNT}" || true
+    umount "${SNAPSHOTTER_SHARED_MNT}" || true
 }
 
 function is_cache_cleared {
@@ -219,6 +223,9 @@ function start_single_container_on_stargz {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
     reboot_containerd shared
+
+    killall "containerd-nydus-grpc" || true
+    sleep 0.5
 
     containerd-nydus-grpc --enable-stargz --daemon-mode multiple --fs-driver fusedev \
         --recover-policy none --log-to-stdout --config-path /etc/nydus/config.json &
@@ -332,7 +339,8 @@ function kill_nydusd_recover_nydusd {
     local daemon_mode=$1
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd "${daemon_mode}" restart
+
+    reboot_containerd "${daemon_mode}" fusedev restart
 
     nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
