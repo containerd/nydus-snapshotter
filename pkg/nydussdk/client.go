@@ -213,7 +213,7 @@ func WaitUntilSocketExisted(sock string) error {
 
 		return nil
 	},
-		retry.Attempts(3),
+		retry.Attempts(5),
 		retry.LastErrorOnly(true),
 		retry.Delay(100*time.Millisecond))
 }
