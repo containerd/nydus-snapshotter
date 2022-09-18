@@ -441,6 +441,9 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	if err != nil {
 		return errors.Wrap(err, "failed to create stargz index")
 	}
+
+	defer starGzToc.Close()
+
 	_, err = io.Copy(starGzToc, r)
 	if err != nil {
 		return errors.Wrap(err, "failed to save stargz index")
