@@ -78,6 +78,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
 		CacheDir:         cfg.CacheDir,
+		RootDir:          cfg.RootDir,
 		RecoverPolicy:    rp,
 	})
 	if err != nil {

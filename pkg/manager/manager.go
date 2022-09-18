@@ -10,6 +10,7 @@ package manager
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/containerd/containerd/log"
@@ -20,6 +21,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
+	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
 
@@ -232,6 +234,7 @@ type Manager struct {
 	// TODO: Close me
 	LivenessNotifier chan deathEvent
 	RecoverPolicy    DaemonRecoverPolicy
+	SupervisorSet    *supervisor.SupervisorsSet
 
 	// Protects updating states cache and DB
 	mu sync.Mutex
@@ -243,6 +246,10 @@ type Opt struct {
 	DaemonMode       config.DaemonMode
 	CacheDir         string
 	RecoverPolicy    DaemonRecoverPolicy
+	// Nydus-snapshotter work directory
+	RootDir string
+}
+
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
@@ -304,6 +311,11 @@ func NewManager(opt Opt) (*Manager, error) {
 		return nil, errors.Wrap(err, "create daemons liveness monitor")
 	}
 
+	supervisorSet, err := supervisor.NewSupervisorSet(filepath.Join(opt.RootDir, "supervisor"))
+	if err != nil {
+		return nil, errors.Wrap(err, "create supervisor set")
+	}
+
 	mgr := &Manager{
 		store:            s,
 		mounter:          &mount.Mounter{},
@@ -314,6 +326,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		monitor:          monitor,
 		LivenessNotifier: make(chan deathEvent, 32),
 		RecoverPolicy:    opt.RecoverPolicy,
+		SupervisorSet:    supervisorSet,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
