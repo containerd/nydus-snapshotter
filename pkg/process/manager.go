@@ -315,7 +315,7 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	var args []string
 	if d.FsDriver == config.FsDriverFscache {
 		args = []string{
-			"daemon",
+			"singleton",
 			"--fscache", m.cacheDir,
 		}
 		nydusdThreadNum := d.NydusdThreadNum()
