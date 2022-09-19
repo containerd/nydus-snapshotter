@@ -298,16 +298,21 @@ func (m *Manager) NewDaemon(daemon *daemon.Daemon) error {
 		return errdefs.ErrAlreadyExists
 	}
 
-	if d, err := m.store.GetBySnapshotID(daemon.SnapshotID); err != nil {
-		return err
-	} else if d != nil {
-		return errdefs.ErrAlreadyExists
+	m.daemonStates.Add(daemon)
+	return m.store.Add(daemon)
+}
+
+func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if old := m.daemonStates.GetByDaemonID(daemon.ID, nil); old == nil {
+		return errdefs.ErrNotFound
 	}
 
 	// Notice: updating daemon states cache and DB should be protect by `mu` lock
 	m.daemonStates.Add(daemon)
-
-	return m.store.Add(daemon)
+	return m.store.Update(daemon)
 }
 
 func (m *Manager) DeleteBySnapshotID(id string) {
@@ -429,8 +434,9 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 	// Update both states cache and DB
 	// TODO: Is it right to commit daemon before nydusd successfully started?
-	m.daemonStates.Add(d)
-	err = m.store.Update(d)
+	// And it brings extra latency of accessing DB. Only write daemon record to
+	// DB when nydusd is started?
+	err = m.UpdateDaemon(d)
 	if err != nil {
 		// Nothing we can do, just ignore it for now
 		log.L.Errorf("fail to update daemon info (%+v) to DB: %v", d, err)
