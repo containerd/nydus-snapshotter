@@ -45,6 +45,8 @@ func main() {
 				return errors.Wrap(err, "failed to set up logger")
 			}
 
+			log.L.Infof("Start nydus-snapshotter. PID %d Version %s", os.Getpid(), Version)
+
 			return snapshotter.Start(ctx, cfg)
 		},
 	}
