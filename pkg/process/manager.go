@@ -489,6 +489,11 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		}
 	}
 
+	if d.SupervisorPath != "" {
+		args = append(args, "--supervisor", d.SupervisorPath)
+		args = append(args, "--id", d.ID)
+	}
+
 	args = append(args, "--apisock", d.GetAPISock())
 	args = append(args, "--log-level", d.LogLevel)
 	if !d.LogToStdout {

@@ -146,3 +146,10 @@ func WithFsDriver(fsDriver string) NewDaemonOpt {
 		return nil
 	}
 }
+
+func WithSupervisor(supervisor string) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.SupervisorPath = supervisor
+		return nil
+	}
+}

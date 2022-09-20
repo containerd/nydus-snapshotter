@@ -51,6 +51,7 @@ type Daemon struct {
 	RootMountPoint   *string
 	CustomMountPoint *string
 	nydusdThreadNum  int
+	SupervisorPath   string
 
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
 	client nydussdk.Interface `json:"-"`
