@@ -595,7 +595,6 @@ func (m *Manager) IsPrefetchDaemon() bool {
 // 3. Manager in SharedDaemon mode should starts a nydusd when recovering
 func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 	var (
-		daemons      []*daemon.Daemon
 		sharedDaemon *daemon.Daemon
 		// Collected deserialized daemons that need to be recovered.
 		recoveringDaemons []*daemon.Daemon
@@ -615,10 +614,8 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		d.Once = &sync.Once{}
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
-			daemons = append(daemons, d)
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
 			recoveringDaemons = append(recoveringDaemons, d)
-
 			return nil
 		}
 		info, err := d.CheckStatus()
@@ -647,7 +644,17 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		}
 
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
-		daemons = append(daemons, d)
+
+		go func() {
+			if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+				log.L.Errorf("Nydusd %s probably not started", d.ID)
+				return
+			}
+
+			if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
+				log.L.Errorf("Nydusd %s probably not started", d.ID)
+			}
+		}()
 
 		// Get the global shared daemon here after CheckStatus() by attention
 		// so that we're sure it's alive.
