@@ -22,10 +22,46 @@ type DaemonInfo struct {
 	State   string        `json:"state"`
 }
 
+type DaemonState int
+
+const (
+	DaemonStateUnknown DaemonState = iota
+	DaemonStateInit
+	DaemonStateReady
+	DaemonStateRunning
+)
+
 func (info *DaemonInfo) Running() bool {
 	// Due to history reason, the daemon state returned by nydusd sock API has
 	// been changed from `Running` to `RUNNING`, so keeps compatibility here.
 	return strings.ToUpper(info.State) == "RUNNING"
+}
+
+func (info *DaemonInfo) DaemonState() DaemonState {
+	s := info.State
+	switch {
+	case strings.EqualFold(s, "running"):
+		return DaemonStateRunning
+	case strings.EqualFold(s, "init"):
+		return DaemonStateInit
+	case strings.EqualFold(s, "ready"):
+		return DaemonStateReady
+	default:
+		return DaemonStateUnknown
+	}
+}
+
+func (s DaemonState) String() string {
+	switch {
+	case s == DaemonStateInit:
+		return "INIT"
+	case s == DaemonStateReady:
+		return "READY"
+	case s == DaemonStateRunning:
+		return "RUNNING"
+	default:
+		return "UNKNOWN"
+	}
 }
 
 type ErrorMessage struct {
