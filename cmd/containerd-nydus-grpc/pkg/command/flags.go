@@ -204,7 +204,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "recover-policy",
-			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to none",
+			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to restart",
 			Destination: &args.RecoverPolicy,
 			Value:       "restart",
 		},
