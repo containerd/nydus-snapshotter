@@ -36,7 +36,7 @@ const (
 	oldDefaultRootDir          = "/var/lib/containerd-nydus-grpc"
 	defaultRotateLogMaxSize    = 200 // 200 megabytes
 	defaultRotateLogMaxBackups = 10
-	defaultRotateLogMaxAge     = 0 // days
+	defaultRotateLogMaxAge     = 0   // days
 	defaultRotateLogLocalTime  = true
 	defaultRotateLogCompress   = true
 )
