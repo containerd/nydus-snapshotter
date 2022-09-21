@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
 )
@@ -338,6 +339,19 @@ func (d *Daemon) Wait() error {
 	}
 
 	return nil
+}
+
+func (d *Daemon) ClearVestige() {
+	mounter := mount.Mounter{}
+	// This is best effort. So no need to handle its error.
+	if err := mounter.Umount(d.HostMountPoint()); err != nil {
+		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
+	}
+	// Nydusd judges if it should enter failover phrase by checking
+	// if unix socket is existed and it can't be connected.
+	if err := os.Remove(d.GetAPISock()); err != nil {
+		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
+	}
 }
 
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {

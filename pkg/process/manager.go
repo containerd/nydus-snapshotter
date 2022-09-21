@@ -266,7 +266,7 @@ func (m *Manager) handleDaemonDeathEvent() {
 					log.L.Warnf("fails to unsubscribe daemon %s, %v", d.ID, err)
 				}
 
-				clearDaemonVestige(d)
+				d.ClearVestige()
 				if err := m.StartDaemon(d); err != nil {
 					log.L.Errorf("fails to start daemon %s when recovering", d.ID)
 					return
@@ -287,19 +287,6 @@ func (m *Manager) handleDaemonDeathEvent() {
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
 			log.L.Warnf("failover is not implemented now!")
 		}
-	}
-}
-
-func clearDaemonVestige(d *daemon.Daemon) {
-	mounter := mount.Mounter{}
-	// This is best effort. So no need to handle its error.
-	if err := mounter.Umount(d.HostMountPoint()); err != nil {
-		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
-	}
-	// Nydusd judges if it should enter failover phrase by checking
-	// if unix socket is existed and it can't be connected.
-	if err := os.Remove(d.GetAPISock()); err != nil {
-		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 	}
 }
 
@@ -633,7 +620,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 				// Nydusd can't do failover any more.
 				// We can safely try to umount its mountpoint to avoid nydusd pausing in INIT state.
 				log.L.Warnf("Nydusd died somehow. Clean up its vestige!")
-				clearDaemonVestige(d)
+				d.ClearVestige()
 			}
 
 			recoveringDaemons = append(recoveringDaemons, d)
