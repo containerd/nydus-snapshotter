@@ -8,7 +8,6 @@ package process
 
 import (
 	"context"
-	stderrors "errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,9 +21,50 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
+
+type DaemonRecoverPolicy int
+
+const (
+	RecoverPolicyInvalid DaemonRecoverPolicy = iota
+	RecoverPolicyNone
+	RecoverPolicyRestart
+	RecoverPolicyFailover
+)
+
+func (p DaemonRecoverPolicy) String() string {
+	switch p {
+	case RecoverPolicyNone:
+		return "none"
+	case RecoverPolicyRestart:
+		return "restart"
+	case RecoverPolicyFailover:
+		return "failover"
+	default:
+		return ""
+	}
+}
+
+var recoverPolicyParser map[string]DaemonRecoverPolicy
+
+func init() {
+	recoverPolicyParser = map[string]DaemonRecoverPolicy{
+		RecoverPolicyNone.String():     RecoverPolicyNone,
+		RecoverPolicyRestart.String():  RecoverPolicyRestart,
+		RecoverPolicyFailover.String(): RecoverPolicyFailover}
+}
+
+func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
+	policy, ok := recoverPolicyParser[p]
+	if !ok {
+		return RecoverPolicyInvalid, errdefs.ErrNotFound
+	}
+
+	return policy, nil
+}
 
 type DaemonStates struct {
 	mu              sync.Mutex
@@ -49,7 +89,8 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 
 	old, ok := s.idxByDaemonID[daemon.ID]
 
-	// TODO: No need to retain all daemons in the slice, just use the map indexed by DaemonID
+	// TODO: No need to retain all daemons in the slice,
+	// just use the map indexed by DaemonID
 	if ok {
 		for i, d := range s.daemons {
 			if d.ID == daemon.ID {
@@ -58,6 +99,10 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 		}
 	} else {
 		s.daemons = append(s.daemons, daemon)
+	}
+
+	if ok && old.SnapshotID != daemon.SnapshotID {
+		log.L.Panicf("same daemon ID with different snapshot ID")
 	}
 
 	s.idxByDaemonID[daemon.ID] = daemon
@@ -101,6 +146,7 @@ func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
 func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
 	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
 }
+
 func (s *DaemonStates) RemoveBySnapshotID(id string) *daemon.Daemon {
 	return s.GetBySnapshotID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
 }
@@ -182,6 +228,11 @@ type Manager struct {
 
 	mounter mount.Interface
 
+	monitor LivenessMonitor
+	// TODO: Close me
+	LivenessNotifier chan deathEvent
+	RecoverPolicy    DaemonRecoverPolicy
+
 	// Protects updating states cache and DB
 	mu sync.Mutex
 }
@@ -191,6 +242,52 @@ type Opt struct {
 	Database         *store.Database
 	DaemonMode       string
 	CacheDir         string
+	RecoverPolicy    DaemonRecoverPolicy
+}
+
+func (m *Manager) handleDaemonDeathEvent() {
+	for event := range m.LivenessNotifier {
+		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
+
+		if m.RecoverPolicy == RecoverPolicyRestart {
+			go func() {
+				d := m.GetByDaemonID(event.daemonID)
+				if d == nil {
+					log.L.Warnf("Daemon %s is not found", event.daemonID)
+					return
+				}
+
+				if err := d.Wait(); err != nil {
+					log.L.Warnf("fails to wait for daemon, %v", err)
+				}
+
+				// Starting a new nydusd will re-subscribe
+				if err := m.monitor.Unsubscribe(d.ID); err != nil {
+					log.L.Warnf("fails to unsubscribe daemon %s, %v", d.ID, err)
+				}
+
+				d.ClearVestige()
+				if err := m.StartDaemon(d); err != nil {
+					log.L.Errorf("fails to start daemon %s when recovering", d.ID)
+					return
+				}
+
+				// Mount rafs instance by http API
+				if d.IsSharedDaemon() {
+					daemons := m.daemonStates.List()
+					for _, d := range daemons {
+						if d.ID != daemon.SharedNydusDaemonID {
+							if err := d.SharedMount(); err != nil {
+								log.L.Warnf("fail to mount rafs instance, %v", err)
+							}
+						}
+					}
+				}
+			}()
+		} else if m.RecoverPolicy == RecoverPolicyFailover {
+			log.L.Warnf("failover is not implemented now!")
+		}
+	}
 }
 
 func NewManager(opt Opt) (*Manager, error) {
@@ -199,14 +296,29 @@ func NewManager(opt Opt) (*Manager, error) {
 		return nil, err
 	}
 
-	return &Manager{
+	monitor, err := newMonitor()
+	if err != nil {
+		return nil, errors.Wrap(err, "create daemons liveness monitor")
+	}
+
+	mgr := &Manager{
 		store:            s,
 		mounter:          &mount.Mounter{},
 		nydusdBinaryPath: opt.NydusdBinaryPath,
 		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
 		daemonStates:     newDaemonStates(),
-	}, nil
+		monitor:          monitor,
+		LivenessNotifier: make(chan deathEvent, 32),
+		RecoverPolicy:    opt.RecoverPolicy,
+	}
+
+	// FIXME: How to get error if monitor goroutine terminates with error?
+	// TODO: Shutdown monitor immediately after snapshotter receive Exit signal
+	mgr.monitor.Run()
+	go mgr.handleDaemonDeathEvent()
+
+	return mgr, nil
 }
 
 // Put a instantiated daemon into states manager. The damon state is
@@ -220,16 +332,21 @@ func (m *Manager) NewDaemon(daemon *daemon.Daemon) error {
 		return errdefs.ErrAlreadyExists
 	}
 
-	if d, err := m.store.GetBySnapshotID(daemon.SnapshotID); err != nil {
-		return err
-	} else if d != nil {
-		return errdefs.ErrAlreadyExists
+	m.daemonStates.Add(daemon)
+	return m.store.Add(daemon)
+}
+
+func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if old := m.daemonStates.GetByDaemonID(daemon.ID, nil); old == nil {
+		return errdefs.ErrNotFound
 	}
 
 	// Notice: updating daemon states cache and DB should be protect by `mu` lock
 	m.daemonStates.Add(daemon)
-
-	return m.store.Add(daemon)
+	return m.store.Update(daemon)
 }
 
 func (m *Manager) DeleteBySnapshotID(id string) {
@@ -295,20 +412,43 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.buildStartCommand(d)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to create start command for daemon %s", d.ID))
+		return errors.Wrapf(err, "failed to create command for daemon %s", d.ID)
 	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+
+	d.Lock()
+	defer d.Unlock()
+
 	d.Pid = cmd.Process.Pid
-	err = m.store.Update(d)
+
+	// Update both states cache and DB
+	// TODO: Is it right to commit daemon before nydusd successfully started?
+	// And it brings extra latency of accessing DB. Only write daemon record to
+	// DB when nydusd is started?
+	err = m.UpdateDaemon(d)
 	if err != nil {
 		// Nothing we can do, just ignore it for now
-		log.L.Errorf("fail to update daemon info (%+v) to db: %v", d, err)
+		log.L.Errorf("fail to update daemon info (%+v) to DB: %v", d, err)
 	}
-	// process wait when destroy daemon and kill process
-	return nil
 
+	// If nydusd fails startup, manager can't subscribe its death event.
+	// So we can ignore the subscribing error.
+	go func() {
+		if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+			log.L.Errorf("Nydusd %s probably not started", d.ID)
+			return
+		}
+
+		// TODO: It's better to subscribe death event when snapshotter
+		// has set daemon's state to RUNNING or READY.
+		if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
+			log.L.Errorf("Nydusd %s probably not started", d.ID)
+		}
+	}()
+
+	return nil
 }
 
 func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
@@ -398,22 +538,19 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	}
 
 	log.L.Infof("umount remote snapshot, mountpoint %s", d.MountPoint())
-	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
-	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
-	if d.Pid > 0 {
-		p, err := os.FindProcess(d.Pid)
-		if err != nil {
-			return errors.Wrapf(err, "find process %d", d.Pid)
-		}
-		if err = p.Signal(syscall.SIGTERM); err != nil {
-			return errors.Wrapf(err, "send SIGTERM signal to process %d", d.Pid)
-		}
-		// if nydus-snapshotter restart, it will break the relationship between nydusd and
-		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
-		if _, err = p.Wait(); err != nil && !stderrors.Is(err, syscall.ECHILD) {
-			log.L.Errorf("failed to process wait, %v", err)
-		}
+
+	if err := m.monitor.Unsubscribe(d.ID); err != nil {
+		log.L.Warnf("Unable to unsubscribe, daemon ID %s", d.ID)
 	}
+
+	if err := d.Terminate(); err != nil {
+		log.L.Warnf("Fails to terminate daemon, %v", err)
+	}
+
+	if err := d.Wait(); err != nil {
+		log.L.Warnf("Fails to wait for daemon, %v", err)
+	}
+
 	// for backward compatible, here umount <snapshot_dir>/<id>/fs and <snapshot_dir>/<id>/mnt
 	// if mountpoint not exist, Umount will return nil
 	mps := []string{d.MountPoint(), d.OldMountPoint()}
@@ -449,7 +586,6 @@ func (m *Manager) IsPrefetchDaemon() bool {
 // 3. Manager in SharedDaemon mode should starts a nydusd when recovering
 func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 	var (
-		daemons      []*daemon.Daemon
 		sharedDaemon *daemon.Daemon
 		// Collected deserialized daemons that need to be recovered.
 		recoveringDaemons []*daemon.Daemon
@@ -469,41 +605,22 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		d.Once = &sync.Once{}
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
-			daemons = append(daemons, d)
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
 			recoveringDaemons = append(recoveringDaemons, d)
-
 			return nil
 		}
 		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 
-			var mnt string
-
-			if d.ID == daemon.SharedNydusDaemonID {
-				mnt = *d.RootMountPoint
-			} else if !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
-				mnt = d.MountPoint()
-			}
-
-			if mnt != "" {
+			// Skip so-called virtual daemon :-(
+			if d.ID == daemon.SharedNydusDaemonID || !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 				// The only reason that nydusd can't be connected is it's not running.
 				// Moreover, snapshotter is restarting. So no nydusd states can be returned to each nydusd.
 				// Nydusd can't do failover any more.
 				// We can safely try to umount its mountpoint to avoid nydusd pausing in INIT state.
 				log.L.Warnf("Nydusd died somehow. Clean up its vestige!")
-
-				mounter := mount.Mounter{}
-				// This is best effort. So no need to handle its error.
-				if err := mounter.Umount(mnt); err != nil {
-					log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
-				}
-				// Nydusd judges if it should enter failover phrase by checking
-				// if unix socket is existed and it can't be connected.
-				if err := os.Remove(d.GetAPISock()); err != nil {
-					log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
-				}
+				d.ClearVestige()
 			}
 
 			recoveringDaemons = append(recoveringDaemons, d)
@@ -518,7 +635,17 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		}
 
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
-		daemons = append(daemons, d)
+
+		go func() {
+			if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+				log.L.Errorf("Nydusd %s probably not started", d.ID)
+				return
+			}
+
+			if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
+				log.L.Errorf("Nydusd %s probably not started", d.ID)
+			}
+		}()
 
 		// Get the global shared daemon here after CheckStatus() by attention
 		// so that we're sure it's alive.

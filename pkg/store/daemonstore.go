@@ -34,6 +34,7 @@ func (s *DaemonStore) GetBySnapshotID(snapshotID string) (*daemon.Daemon, error)
 	return nil, nil
 }
 
+// If the daemon is inserted to DB before, return error ErrAlreadyExisted.
 func (s *DaemonStore) Add(d *daemon.Daemon) error {
 	// Save daemon info in case snapshotter restarts so that we can restore the
 	// daemon states and reconnect the daemons.

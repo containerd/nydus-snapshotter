@@ -17,6 +17,7 @@ import (
 type Store interface {
 	GetByDaemonID(id string) (*daemon.Daemon, error)
 	GetBySnapshotID(snapshotID string) (*daemon.Daemon, error)
+	// If the daemon is inserted to DB before, return error ErrAlreadyExisted.
 	Add(*daemon.Daemon) error
 	Update(d *daemon.Daemon) error
 	Delete(*daemon.Daemon) error
