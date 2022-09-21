@@ -60,6 +60,11 @@ type DaemonConfig struct {
 	FscacheDaemonConfig
 }
 
+type MirrorConfig struct {
+	Scheme  string            `json:"scheme,omitempty"`
+	Host    string            `json:"host,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
 type BackendConfig struct {
 	// Localfs backend configs
 	BlobFile     string `json:"blob_file,omitempty"`
@@ -68,12 +73,13 @@ type BackendConfig struct {
 	ReadAheadSec int    `json:"readahead_sec,omitempty"`
 
 	// Registry backend configs
-	Host               string `json:"host,omitempty"`
-	Repo               string `json:"repo,omitempty"`
-	Auth               string `json:"auth,omitempty"`
-	RegistryToken      string `json:"registry_token,omitempty"`
-	BlobURLScheme      string `json:"blob_url_scheme,omitempty"`
-	BlobRedirectedHost string `json:"blob_redirected_host,omitempty"`
+	Host               string         `json:"host,omitempty"`
+	Repo               string         `json:"repo,omitempty"`
+	Auth               string         `json:"auth,omitempty"`
+	RegistryToken      string         `json:"registry_token,omitempty"`
+	BlobURLScheme      string         `json:"blob_url_scheme,omitempty"`
+	BlobRedirectedHost string         `json:"blob_redirected_host,omitempty"`
+	Mirrors            []MirrorConfig `json:"mirrors,omitempty"`
 
 	// OSS backend configs
 	EndPoint        string `json:"endpoint,omitempty"`

@@ -81,9 +81,6 @@ func WithVerifier(verifier *signature.Verifier) NewFSOpt {
 
 func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
 	return func(d *Filesystem) error {
-		if (config.DaemonConfig{}) == cfg {
-			return errors.New("daemon config is empty")
-		}
 		d.daemonCfg = cfg
 		return nil
 	}
