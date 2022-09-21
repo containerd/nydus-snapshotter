@@ -518,11 +518,14 @@ func (m *Manager) DestroyBySnapshotID(id string) error {
 // FIXME: should handle the inconsistent status caused by any step
 // in the function that returns an error.
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
+	// Delete daemon from DB in the first place in case any of below steps fails
+	// ending up with daemon is residual in DB.
+	if err := m.DeleteDaemon(d); err != nil {
+		return errors.Wrapf(err, "delete daemon %s", d.ID)
+	}
+
 	cleanup := func() error {
 		m.CleanUpDaemonResources(d)
-		if err := m.DeleteDaemon(d); err != nil {
-			return errors.Wrap(err, "delete daemon")
-		}
 		return nil
 	}
 
