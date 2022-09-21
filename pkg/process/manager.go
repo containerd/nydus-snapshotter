@@ -250,36 +250,40 @@ func (m *Manager) handleDaemonDeathEvent() {
 		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
 
 		if m.RecoverPolicy == RecoverPolicyRestart {
-			// We can't restart nydusd for now fuse connection
-			d := m.GetByDaemonID(event.daemonID)
-			if d == nil {
-				log.L.Warnf("Daemon %s is not found", event.daemonID)
-				continue
-			}
+			go func() {
+				d := m.GetByDaemonID(event.daemonID)
+				if d == nil {
+					log.L.Warnf("Daemon %s is not found", event.daemonID)
+					return
+				}
 
-			if err := d.Wait(); err != nil {
-				log.L.Warnf("fails to wait for daemon")
-			}
+				if err := d.Wait(); err != nil {
+					log.L.Warnf("fails to wait for daemon, %v", err)
+				}
 
-			// Starting a new nydusd will re-subscribe
-			if err := m.monitor.Unsubscribe(d.ID); err != nil {
-				log.L.Warnf("fails to unsubscribe")
-			}
+				// Starting a new nydusd will re-subscribe
+				if err := m.monitor.Unsubscribe(d.ID); err != nil {
+					log.L.Warnf("fails to unsubscribe daemon %s, %v", d.ID, err)
+				}
 
-			clearDaemonVestige(d)
+				clearDaemonVestige(d)
+				if err := m.StartDaemon(d); err != nil {
+					log.L.Errorf("fails to start daemon %s when recovering", d.ID)
+					return
+				}
 
-			m.StartDaemon(d)
-
-			if d.IsSharedDaemon() {
-				daemons := m.daemonStates.List()
-				for _, d := range daemons {
-					if d.ID != daemon.SharedNydusDaemonID {
-						if err := d.SharedMount(); err != nil {
-							log.L.Warnf("fail to mount rafs, %v", err)
+				// Mount rafs instance by http API
+				if d.IsSharedDaemon() {
+					daemons := m.daemonStates.List()
+					for _, d := range daemons {
+						if d.ID != daemon.SharedNydusDaemonID {
+							if err := d.SharedMount(); err != nil {
+								log.L.Warnf("fail to mount rafs instance, %v", err)
+							}
 						}
 					}
 				}
-			}
+			}()
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
 			log.L.Warnf("failover is not implemented now!")
 		}
