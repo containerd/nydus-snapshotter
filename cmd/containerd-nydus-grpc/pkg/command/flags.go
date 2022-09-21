@@ -34,33 +34,33 @@ const (
 )
 
 type Args struct {
-	Address                  string
-	LogLevel                 string
-	LogDir                   string
-	ConfigPath               string
-	RootDir                  string
-	CacheDir                 string
-	GCPeriod                 string
-	ValidateSignature        bool
-	PublicKeyFile            string
-	ConvertVpcRegistry       bool
-	NydusdBinaryPath         string
-	NydusImageBinaryPath     string
-	SharedDaemon             bool
-	DaemonMode               string
-	FsDriver                 string
-	SyncRemove               bool
-	EnableMetrics            bool
-	MetricsFile              string
-	EnableStargz             bool
-	DisableCacheManager      bool
-	LogToStdout              bool
-	EnableNydusOverlayFS     bool
-	NydusdThreadNum          int
-	CleanupOnClose           bool
-	KubeconfigPath           string
-	EnableKubeconfigKeychain bool
-	RecoverPolicy            string
+	Address                  string `toml:"address"`
+	LogLevel                 string `toml:"log_level"`
+	LogDir                   string `toml:"log_dir"`
+	ConfigPath               string `toml:"config_path"`
+	RootDir                  string `toml:"root_dir"`
+	CacheDir                 string `toml:"cache_dir"`
+	GCPeriod                 string `toml:"gc_period"`
+	ValidateSignature        bool   `toml:"validate_signature"`
+	PublicKeyFile            string `toml:"public_key_file"`
+	ConvertVpcRegistry       bool   `toml:"convert_vpc_registry"`
+	NydusdBinaryPath         string `toml:"nydusd_binary_path"`
+	NydusImageBinaryPath     string `toml:"nydus_image_binary_path"`
+	SharedDaemon             bool   `toml:"shared_daemon"`
+	DaemonMode               string `toml:"daemon_mode"`
+	FsDriver                 string `toml:"fs_driver"`
+	SyncRemove               bool   `toml:"sync_remove"`
+	EnableMetrics            bool   `toml:"enable_metrics"`
+	MetricsFile              string `toml:"metrics_file"`
+	EnableStargz             bool   `toml:"enable_stargz"`
+	DisableCacheManager      bool   `toml:"disable_cache_manager"`
+	LogToStdout              bool   `toml:"log_to_stdout"`
+	EnableNydusOverlayFS     bool   `toml:"enable_nydus_overlay_fs"`
+	NydusdThreadNum          int    `toml:"nydusd_thread_num"`
+	CleanupOnClose           bool   `toml:"cleanup_on_close"`
+	KubeconfigPath           string `toml:"kubeconfig_path"`
+	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
+	Config                   string `toml:"-"`
 }
 
 type Flags struct {
@@ -229,6 +229,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Value:       false,
 			Usage:       "synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with provided `--kubeconfig-path` (default `$KUBECONFIG` or `~/.kube/config`)",
 			Destination: &args.EnableKubeconfigKeychain,
+		},
+		&cli.StringFlag{
+			Name:        "config",
+			Value:       "",
+			Usage:       "path to the toml file of configuration",
+			Destination: &args.Config,
 		},
 	}
 }

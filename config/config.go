@@ -7,12 +7,16 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
+	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
+
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 )
 
 const (
@@ -67,6 +71,25 @@ type Config struct {
 	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
 	RotateLogCompress        bool          `toml:"log_rotate_compress"`
 	RecoverPolicy            string        `toml:"recover_policy"`
+}
+
+type SnapshotterConfig struct {
+	StartupParameterCfg command.Args `toml:"StartupParameter"`
+}
+
+func LoadShotterConfigFile(snapshotterConfigPath string, config *SnapshotterConfig) error {
+	// get nydus-snapshotter configuration from specified path of toml file
+	if snapshotterConfigPath == "" {
+		return errors.New("snapshotter config path cannot be specified")
+	}
+	tree, err := toml.LoadFile(snapshotterConfigPath)
+	if err != nil && !(os.IsNotExist(err)) {
+		return errors.Wrapf(err, "failed to load snapshotter config file %q", snapshotterConfigPath)
+	}
+	if err := tree.Unmarshal(config); err != nil {
+		return errors.Wrapf(err, "failed to unmarshal snapshotter config file %q", snapshotterConfigPath)
+	}
+	return nil
 }
 
 func (c *Config) FillupWithDefaults() error {
