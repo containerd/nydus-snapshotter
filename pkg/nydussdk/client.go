@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -199,25 +200,31 @@ func (c NydusClient) FscacheUnbindBlob(daemonConfig string) error {
 	return handleMountError(resp)
 }
 
-func waitUntilSocketReady(sock string) error {
-	return retry.Do(func() error {
-		if _, err := os.Stat(sock); err != nil {
-			return err
+func WaitUntilSocketExisted(sock string) error {
+	return retry.Do(func() (err error) {
+		var st fs.FileInfo
+		if st, err = os.Stat(sock); err != nil {
+			return
 		}
+
+		if st.Mode()&os.ModeSocket == 0 {
+			return errors.Errorf("file %s is not socket file", sock)
+		}
+
 		return nil
 	},
-		retry.Attempts(3),
+		retry.Attempts(5),
 		retry.LastErrorOnly(true),
 		retry.Delay(100*time.Millisecond))
 }
 
+// TODO: It's time-consuming. Make it execute only once by sync.Once
 func buildTransport(sock string) (http.RoundTripper, error) {
-	err := waitUntilSocketReady(sock)
+	err := WaitUntilSocketExisted(sock)
 	if err != nil {
 		return nil, err
 	}
 	return &http.Transport{
-		// DisableKeepAlives:     true,
 		MaxIdleConns:          10,
 		IdleConnTimeout:       10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,

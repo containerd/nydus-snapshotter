@@ -202,6 +202,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "Deprecated, equivalent to \"--daemon-mode shared\"",
 			Destination: &args.SharedDaemon,
 		},
+		&cli.StringFlag{
+			Name:        "recover-policy",
+			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to none",
+			Destination: &args.RecoverPolicy,
+			Value:       "restart",
+		},
 		&cli.BoolFlag{
 			Name:        "sync-remove",
 			Usage:       "whether to clean up snapshots in synchronous mode, default to asynchronous mode",
@@ -319,6 +325,7 @@ func Validate(args *Args, cfg *config.Config) error {
 	cfg.SyncRemove = args.SyncRemove
 	cfg.KubeconfigPath = args.KubeconfigPath
 	cfg.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
+	cfg.RecoverPolicy = args.RecoverPolicy
 
 	return cfg.SetupNydusBinaryPaths()
 }

@@ -341,11 +341,14 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
-// Merge multiple nydus bootstraps (from each blob layer of image) to a final bootstrap.
-func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) error {
+// Merge multiple nydus bootstraps (from each layer of image) to a final
+// bootstrap. And due to the possibility of enabling the `ChunkDictPath`
+// option causes the data deduplication, it will return the actual blob
+// digests referenced by the bootstrap.
+func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption) ([]digest.Digest, error) {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
-		return errors.Wrap(err, "ensure work directory")
+		return nil, errors.Wrap(err, "ensure work directory")
 	}
 	defer os.RemoveAll(workDir)
 
@@ -374,21 +377,23 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	}
 
 	if err := eg.Wait(); err != nil {
-		return errors.Wrap(err, "unpack all bootstraps")
+		return nil, errors.Wrap(err, "unpack all bootstraps")
 	}
 
 	targetBootstrapPath := filepath.Join(workDir, "bootstrap")
 
-	if err := tool.Merge(tool.MergeOption{
+	blobDigests, err := tool.Merge(tool.MergeOption{
 		BuilderPath: getBuilder(opt.BuilderPath),
 
 		SourceBootstrapPaths: sourceBootstrapPaths,
 		TargetBootstrapPath:  targetBootstrapPath,
 		ChunkDictPath:        opt.ChunkDictPath,
 		PrefetchPatterns:     opt.PrefetchPatterns,
+		OutputJSONPath:       filepath.Join(workDir, "merge-output.json"),
 		Timeout:              opt.Timeout,
-	}); err != nil {
-		return errors.Wrap(err, "merge bootstrap")
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "merge bootstrap")
 	}
 
 	var rc io.ReadCloser
@@ -396,12 +401,12 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	if opt.WithTar {
 		rc, err = packToTar(targetBootstrapPath, fmt.Sprintf("image/%s", bootstrapNameInTar), false)
 		if err != nil {
-			return errors.Wrap(err, "pack bootstrap to tar")
+			return nil, errors.Wrap(err, "pack bootstrap to tar")
 		}
 	} else {
 		rc, err = os.Open(targetBootstrapPath)
 		if err != nil {
-			return errors.Wrap(err, "open targe bootstrap")
+			return nil, errors.Wrap(err, "open targe bootstrap")
 		}
 	}
 	defer rc.Close()
@@ -409,10 +414,10 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err = io.CopyBuffer(dest, rc, *buffer); err != nil {
-		return errors.Wrap(err, "copy merged bootstrap")
+		return nil, errors.Wrap(err, "copy merged bootstrap")
 	}
 
-	return nil
+	return blobDigests, nil
 }
 
 // Unpack converts a nydus blob layer to OCI formatted tar stream.
@@ -605,7 +610,7 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 		}
 
 		// Append bootstrap layer to manifest.
-		bootstrapDesc, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
+		bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
 			BuilderPath:   opt.BuilderPath,
 			WorkDir:       opt.WorkDir,
 			ChunkDictPath: opt.ChunkDictPath,
@@ -621,23 +626,31 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 			// blob layer into manifest if blob storage backend is specified.
 			manifest.Layers = []ocispec.Descriptor{*bootstrapDesc}
 		} else {
-			manifest.Layers = append(manifest.Layers, *bootstrapDesc)
+			for idx, blobDesc := range blobDescs {
+				blobGCLabelKey := fmt.Sprintf("containerd.io/gc.ref.content.l.%d", idx)
+				labels[blobGCLabelKey] = blobDesc.Digest.String()
+			}
+			// Affected by chunk dict, the blob list referenced by final bootstrap
+			// are from different layers, part of them are from original layers, part
+			// from chunk dict bootstrap, so we need to rewrite manifest's layers here.
+			manifest.Layers = append(blobDescs, *bootstrapDesc)
 		}
 
 		// Update the gc label of bootstrap layer
 		bootstrapGCLabelKey := fmt.Sprintf("containerd.io/gc.ref.content.l.%d", len(manifest.Layers)-1)
 		labels[bootstrapGCLabelKey] = bootstrapDesc.Digest.String()
 
-		// Remove useless annotation.
-		for _, layer := range manifest.Layers {
-			delete(layer.Annotations, LayerAnnotationUncompressed)
-		}
-
-		// Update diff ids in image config.
+		// Rewrite diff ids and remove useless annotation.
 		var config ocispec.Image
 		configLabels, err := readJSON(ctx, cs, &config, manifest.Config)
 		if err != nil {
 			return nil, errors.Wrap(err, "read image config")
+		}
+		config.RootFS.DiffIDs = []digest.Digest{}
+		for _, layer := range manifest.Layers {
+			config.RootFS.DiffIDs = append(config.RootFS.DiffIDs, digest.Digest(layer.Annotations[LayerAnnotationUncompressed]))
+			// Remove useless annotation.
+			delete(layer.Annotations, LayerAnnotationUncompressed)
 		}
 		if opt.Backend != nil {
 			config.RootFS.DiffIDs = []digest.Digest{bootstrapDiffID}
@@ -666,19 +679,17 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 
 // MergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
 // The media type of the nydus bootstrap layer is "application/vnd.oci.image.layer.v1.tar+gzip".
-func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
+func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, []ocispec.Descriptor, error) {
 	// Extracts nydus bootstrap from nydus format for each layer.
 	layers := []Layer{}
-	blobIDs := []string{}
 
 	var chainID digest.Digest
 	for _, blobDesc := range descs {
 		ra, err := cs.ReaderAt(ctx, blobDesc)
 		if err != nil {
-			return nil, errors.Wrapf(err, "get reader for blob %q", blobDesc.Digest)
+			return nil, nil, errors.Wrapf(err, "get reader for blob %q", blobDesc.Digest)
 		}
 		defer ra.Close()
-		blobIDs = append(blobIDs, blobDesc.Digest.Hex())
 		layers = append(layers, Layer{
 			Digest:   blobDesc.Digest,
 			ReaderAt: ra,
@@ -692,17 +703,20 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 
 	// Merge all nydus bootstraps into a final nydus bootstrap.
 	pr, pw := io.Pipe()
+	blobDigestChan := make(chan []digest.Digest, 1)
 	go func() {
 		defer pw.Close()
-		if err := Merge(ctx, layers, pw, opt); err != nil {
+		blobDigests, err := Merge(ctx, layers, pw, opt)
+		if err != nil {
 			pw.CloseWithError(errors.Wrapf(err, "merge nydus bootstrap"))
 		}
+		blobDigestChan <- blobDigests
 	}()
 
 	// Compress final nydus bootstrap to tar.gz and write into content store.
 	cw, err := content.OpenWriter(ctx, cs, content.WithRef("nydus-merge-"+chainID.String()))
 	if err != nil {
-		return nil, errors.Wrap(err, "open content store writer")
+		return nil, nil, errors.Wrap(err, "open content store writer")
 	}
 	defer cw.Close()
 
@@ -712,10 +726,10 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err := io.CopyBuffer(compressed, pr, *buffer); err != nil {
-		return nil, errors.Wrapf(err, "copy bootstrap targz into content store")
+		return nil, nil, errors.Wrapf(err, "copy bootstrap targz into content store")
 	}
 	if err := gw.Close(); err != nil {
-		return nil, errors.Wrap(err, "close gzip writer")
+		return nil, nil, errors.Wrap(err, "close gzip writer")
 	}
 
 	compressedDgst := cw.Digest()
@@ -723,30 +737,50 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
 	})); err != nil {
 		if !errdefs.IsAlreadyExists(err) {
-			return nil, errors.Wrap(err, "commit to content store")
+			return nil, nil, errors.Wrap(err, "commit to content store")
 		}
 	}
 	if err := cw.Close(); err != nil {
-		return nil, errors.Wrap(err, "close content store writer")
+		return nil, nil, errors.Wrap(err, "close content store writer")
 	}
 
-	info, err := cs.Info(ctx, compressedDgst)
+	bootstrapInfo, err := cs.Info(ctx, compressedDgst)
 	if err != nil {
-		return nil, errors.Wrap(err, "get info from content store")
+		return nil, nil, errors.Wrap(err, "get info from content store")
+	}
+
+	blobDigests := <-blobDigestChan
+	blobDescs := []ocispec.Descriptor{}
+	blobIDs := []string{}
+	for _, blobDigest := range blobDigests {
+		blobInfo, err := cs.Info(ctx, blobDigest)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "get info from content store")
+		}
+		blobDesc := ocispec.Descriptor{
+			Digest:    blobDigest,
+			Size:      blobInfo.Size,
+			MediaType: MediaTypeNydusBlob,
+			Annotations: map[string]string{
+				LayerAnnotationUncompressed: blobDigest.String(),
+			},
+		}
+		blobDescs = append(blobDescs, blobDesc)
+		blobIDs = append(blobIDs, blobDigest.Hex())
 	}
 
 	blobIDsBytes, err := json.Marshal(blobIDs)
 	if err != nil {
-		return nil, errors.Wrap(err, "marshal blob ids")
+		return nil, nil, errors.Wrap(err, "marshal blob ids")
 	}
 
 	if opt.FsVersion == "" {
 		opt.FsVersion = "5"
 	}
 
-	desc := ocispec.Descriptor{
+	bootstrapDesc := ocispec.Descriptor{
 		Digest:    compressedDgst,
-		Size:      info.Size,
+		Size:      bootstrapInfo.Size,
 		MediaType: ocispec.MediaTypeImageLayerGzip,
 		Annotations: map[string]string{
 			LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
@@ -758,5 +792,5 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		},
 	}
 
-	return &desc, nil
+	return &bootstrapDesc, blobDescs, nil
 }

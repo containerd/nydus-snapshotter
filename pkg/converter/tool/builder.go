@@ -8,12 +8,16 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -39,6 +43,7 @@ type MergeOption struct {
 	TargetBootstrapPath  string
 	ChunkDictPath        string
 	PrefetchPatterns     string
+	OutputJSONPath       string
 	Timeout              *time.Duration
 }
 
@@ -48,6 +53,10 @@ type UnpackOption struct {
 	BlobPath      string
 	TarPath       string
 	Timeout       *time.Duration
+}
+
+type outputJSON struct {
+	Blobs []string
 }
 
 func Pack(option PackOption) error {
@@ -108,13 +117,15 @@ func Pack(option PackOption) error {
 	return nil
 }
 
-func Merge(option MergeOption) error {
+func Merge(option MergeOption) ([]digest.Digest, error) {
 	args := []string{
 		"merge",
 		"--log-level",
 		"warn",
 		"--prefetch-policy",
 		"fs",
+		"--output-json",
+		option.OutputJSONPath,
 		"--bootstrap",
 		option.TargetBootstrapPath,
 	}
@@ -145,10 +156,25 @@ func Merge(option MergeOption) error {
 		} else {
 			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
 		}
-		return err
+		return nil, errors.Wrap(err, "run merge command")
 	}
 
-	return nil
+	outputBytes, err := ioutil.ReadFile(option.OutputJSONPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read file %s", option.OutputJSONPath)
+	}
+	var output outputJSON
+	err = json.Unmarshal(outputBytes, &output)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unmarshal output json file %s", option.OutputJSONPath)
+	}
+
+	blobDigests := []digest.Digest{}
+	for _, blobID := range output.Blobs {
+		blobDigests = append(blobDigests, digest.NewDigestFromHex(string(digest.SHA256), blobID))
+	}
+
+	return blobDigests, nil
 }
 
 func Unpack(option UnpackOption) error {

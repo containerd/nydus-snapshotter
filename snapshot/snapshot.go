@@ -42,9 +42,10 @@ import (
 var _ snapshots.Snapshotter = &snapshotter{}
 
 type snapshotter struct {
-	context              context.Context
-	root                 string
-	nydusdPath           string
+	context    context.Context
+	root       string
+	nydusdPath string
+	// Storing snapshots' state, parentage ant other metadata
 	ms                   *storage.MetaStore
 	fs                   *fspkg.Filesystem
 	manager              *process.Manager
@@ -71,15 +72,23 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to new database")
 	}
 
+	rp, err := process.ParseRecoverPolicy(cfg.RecoverPolicy)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse recover policy")
+	}
+
 	pm, err := process.NewManager(process.Opt{
 		NydusdBinaryPath: cfg.NydusdBinaryPath,
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
 		CacheDir:         cfg.CacheDir,
+		RecoverPolicy:    rp,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new process manager")
 	}
+
+	// FIXME: How to get event goroutine has exited with error?
 
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithProcessManager(pm),
@@ -251,7 +260,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	if err != nil {
 		return nil, err
 	}
-	logCtx.Infof("prepare snapshot with labels %v", base.Labels)
+	logCtx.Debugf("prepare snapshot with labels %v", base.Labels)
 
 	// Handle nydus/stargz image data layers.
 	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
@@ -679,7 +688,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal NydusOption")
 	}
 	// XXX: Log options without extraoptions as it might contain secrets.
-	log.G(ctx).Infof("fuse.nydus-overlayfs mount options %v", overlayOptions)
+	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
 	// base64 to filter easily in `nydus-overlayfs`
 	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
 	options := append(overlayOptions, opt)
@@ -740,7 +749,7 @@ func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storag
 	}
 	options = append(options, fmt.Sprintf("lowerdir=%s", strings.Join(parentPaths, ":")))
 
-	log.G(ctx).Infof("overlayfs mount options %s", options)
+	log.G(ctx).Debugf("overlayfs mount options %s", options)
 	return []mount.Mount{
 		{
 			Type:    "overlay",
