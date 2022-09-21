@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
@@ -21,7 +23,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -229,7 +230,7 @@ func (d *Daemon) sharedErofsMount() error {
 		// chance to umount erofs mountpoint, so if snapshotter resumes running and mount
 		// again (by a new request to create container), it will need to ignore the mount
 		// error `device or resource busy`.
-		logrus.WithError(err).Warnf("erofs mountpoint %s has been mounted", mountPoint)
+		log.L.Warnf("erofs mountpoint %s has been mounted", mountPoint)
 	}
 
 	return nil
@@ -294,6 +295,49 @@ func (d *Daemon) ensureClient(action string) error {
 		return fmt.Errorf("failed to %s, client not initialized", action)
 	}
 	return err
+}
+
+func (d *Daemon) Terminate() error {
+	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
+	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+
+	d.Lock()
+	defer d.Unlock()
+
+	if d.Pid > 0 {
+		p, err := os.FindProcess(d.Pid)
+		if err != nil {
+			return errors.Wrapf(err, "find process %d", d.Pid)
+		}
+		if err = p.Signal(syscall.SIGTERM); err != nil {
+			return errors.Wrapf(err, "send SIGTERM signal to process %d", d.Pid)
+		}
+	}
+
+	return nil
+}
+
+func (d *Daemon) Wait() error {
+	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
+	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+
+	d.Lock()
+	defer d.Unlock()
+
+	if d.Pid > 0 {
+		p, err := os.FindProcess(d.Pid)
+		if err != nil {
+			return errors.Wrapf(err, "find process %d", d.Pid)
+		}
+
+		// if nydus-snapshotter restarts, it will break the relationship between nydusd and
+		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
+		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
+			log.L.Errorf("failed to process wait, %v", err)
+		}
+	}
+
+	return nil
 }
 
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
