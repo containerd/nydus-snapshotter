@@ -61,6 +61,7 @@ type Args struct {
 	KubeconfigPath           string
 	EnableKubeconfigKeychain bool
 	RecoverPolicy            string
+	Config                   string
 }
 
 type Flags struct {
@@ -229,6 +230,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Value:       false,
 			Usage:       "synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with provided `--kubeconfig-path` (default `$KUBECONFIG` or `~/.kube/config`)",
 			Destination: &args.EnableKubeconfigKeychain,
+		},
+		&cli.StringFlag{
+			Name:        "config",
+			Value:       "",
+			Usage:       "path to the toml file of configuration",
+			Destination: &args.Config,
 		},
 	}
 }
