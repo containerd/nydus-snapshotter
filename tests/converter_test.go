@@ -324,8 +324,9 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	err = converter.Merge(context.TODO(), layers, file, converter.MergeOption{})
+	blobDigests, err := converter.Merge(context.TODO(), layers, file, converter.MergeOption{})
 	require.NoError(t, err)
+	require.Equal(t, []digest.Digest{lowerNydusBlobDigest}, blobDigests)
 
 	dictBlobPath := ""
 	err = filepath.WalkDir(blobDir, func(path string, entry fs.DirEntry, err error) error {
@@ -391,10 +392,12 @@ func TestConverter(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	err = converter.Merge(context.TODO(), layers, file, converter.MergeOption{
+	blobDigests, err := converter.Merge(context.TODO(), layers, file, converter.MergeOption{
 		ChunkDictPath: chunkDictBootstrapPath,
 	})
 	require.NoError(t, err)
+	expectedBlobDigests := []digest.Digest{digest.NewDigestFromHex(string(digest.SHA256), chunkDictBlobHash), upperNydusBlobDigest}
+	require.Equal(t, expectedBlobDigests, blobDigests)
 
 	verify(t, workDir)
 	dropCache(t)
