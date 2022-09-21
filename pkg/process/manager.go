@@ -26,6 +26,46 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
 
+type DaemonRecoverPolicy int
+
+const (
+	RecoverPolicyInvalid DaemonRecoverPolicy = iota
+	RecoverPolicyNone
+	RecoverPolicyRestart
+	RecoverPolicyFailover
+)
+
+func (p DaemonRecoverPolicy) String() string {
+	switch p {
+	case RecoverPolicyNone:
+		return "none"
+	case RecoverPolicyRestart:
+		return "restart"
+	case RecoverPolicyFailover:
+		return "failover"
+	default:
+		return ""
+	}
+}
+
+var recoverPolicyParser map[string]DaemonRecoverPolicy
+
+func init() {
+	recoverPolicyParser = map[string]DaemonRecoverPolicy{
+		RecoverPolicyNone.String():     RecoverPolicyNone,
+		RecoverPolicyRestart.String():  RecoverPolicyRestart,
+		RecoverPolicyFailover.String(): RecoverPolicyFailover}
+}
+
+func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
+	policy, ok := recoverPolicyParser[p]
+	if !ok {
+		return RecoverPolicyInvalid, errdefs.ErrNotFound
+	}
+
+	return policy, nil
+}
+
 type DaemonStates struct {
 	mu              sync.Mutex
 	idxBySnapshotID map[string]*daemon.Daemon // index by snapshot ID
@@ -191,7 +231,7 @@ type Manager struct {
 	monitor LivenessMonitor
 	// TODO: Close me
 	LivenessNotifier chan deathEvent
-	RecoverPolicy    string
+	RecoverPolicy    DaemonRecoverPolicy
 
 	// Protects updating states cache and DB
 	mu sync.Mutex
@@ -202,16 +242,20 @@ type Opt struct {
 	Database         *store.Database
 	DaemonMode       string
 	CacheDir         string
-	RecoverPolicy    string
+	RecoverPolicy    DaemonRecoverPolicy
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
 	for event := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
 
-		if m.RecoverPolicy == "restart" {
+		if m.RecoverPolicy == RecoverPolicyRestart {
 			// We can't restart nydusd for now fuse connection
 			d := m.GetByDaemonID(event.daemonID)
+			if d == nil {
+				log.L.Warnf("Daemon %s is not found", event.daemonID)
+				continue
+			}
 
 			if err := d.Wait(); err != nil {
 				log.L.Warnf("fails to wait for daemon")
@@ -236,7 +280,7 @@ func (m *Manager) handleDaemonDeathEvent() {
 					}
 				}
 			}
-		} else if m.RecoverPolicy == "failover" {
+		} else if m.RecoverPolicy == RecoverPolicyFailover {
 			log.L.Warnf("failover is not implemented now!")
 		}
 	}

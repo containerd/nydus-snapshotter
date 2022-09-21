@@ -72,12 +72,17 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to new database")
 	}
 
+	rp, err := process.ParseRecoverPolicy(cfg.RecoverPolicy)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse recover policy")
+	}
+
 	pm, err := process.NewManager(process.Opt{
 		NydusdBinaryPath: cfg.NydusdBinaryPath,
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
 		CacheDir:         cfg.CacheDir,
-		RecoverPolicy:    cfg.RecoverPolicy,
+		RecoverPolicy:    rp,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new process manager")
