@@ -246,11 +246,11 @@ type Opt struct {
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
-	for event := range m.LivenessNotifier {
-		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
+	for ev := range m.LivenessNotifier {
+		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
 
 		if m.RecoverPolicy == RecoverPolicyRestart {
-			go func() {
+			go func(event deathEvent) {
 				d := m.GetByDaemonID(event.daemonID)
 				if d == nil {
 					log.L.Warnf("Daemon %s is not found", event.daemonID)
@@ -283,7 +283,7 @@ func (m *Manager) handleDaemonDeathEvent() {
 						}
 					}
 				}
-			}()
+			}(ev)
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
 			log.L.Warnf("failover is not implemented now!")
 		}
