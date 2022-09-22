@@ -28,9 +28,18 @@ func main() {
 		Version: Version,
 		Flags:   flags.F,
 		Action: func(c *cli.Context) error {
-			var cfg config.Config
-			if err := command.Validate(flags.Args, &cfg); err != nil {
-				return errors.Wrap(err, "invalid argument")
+			var (
+				cfg            config.Config
+				snapshotterCfg config.SnapshotterConfig
+			)
+			if err := config.LoadShotterConfigFile(flags.Args.ConfigPath, &snapshotterCfg); err == nil {
+				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
+					return errors.Wrap(err, "invalid configuration")
+				}
+			} else {
+				if err := config.SetStartupParameter(flags.Args, &cfg); err != nil {
+					return errors.Wrap(err, "invalid argument")
+				}
 			}
 
 			ctx := logging.WithContext()
