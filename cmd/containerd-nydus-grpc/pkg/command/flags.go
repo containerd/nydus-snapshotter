@@ -232,7 +232,7 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.EnableKubeconfigKeychain,
 		},
 		&cli.StringFlag{
-			Name:        "config",
+			Name:        "sanpshotter-config",
 			Value:       "",
 			Usage:       "path to the toml file of configuration",
 			Destination: &args.SanpshotterConfig,
