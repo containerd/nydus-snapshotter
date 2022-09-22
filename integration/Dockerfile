@@ -5,7 +5,7 @@ ARG RUNC_VERSION=1.1.3
 ARG NYDUS_SNAPSHOTTER_PROJECT=/nydus-snapshotter
 # ARG DOWNLOADS_MIRROR="https://nydus-e2e.tos-cn-boe.volces.com"
 ARG DOWNLOADS_MIRROR="https://github.com"
-ARG NYDUS_VER=2.1.0-rc.2
+ARG NYDUS_VER=2.1.0-rc.3.1
 ARG NERDCTL_VER=0.22.2
 
 FROM golang:1.18.5-bullseye AS golang-base
