@@ -603,12 +603,34 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		m.daemonStates.RecoverDaemonState(d)
 
 		d.Once = &sync.Once{}
+
+		defer func() {
+			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
+			// But the socket file may be residual and will be cleared before starting a new nydusd.
+			// So clear the client by assigning nil
+			d.Client = nil
+			d.Once = &sync.Once{}
+		}()
+
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
 			recoveringDaemons = append(recoveringDaemons, d)
+
+			// It a coincidence that virtual daemon has the same socket path with shared daemon.
+			// Check if nydusd can be connected before clear their vestiges.
+			_, err := d.CheckStatus()
+			if err != nil {
+				log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+
+				if d.FsDriver == config.FsDriverFscache {
+					d.ClearVestige()
+				}
+			}
+
 			return nil
 		}
+
 		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)

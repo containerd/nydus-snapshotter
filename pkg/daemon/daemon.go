@@ -344,6 +344,7 @@ func (d *Daemon) Wait() error {
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
 	// This is best effort. So no need to handle its error.
+	log.L.Infof("Umounting %s when clear vestige", d.HostMountPoint())
 	if err := mounter.Umount(d.HostMountPoint()); err != nil {
 		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
 	}
