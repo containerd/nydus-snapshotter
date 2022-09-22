@@ -50,6 +50,9 @@ RUN wget ${DOWNLOADS_MIRROR}/containerd/nerdctl/releases/download/v${NERDCTL_VER
 tar xzf nerdctl-${NERDCTL_VER}-linux-amd64.tar.gz && \
 install -D -m 755 nerdctl /usr/local/bin/nerdctl
 
+# Install fscache driver configuration file
+COPY misc/snapshotter/nydusd-config.fscache.json /etc/nydus/nydusd-config.fscache.json
+
 VOLUME [ "/var/lib" ]
 
 COPY integration/entrypoint.sh /

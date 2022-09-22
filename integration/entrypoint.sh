@@ -4,7 +4,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-set -euo pipefail
+
+FSCACHE_NYDUSD_CONFIG=/etc/nydus/nydusd-config.fscache.json
 
 CONTAINERD_ROOT=/var/lib/containerd/
 CONTAINERD_STATUS=/run/containerd/
@@ -136,6 +137,12 @@ function reboot_containerd {
 
     if [ -d "${REMOTE_SNAPSHOTTER_ROOT:?}/snapshotter/snapshots/" ]; then
         umount -t fuse --all
+    fi
+
+    if [[ "${fs_driver}" == fusedev ]]; then
+        nydusd_config=/etc/nydus/config.json
+    else
+        nydusd_config="$FSCACHE_NYDUSD_CONFIG"
     fi
 
     # rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/* || fuser -m "${REMOTE_SNAPSHOTTER_ROOT}/mnt" && false
