@@ -42,7 +42,6 @@ import (
 var _ snapshots.Snapshotter = &snapshotter{}
 
 type snapshotter struct {
-	context    context.Context
 	root       string
 	nydusdPath string
 	// Storing snapshots' state, parentage ant other metadata
@@ -87,8 +86,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new process manager")
 	}
-
-	// FIXME: How to get event goroutine has exited with error?
 
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithProcessManager(pm),
@@ -169,7 +166,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	}
 
 	return &snapshotter{
-		context:              ctx,
 		root:                 cfg.RootDir,
 		nydusdPath:           cfg.NydusdBinaryPath,
 		ms:                   ms,
@@ -234,7 +230,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 
 	if id, info, rErr := o.findMetaLayer(ctx, key); rErr == nil {
-		err = o.fs.WaitUntilReady(ctx, id)
+		err = o.fs.WaitUntilReady(id)
 		if err != nil {
 			log.G(ctx).Errorf("snapshot %s is not ready, err: %v", id, err)
 			return nil, err
@@ -251,7 +247,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 
 func (o *snapshotter) prepareRemoteSnapshot(ctx context.Context, id string, labels map[string]string) error {
 	log.G(ctx).Infof("prepare remote snapshot mountpoint %s", o.upperPath(id))
-	return o.fs.Mount(o.context, id, labels)
+	return o.fs.Mount(id, labels)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {

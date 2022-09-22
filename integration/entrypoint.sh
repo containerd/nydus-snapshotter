@@ -4,7 +4,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-set -euo pipefail
+set -eEuo pipefail
+
+FSCACHE_NYDUSD_CONFIG=/etc/nydus/nydusd-config.fscache.json
 
 CONTAINERD_ROOT=/var/lib/containerd/
 CONTAINERD_STATUS=/run/containerd/
@@ -18,11 +20,15 @@ JAVA_IMAGE=${JAVA_IMAGE:-ghcr.io/dragonflyoss/image-service/java:nydus-nightly-v
 WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-ghcr.io/dragonflyoss/image-service/wordpress:nydus-nightly-v6}
 TOMCAT_IMAGE=${TOMCAT_IMAGE:-ghcr.io/dragonflyoss/image-service/tomcat:nydus-nightly-v5}
 STARGZ_IMAGE=${TOMCAT_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
+REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-ghcr.io/stargz-containers/redis:6.2.6-org}
+WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-org}
 
 # JAVA_IMAGE=${JAVA_IMAGE:-hub.byted.org/gechangwei/java:latest-nydus-v6}
 # WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-hub.byted.org/gechangwei/wordpress:latest-nydus-v6}
 # TOMCAT_IMAGE=${TOMCAT_IMAGE:-hub.byted.org/gechangwei/tomcat:latest-nydus-v5}
 # STARGZ_IMAGE=${TOMCAT_IMAGE:-hub.byted.org/gechangwei/java:latest-stargz}
+# REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-hub.byted.org/gechangwei/redis:latest}
+# WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-hub.byted.org/gechangwei/wordpress:latest}
 
 PLUGIN=nydus
 
@@ -32,6 +38,8 @@ TIMEOUTSEC=180
 
 GORACE_REPORT="$(pwd)/go_race_report"
 export GORACE="log_path=${GORACE_REPORT}"
+
+# trap "{ pause 1000; }" ERR
 
 function detect_go_race {
     if [ -n "$(ls -A ${GORACE_REPORT}.* 2>/dev/null)" ]; then
@@ -98,8 +106,8 @@ function retry {
 }
 
 function can_erofs_ondemand_read {
-    grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config
-    return $?
+    grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config 1>/dev/null
+    echo $?
 }
 
 function validate_mnt_number {
@@ -116,6 +124,8 @@ function validate_mnt_number {
 function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
+    # In case nydusd is using cache dir
+    killall "nydusd" || true
 
     # Let snapshotter shutdown all its services.
     sleep 0.5
@@ -138,9 +148,15 @@ function reboot_containerd {
         umount -t fuse --all
     fi
 
+    if [[ "${fs_driver}" == fusedev ]]; then
+        nydusd_config=/etc/nydus/config.json
+    else
+        nydusd_config="$FSCACHE_NYDUSD_CONFIG"
+    fi
+
     # rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/* || fuser -m "${REMOTE_SNAPSHOTTER_ROOT}/mnt" && false
     rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/*
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path /etc/nydus/config.json &
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path "${nydusd_config}" &
 
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
     containerd --log-level info --config=/etc/containerd/config.toml &
@@ -176,7 +192,8 @@ function nerdctl_prune_images {
     nerdctl container prune -f
     nerdctl image prune --all -f
     nerdctl images
-    is_cache_cleared
+    # FIXME:
+    # is_cache_cleared
 }
 
 function start_single_container_multiple_daemons {
@@ -222,7 +239,7 @@ function start_multiple_containers_shared_daemon {
 function start_single_container_on_stargz {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd shared
+    reboot_containerd multiple
 
     killall "containerd-nydus-grpc" || true
     sleep 0.5
@@ -232,6 +249,22 @@ function start_single_container_on_stargz {
 
     nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
     detect_go_race
+}
+
+function start_container_on_oci {
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd mutiple
+
+    nerdctl --snapshotter nydus run -d --net none "${REDIS_OCI_IMAGE}"
+    nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_OCI_IMAGE}"
+    pause 2
+
+    func_retry stop_all_containers
+
+    # Deleteing with flag --async as a fuzzer
+    nerdctl image rm --async --force "${REDIS_OCI_IMAGE}"
+    nerdctl image rm --force "${WORDPRESS_OCI_IMAGE}"
 }
 
 function pull_remove_one_image {
@@ -251,27 +284,38 @@ function pull_remove_multiple_images {
     nerdctl_prune_images
     reboot_containerd "${daemon_mode}"
 
+    # Because nydusd is not started right after image pull.
+    # Nydusd is started when preparing the writable active snapshot as the
+    # uppermost layer. So we must create a container to start nydusd.
+    # Then to test if snapshotter's nydusd daemons management works well
+
     nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus image pull "${TOMCAT_IMAGE}"
 
-    nerdctl --snapshotter nydus image rm "${TOMCAT_IMAGE}"
-    nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
-    nerdctl --snapshotter nydus image rm "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus create --rm --net none "${TOMCAT_IMAGE}"
+    nerdctl --snapshotter nydus create --rm --net none "${WORDPRESS_IMAGE}"
 
-    # TODO: Validate running nydusd number
+    nerdctl --snapshotter nydus image rm --force "${JAVA_IMAGE}"
+    nerdctl --snapshotter nydus image rm --force "${WORDPRESS_IMAGE}"
+
+    # Deleteing with flag --async as a fuzzer
+    nerdctl --snapshotter nydus image rm --force --async "${TOMCAT_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${TOMCAT_IMAGE}"
+    nerdctl --snapshotter nydus create --net none "${TOMCAT_IMAGE}"
 
     detect_go_race
+
+    # TODO: Validate running nydusd number
 }
 
-function start_multiple_containers_shared_daemon_erofs {
+function start_multiple_containers_shared_daemon_fscache {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
     reboot_containerd shared fscache
 
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
-    nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
 
     detect_go_race
 }
@@ -301,6 +345,38 @@ function kill_snapshotter_and_nydusd_recover {
     nerdctl --snapshotter nydus start "$c1"
     nerdctl --snapshotter nydus start "$c2"
 
+    detect_go_race
+}
+
+function fscache_kill_snapshotter_and_nydusd_recover {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd "${daemon_mode}" fscache restart
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+    sleep 1
+
+    echo "killing nydusd"
+    killall -9 nydusd || true
+    killall -9 containerd-nydus-grpc || true
+
+    sleep 1
+
+    rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver fscache --log-to-stdout --config-path /etc/nydus/nydusd-config.fscache.json &
+    retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+
+    # killall -9 nydusd
+    sleep 0.2
     detect_go_race
 }
 
@@ -359,7 +435,7 @@ function kill_nydusd_recover_nydusd {
     detect_go_race
 }
 
-reboot_containerd mutiples
+reboot_containerd multiple
 
 start_single_container_multiple_daemons
 start_multiple_containers_multiple_daemons
@@ -382,7 +458,8 @@ kill_nydusd_recover_nydusd shared
 kill_nydusd_recover_nydusd multiple
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
-    start_multiple_containers_shared_daemon_erofs
+    start_multiple_containers_shared_daemon_fscache
+    fscache_kill_snapshotter_and_nydusd_recover shared
 fi
 
-# trap "{ pause 1000; }" ERR
+start_container_on_oci
