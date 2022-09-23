@@ -61,7 +61,6 @@ type DaemonConfig struct {
 }
 
 type MirrorConfig struct {
-	Scheme  string            `json:"scheme,omitempty"`
 	Host    string            `json:"host,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
