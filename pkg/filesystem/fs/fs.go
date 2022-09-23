@@ -154,7 +154,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	if fs.mode == SharedInstance {
 		if d := fs.getSharedDaemon(); d != nil && !d.Connected {
 			log.G(ctx).Infof("initializing the shared nydus daemon")
-			if _, err := fs.initSharedDaemon(ctx); err != nil {
+			if _, err := fs.initSharedDaemon(); err != nil {
 				return nil, errors.Wrap(err, "start shared nydusd daemon")
 			}
 
@@ -519,7 +519,7 @@ func (fs *Filesystem) IsNydusMetaLayer(ctx context.Context, labels map[string]st
 
 // Mount will be called when containerd snapshotter prepare remote snapshotter
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
-func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string) (err error) {
+func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err error) {
 	// If NoneDaemon mode, we don't mount nydus on host
 	if !fs.hasDaemon() {
 		return nil
@@ -530,7 +530,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
 
-	d, err := fs.newDaemon(ctx, snapshotID, imageID)
+	d, err := fs.newDaemon(snapshotID, imageID)
 	// if daemon already exists for snapshotID, just return
 	if err != nil {
 		if errdefs.IsAlreadyExists(err) {
@@ -555,7 +555,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	}
 	err = fs.mount(d, labels)
 	if err != nil {
-		log.G(ctx).Errorf("failed to mount %s, %v", d.MountPoint(), err)
+		log.L.Errorf("failed to mount %s, %v", d.MountPoint(), err)
 		return errors.Wrap(err, fmt.Sprintf("failed to mount daemon %s", d.ID))
 	}
 
@@ -564,7 +564,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 
 // WaitUntilReady wait until daemon ready by snapshotID, it will wait until nydus domain socket established
 // and the status of nydusd daemon must be ready
-func (fs *Filesystem) WaitUntilReady(ctx context.Context, snapshotID string) error {
+func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 	// If NoneDaemon mode, there's no need to wait for daemon ready
 	if !fs.hasDaemon() {
 		return nil
@@ -705,7 +705,7 @@ func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
 	return fs.cacheMgr.AddSnapshot(imageID, blobs)
 }
 
-func (fs *Filesystem) initSharedDaemon(ctx context.Context) (_ *daemon.Daemon, retErr error) {
+func (fs *Filesystem) initSharedDaemon() (_ *daemon.Daemon, retErr error) {
 	d, err := fs.newSharedDaemon()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to init shared daemon")
@@ -727,17 +727,17 @@ func (fs *Filesystem) initSharedDaemon(ctx context.Context) (_ *daemon.Daemon, r
 	return d, nil
 }
 
-func (fs *Filesystem) newDaemon(ctx context.Context, snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
+func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
 	if fs.mode == SharedInstance || fs.mode == PrefetchInstance {
 		// Check if daemon is already running
 		d := fs.getSharedDaemon()
 		if d != nil {
 			if fs.sharedDaemon == nil {
 				fs.sharedDaemon = d
-				log.G(ctx).Infof("daemon(ID=%s) is already running and reconnected", daemon.SharedNydusDaemonID)
+				log.L.Infof("daemon(ID=%s) is already running and reconnected", daemon.SharedNydusDaemonID)
 			}
 		} else {
-			_, err := fs.initSharedDaemon(ctx)
+			_, err := fs.initSharedDaemon()
 			if err != nil {
 				// AlreadyExists means someone else has initialized shared daemon.
 				if !errdefs.IsAlreadyExists(err) {
@@ -749,7 +749,7 @@ func (fs *Filesystem) newDaemon(ctx context.Context, snapshotID string, imageID 
 			// to return snapshot to containerd as soon as possible, and prefetch instance is
 			// only for prefetch.
 			if fs.mode != PrefetchInstance {
-				if err := fs.WaitUntilReady(ctx, daemon.SharedNydusDaemonID); err != nil {
+				if err := fs.WaitUntilReady(daemon.SharedNydusDaemonID); err != nil {
 					return nil, errors.Wrap(err, "failed to wait shared daemon")
 				}
 			}
