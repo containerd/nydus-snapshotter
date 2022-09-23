@@ -88,8 +88,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to new process manager")
 	}
 
-	// FIXME: How to get event goroutine has exited with error?
-
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithProcessManager(pm),
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),

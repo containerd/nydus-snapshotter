@@ -21,7 +21,7 @@ var (
 	DefaultMaxJitter     = 100 * time.Millisecond
 	DefaultOnRetry       = func(n uint, err error) {}
 	DefaultRetryIf       = IsRecoverable
-	DefaultDelayType     = CombineDelay(BackOffDelay, RandomDelay)
+	DefaultDelayType     = CombineDelay(FixedDelay, RandomDelay)
 	DefaultLastErrorOnly = false
 )
 
