@@ -160,7 +160,7 @@ func (d *Daemon) WaitUntilReady() error {
 		}
 		return nil
 	},
-		retry.Attempts(3),
+		retry.Attempts(20), // totally wait for 2 seconds, should be enough
 		retry.LastErrorOnly(true),
 		retry.Delay(100*time.Millisecond),
 	)
