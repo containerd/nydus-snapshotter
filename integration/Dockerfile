@@ -5,7 +5,7 @@ ARG RUNC_VERSION=1.1.3
 ARG NYDUS_SNAPSHOTTER_PROJECT=/nydus-snapshotter
 # ARG DOWNLOADS_MIRROR="https://nydus-e2e.tos-cn-boe.volces.com"
 ARG DOWNLOADS_MIRROR="https://github.com"
-ARG NYDUS_VER=2.1.0-rc.2
+ARG NYDUS_VER=2.1.0-rc.3.1
 ARG NERDCTL_VER=0.22.2
 
 FROM golang:1.18.5-bullseye AS golang-base
@@ -49,6 +49,9 @@ install -D -m 755 nydus-static/nydusctl /usr/local/bin/nydusctl
 RUN wget ${DOWNLOADS_MIRROR}/containerd/nerdctl/releases/download/v${NERDCTL_VER}/nerdctl-${NERDCTL_VER}-linux-amd64.tar.gz && \
 tar xzf nerdctl-${NERDCTL_VER}-linux-amd64.tar.gz && \
 install -D -m 755 nerdctl /usr/local/bin/nerdctl
+
+# Install fscache driver configuration file
+COPY misc/snapshotter/nydusd-config.fscache.json /etc/nydus/nydusd-config.fscache.json
 
 VOLUME [ "/var/lib" ]
 

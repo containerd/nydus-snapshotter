@@ -4,7 +4,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-set -euo pipefail
+set -eEuo pipefail
+
+FSCACHE_NYDUSD_CONFIG=/etc/nydus/nydusd-config.fscache.json
 
 CONTAINERD_ROOT=/var/lib/containerd/
 CONTAINERD_STATUS=/run/containerd/
@@ -32,6 +34,8 @@ TIMEOUTSEC=180
 
 GORACE_REPORT="$(pwd)/go_race_report"
 export GORACE="log_path=${GORACE_REPORT}"
+
+# trap "{ pause 1000; }" ERR
 
 function detect_go_race {
     if [ -n "$(ls -A ${GORACE_REPORT}.* 2>/dev/null)" ]; then
@@ -98,8 +102,8 @@ function retry {
 }
 
 function can_erofs_ondemand_read {
-    grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config
-    return $?
+    grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config 1>/dev/null
+    echo $?
 }
 
 function validate_mnt_number {
@@ -116,6 +120,8 @@ function validate_mnt_number {
 function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
+    # In case nydusd is using cache dir
+    killall "nydusd" || true
 
     # Let snapshotter shutdown all its services.
     sleep 0.5
@@ -138,9 +144,15 @@ function reboot_containerd {
         umount -t fuse --all
     fi
 
+    if [[ "${fs_driver}" == fusedev ]]; then
+        nydusd_config=/etc/nydus/config.json
+    else
+        nydusd_config="$FSCACHE_NYDUSD_CONFIG"
+    fi
+
     # rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/* || fuser -m "${REMOTE_SNAPSHOTTER_ROOT}/mnt" && false
     rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/*
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path /etc/nydus/config.json &
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path "${nydusd_config}" &
 
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
     containerd --log-level info --config=/etc/containerd/config.toml &
@@ -176,7 +188,8 @@ function nerdctl_prune_images {
     nerdctl container prune -f
     nerdctl image prune --all -f
     nerdctl images
-    is_cache_cleared
+    # FIXME:
+    # is_cache_cleared
 }
 
 function start_single_container_multiple_daemons {
@@ -264,14 +277,13 @@ function pull_remove_multiple_images {
     detect_go_race
 }
 
-function start_multiple_containers_shared_daemon_erofs {
+function start_multiple_containers_shared_daemon_fscache {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
     reboot_containerd shared fscache
 
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
-    nerdctl --snapshotter nydus run -d --net none "${TOMCAT_IMAGE}"
 
     detect_go_race
 }
@@ -301,6 +313,38 @@ function kill_snapshotter_and_nydusd_recover {
     nerdctl --snapshotter nydus start "$c1"
     nerdctl --snapshotter nydus start "$c2"
 
+    detect_go_race
+}
+
+function fscache_kill_snapshotter_and_nydusd_recover {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd "${daemon_mode}" fscache restart
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+    sleep 1
+
+    echo "killing nydusd"
+    killall -9 nydusd || true
+    killall -9 containerd-nydus-grpc || true
+
+    sleep 1
+
+    rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver fscache --log-to-stdout --config-path /etc/nydus/nydusd-config.fscache.json &
+    retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+
+    # killall -9 nydusd
+    sleep 0.2
     detect_go_race
 }
 
@@ -359,7 +403,7 @@ function kill_nydusd_recover_nydusd {
     detect_go_race
 }
 
-reboot_containerd mutiples
+reboot_containerd multiple
 
 start_single_container_multiple_daemons
 start_multiple_containers_multiple_daemons
@@ -382,7 +426,6 @@ kill_nydusd_recover_nydusd shared
 kill_nydusd_recover_nydusd multiple
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
-    start_multiple_containers_shared_daemon_erofs
+    start_multiple_containers_shared_daemon_fscache
+    fscache_kill_snapshotter_and_nydusd_recover shared
 fi
-
-# trap "{ pause 1000; }" ERR
