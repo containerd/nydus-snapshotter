@@ -52,8 +52,8 @@ type Daemon struct {
 	CustomMountPoint *string
 	nydusdThreadNum  int
 
-	// Client will be rebuilt on Reconnect, skip marshal/unmarshal
-	Client nydussdk.Interface `json:"-"`
+	// client will be rebuilt on Reconnect, skip marshal/unmarshal
+	client nydussdk.Interface `json:"-"`
 	Once   *sync.Once         `json:"-"`
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
@@ -146,7 +146,7 @@ func (d *Daemon) CheckStatus() (*model.DaemonInfo, error) {
 		return nil, err
 	}
 
-	return d.Client.CheckStatus()
+	return d.client.CheckStatus()
 }
 
 func (d *Daemon) WaitUntilReady() error {
@@ -181,7 +181,7 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
-	return d.Client.SharedMount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
+	return d.client.SharedMount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
 }
 
 func (d *Daemon) SharedUmount() error {
@@ -196,7 +196,7 @@ func (d *Daemon) SharedUmount() error {
 		return nil
 	}
 
-	return d.Client.Umount(d.SharedMountPoint())
+	return d.client.Umount(d.SharedMountPoint())
 }
 
 func (d *Daemon) sharedErofsMount() error {
@@ -208,7 +208,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
 
-	if err := d.Client.FscacheBindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.FscacheBindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
@@ -242,7 +242,7 @@ func (d *Daemon) sharedErofsUmount() error {
 		return err
 	}
 
-	if err := d.Client.FscacheUnbindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.FscacheUnbindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
@@ -258,7 +258,7 @@ func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, er
 	if err := d.ensureClient("get metric"); err != nil {
 		return nil, err
 	}
-	return d.Client.GetFsMetric(sharedDaemon, sid)
+	return d.client.GetFsMetric(sharedDaemon, sid)
 }
 
 func (d *Daemon) IsMultipleDaemon() bool {
@@ -278,23 +278,31 @@ func (d *Daemon) initClient() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nydus client")
 	}
-	d.Client = client
+	d.client = client
 	return nil
 }
 
-func (d *Daemon) ensureClient(action string) error {
+func (d *Daemon) ResetClient() {
+	d.client = nil
+	d.Once = &sync.Once{}
+}
+
+func (d *Daemon) ensureClient(situation string) error {
 	var err error
+
 	d.Once.Do(func() {
-		if d.Client == nil {
+		if d.client == nil {
 			if ierr := d.initClient(); ierr != nil {
-				err = errors.Wrapf(ierr, "failed to %s", action)
+				err = errors.Wrapf(ierr, "failed to %s", situation)
 				d.Once = &sync.Once{}
 			}
 		}
 	})
-	if err == nil && d.Client == nil {
-		return fmt.Errorf("failed to %s, client not initialized", action)
+
+	if err == nil && d.client == nil {
+		return errors.Errorf("failed to %s, client not initialized", situation)
 	}
+
 	return err
 }
 

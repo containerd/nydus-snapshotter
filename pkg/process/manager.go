@@ -602,14 +602,13 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		m.daemonStates.RecoverDaemonState(d)
 
-		d.Once = &sync.Once{}
+		d.ResetClient()
 
 		defer func() {
 			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
 			// But the socket file may be residual and will be cleared before starting a new nydusd.
 			// So clear the client by assigning nil
-			d.Client = nil
-			d.Once = &sync.Once{}
+			d.ResetClient()
 		}()
 
 		// Do not check status on virtual daemons
