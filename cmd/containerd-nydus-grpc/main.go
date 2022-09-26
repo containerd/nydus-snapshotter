@@ -7,6 +7,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/containerd/containerd/log"
@@ -23,11 +24,20 @@ import (
 func main() {
 	flags := command.NewFlags()
 	app := &cli.App{
-		Name:    "containerd-nydus-grpc",
-		Usage:   "Nydus remote snapshotter for containerd",
-		Version: Version,
-		Flags:   flags.F,
+		Name:        "containerd-nydus-grpc",
+		Usage:       "Nydus remote snapshotter for containerd",
+		Version:     Version,
+		Flags:       flags.F,
+		HideVersion: true,
 		Action: func(c *cli.Context) error {
+			if flags.Args.PrintVersion {
+				fmt.Println("Version:    ", Version)
+				fmt.Println("Reversion:  ", Reversion)
+				fmt.Println("Go version: ", GoVersion)
+				fmt.Println("Build time: ", BuildTimestamp)
+				return nil
+			}
+
 			var cfg config.Config
 			if err := command.Validate(flags.Args, &cfg); err != nil {
 				return errors.Wrap(err, "invalid argument")

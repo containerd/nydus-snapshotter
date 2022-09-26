@@ -1,7 +1,5 @@
 all: clear build
 
-VERSION=$(shell git rev-parse --verify HEAD --short=7)
-BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
 PACKAGES ?= $(shell go list ./... | grep -v /tests)
 SUDO = $(shell which sudo)
 GO_EXECUTABLE_PATH ?= $(shell which go)
@@ -11,6 +9,11 @@ GOOS ?= linux
 GOARCH ?= $(shell go env GOARCH)
 KERNEL_VER = $(shell uname -r)
 #GOPROXY ?= https://goproxy.io
+
+# Used to populate variables in version package.
+BUILD_TIMESTAMP=$(shell date '+%Y-%m-%dT%H:%M:%S')
+VERSION=$(shell git describe --match 'v[0-9]*' --dirty='.m' --always --tags)
+REVISION=$(shell git rev-parse HEAD)$(shell if ! git diff --no-ext-diff --quiet --exit-code; then echo .m; fi)
 
 ifdef GOPROXY
 PROXY := GOPROXY="${GOPROXY}"
@@ -22,13 +25,14 @@ else
 FS_DRIVER = fusedev
 endif
 
+LDFLAGS = -s -w -X main.Version=${VERSION} -X main.Reversion=$(REVISION) -X main.BuildTimestamp=$(BUILD_TIMESTAMP)
 
 .PHONY: build
 build:
-	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags="-s -w -X 'main.Version=${VERSION}'" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 
 static-release:
-	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-s -w -X "main.Version=${VERSION}" -extldflags "-static"' -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 
 .PHONY: clear
 clear:
