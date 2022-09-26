@@ -239,7 +239,7 @@ function start_multiple_containers_shared_daemon {
 function start_single_container_on_stargz {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd shared
+    reboot_containerd multiple
 
     killall "containerd-nydus-grpc" || true
     sleep 0.5
