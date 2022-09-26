@@ -61,6 +61,7 @@ type Args struct {
 	KubeconfigPath           string
 	EnableKubeconfigKeychain bool
 	RecoverPolicy            string
+	PrintVersion             bool
 }
 
 type Flags struct {
@@ -70,6 +71,12 @@ type Flags struct {
 
 func buildFlags(args *Args) []cli.Flag {
 	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:        "version",
+			Value:       false,
+			Usage:       "print version and build information",
+			Destination: &args.PrintVersion,
+		},
 		&cli.StringFlag{
 			Name:        "address",
 			Value:       defaultAddress,
@@ -91,7 +98,6 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "config-path",
-			Required:    true,
 			Aliases:     []string{"c", "config"},
 			Usage:       "path to the configuration `FILE`",
 			Destination: &args.ConfigPath,
