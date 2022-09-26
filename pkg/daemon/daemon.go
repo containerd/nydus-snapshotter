@@ -353,6 +353,7 @@ func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
 	// This is best effort. So no need to handle its error.
 	log.L.Infof("Umounting %s when clear vestige", d.HostMountPoint())
+
 	if err := mounter.Umount(d.HostMountPoint()); err != nil {
 		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
 	}
@@ -361,6 +362,9 @@ func (d *Daemon) ClearVestige() {
 	if err := os.Remove(d.GetAPISock()); err != nil {
 		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 	}
+
+	// Let't transport builder wait for nydusd startup again until it sees the created socket file.
+	d.ResetClient()
 }
 
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
