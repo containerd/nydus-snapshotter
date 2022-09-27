@@ -2,8 +2,6 @@
 
 linters:
   enable:
-    - structcheck
-    - varcheck
     - staticcheck
     - unconvert
     - gofmt
@@ -20,4 +18,3 @@ run:
   deadline: 4m
   skip-dirs:
     - misc
-
