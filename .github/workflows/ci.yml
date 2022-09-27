@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.18.6"
+          go-version: "1.19.1"
       - name: Check out code
         uses: actions/checkout@v1
       - name: cache go mod
