@@ -10,7 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -159,7 +159,7 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 		return nil, errors.Wrap(err, "run merge command")
 	}
 
-	outputBytes, err := ioutil.ReadFile(option.OutputJSONPath)
+	outputBytes, err := os.ReadFile(option.OutputJSONPath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read file %s", option.OutputJSONPath)
 	}
