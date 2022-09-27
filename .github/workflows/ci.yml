@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17'
+          go-version: "1.18.6"
       - name: Check out code
         uses: actions/checkout@v1
       - name: cache go mod
@@ -41,7 +41,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17'
+          go-version: "1.18.6"
       - name: Check out code
         uses: actions/checkout@v1
       - name: cache go mod
@@ -75,13 +75,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        GOOS: ['linux', 'windows', 'darwin']
-        GOARCH: ['amd64', 'arm64']
+        GOOS: ["linux", "windows", "darwin"]
+        GOARCH: ["amd64", "arm64"]
     steps:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17'
+          go-version: "1.18.6"
       - name: Check out code
         uses: actions/checkout@v1
       - name: cache go mod
@@ -104,7 +104,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v3
         with:
-          go-version: '1.17'
+          go-version: "1.18.6"
       - name: Checkout code
         uses: actions/checkout@v2
       - name: cache go mod
