@@ -152,7 +152,14 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 
 	// Try to bring up the shared daemon early.
 	if fs.mode == SharedInstance {
-		if d := fs.getSharedDaemon(); d != nil && !d.Connected {
+		// Situations that shared daemon is not found:
+		//   1. The first time this nydus-snapshotter runs
+		//   2. Daemon record is wrongly deleted from DB. Above reconnecting already gathers
+		//		all daemons but still not found shared daemon. The best workaround is to start
+		//		a new nydusd for it.
+		// TODO: We still need to consider shared daemon the time sequence of initializing daemon,
+		// start daemon commit its state to DB and retrieving its state.
+		if d := fs.getSharedDaemon(); (d != nil && !d.Connected) || d == nil {
 			log.G(ctx).Infof("initializing the shared nydus daemon")
 			if _, err := fs.initSharedDaemon(); err != nil {
 				return nil, errors.Wrap(err, "start shared nydusd daemon")
@@ -705,12 +712,16 @@ func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
 	return fs.cacheMgr.AddSnapshot(imageID, blobs)
 }
 
+// 1. Create a daemon instance
+// 2. Build command line
+// 3. Start daemon
 func (fs *Filesystem) initSharedDaemon() (_ *daemon.Daemon, retErr error) {
 	d, err := fs.newSharedDaemon()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to init shared daemon")
 	}
 
+	// FIXME: Daemon record should not be removed after starting daemon failure.
 	defer func() {
 		if retErr != nil {
 			if err := fs.manager.DeleteDaemon(d); err != nil {
