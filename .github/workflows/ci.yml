@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build
+    name: Build and Lint
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -27,7 +27,7 @@ jobs:
             ${{ runner.os }}-go
       - name: Build
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.43.0
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.49.0
           export PATH=$PATH:$(go env GOPATH)/bin
           make
           make test
