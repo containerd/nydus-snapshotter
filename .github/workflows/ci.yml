@@ -51,6 +51,11 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go
+      - name: Set up containerd
+        uses: crazy-max/ghaction-setup-containerd@v2
+      - name: Set up docker registry
+        run: |
+          docker run -d -p 5000:5000 --restart=always --name registry registry:2
       - name: Build
         run: |
           # Download nydus components
@@ -59,6 +64,7 @@ jobs:
           tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
           mkdir -p /usr/bin
           sudo mv nydus-static/nydus-image nydus-static/nydusd-fusedev nydus-static/nydusify /usr/bin/
+          sudo ln /usr/bin/nydusd-fusedev /usr/bin/nydusd
 
           export PATH=$PATH:$(go env GOPATH)/bin
           make smoke
