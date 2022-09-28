@@ -44,7 +44,7 @@ type Interface interface {
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
 }
 
-type NydusClient struct {
+type NydusdClient struct {
 	httpClient *http.Client
 }
 
@@ -53,7 +53,7 @@ func NewNydusClient(sock string) (Interface, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build transport for nydus client")
 	}
-	return &NydusClient{
+	return &NydusdClient{
 		httpClient: &http.Client{
 			Timeout:   defaultHTTPClientTimeout,
 			Transport: transport,
@@ -61,7 +61,7 @@ func NewNydusClient(sock string) (Interface, error) {
 	}, nil
 }
 
-func (c *NydusClient) CheckStatus() (*model.DaemonInfo, error) {
+func (c *NydusdClient) CheckStatus() (*model.DaemonInfo, error) {
 	addr := fmt.Sprintf("http://unix%s", endpointDaemonInfo)
 	resp, err := c.httpClient.Get(addr)
 	if err != nil {
@@ -79,7 +79,7 @@ func (c *NydusClient) CheckStatus() (*model.DaemonInfo, error) {
 	return &info, nil
 }
 
-func (c *NydusClient) Umount(sharedMountPoint string) error {
+func (c *NydusdClient) Umount(sharedMountPoint string) error {
 	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", endpointMount, sharedMountPoint)
 	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *NydusClient) Umount(sharedMountPoint string) error {
 	return handleMountError(resp)
 }
 
-func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
+func (c *NydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
 	var getStatURL string
 
 	if sharedDaemon {
@@ -125,7 +125,7 @@ func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetri
 	return &m, nil
 }
 
-func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error {
+func (c *NydusdClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error {
 	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", endpointMount, sharedMountPoint)
 	content, err := os.ReadFile(daemonConfig)
 	if err != nil {
@@ -146,7 +146,7 @@ func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig stri
 	return handleMountError(resp)
 }
 
-func (c NydusClient) FscacheBindBlob(daemonConfig string) error {
+func (c NydusdClient) FscacheBindBlob(daemonConfig string) error {
 	log.L.Infof("requesting daemon to bind fscache blob with config %s", daemonConfig)
 
 	body, err := os.ReadFile(daemonConfig)
@@ -173,7 +173,7 @@ func (c NydusClient) FscacheBindBlob(daemonConfig string) error {
 	return handleMountError(resp)
 }
 
-func (c NydusClient) FscacheUnbindBlob(daemonConfig string) error {
+func (c NydusdClient) FscacheUnbindBlob(daemonConfig string) error {
 	body, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
