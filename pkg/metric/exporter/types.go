@@ -70,7 +70,7 @@ func (h *FsMetricHistogram) ToConstHistogram(m *model.FsMetric, imageRef string)
 
 	for i, c := range counters {
 		count += c
-		sum = sum + h.Buckets[i]*c
+		sum += h.Buckets[i] * c
 		hmap[float64(h.Buckets[i])] = c
 	}
 

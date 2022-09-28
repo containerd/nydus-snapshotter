@@ -677,7 +677,8 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 		// Affected by chunk dict, the blob list referenced by final bootstrap
 		// are from different layers, part of them are from original layers, part
 		// from chunk dict bootstrap, so we need to rewrite manifest's layers here.
-		manifest.Layers = append(blobDescs, *bootstrapDesc)
+		blobDescs := append(blobDescs, *bootstrapDesc)
+		manifest.Layers = blobDescs
 	}
 
 	// Update the gc label of bootstrap layer

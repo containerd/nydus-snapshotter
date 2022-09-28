@@ -64,13 +64,15 @@ func (ra *seekReader) Read(p []byte) (int, error) {
 }
 
 func (ra *seekReader) Seek(offset int64, whence int) (int64, error) {
-	if whence == io.SeekCurrent {
+	switch {
+	case whence == io.SeekCurrent:
 		ra.pos += offset
-	} else if whence == io.SeekStart {
+	case whence == io.SeekStart:
 		ra.pos = offset
-	} else {
+	default:
 		return 0, fmt.Errorf("unsupported whence %d", whence)
 	}
+
 	return ra.pos, nil
 }
 
@@ -126,11 +128,12 @@ func packToTar(src string, name string, compress bool) (io.ReadCloser, error) {
 			var finalErr error
 
 			// Return the first error encountered to the other end and ignore others.
-			if err != nil {
+			switch {
+			case err != nil:
 				finalErr = err
-			} else if err1 != nil {
+			case err1 != nil:
 				finalErr = err1
-			} else if err2 != nil {
+			case err2 != nil:
 				finalErr = err2
 			}
 

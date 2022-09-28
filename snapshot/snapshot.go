@@ -687,12 +687,12 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
 	// base64 to filter easily in `nydus-overlayfs`
 	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
-	options := append(overlayOptions, opt)
+	overlayOptions = append(overlayOptions, opt)
 	return []mount.Mount{
 		{
 			Type:    "fuse.nydus-overlayfs",
 			Source:  "overlay",
-			Options: options,
+			Options: overlayOptions,
 		},
 	}, nil
 }

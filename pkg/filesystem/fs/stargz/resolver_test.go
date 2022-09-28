@@ -96,14 +96,14 @@ func (tr *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 			footer, _ := os.ReadFile("testdata/stargzfooter.bin")
 			return &http.Response{
 				StatusCode: http.StatusPartialContent,
-				Body:       io.NopCloser(bytes.NewReader(footer[:])),
+				Body:       io.NopCloser(bytes.NewReader(footer)),
 			}, nil
 		}
 		if rangeHeader == "bytes=24442675-24613138" {
 			toc, _ := os.ReadFile("testdata/stargztoc.bin")
 			return &http.Response{
 				StatusCode: http.StatusPartialContent,
-				Body:       io.NopCloser(bytes.NewReader(toc[:])),
+				Body:       io.NopCloser(bytes.NewReader(toc)),
 			}, nil
 		}
 	}
