@@ -23,6 +23,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containerd/containerd"
+	containerdconverter "github.com/containerd/containerd/images/converter"
+	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 
@@ -406,6 +410,73 @@ func TestConverter(t *testing.T) {
 	ensureFile(t, filepath.Join(cacheDir, chunkDictBlobHash)+".chunk_map")
 	ensureNoFile(t, filepath.Join(cacheDir, lowerNydusBlobDigest.Hex())+".chunk_map")
 	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".chunk_map")
+}
+
+// sudo go test -v -count=1 -run TestContainerdImageConvert ./tests
+func TestContainerdImageConvert(t *testing.T) {
+	const (
+		srcImageRef    = "docker.io/library/nginx:latest"
+		targetImageRef = "localhost:5000/nydus/nginx:nydus-latest"
+	)
+	if err := exec.Command("ctr", "images", "pull", srcImageRef).Run(); err != nil {
+		t.Fatalf("failed to pull image %s: %v", srcImageRef, err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("ctr", "images", "rm", srcImageRef).Run(); err != nil {
+			t.Fatalf("failed to remove image %s: %v", srcImageRef, err)
+		}
+	}()
+	workDir, err := os.MkdirTemp("", "nydus-containerd-converter-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+	nydusOpts := &converter.PackOption{
+		WorkDir:   workDir,
+		FsVersion: "5",
+	}
+	convertFunc := converter.LayerConvertFunc(*nydusOpts)
+	convertHooks := containerdconverter.ConvertHooks{
+		PostConvertHook: converter.ConvertHookFunc(converter.MergeOption{
+			WorkDir:          nydusOpts.WorkDir,
+			BuilderPath:      nydusOpts.BuilderPath,
+			FsVersion:        nydusOpts.FsVersion,
+			ChunkDictPath:    nydusOpts.ChunkDictPath,
+			PrefetchPatterns: nydusOpts.PrefetchPatterns,
+		}),
+	}
+	convertFuncOpt := containerdconverter.WithIndexConvertFunc(
+		containerdconverter.IndexConvertFuncWithHook(
+			convertFunc,
+			true,
+			platforms.DefaultStrict(),
+			convertHooks,
+		),
+	)
+	client, err := containerd.New("/run/containerd/containerd.sock")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+	if _, err = containerdconverter.Convert(ctx, client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
+		t.Fatal(err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("ctr", "images", "rm", targetImageRef).Run(); err != nil {
+			t.Fatalf("failed to remove image %s: %v", targetImageRef, err)
+		}
+	}()
+	// push target image
+	if err := exec.Command("ctr", "images", "push", targetImageRef, "--plain-http").Run(); err != nil {
+		t.Fatalf("failed to push image %s: %v", targetImageRef, err)
+		return
+	}
+	// check whether the converted image is valid
+	if output, err := exec.Command("nydusify", "check", "--source", srcImageRef, "--target", targetImageRef, "--target-insecure").CombinedOutput(); err != nil {
+		t.Fatalf("failed to check image %s: %v, \noutput:\n%s", targetImageRef, err, output)
+		return
+	}
 }
 
 func TestUnpack(t *testing.T) {
