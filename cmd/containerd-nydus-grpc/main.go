@@ -7,6 +7,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/containerd/containerd/log"
@@ -23,16 +24,23 @@ import (
 func main() {
 	flags := command.NewFlags()
 	app := &cli.App{
-		Name:    "containerd-nydus-grpc",
-		Usage:   "Nydus remote snapshotter for containerd",
-		Version: Version,
-		Flags:   flags.F,
+		Name:        "containerd-nydus-grpc",
+		Usage:       "Nydus remote snapshotter for containerd",
+		Version:     Version,
+		Flags:       flags.F,
+		HideVersion: true,
 		Action: func(c *cli.Context) error {
+			if flags.Args.PrintVersion {
+				fmt.Println("Version:    ", Version)
+				fmt.Println("Reversion:  ", Reversion)
+				fmt.Println("Go version: ", GoVersion)
+				fmt.Println("Build time: ", BuildTimestamp)
+				return nil
+			}
 			var (
-				cfg            config.Config
-				snapshotterCfg config.SnapshotterConfig
+				cfg config.Config
 			)
-			if err := config.LoadShotterConfigFile(flags.Args.ConfigPath, &snapshotterCfg); err == nil {
+			if snapshotterCfg, err := config.LoadShotterConfigFile(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
 				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
 					return errors.Wrap(err, "invalid configuration")
 				}
@@ -53,6 +61,8 @@ func main() {
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir, logRotateArgs); err != nil {
 				return errors.Wrap(err, "failed to set up logger")
 			}
+
+			log.L.Infof("Start nydus-snapshotter. PID %d Version %s", os.Getpid(), Version)
 
 			return snapshotter.Start(ctx, cfg)
 		},

@@ -61,7 +61,6 @@ type DaemonConfig struct {
 }
 
 type MirrorConfig struct {
-	Scheme  string            `json:"scheme,omitempty"`
 	Host    string            `json:"host,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
@@ -98,6 +97,7 @@ type BackendConfig struct {
 		Fallback      bool   `json:"fallback"`
 		PingURL       string `json:"ping_url,omitempty"`
 		CheckInterval int    `json:"check_interval,omitempty"`
+		UseHTTP       bool   `json:"use_http,omitempty"`
 	} `json:"proxy,omitempty"`
 	Timeout        int `json:"timeout,omitempty"`
 	ConnectTimeout int `json:"connect_timeout,omitempty"`

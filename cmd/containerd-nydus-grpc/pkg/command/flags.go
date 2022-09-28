@@ -12,19 +12,13 @@ import (
 )
 
 const (
-	defaultAddress                    = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultLogLevel                   = logrus.InfoLevel
-	defaultRootDir                    = "/var/lib/containerd-nydus"
-	oldDefaultRootDir                 = "/var/lib/containerd-nydus-grpc"
-	defaultGCPeriod                   = "24h"
-	defaultPublicKey                  = "/signing/nydus-image-signing-public.key"
-	defaultRotateLogMaxSize           = 200 // 200 megabytes
-	defaultRotateLogMaxBackups        = 10
-	defaultRotateLogMaxAge            = 0 // days
-	defaultRotateLogLocalTime         = true
-	defaultRotateLogCompress          = true
-	DefaultDaemonMode          string = "multiple"
-	FsDriverFusedev            string = "fusedev"
+	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+	defaultLogLevel          = logrus.InfoLevel
+	defaultRootDir           = "/var/lib/containerd-nydus"
+	defaultGCPeriod          = "24h"
+	defaultPublicKey         = "/signing/nydus-image-signing-public.key"
+	DefaultDaemonMode string = "multiple"
+	FsDriverFusedev   string = "fusedev"
 )
 
 type Args struct {
@@ -40,7 +34,7 @@ type Args struct {
 	ConvertVpcRegistry       bool   `toml:"convert_vpc_registry"`
 	NydusdBinaryPath         string `toml:"nydusd_binary_path"`
 	NydusImageBinaryPath     string `toml:"nydus_image_binary_path"`
-	SharedDaemon             bool   `toml:"shared_daemon"`
+	SharedDaemon             bool   `toml:"-"`
 	DaemonMode               string `toml:"daemon_mode"`
 	FsDriver                 string `toml:"fs_driver"`
 	SyncRemove               bool   `toml:"sync_remove"`
@@ -55,6 +49,7 @@ type Args struct {
 	KubeconfigPath           string `toml:"kubeconfig_path"`
 	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
 	RecoverPolicy            string `toml:"recover_policy"`
+	PrintVersion             bool   `toml:"-"`
 }
 
 type Flags struct {
@@ -64,6 +59,12 @@ type Flags struct {
 
 func buildFlags(args *Args) []cli.Flag {
 	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:        "version",
+			Value:       false,
+			Usage:       "print version and build information",
+			Destination: &args.PrintVersion,
+		},
 		&cli.StringFlag{
 			Name:        "address",
 			Value:       defaultAddress,
@@ -85,7 +86,6 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "config-path",
-			Required:    true,
 			Aliases:     []string{"c", "config"},
 			Usage:       "path to the configuration `FILE`",
 			Destination: &args.ConfigPath,
@@ -198,7 +198,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "recover-policy",
-			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to none",
+			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to restart",
 			Destination: &args.RecoverPolicy,
 			Value:       "restart",
 		},

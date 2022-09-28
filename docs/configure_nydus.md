@@ -1,8 +1,40 @@
 # How to Configure Nydus
 
-Nydus-snapshotter receives a json file as nydusd configuration through CLI option `--config-path`.
+Nydus-snapshotter can receive a toml file as Nudus-snapshotter configuration to startup Nydus-snapshotter
+through CLI option `--config-path`.The `--config-path` can also be set to a json file path as nydusd configuration.
 An example configuration looks like below.
-You can find registry auth from local docker configuration.
+You can refer to the following template for configuration.
+
+```toml
+# Nydus-snapshotter startup parameter
+[snapshotter]
+address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+config_path = "/etc/nydusd-config.json" 
+root_dir  = "/var/lib/containerd-nydus"
+cache_dir  = "/var/lib/nydus/cache"
+nydusd_binary_path  = "/usr/local/bin/nydusd"
+nydus_image_binary_path = "/usr/local/bin/nydus-image"
+log_to_stdout = true
+log_level = "info"
+log_dir = "logs"
+gc_period = "24h"
+validate_signature = true
+public_key_file = "/signing/nydus-image-signing-public.key"
+convert_vpc_registry = true
+daemon_mode = "multiple"
+fs_driver = "fusedev"
+sync_remove = true
+enable_metrics = true
+metrics_file ="metrics"
+enable_stargz = true
+disable_cache_manager = false
+enable_nydus_overlay_fs = true
+nydusd_thread_num = 1
+cleanup_on_close = false
+kubeconfig_path = "$HOME/.kube/config"
+enable_kubeconfig_keychain = true
+recover_policy = "restart"
+```
 
 ```json
 {

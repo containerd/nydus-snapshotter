@@ -86,22 +86,26 @@ type SnapshotterConfig struct {
 	StartupFlag command.Args `toml:"snapshotter"`
 }
 
-func LoadShotterConfigFile(snapshotterConfigPath string, config *SnapshotterConfig) error {
+func LoadShotterConfigFile(snapshotterConfigPath string) (*SnapshotterConfig, error) {
+	var config SnapshotterConfig
 	// get nydus-snapshotter configuration from specified path of toml file
 	if snapshotterConfigPath == "" {
-		return errors.New("snapshotter config path cannot be specified")
+		return nil, errors.New("snapshotter config path cannot be specified")
 	}
 	tree, err := toml.LoadFile(snapshotterConfigPath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to load snapshotter config file %q", snapshotterConfigPath)
+		return nil, errors.Wrapf(err, "failed to load snapshotter config file %q", snapshotterConfigPath)
 	}
-	if err := tree.Unmarshal(config); err != nil {
-		return errors.Wrapf(err, "failed to unmarshal snapshotter config file %q", snapshotterConfigPath)
+	if err = tree.Unmarshal(config); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal snapshotter config file %q", snapshotterConfigPath)
 	}
-	return nil
+	return &config, nil
 }
 
 func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
+	if startupFlag == nil {
+		return errors.New("no startup parameter provided")
+	}
 	var daemonCfg DaemonConfig
 	if err := LoadConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
 		return errors.Wrapf(err, "failed to load config file %q", startupFlag.ConfigPath)
@@ -179,6 +183,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	cfg.SyncRemove = startupFlag.SyncRemove
 	cfg.KubeconfigPath = startupFlag.KubeconfigPath
 	cfg.EnableKubeconfigKeychain = startupFlag.EnableKubeconfigKeychain
+	cfg.RecoverPolicy = startupFlag.RecoverPolicy
 
 	return cfg.SetupNydusBinaryPaths()
 }

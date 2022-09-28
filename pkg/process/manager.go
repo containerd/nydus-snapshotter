@@ -8,12 +8,10 @@ package process
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
@@ -246,11 +244,11 @@ type Opt struct {
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
-	for event := range m.LivenessNotifier {
-		log.L.Warnf("Daemon %s died! socket path %s", event.daemonID, event.path)
+	for ev := range m.LivenessNotifier {
+		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
 
 		if m.RecoverPolicy == RecoverPolicyRestart {
-			go func() {
+			go func(event deathEvent) {
 				d := m.GetByDaemonID(event.daemonID)
 				if d == nil {
 					log.L.Warnf("Daemon %s is not found", event.daemonID)
@@ -283,7 +281,7 @@ func (m *Manager) handleDaemonDeathEvent() {
 						}
 					}
 				}
-			}()
+			}(ev)
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
 			log.L.Warnf("failover is not implemented now!")
 		}
@@ -518,13 +516,13 @@ func (m *Manager) DestroyBySnapshotID(id string) error {
 // FIXME: should handle the inconsistent status caused by any step
 // in the function that returns an error.
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
-	cleanup := func() error {
-		m.CleanUpDaemonResources(d)
-		if err := m.DeleteDaemon(d); err != nil {
-			return errors.Wrap(err, "delete daemon")
-		}
-		return nil
+	// Delete daemon from DB in the first place in case any of below steps fails
+	// ending up with daemon is residual in DB.
+	if err := m.DeleteDaemon(d); err != nil {
+		return errors.Wrapf(err, "delete daemon %s", d.ID)
 	}
+
+	defer m.CleanUpDaemonResources(d)
 
 	// if daemon is shared mount or use shared mount to do
 	// prefetch, we should only umount the daemon with api instead
@@ -534,15 +532,16 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		if err := d.SharedUmount(); err != nil {
 			return errors.Wrap(err, "shared umount on destroying daemon")
 		}
-		return cleanup()
+		return nil
 	}
-
-	log.L.Infof("umount remote snapshot, mountpoint %s", d.MountPoint())
 
 	if err := m.monitor.Unsubscribe(d.ID); err != nil {
 		log.L.Warnf("Unable to unsubscribe, daemon ID %s", d.ID)
 	}
 
+	log.L.Infof("Destroy nydusd daemon %s. Host mountpoint %s, snapshot %s", d.ID, d.HostMountPoint(), d.SnapshotID)
+
+	// Graceful nydusd termination will umount itself.
 	if err := d.Terminate(); err != nil {
 		log.L.Warnf("Fails to terminate daemon, %v", err)
 	}
@@ -551,16 +550,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		log.L.Warnf("Fails to wait for daemon, %v", err)
 	}
 
-	// for backward compatible, here umount <snapshot_dir>/<id>/fs and <snapshot_dir>/<id>/mnt
-	// if mountpoint not exist, Umount will return nil
-	mps := []string{d.MountPoint(), d.OldMountPoint()}
-	for _, mp := range mps {
-		if err := m.mounter.Umount(mp); err != nil && err != syscall.EINVAL {
-			return errors.Wrap(err, fmt.Sprintf("failed to umount mountpoint %s", mp))
-		}
-	}
-
-	return cleanup()
+	return nil
 }
 
 func (m *Manager) isOneDaemon() bool {
@@ -602,13 +592,34 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		m.daemonStates.RecoverDaemonState(d)
 
-		d.Once = &sync.Once{}
+		d.ResetClient()
+
+		defer func() {
+			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
+			// But the socket file may be residual and will be cleared before starting a new nydusd.
+			// So clear the client by assigning nil
+			d.ResetClient()
+		}()
+
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
 			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
 			recoveringDaemons = append(recoveringDaemons, d)
+
+			// It a coincidence that virtual daemon has the same socket path with shared daemon.
+			// Check if nydusd can be connected before clear their vestiges.
+			_, err := d.CheckStatus()
+			if err != nil {
+				log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+
+				if d.FsDriver == config.FsDriverFscache {
+					d.ClearVestige()
+				}
+			}
+
 			return nil
 		}
+
 		info, err := d.CheckStatus()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)

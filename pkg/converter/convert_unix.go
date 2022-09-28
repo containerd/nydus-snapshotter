@@ -592,89 +592,130 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 
 // ConvertHookFunc returns a function which will be used as a callback
 // called for each blob after conversion is done. The function only hooks
-// the manifest conversion and merges all the nydus blob layers into a
-// nydus bootstrap layer and update the image config.
+// the index conversion and the manifest conversion.
 func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
-		if !images.IsManifestType(newDesc.MediaType) {
-			// Only need to hook manifest conversion
+		switch {
+		case images.IsIndexType(newDesc.MediaType):
+			return convertIndex(ctx, cs, orgDesc, newDesc)
+		case images.IsManifestType(newDesc.MediaType):
+			return convertManifest(ctx, cs, newDesc, opt)
+		default:
 			return newDesc, nil
 		}
+	}
+}
 
-		// Convert manifest
-		var manifest ocispec.Manifest
-		manifestDesc := *newDesc
-		labels, err := readJSON(ctx, cs, &manifest, manifestDesc)
-		if err != nil {
-			return nil, errors.Wrap(err, "read manifest json")
-		}
-
-		// Append bootstrap layer to manifest.
-		bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
-			BuilderPath:   opt.BuilderPath,
-			WorkDir:       opt.WorkDir,
-			ChunkDictPath: opt.ChunkDictPath,
-			WithTar:       true,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "merge nydus layers")
-		}
-		bootstrapDiffID := digest.Digest(bootstrapDesc.Annotations[LayerAnnotationUncompressed])
-
-		if opt.Backend != nil {
-			// Only append nydus bootstrap layer into manifest, and do not put nydus
-			// blob layer into manifest if blob storage backend is specified.
-			manifest.Layers = []ocispec.Descriptor{*bootstrapDesc}
-		} else {
-			for idx, blobDesc := range blobDescs {
-				blobGCLabelKey := fmt.Sprintf("containerd.io/gc.ref.content.l.%d", idx)
-				labels[blobGCLabelKey] = blobDesc.Digest.String()
+// convertIndex modifies the original index by appending "nydus.remoteimage.v1"
+// to the Platform.OSFeatures of each modified manifest descriptors.
+func convertIndex(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
+	var orgIndex ocispec.Index
+	if _, err := readJSON(ctx, cs, &orgIndex, orgDesc); err != nil {
+		return nil, errors.Wrap(err, "read target image index json")
+	}
+	// isManifestModified is a function to check whether the manifest is modified.
+	isManifestModified := func(manifest ocispec.Descriptor) bool {
+		for _, oldManifest := range orgIndex.Manifests {
+			if manifest.Digest == oldManifest.Digest {
+				return false
 			}
-			// Affected by chunk dict, the blob list referenced by final bootstrap
-			// are from different layers, part of them are from original layers, part
-			// from chunk dict bootstrap, so we need to rewrite manifest's layers here.
-			manifest.Layers = append(blobDescs, *bootstrapDesc)
 		}
+		return true
+	}
 
-		// Update the gc label of bootstrap layer
-		bootstrapGCLabelKey := fmt.Sprintf("containerd.io/gc.ref.content.l.%d", len(manifest.Layers)-1)
-		labels[bootstrapGCLabelKey] = bootstrapDesc.Digest.String()
-
-		// Rewrite diff ids and remove useless annotation.
-		var config ocispec.Image
-		configLabels, err := readJSON(ctx, cs, &config, manifest.Config)
-		if err != nil {
-			return nil, errors.Wrap(err, "read image config")
+	var index ocispec.Index
+	indexLabels, err := readJSON(ctx, cs, &index, *newDesc)
+	if err != nil {
+		return nil, errors.Wrap(err, "read index json")
+	}
+	for i, manifest := range index.Manifests {
+		if !isManifestModified(manifest) {
+			// Skip the manifest which is not modified.
+			continue
 		}
-		config.RootFS.DiffIDs = []digest.Digest{}
-		for _, layer := range manifest.Layers {
+		manifest.Platform.OSFeatures = append(manifest.Platform.OSFeatures, ManifestOSFeatureNydus)
+		index.Manifests[i] = manifest
+	}
+	// Update image index in content store.
+	newIndexDesc, err := writeJSON(ctx, cs, index, *newDesc, indexLabels)
+	if err != nil {
+		return nil, errors.Wrap(err, "write index json")
+	}
+	return newIndexDesc, nil
+}
+
+// convertManifest merges all the nydus blob layers into a
+// nydus bootstrap layer, update the image config,
+// and modify the image manifest.
+func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
+	var manifest ocispec.Manifest
+	manifestDesc := *newDesc
+	manifestLabels, err := readJSON(ctx, cs, &manifest, manifestDesc)
+	if err != nil {
+		return nil, errors.Wrap(err, "read manifest json")
+	}
+
+	// Append bootstrap layer to manifest.
+	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
+		BuilderPath:   opt.BuilderPath,
+		WorkDir:       opt.WorkDir,
+		ChunkDictPath: opt.ChunkDictPath,
+		WithTar:       true,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "merge nydus layers")
+	}
+	if opt.Backend != nil {
+		// Only append nydus bootstrap layer into manifest, and do not put nydus
+		// blob layer into manifest if blob storage backend is specified.
+		manifest.Layers = []ocispec.Descriptor{*bootstrapDesc}
+	} else {
+		for idx, blobDesc := range blobDescs {
+			blobGCLabelKey := fmt.Sprintf("containerd.io/gc.ref.content.l.%d", idx)
+			manifestLabels[blobGCLabelKey] = blobDesc.Digest.String()
+		}
+		// Affected by chunk dict, the blob list referenced by final bootstrap
+		// are from different layers, part of them are from original layers, part
+		// from chunk dict bootstrap, so we need to rewrite manifest's layers here.
+		manifest.Layers = append(blobDescs, *bootstrapDesc)
+	}
+
+	// Update the gc label of bootstrap layer
+	bootstrapGCLabelKey := fmt.Sprintf("containerd.io/gc.ref.content.l.%d", len(manifest.Layers)-1)
+	manifestLabels[bootstrapGCLabelKey] = bootstrapDesc.Digest.String()
+
+	// Rewrite diff ids and remove useless annotation.
+	var config ocispec.Image
+	configLabels, err := readJSON(ctx, cs, &config, manifest.Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "read image config")
+	}
+	if opt.Backend != nil {
+		config.RootFS.DiffIDs = []digest.Digest{digest.Digest(bootstrapDesc.Annotations[LayerAnnotationUncompressed])}
+	} else {
+		config.RootFS.DiffIDs = make([]digest.Digest, 0, len(manifest.Layers))
+		for i, layer := range manifest.Layers {
 			config.RootFS.DiffIDs = append(config.RootFS.DiffIDs, digest.Digest(layer.Annotations[LayerAnnotationUncompressed]))
 			// Remove useless annotation.
-			delete(layer.Annotations, LayerAnnotationUncompressed)
+			delete(manifest.Layers[i].Annotations, LayerAnnotationUncompressed)
 		}
-		if opt.Backend != nil {
-			config.RootFS.DiffIDs = []digest.Digest{bootstrapDiffID}
-		} else {
-			config.RootFS.DiffIDs = append(config.RootFS.DiffIDs, bootstrapDiffID)
-		}
-
-		// Update image config in content store.
-		newConfigDesc, err := writeJSON(ctx, cs, config, manifest.Config, configLabels)
-		if err != nil {
-			return nil, errors.Wrap(err, "write image config")
-		}
-		manifest.Config = *newConfigDesc
-		// Update the config gc label
-		labels[configGCLabelKey] = newConfigDesc.Digest.String()
-
-		// Update image manifest in content store.
-		newManifestDesc, err := writeJSON(ctx, cs, manifest, manifestDesc, labels)
-		if err != nil {
-			return nil, errors.Wrap(err, "write manifest")
-		}
-
-		return newManifestDesc, nil
 	}
+	// Update image config in content store.
+	newConfigDesc, err := writeJSON(ctx, cs, config, manifest.Config, configLabels)
+	if err != nil {
+		return nil, errors.Wrap(err, "write image config")
+	}
+	manifest.Config = *newConfigDesc
+	// Update the config gc label
+	manifestLabels[configGCLabelKey] = newConfigDesc.Digest.String()
+
+	// Update image manifest in content store.
+	newManifestDesc, err := writeJSON(ctx, cs, manifest, manifestDesc, manifestLabels)
+	if err != nil {
+		return nil, errors.Wrap(err, "write manifest")
+	}
+
+	return newManifestDesc, nil
 }
 
 // MergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
@@ -763,6 +804,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 			MediaType: MediaTypeNydusBlob,
 			Annotations: map[string]string{
 				LayerAnnotationUncompressed: blobDigest.String(),
+				LayerAnnotationNydusBlob:    "true",
 			},
 		}
 		blobDescs = append(blobDescs, blobDesc)
