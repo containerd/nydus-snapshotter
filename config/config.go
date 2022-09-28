@@ -7,12 +7,17 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
+	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
+
+	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 )
 
 const (
@@ -27,6 +32,14 @@ const (
 	defaultNydusDaemonConfigPath string = "/etc/nydus/config.json"
 	nydusdBinaryName             string = "nydusd"
 	nydusImageBinaryName         string = "nydus-image"
+
+	defaultRootDir             = "/var/lib/containerd-nydus"
+	oldDefaultRootDir          = "/var/lib/containerd-nydus-grpc"
+	defaultRotateLogMaxSize    = 200 // 200 megabytes
+	defaultRotateLogMaxBackups = 10
+	defaultRotateLogMaxAge     = 0 // days
+	defaultRotateLogLocalTime  = true
+	defaultRotateLogCompress   = true
 )
 
 const (
@@ -67,6 +80,112 @@ type Config struct {
 	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
 	RotateLogCompress        bool          `toml:"log_rotate_compress"`
 	RecoverPolicy            string        `toml:"recover_policy"`
+}
+
+type SnapshotterConfig struct {
+	StartupFlag command.Args `toml:"snapshotter"`
+}
+
+func LoadShotterConfigFile(snapshotterConfigPath string) (*SnapshotterConfig, error) {
+	var config SnapshotterConfig
+	// get nydus-snapshotter configuration from specified path of toml file
+	if snapshotterConfigPath == "" {
+		return nil, errors.New("snapshotter config path cannot be specified")
+	}
+	tree, err := toml.LoadFile(snapshotterConfigPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to load snapshotter config file %q", snapshotterConfigPath)
+	}
+	if err = tree.Unmarshal(config); err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshal snapshotter config file %q", snapshotterConfigPath)
+	}
+	return &config, nil
+}
+
+func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
+	if startupFlag == nil {
+		return errors.New("no startup parameter provided")
+	}
+	var daemonCfg DaemonConfig
+	if err := LoadConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
+		return errors.Wrapf(err, "failed to load config file %q", startupFlag.ConfigPath)
+	}
+	cfg.DaemonCfg = daemonCfg
+
+	if startupFlag.ValidateSignature {
+		if startupFlag.PublicKeyFile == "" {
+			return errors.New("need to specify publicKey file for signature validation")
+		} else if _, err := os.Stat(startupFlag.PublicKeyFile); err != nil {
+			return errors.Wrapf(err, "failed to find publicKey file %q", startupFlag.PublicKeyFile)
+		}
+	}
+	cfg.PublicKeyFile = startupFlag.PublicKeyFile
+	cfg.ValidateSignature = startupFlag.ValidateSignature
+
+	// Give --shared-daemon higher priority
+	cfg.DaemonMode = startupFlag.DaemonMode
+	if startupFlag.SharedDaemon {
+		cfg.DaemonMode = DaemonModeShared
+	}
+	if startupFlag.FsDriver == FsDriverFscache && startupFlag.DaemonMode != DaemonModeShared {
+		return errors.New("`fscache` driver only supports `shared` daemon mode")
+	}
+
+	cfg.RootDir = startupFlag.RootDir
+	if len(cfg.RootDir) == 0 {
+		return errors.New("invalid empty root directory")
+	}
+
+	if startupFlag.RootDir == defaultRootDir {
+		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
+			if len(entries) != 0 {
+				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
+			}
+		}
+	}
+
+	cfg.CacheDir = startupFlag.CacheDir
+	if len(cfg.CacheDir) == 0 {
+		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
+	}
+
+	cfg.LogLevel = startupFlag.LogLevel
+	// Always let options from CLI override those from configuration file.
+	cfg.LogToStdout = startupFlag.LogToStdout
+	cfg.LogDir = startupFlag.LogDir
+	if len(cfg.LogDir) == 0 {
+		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
+	}
+	cfg.RotateLogMaxSize = defaultRotateLogMaxSize
+	cfg.RotateLogMaxBackups = defaultRotateLogMaxBackups
+	cfg.RotateLogMaxAge = defaultRotateLogMaxAge
+	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
+	cfg.RotateLogCompress = defaultRotateLogCompress
+
+	d, err := time.ParseDuration(startupFlag.GCPeriod)
+	if err != nil {
+		return errors.Wrapf(err, "parse gc period %v failed", startupFlag.GCPeriod)
+	}
+	cfg.GCPeriod = d
+
+	cfg.Address = startupFlag.Address
+	cfg.CleanupOnClose = startupFlag.CleanupOnClose
+	cfg.ConvertVpcRegistry = startupFlag.ConvertVpcRegistry
+	cfg.DisableCacheManager = startupFlag.DisableCacheManager
+	cfg.EnableMetrics = startupFlag.EnableMetrics
+	cfg.EnableStargz = startupFlag.EnableStargz
+	cfg.EnableNydusOverlayFS = startupFlag.EnableNydusOverlayFS
+	cfg.FsDriver = startupFlag.FsDriver
+	cfg.MetricsFile = startupFlag.MetricsFile
+	cfg.NydusdBinaryPath = startupFlag.NydusdBinaryPath
+	cfg.NydusImageBinaryPath = startupFlag.NydusImageBinaryPath
+	cfg.NydusdThreadNum = startupFlag.NydusdThreadNum
+	cfg.SyncRemove = startupFlag.SyncRemove
+	cfg.KubeconfigPath = startupFlag.KubeconfigPath
+	cfg.EnableKubeconfigKeychain = startupFlag.EnableKubeconfigKeychain
+	cfg.RecoverPolicy = startupFlag.RecoverPolicy
+
+	return cfg.SetupNydusBinaryPaths()
 }
 
 func (c *Config) FillupWithDefaults() error {

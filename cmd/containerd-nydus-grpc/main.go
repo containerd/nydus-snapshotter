@@ -37,10 +37,17 @@ func main() {
 				fmt.Println("Build time: ", BuildTimestamp)
 				return nil
 			}
-
-			var cfg config.Config
-			if err := command.Validate(flags.Args, &cfg); err != nil {
-				return errors.Wrap(err, "invalid argument")
+			var (
+				cfg config.Config
+			)
+			if snapshotterCfg, err := config.LoadShotterConfigFile(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
+				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
+					return errors.Wrap(err, "invalid configuration")
+				}
+			} else {
+				if err := config.SetStartupParameter(flags.Args, &cfg); err != nil {
+					return errors.Wrap(err, "invalid argument")
+				}
 			}
 
 			ctx := logging.WithContext()
