@@ -283,12 +283,15 @@ func (d *Daemon) initClient() error {
 }
 
 func (d *Daemon) ResetClient() {
+	d.Lock()
 	d.client = nil
 	d.Once = &sync.Once{}
+	d.Unlock()
 }
 
-func (d *Daemon) ensureClient(situation string) error {
-	var err error
+func (d *Daemon) ensureClient(situation string) (err error) {
+	d.Lock()
+	defer d.Unlock()
 
 	d.Once.Do(func() {
 		if d.client == nil {
@@ -303,7 +306,7 @@ func (d *Daemon) ensureClient(situation string) error {
 		return errors.Errorf("failed to %s, client not initialized", situation)
 	}
 
-	return err
+	return
 }
 
 func (d *Daemon) Terminate() error {
