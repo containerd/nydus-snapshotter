@@ -41,6 +41,8 @@ func (p DaemonRecoverPolicy) String() string {
 		return "restart"
 	case RecoverPolicyFailover:
 		return "failover"
+	case RecoverPolicyInvalid:
+		fallthrough
 	default:
 		return ""
 	}
