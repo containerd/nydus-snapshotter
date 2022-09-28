@@ -114,14 +114,14 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 }
 
 // Unpack a Nydus formatted tar stream into a directory.
-func unpackNydusTar(ctx context.Context, bootDst, blobDst string, ra content.ReaderAt) error {
+func unpackNydusTar(bootDst, blobDst string, ra content.ReaderAt) error {
 	boot, err := os.OpenFile(bootDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return errors.Wrapf(err, "write to bootstrap %s", bootDst)
 	}
 	defer boot.Close()
 
-	if err = unpackBootstrapFromNydusTar(ctx, ra, boot); err != nil {
+	if err = unpackBootstrapFromNydusTar(ra, boot); err != nil {
 		return errors.Wrap(err, "unpack bootstrap from nydus")
 	}
 
@@ -131,7 +131,7 @@ func unpackNydusTar(ctx context.Context, bootDst, blobDst string, ra content.Rea
 	}
 	defer blob.Close()
 
-	if err = unpackBlobFromNydusTar(ctx, ra, blob); err != nil {
+	if err = unpackBlobFromNydusTar(ra, blob); err != nil {
 		return errors.Wrap(err, "unpack blob from nydus")
 	}
 
@@ -143,7 +143,7 @@ func unpackNydusTar(ctx context.Context, bootDst, blobDst string, ra content.Rea
 // data as follows:
 //
 // `blob_data | blob_tar_header | bootstrap_data | bootstrap_tar_header`
-func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.Writer) error {
+func unpackBootstrapFromNydusTar(ra content.ReaderAt, target io.Writer) error {
 	cur := ra.Size()
 	reader := newSeekReader(ra)
 
@@ -202,7 +202,7 @@ func unpackBootstrapFromNydusTar(ctx context.Context, ra content.ReaderAt, targe
 // data as follows:
 //
 // `blob_data | blob_tar_header | bootstrap_data | bootstrap_tar_header`
-func unpackBlobFromNydusTar(ctx context.Context, ra content.ReaderAt, target io.Writer) error {
+func unpackBlobFromNydusTar(ra content.ReaderAt, target io.Writer) error {
 	cur := ra.Size()
 	reader := newSeekReader(ra)
 
@@ -352,7 +352,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	}
 	defer os.RemoveAll(workDir)
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, _ := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
 	for idx := range layers {
 		sourceBootstrapPaths = append(sourceBootstrapPaths, filepath.Join(workDir, layers[idx].Digest.Hex()))
@@ -367,7 +367,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 				}
 				defer bootstrap.Close()
 
-				if err := unpackBootstrapFromNydusTar(ctx, layer.ReaderAt, bootstrap); err != nil {
+				if err := unpackBootstrapFromNydusTar(layer.ReaderAt, bootstrap); err != nil {
 					return errors.Wrap(err, "unpack nydus tar")
 				}
 
@@ -429,7 +429,7 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 	defer os.RemoveAll(workDir)
 
 	bootPath, blobPath := filepath.Join(workDir, bootstrapNameInTar), filepath.Join(workDir, blobNameInTar)
-	if err = unpackNydusTar(ctx, bootPath, blobPath, ra); err != nil {
+	if err = unpackNydusTar(bootPath, blobPath, ra); err != nil {
 		return errors.Wrap(err, "unpack nydus tar")
 	}
 

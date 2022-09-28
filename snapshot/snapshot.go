@@ -539,7 +539,7 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 		}
 	}()
 
-	td, err = o.prepareDirectory(ctx, o.snapshotRoot(), kind)
+	td, err = o.prepareDirectory(o.snapshotRoot(), kind)
 	if err != nil {
 		return nil, storage.Snapshot{}, errors.Wrap(err, "failed to create prepare snapshot dir")
 	}
@@ -755,7 +755,7 @@ func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storag
 	}, nil
 }
 
-func (o *snapshotter) prepareDirectory(ctx context.Context, snapshotDir string, kind snapshots.Kind) (string, error) {
+func (o *snapshotter) prepareDirectory(snapshotDir string, kind snapshots.Kind) (string, error) {
 	td, err := os.MkdirTemp(snapshotDir, "new-")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create temp dir")

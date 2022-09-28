@@ -161,7 +161,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		// start daemon commit its state to DB and retrieving its state.
 		if d := fs.getSharedDaemon(); (d != nil && !d.Connected) || d == nil {
 			log.G(ctx).Infof("initializing the shared nydus daemon")
-			if _, err := fs.initSharedDaemon(); err != nil {
+			if err := fs.initSharedDaemon(); err != nil {
 				return nil, errors.Wrap(err, "start shared nydusd daemon")
 			}
 
@@ -715,27 +715,28 @@ func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
 // 1. Create a daemon instance
 // 2. Build command line
 // 3. Start daemon
-func (fs *Filesystem) initSharedDaemon() (_ *daemon.Daemon, retErr error) {
+func (fs *Filesystem) initSharedDaemon() (err error) {
 	d, err := fs.newSharedDaemon()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to init shared daemon")
+		return errors.Wrap(err, "failed to initialize shared daemon")
 	}
 
 	// FIXME: Daemon record should not be removed after starting daemon failure.
 	defer func() {
-		if retErr != nil {
+		if err != nil {
 			if err := fs.manager.DeleteDaemon(d); err != nil {
-				log.L.Errorf("%v", err)
+				log.L.Errorf("Start nydusd daemon error %v", err)
 			}
 		}
 	}()
 
 	if err := fs.manager.StartDaemon(d); err != nil {
-		return nil, errors.Wrap(err, "failed to start shared daemon")
+		return errors.Wrap(err, "failed to start shared daemon")
 	}
+
 	fs.sharedDaemon = d
 
-	return d, nil
+	return
 }
 
 func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
@@ -748,7 +749,7 @@ func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Da
 				log.L.Infof("daemon(ID=%s) is already running and reconnected", daemon.SharedNydusDaemonID)
 			}
 		} else {
-			_, err := fs.initSharedDaemon()
+			err := fs.initSharedDaemon()
 			if err != nil {
 				// AlreadyExists means someone else has initialized shared daemon.
 				if !errdefs.IsAlreadyExists(err) {

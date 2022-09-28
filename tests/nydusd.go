@@ -94,7 +94,7 @@ func makeConfig(conf NydusdConfig) error {
 }
 
 // Wait until Nydusd ready by checking daemon state RUNNING
-func checkReady(ctx context.Context, sock string) (<-chan bool, error) {
+func checkReady(ctx context.Context, sock string) <-chan bool {
 	ready := make(chan bool)
 
 	transport := &http.Transport{
@@ -146,7 +146,7 @@ func checkReady(ctx context.Context, sock string) (<-chan bool, error) {
 		}
 	}()
 
-	return ready, nil
+	return ready
 }
 
 func NewNydusd(conf NydusdConfig) (*Nydusd, error) {
@@ -186,10 +186,7 @@ func (nydusd *Nydusd) Mount() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ready, err := checkReady(ctx, nydusd.APISockPath)
-	if err != nil {
-		return errors.New("check Nydusd state")
-	}
+	ready := checkReady(ctx, nydusd.APISockPath)
 
 	select {
 	case err := <-runErr:
