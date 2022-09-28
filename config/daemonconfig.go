@@ -133,7 +133,7 @@ func LoadConfig(configFile string, cfg *DaemonConfig) error {
 func SaveConfig(c interface{}, configFile string) error {
 	b, err := json.Marshal(c)
 	if err != nil {
-		return nil
+		return err
 	}
 	return os.WriteFile(configFile, b, 0755)
 }

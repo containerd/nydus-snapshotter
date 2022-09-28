@@ -171,7 +171,7 @@ func (r *Resolver) resolve(ref, digest string, keychain authn.Keychain) (*io.Sec
 		defer cancel()
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return 0, nil
+			return 0, err
 		}
 		req.Close = false
 		r := fmt.Sprintf("bytes=%d-%d", offset, offset+int64(length)-1)
@@ -198,7 +198,7 @@ func getSize(url string, tr http.RoundTripper) (int64, error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 	req.Close = false
 	req.Header.Set("Range", "bytes=0-0")
