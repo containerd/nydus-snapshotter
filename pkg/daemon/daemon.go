@@ -278,6 +278,7 @@ func (d *Daemon) initClient() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nydus client")
 	}
+
 	d.client = client
 	return nil
 }

@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	infoEndpoint   = "/api/v1/daemon"
-	mountEndpoint  = "/api/v1/mount"
-	metricEndpoint = "/api/v1/metrics"
+	endpointDaemonInfo = "/api/v1/daemon"
+	endpointMount      = "/api/v1/mount"
+	endpointMetrics    = "/api/v1/metrics"
 
 	defaultHTTPClientTimeout = 30 * time.Second
 	contentType              = "application/json"
@@ -62,7 +62,7 @@ func NewNydusClient(sock string) (Interface, error) {
 }
 
 func (c *NydusClient) CheckStatus() (*model.DaemonInfo, error) {
-	addr := fmt.Sprintf("http://unix%s", infoEndpoint)
+	addr := fmt.Sprintf("http://unix%s", endpointDaemonInfo)
 	resp, err := c.httpClient.Get(addr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to do HTTP GET from %s", addr)
@@ -80,7 +80,7 @@ func (c *NydusClient) CheckStatus() (*model.DaemonInfo, error) {
 }
 
 func (c *NydusClient) Umount(sharedMountPoint string) error {
-	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", mountEndpoint, sharedMountPoint)
+	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", endpointMount, sharedMountPoint)
 	req, err := http.NewRequest(http.MethodDelete, requestURL, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create umount request")
@@ -100,9 +100,9 @@ func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetri
 	var getStatURL string
 
 	if sharedDaemon {
-		getStatURL = fmt.Sprintf("http://unix%s?id=/%s/fs", metricEndpoint, sid)
+		getStatURL = fmt.Sprintf("http://unix%s?id=/%s/fs", endpointMetrics, sid)
 	} else {
-		getStatURL = fmt.Sprintf("http://unix%s", metricEndpoint)
+		getStatURL = fmt.Sprintf("http://unix%s", endpointMetrics)
 	}
 
 	req, err := http.NewRequest(http.MethodGet, getStatURL, nil)
@@ -126,7 +126,7 @@ func (c *NydusClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetri
 }
 
 func (c *NydusClient) SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error {
-	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", mountEndpoint, sharedMountPoint)
+	requestURL := fmt.Sprintf("http://unix%s?mountpoint=%s", endpointMount, sharedMountPoint)
 	content, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get content of daemon config %s", daemonConfig)
