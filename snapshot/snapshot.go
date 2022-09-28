@@ -825,6 +825,9 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	if err := os.RemoveAll(dir); err != nil {
 		return errors.Wrapf(err, "failed to remove directory %q", dir)
 	}
+
+	log.L.Infof("Delete snapshot directory %s", dir)
+
 	return nil
 }
 

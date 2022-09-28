@@ -403,11 +403,14 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	if d.IsMultipleDaemon() {
 		resource = append(resource, d.SocketDir)
 	}
+
 	for _, dir := range resource {
 		if err := os.RemoveAll(dir); err != nil {
 			log.L.Errorf("failed to remove dir %s err %v", dir, err)
 		}
 	}
+
+	log.L.Infof("Deleting resources %v", resource)
 }
 
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
