@@ -275,6 +275,9 @@ func (m *Manager) handleDaemonDeathEvent() {
 					daemons := m.daemonStates.List()
 					for _, d := range daemons {
 						if d.ID != daemon.SharedNydusDaemonID {
+							// FIXME: Virtual daemon has a separated client, so it skips checking unix socket's existence.
+							// This is really hacky, but I don't have better solution until rafs object is decoupled from daemon.
+							d.ResetClient()
 							if err := d.SharedMount(); err != nil {
 								log.L.Warnf("fail to mount rafs instance, %v", err)
 							}
