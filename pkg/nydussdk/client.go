@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,6 +31,9 @@ const (
 	endpointMount      = "/api/v1/mount"
 	endpointMetrics    = "/api/v1/metrics"
 	endpointBlobs      = "/api/v2/blobs"
+	endpointTakeOver   = "/api/v1/daemon/fuse/takeover"
+	endpointSendFd     = "/api/v1/daemon/fuse/sendfd"
+	endpointStart      = "/api/v1/daemon/start"
 
 	defaultHTTPClientTimeout = 30 * time.Second
 	jsonContentType          = "application/json"
@@ -42,6 +46,9 @@ type Interface interface {
 	FscacheUnbindBlob(daemonConfig string) error
 	Umount(sharedMountPoint string) error
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
+	TakeOver() error
+	SendFd() error
+	Start() error
 }
 
 type NydusdClient struct {
@@ -58,6 +65,25 @@ func (c *NydusdClient) url(path string, query query) (url string) {
 	}
 
 	return
+}
+
+func (c *NydusdClient) simpleRequest(method string, url string) error {
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return errors.Wrap(err, "construct request")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if succeeded(resp) {
+		return nil
+	}
+
+	return parseErrorMessage(resp)
 }
 
 func succeeded(resp *http.Response) bool {
@@ -260,4 +286,19 @@ func (c *NydusdClient) FscacheUnbindBlob(daemonConfig string) error {
 	url := c.url(endpointBlobs, query)
 
 	return c.simpleRequest(http.MethodDelete, url)
+}
+
+func (c *NydusdClient) TakeOver() error {
+	url := c.url(endpointTakeOver, query{})
+	return c.simpleRequest(http.MethodPut, url)
+}
+
+func (c *NydusdClient) SendFd() error {
+	url := c.url(endpointSendFd, query{})
+	return c.simpleRequest(http.MethodPut, url)
+}
+
+func (c *NydusdClient) Start() error {
+	url := c.url(endpointStart, query{})
+	return c.simpleRequest(http.MethodPut, url)
 }
