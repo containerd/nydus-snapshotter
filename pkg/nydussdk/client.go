@@ -109,7 +109,7 @@ func parseErrorMessage(resp *http.Response) error {
 		resp.StatusCode, errMessage.Code, errMessage.Message)
 }
 
-func buildTransport(sock string) (http.RoundTripper, error) {
+func buildTransport(sock string) http.RoundTripper {
 	return &http.Transport{
 		MaxIdleConns:          10,
 		IdleConnTimeout:       10 * time.Second,
@@ -121,7 +121,7 @@ func buildTransport(sock string) (http.RoundTripper, error) {
 			}
 			return dialer.DialContext(ctx, "unix", sock)
 		},
-	}, nil
+	}
 }
 
 func WaitUntilSocketExisted(sock string) error {
@@ -147,10 +147,8 @@ func NewNydusClient(sock string) (Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-	transport, err := buildTransport(sock)
-	if err != nil {
-		return nil, errors.Wrap(err, "build nydusd http client")
-	}
+	transport := buildTransport(sock)
+
 	return &NydusdClient{
 		httpClient: &http.Client{
 			Timeout:   defaultHTTPClientTimeout,
