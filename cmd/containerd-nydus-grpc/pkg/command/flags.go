@@ -15,6 +15,7 @@ const (
 	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 	defaultLogLevel          = logrus.InfoLevel
 	defaultRootDir           = "/var/lib/containerd-nydus"
+	defaultApiSocket         = "/var/lib/containerd-nydus/api.sock"
 	defaultGCPeriod          = "24h"
 	defaultPublicKey         = "/signing/nydus-image-signing-public.key"
 	DefaultDaemonMode string = "multiple"
