@@ -158,15 +158,21 @@ func (d *Daemon) State() (model.DaemonState, error) {
 	return info.DaemonState(), nil
 }
 
-func (d *Daemon) WaitUntilRunning() error {
+// Waits for some time until daemon reaches the expected state.
+// For example:
+//  1. INIT
+//  2. READY
+//  3. RUNNING
+func (d *Daemon) WaitUntilState(expected model.DaemonState) error {
 	return retry.Do(func() error {
 		state, err := d.State()
 		if err != nil {
-			return errors.Wrap(err, "wait until daemon is READY")
+			return errors.Wrapf(err, "wait until daemon is %s", expected)
 		}
 
-		if state != model.DaemonStateRunning {
-			return errors.Errorf("daemon %s is not running yet, current state %s", d.ID, state)
+		if state != expected {
+			return errors.Errorf("daemon %s is not %s yet, current state %s",
+				d.ID, expected, state)
 		}
 
 		return nil

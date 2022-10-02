@@ -61,7 +61,7 @@ func TestNydusClient_CheckStatus(t *testing.T) {
 	require.Nil(t, err)
 	info, err := client.GetDaemonInfo()
 	require.Nil(t, err)
-	assert.True(t, info.Running())
+	assert.Equal(t, info.DaemonState(), model.DaemonStateRunning)
 	assert.Equal(t, "testid", info.ID)
 	assert.Equal(t, BTI, info.Version)
 }
