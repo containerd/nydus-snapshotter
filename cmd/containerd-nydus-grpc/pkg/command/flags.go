@@ -15,7 +15,7 @@ const (
 	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 	defaultLogLevel          = logrus.InfoLevel
 	defaultRootDir           = "/var/lib/containerd-nydus"
-	defaultApiSocket         = "/var/lib/containerd-nydus/api.sock"
+	defaultAPISocket         = "/var/lib/containerd-nydus/api.sock"
 	defaultGCPeriod          = "24h"
 	defaultPublicKey         = "/signing/nydus-image-signing-public.key"
 	DefaultDaemonMode string = "multiple"
@@ -51,6 +51,7 @@ type Args struct {
 	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
 	RecoverPolicy            string `toml:"recover_policy"`
 	PrintVersion             bool   `toml:"-"`
+	APISocket                string
 }
 
 type Flags struct {
@@ -212,6 +213,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "validate-signature",
 			Usage:       "whether to validate integrity of image bootstrap",
 			Destination: &args.ValidateSignature,
+		},
+		&cli.StringFlag{
+			Name:        "api-socket",
+			Value:       defaultAPISocket,
+			Usage:       "(experimental) unix domain socket path to serve HTTP-based system management",
+			Destination: &args.APISocket,
 		},
 		&cli.StringFlag{
 			Name:        "kubeconfig-path",
