@@ -41,6 +41,8 @@ func (p DaemonRecoverPolicy) String() string {
 		return "restart"
 	case RecoverPolicyFailover:
 		return "failover"
+	case RecoverPolicyInvalid:
+		fallthrough
 	default:
 		return ""
 	}
@@ -472,7 +474,9 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		if nydusdThreadNum != "" {
 			args = append(args, "--thread-num", nydusdThreadNum)
 		}
-		if d.IsMultipleDaemon() {
+
+		switch {
+		case d.IsMultipleDaemon():
 			bootstrap, err := d.BootstrapFile()
 			if err != nil {
 				return nil, err
@@ -485,12 +489,12 @@ func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 				"--mountpoint",
 				d.MountPoint(),
 			)
-		} else if m.isOneDaemon() {
+		case m.isOneDaemon():
 			args = append(args,
 				"--mountpoint",
 				*d.RootMountPoint,
 			)
-		} else {
+		default:
 			return nil, errors.Errorf("DaemonMode %s doesn't have daemon configured", d.DaemonMode)
 		}
 	}

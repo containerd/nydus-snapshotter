@@ -96,7 +96,7 @@ func splitBlobByPartNum(blobSize int64, chunkNum int) ([]oss.FileChunk, error) {
 }
 
 // Upload nydus blob to oss storage backend.
-func (b *OSSBackend) push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
+func (b *OSSBackend) push(ra content.ReaderAt, blobDigest digest.Digest) error {
 	blobID := blobDigest.Hex()
 	blobObjectKey := b.objectPrefix + blobID
 
@@ -169,7 +169,7 @@ func (b *OSSBackend) push(ctx context.Context, ra content.ReaderAt, blobDigest d
 func (b *OSSBackend) Push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
 	backoff := time.Second
 	for {
-		err := b.push(ctx, ra, blobDigest)
+		err := b.push(ra, blobDigest)
 		if err != nil {
 			select {
 			case <-ctx.Done():

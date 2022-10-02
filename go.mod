@@ -1,6 +1,6 @@
 module github.com/containerd/nydus-snapshotter
 
-go 1.17
+go 1.18
 
 require (
 	github.com/KarpelesLab/reflink v0.0.2

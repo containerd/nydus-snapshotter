@@ -539,7 +539,7 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 		}
 	}()
 
-	td, err = o.prepareDirectory(ctx, o.snapshotRoot(), kind)
+	td, err = o.prepareDirectory(o.snapshotRoot(), kind)
 	if err != nil {
 		return nil, storage.Snapshot{}, errors.Wrap(err, "failed to create prepare snapshot dir")
 	}
@@ -687,12 +687,12 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
 	// base64 to filter easily in `nydus-overlayfs`
 	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
-	options := append(overlayOptions, opt)
+	overlayOptions = append(overlayOptions, opt)
 	return []mount.Mount{
 		{
 			Type:    "fuse.nydus-overlayfs",
 			Source:  "overlay",
-			Options: options,
+			Options: overlayOptions,
 		},
 	}, nil
 }
@@ -755,7 +755,7 @@ func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storag
 	}, nil
 }
 
-func (o *snapshotter) prepareDirectory(ctx context.Context, snapshotDir string, kind snapshots.Kind) (string, error) {
+func (o *snapshotter) prepareDirectory(snapshotDir string, kind snapshots.Kind) (string, error) {
 	td, err := os.MkdirTemp(snapshotDir, "new-")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create temp dir")

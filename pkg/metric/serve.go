@@ -98,7 +98,7 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	return &s, nil
 }
 
-func (s *Server) collectDaemonMetric(ctx context.Context) error {
+func (s *Server) collectDaemonMetric(ctx context.Context) {
 	// TODO(renzhen): make collect interval time configurable
 	timer := time.NewTicker(time.Duration(1) * time.Minute)
 
@@ -127,8 +127,6 @@ outer:
 			break outer
 		}
 	}
-
-	return nil
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -143,9 +141,8 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	// Process manager starts to collect metrics from daemons periodically.
 	go func() {
-		if err := s.collectDaemonMetric(ctx); err != nil {
-			log.G(ctx).Errorf("failed to collect daemon metric, err: %v", err)
-		}
+		s.collectDaemonMetric(ctx)
+		// log.G(ctx).Errorf("failed to collect daemon metric, err: %v", err)
 	}()
 
 	// Shutdown the server when stop is closed

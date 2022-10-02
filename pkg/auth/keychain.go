@@ -35,7 +35,7 @@ type PassKeyChain struct {
 func FromBase64(str string) (PassKeyChain, error) {
 	decoded, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
-		return emptyPassKeyChain, nil
+		return emptyPassKeyChain, err
 	}
 	pair := strings.Split(string(decoded), sep)
 	if len(pair) != 2 {

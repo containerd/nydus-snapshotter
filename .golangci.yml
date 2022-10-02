@@ -1,9 +1,30 @@
 # https://golangci-lint.run/usage/configuration#config-file
 
+run:
+  concurrency: 4
+  deadline: 5m
+  issues-exit-code: 1
+  tests: true
+  skip-dirs:
+    - misc
+
+linters-settings:
+  #   govet:
+  #     check-shadowing: true
+  #     enable:
+  #       - fieldalignment
+  funlen:
+    # Checks the number of lines in a function.
+    # If lower than 0, disable the check.
+    # Default: 60
+    lines: 100
+    # Checks the number of statements in a function.
+    # If lower than 0, disable the check.
+    # Default: 40
+    statements: 80
+
 linters:
   enable:
-    - structcheck
-    - varcheck
     - staticcheck
     - unconvert
     - gofmt
@@ -13,11 +34,21 @@ linters:
     - vet
     - unused
     - misspell
+    - bodyclose
+    # - cyclop
+    - dogsled
+    # - nilnil
+    - unparam
+    - unused
+    - nilerr
+    # - goerr113
+    - exportloopref
+    # - gosec
+    # - govet
+    - gocritic
+    # - prealloc
+    - tenv
+    # - funlen
+    - exhaustive
   disable:
     - errcheck
-
-run:
-  deadline: 4m
-  skip-dirs:
-    - misc
-

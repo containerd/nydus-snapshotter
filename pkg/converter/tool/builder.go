@@ -10,7 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -98,7 +98,7 @@ func Pack(option PackOption) error {
 		defer cancel()
 	}
 
-	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
+	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
 	cmd.Stdout = logger.Writer()
@@ -143,7 +143,7 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 		ctx, cancel = context.WithTimeout(ctx, *option.Timeout)
 		defer cancel()
 	}
-	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
+	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
 	cmd.Stdout = logger.Writer()
@@ -159,7 +159,7 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 		return nil, errors.Wrap(err, "run merge command")
 	}
 
-	outputBytes, err := ioutil.ReadFile(option.OutputJSONPath)
+	outputBytes, err := os.ReadFile(option.OutputJSONPath)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read file %s", option.OutputJSONPath)
 	}
@@ -198,7 +198,7 @@ func Unpack(option UnpackOption) error {
 		defer cancel()
 	}
 
-	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args[:], " "))
+	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
 	cmd.Stdout = logger.Writer()
