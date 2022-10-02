@@ -59,7 +59,7 @@ func TestNydusClient_CheckStatus(t *testing.T) {
 	defer dispose()
 	client, err := NewNydusClient(sock)
 	require.Nil(t, err)
-	info, err := client.CheckStatus()
+	info, err := client.GetDaemonInfo()
 	require.Nil(t, err)
 	assert.True(t, info.Running())
 	assert.Equal(t, "testid", info.ID)

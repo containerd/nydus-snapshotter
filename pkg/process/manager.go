@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
+	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
@@ -618,7 +619,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 			// It a coincidence that virtual daemon has the same socket path with shared daemon.
 			// Check if nydusd can be connected before clear their vestiges.
-			_, err := d.CheckStatus()
+			_, err := d.State()
 			if err != nil {
 				log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 
@@ -630,7 +631,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 			return nil
 		}
 
-		info, err := d.CheckStatus()
+		state, err := d.State()
 		if err != nil {
 			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
 
@@ -650,8 +651,8 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		d.Connected = true
 
-		if !info.Running() {
-			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", info)
+		if state != model.DaemonStateRunning {
+			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", state)
 			return nil
 		}
 

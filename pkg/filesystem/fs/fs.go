@@ -582,7 +582,7 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 		return errdefs.ErrNotFound
 	}
 
-	return d.WaitUntilReady()
+	return d.WaitUntilRunning()
 }
 
 func (fs *Filesystem) DelSnapshot(imageID string) error {

@@ -40,7 +40,7 @@ const (
 )
 
 type Interface interface {
-	CheckStatus() (*model.DaemonInfo, error)
+	GetDaemonInfo() (*model.DaemonInfo, error)
 	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
 	FscacheBindBlob(daemonConfig string) error
 	FscacheUnbindBlob(daemonConfig string) error
@@ -157,8 +157,9 @@ func NewNydusClient(sock string) (Interface, error) {
 	}, nil
 }
 
-func (c *NydusdClient) CheckStatus() (*model.DaemonInfo, error) {
+func (c *NydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
 	url := c.url(endpointDaemonInfo, query{})
+
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return nil, errors.Wrapf(err, "get daemon info %s", url)

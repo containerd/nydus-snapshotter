@@ -141,23 +141,34 @@ func (d *Daemon) LogFile() string {
 	return filepath.Join(d.LogDir, "nydusd.log")
 }
 
-func (d *Daemon) CheckStatus() (*model.DaemonInfo, error) {
-	if err := d.ensureClient("check status"); err != nil {
-		return nil, err
+// Nydusd daemon current working state by requesting to nydusd:
+// 1. INIT
+// 2. READY: All needed resources are ready.
+// 3. RUNNING
+func (d *Daemon) State() (model.DaemonState, error) {
+	if err := d.ensureClient("getting daemon state"); err != nil {
+		return model.DaemonStateUnknown, err
 	}
 
-	return d.client.CheckStatus()
+	info, err := d.client.GetDaemonInfo()
+	if err != nil {
+		return model.DaemonStateUnknown, err
+	}
+
+	return info.DaemonState(), nil
 }
 
-func (d *Daemon) WaitUntilReady() error {
+func (d *Daemon) WaitUntilRunning() error {
 	return retry.Do(func() error {
-		info, err := d.CheckStatus()
+		state, err := d.State()
 		if err != nil {
-			return errors.Wrap(err, "wait until daemon ready by checking status")
+			return errors.Wrap(err, "wait until daemon is READY")
 		}
-		if !info.Running() {
-			return fmt.Errorf("daemon %s is not ready: %v", d.ID, info)
+
+		if state != model.DaemonStateRunning {
+			return errors.Errorf("daemon %s is not running yet, current state %s", d.ID, state)
 		}
+
 		return nil
 	},
 		retry.Attempts(20), // totally wait for 2 seconds, should be enough
