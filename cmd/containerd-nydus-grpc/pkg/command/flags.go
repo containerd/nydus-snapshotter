@@ -7,61 +7,49 @@
 package command
 
 import (
-	"os"
-	"path/filepath"
-	"time"
-
-	"github.com/containerd/containerd/log"
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
-	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
 
 const (
-	defaultAddress             = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultLogLevel            = logrus.InfoLevel
-	defaultRootDir             = "/var/lib/containerd-nydus"
-	oldDefaultRootDir          = "/var/lib/containerd-nydus-grpc"
-	defaultGCPeriod            = "24h"
-	defaultPublicKey           = "/signing/nydus-image-signing-public.key"
-	defaultRotateLogMaxSize    = 200 // 200 megabytes
-	defaultRotateLogMaxBackups = 10
-	defaultRotateLogMaxAge     = 0 // days
-	defaultRotateLogLocalTime  = true
-	defaultRotateLogCompress   = true
+	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+	defaultLogLevel          = logrus.InfoLevel
+	defaultRootDir           = "/var/lib/containerd-nydus"
+	defaultGCPeriod          = "24h"
+	defaultPublicKey         = "/signing/nydus-image-signing-public.key"
+	DefaultDaemonMode string = "multiple"
+	FsDriverFusedev   string = "fusedev"
 )
 
 type Args struct {
-	Address                  string
-	LogLevel                 string
-	LogDir                   string
-	ConfigPath               string
-	RootDir                  string
-	CacheDir                 string
-	GCPeriod                 string
-	ValidateSignature        bool
-	PublicKeyFile            string
-	ConvertVpcRegistry       bool
-	NydusdBinaryPath         string
-	NydusImageBinaryPath     string
-	SharedDaemon             bool
-	DaemonMode               string
-	FsDriver                 string
-	SyncRemove               bool
-	EnableMetrics            bool
-	MetricsFile              string
-	EnableStargz             bool
-	DisableCacheManager      bool
-	LogToStdout              bool
-	EnableNydusOverlayFS     bool
-	NydusdThreadNum          int
-	CleanupOnClose           bool
-	KubeconfigPath           string
-	EnableKubeconfigKeychain bool
-	RecoverPolicy            string
-	PrintVersion             bool
+	Address                  string `toml:"address"`
+	LogLevel                 string `toml:"log_level"`
+	LogDir                   string `toml:"log_dir"`
+	ConfigPath               string `toml:"config_path"`
+	RootDir                  string `toml:"root_dir"`
+	CacheDir                 string `toml:"cache_dir"`
+	GCPeriod                 string `toml:"gc_period"`
+	ValidateSignature        bool   `toml:"validate_signature"`
+	PublicKeyFile            string `toml:"public_key_file"`
+	ConvertVpcRegistry       bool   `toml:"convert_vpc_registry"`
+	NydusdBinaryPath         string `toml:"nydusd_binary_path"`
+	NydusImageBinaryPath     string `toml:"nydus_image_binary_path"`
+	SharedDaemon             bool   `toml:"-"`
+	DaemonMode               string `toml:"daemon_mode"`
+	FsDriver                 string `toml:"fs_driver"`
+	SyncRemove               bool   `toml:"sync_remove"`
+	EnableMetrics            bool   `toml:"enable_metrics"`
+	MetricsFile              string `toml:"metrics_file"`
+	EnableStargz             bool   `toml:"enable_stargz"`
+	DisableCacheManager      bool   `toml:"disable_cache_manager"`
+	LogToStdout              bool   `toml:"log_to_stdout"`
+	EnableNydusOverlayFS     bool   `toml:"enable_nydus_overlay_fs"`
+	NydusdThreadNum          int    `toml:"nydusd_thread_num"`
+	CleanupOnClose           bool   `toml:"cleanup_on_close"`
+	KubeconfigPath           string `toml:"kubeconfig_path"`
+	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
+	RecoverPolicy            string `toml:"recover_policy"`
+	PrintVersion             bool   `toml:"-"`
 }
 
 type Flags struct {
@@ -109,7 +97,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
-			Value:       config.DefaultDaemonMode,
+			Value:       DefaultDaemonMode,
 			Aliases:     []string{"M"},
 			Usage:       "set daemon working `MODE`, one of \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
@@ -136,7 +124,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
-			Value:       config.FsDriverFusedev,
+			Value:       FsDriverFusedev,
 			Aliases:     []string{"daemon-backend"},
 			Usage:       "backend `DRIVER` to serve the filesystem, one of \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
@@ -245,87 +233,4 @@ func NewFlags() *Flags {
 		Args: &args,
 		F:    buildFlags(&args),
 	}
-}
-
-func Validate(args *Args, cfg *config.Config) error {
-	var daemonCfg config.DaemonConfig
-	if err := config.LoadConfig(args.ConfigPath, &daemonCfg); err != nil {
-		return errors.Wrapf(err, "failed to load config file %q", args.ConfigPath)
-	}
-	cfg.DaemonCfg = daemonCfg
-
-	if args.ValidateSignature {
-		if args.PublicKeyFile == "" {
-			return errors.New("need to specify publicKey file for signature validation")
-		} else if _, err := os.Stat(args.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
-		}
-	}
-	cfg.PublicKeyFile = args.PublicKeyFile
-	cfg.ValidateSignature = args.ValidateSignature
-
-	// Give --shared-daemon higher priority
-	cfg.DaemonMode = args.DaemonMode
-	if args.SharedDaemon {
-		cfg.DaemonMode = config.DaemonModeShared
-	}
-	if args.FsDriver == config.FsDriverFscache && args.DaemonMode != config.DaemonModeShared {
-		return errors.New("`fscache` driver only supports `shared` daemon mode")
-	}
-
-	cfg.RootDir = args.RootDir
-	if len(cfg.RootDir) == 0 {
-		return errors.New("invalid empty root directory")
-	}
-
-	if args.RootDir == defaultRootDir {
-		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
-			if len(entries) != 0 {
-				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
-			}
-		}
-	}
-
-	cfg.CacheDir = args.CacheDir
-	if len(cfg.CacheDir) == 0 {
-		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
-	}
-
-	cfg.LogLevel = args.LogLevel
-	// Always let options from CLI override those from configuration file.
-	cfg.LogToStdout = args.LogToStdout
-	cfg.LogDir = args.LogDir
-	if len(cfg.LogDir) == 0 {
-		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
-	}
-	cfg.RotateLogMaxSize = defaultRotateLogMaxSize
-	cfg.RotateLogMaxBackups = defaultRotateLogMaxBackups
-	cfg.RotateLogMaxAge = defaultRotateLogMaxAge
-	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
-	cfg.RotateLogCompress = defaultRotateLogCompress
-
-	d, err := time.ParseDuration(args.GCPeriod)
-	if err != nil {
-		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
-	}
-	cfg.GCPeriod = d
-
-	cfg.Address = args.Address
-	cfg.CleanupOnClose = args.CleanupOnClose
-	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
-	cfg.DisableCacheManager = args.DisableCacheManager
-	cfg.EnableMetrics = args.EnableMetrics
-	cfg.EnableStargz = args.EnableStargz
-	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
-	cfg.FsDriver = args.FsDriver
-	cfg.MetricsFile = args.MetricsFile
-	cfg.NydusdBinaryPath = args.NydusdBinaryPath
-	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
-	cfg.NydusdThreadNum = args.NydusdThreadNum
-	cfg.SyncRemove = args.SyncRemove
-	cfg.KubeconfigPath = args.KubeconfigPath
-	cfg.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
-	cfg.RecoverPolicy = args.RecoverPolicy
-
-	return cfg.SetupNydusBinaryPaths()
 }
