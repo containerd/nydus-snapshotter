@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,8 +10,6 @@ package process
 import (
 	"context"
 	"os"
-	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/log"
@@ -218,7 +217,8 @@ type Manager struct {
 	store            Store
 	nydusdBinaryPath string
 	daemonMode       string
-	cacheDir         string
+	// Where nydusd stores cache files for fscache driver
+	cacheDir string
 	// Daemon states are inserted when creating snapshots and nydusd and
 	// removed when snapshot is deleted and nydusd is stopped. The persisted
 	// daemon state should be updated respectively. For fetch daemon state, it
@@ -413,107 +413,6 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	}
 
 	log.L.Infof("Deleting resources %v", resource)
-}
-
-func (m *Manager) StartDaemon(d *daemon.Daemon) error {
-	cmd, err := m.buildStartCommand(d)
-	if err != nil {
-		return errors.Wrapf(err, "failed to create command for daemon %s", d.ID)
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	d.Lock()
-	defer d.Unlock()
-
-	d.Pid = cmd.Process.Pid
-
-	// Update both states cache and DB
-	// TODO: Is it right to commit daemon before nydusd successfully started?
-	// And it brings extra latency of accessing DB. Only write daemon record to
-	// DB when nydusd is started?
-	err = m.UpdateDaemon(d)
-	if err != nil {
-		// Nothing we can do, just ignore it for now
-		log.L.Errorf("fail to update daemon info (%+v) to DB: %v", d, err)
-	}
-
-	// If nydusd fails startup, manager can't subscribe its death event.
-	// So we can ignore the subscribing error.
-	go func() {
-		if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
-			log.L.Errorf("Nydusd %s probably not started", d.ID)
-			return
-		}
-
-		// TODO: It's better to subscribe death event when snapshotter
-		// has set daemon's state to RUNNING or READY.
-		if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
-			log.L.Errorf("Nydusd %s probably not started", d.ID)
-		}
-	}()
-
-	return nil
-}
-
-func (m *Manager) buildStartCommand(d *daemon.Daemon) (*exec.Cmd, error) {
-	var args []string
-	if d.FsDriver == config.FsDriverFscache {
-		args = []string{
-			"singleton",
-			"--fscache", m.cacheDir,
-		}
-		nydusdThreadNum := d.NydusdThreadNum()
-		if nydusdThreadNum != "" {
-			args = append(args, "--fscache-threads", nydusdThreadNum)
-		}
-	} else {
-		args = []string{"fuse"}
-		nydusdThreadNum := d.NydusdThreadNum()
-		if nydusdThreadNum != "" {
-			args = append(args, "--thread-num", nydusdThreadNum)
-		}
-
-		switch {
-		case d.IsMultipleDaemon():
-			bootstrap, err := d.BootstrapFile()
-			if err != nil {
-				return nil, err
-			}
-			args = append(args,
-				"--config",
-				d.ConfigFile(),
-				"--bootstrap",
-				bootstrap,
-				"--mountpoint",
-				d.MountPoint(),
-			)
-		case m.isOneDaemon():
-			args = append(args,
-				"--mountpoint",
-				*d.RootMountPoint,
-			)
-		default:
-			return nil, errors.Errorf("DaemonMode %s doesn't have daemon configured", d.DaemonMode)
-		}
-	}
-
-	args = append(args, "--apisock", d.GetAPISock())
-	args = append(args, "--log-level", d.LogLevel)
-	if !d.LogToStdout {
-		args = append(args, "--log-file", d.LogFile())
-	}
-
-	log.L.Infof("start nydus daemon: %s %s", m.nydusdBinaryPath, strings.Join(args, " "))
-
-	cmd := exec.Command(m.nydusdBinaryPath, args...)
-	// nydusd standard output and standard error rather than its logs are
-	// always redirected to snapshotter's respectively
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd, nil
 }
 
 func (m *Manager) DestroyBySnapshotID(id string) error {
