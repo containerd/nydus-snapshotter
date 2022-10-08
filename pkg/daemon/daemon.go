@@ -198,7 +198,7 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
-	return d.client.SharedMount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
+	return d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
 }
 
 func (d *Daemon) SharedUmount() error {
@@ -225,7 +225,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
 
-	if err := d.client.FscacheBindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.BindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
@@ -259,7 +259,7 @@ func (d *Daemon) sharedErofsUmount() error {
 		return err
 	}
 
-	if err := d.client.FscacheUnbindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.UnbindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 

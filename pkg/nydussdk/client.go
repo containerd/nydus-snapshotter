@@ -48,9 +48,9 @@ const (
 
 type NydusdClient interface {
 	GetDaemonInfo() (*model.DaemonInfo, error)
-	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
-	FscacheBindBlob(daemonConfig string) error
-	FscacheUnbindBlob(daemonConfig string) error
+	Mount(sharedMountPoint, bootstrap, daemonConfig string) error
+	BindBlob(daemonConfig string) error
+	UnbindBlob(daemonConfig string) error
 	Umount(sharedMountPoint string) error
 	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
 	TakeOver() error
@@ -78,7 +78,9 @@ func (c *nydusdClient) url(path string, query query) (url string) {
 
 // A simple http client request wrapper with capability to take
 // request body and handle or process http response if result is expected.
-func (c *nydusdClient) simpleRequest(method string, url string, body io.Reader, respHandler func(resp *http.Response) error) error {
+func (c *nydusdClient) request(method string, url string,
+	body io.Reader, respHandler func(resp *http.Response) error) error {
+
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return errors.Wrapf(err, "construct request %s", url)
@@ -96,7 +98,9 @@ func (c *nydusdClient) simpleRequest(method string, url string, body io.Reader, 
 
 	if succeeded(resp) {
 		if respHandler != nil {
-			respHandler(resp)
+			if err = respHandler(resp); err != nil {
+				return errors.Wrapf(err, "handle response")
+			}
 		}
 		return nil
 	}
@@ -108,7 +112,7 @@ func succeeded(resp *http.Response) bool {
 	return resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK
 }
 
-func decode(resp *http.Response, v interface{}) error {
+func decode(resp *http.Response, v any) error {
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
 		return errors.Wrap(err, "decode response")
 	}
@@ -181,7 +185,7 @@ func (c *nydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
 	url := c.url(endpointDaemonInfo, query{})
 
 	var info model.DaemonInfo
-	err := c.simpleRequest(http.MethodGet, url, nil, func(resp *http.Response) error {
+	err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		if err := decode(resp, &info); err != nil {
 			return err
 		}
@@ -199,7 +203,7 @@ func (c *nydusdClient) Umount(mp string) error {
 	query := query{}
 	query.Add("mountpoint", mp)
 	url := c.url(endpointMount, query)
-	return c.simpleRequest(http.MethodDelete, url, nil, nil)
+	return c.request(http.MethodDelete, url, nil, nil)
 }
 
 func (c *nydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
@@ -210,7 +214,7 @@ func (c *nydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetr
 
 	url := c.url(endpointMetrics, query)
 	var m model.FsMetric
-	c.simpleRequest(http.MethodGet, url, nil, func(resp *http.Response) error {
+	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		if err := decode(resp, &m); err != nil {
 			return err
 		}
@@ -220,7 +224,7 @@ func (c *nydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetr
 	return &m, nil
 }
 
-func (c *nydusdClient) SharedMount(mp, bootstrap, daemonConfig string) error {
+func (c *nydusdClient) Mount(mp, bootstrap, daemonConfig string) error {
 	// FIXME: Try not to load from on-disk file to reduce latency.
 	f, err := os.ReadFile(daemonConfig)
 	if err != nil {
@@ -236,10 +240,10 @@ func (c *nydusdClient) SharedMount(mp, bootstrap, daemonConfig string) error {
 	query.Add("mountpoint", mp)
 	url := c.url(endpointMount, query)
 
-	return c.simpleRequest(http.MethodPost, url, bytes.NewBuffer(body), nil)
+	return c.request(http.MethodPost, url, bytes.NewBuffer(body), nil)
 }
 
-func (c *nydusdClient) FscacheBindBlob(daemonConfig string) error {
+func (c *nydusdClient) BindBlob(daemonConfig string) error {
 	// FIXME: it brings extra IO latency!
 	body, err := os.ReadFile(daemonConfig)
 	if err != nil {
@@ -247,10 +251,10 @@ func (c *nydusdClient) FscacheBindBlob(daemonConfig string) error {
 	}
 
 	url := c.url(endpointBlobs, query{})
-	return c.simpleRequest(http.MethodPut, url, bytes.NewBuffer(body), nil)
+	return c.request(http.MethodPut, url, bytes.NewBuffer(body), nil)
 }
 
-func (c *nydusdClient) FscacheUnbindBlob(daemonConfig string) error {
+func (c *nydusdClient) UnbindBlob(daemonConfig string) error {
 	f, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "read daemon configuration %s", daemonConfig)
@@ -265,20 +269,20 @@ func (c *nydusdClient) FscacheUnbindBlob(daemonConfig string) error {
 	query.Add("domain_id", cfg.DomainID)
 	url := c.url(endpointBlobs, query)
 
-	return c.simpleRequest(http.MethodDelete, url, nil, nil)
+	return c.request(http.MethodDelete, url, nil, nil)
 }
 
 func (c *nydusdClient) TakeOver() error {
 	url := c.url(endpointTakeOver, query{})
-	return c.simpleRequest(http.MethodPut, url, nil, nil)
+	return c.request(http.MethodPut, url, nil, nil)
 }
 
 func (c *nydusdClient) SendFd() error {
 	url := c.url(endpointSendFd, query{})
-	return c.simpleRequest(http.MethodPut, url, nil, nil)
+	return c.request(http.MethodPut, url, nil, nil)
 }
 
 func (c *nydusdClient) Start() error {
 	url := c.url(endpointStart, query{})
-	return c.simpleRequest(http.MethodPut, url, nil, nil)
+	return c.request(http.MethodPut, url, nil, nil)
 }
