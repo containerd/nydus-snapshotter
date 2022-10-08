@@ -1,10 +1,11 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package model
+package types
 
 import "strings"
 

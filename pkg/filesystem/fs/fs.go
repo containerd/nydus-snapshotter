@@ -30,11 +30,11 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
@@ -583,7 +583,7 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 		return errdefs.ErrNotFound
 	}
 
-	return d.WaitUntilState(model.DaemonStateRunning)
+	return d.WaitUntilState(types.DaemonStateRunning)
 }
 
 func (fs *Filesystem) DelSnapshot(imageID string) error {

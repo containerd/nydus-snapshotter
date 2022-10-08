@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
@@ -46,13 +46,19 @@ const (
 	jsonContentType = "application/json"
 )
 
+// Nydusd HTTP client to query nydusd runtime status, operate file system instances.
+// Control nydusd workflow like failover and upgrade.
 type NydusdClient interface {
-	GetDaemonInfo() (*model.DaemonInfo, error)
+	GetDaemonInfo() (*types.DaemonInfo, error)
+
 	Mount(sharedMountPoint, bootstrap, daemonConfig string) error
+	Umount(sharedMountPoint string) error
+
 	BindBlob(daemonConfig string) error
 	UnbindBlob(daemonConfig string) error
-	Umount(sharedMountPoint string) error
-	GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error)
+
+	GetFsMetric(sharedDaemon bool, sid string) (*types.FsMetric, error)
+
 	TakeOver() error
 	SendFd() error
 	Start() error
@@ -123,7 +129,7 @@ func decode(resp *http.Response, v any) error {
 // Parse http response to get the specific error message formatted by nydusd API server.
 // So it will be clear what's wrong in nydusd during processing http requests.
 func parseErrorMessage(resp *http.Response) error {
-	var errMessage model.ErrorMessage
+	var errMessage types.ErrorMessage
 	err := decode(resp, &errMessage)
 	if err != nil {
 		return err
@@ -181,10 +187,10 @@ func NewNydusClient(sock string) (NydusdClient, error) {
 	}, nil
 }
 
-func (c *nydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
+func (c *nydusdClient) GetDaemonInfo() (*types.DaemonInfo, error) {
 	url := c.url(endpointDaemonInfo, query{})
 
-	var info model.DaemonInfo
+	var info types.DaemonInfo
 	err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		if err := decode(resp, &info); err != nil {
 			return err
@@ -206,14 +212,14 @@ func (c *nydusdClient) Umount(mp string) error {
 	return c.request(http.MethodDelete, url, nil, nil)
 }
 
-func (c *nydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
+func (c *nydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*types.FsMetric, error) {
 	query := query{}
 	if sharedDaemon {
 		query.Add("id", "/"+sid)
 	}
 
 	url := c.url(endpointMetrics, query)
-	var m model.FsMetric
+	var m types.FsMetric
 	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		if err := decode(resp, &m); err != nil {
 			return err
@@ -231,7 +237,7 @@ func (c *nydusdClient) Mount(mp, bootstrap, daemonConfig string) error {
 		return errors.Wrapf(err, "read nydusd configurations %s", daemonConfig)
 	}
 
-	body, err := json.Marshal(model.NewMountRequest(bootstrap, string(f)))
+	body, err := json.Marshal(types.NewMountRequest(bootstrap, string(f)))
 	if err != nil {
 		return errors.Wrap(err, "construct mount request")
 	}

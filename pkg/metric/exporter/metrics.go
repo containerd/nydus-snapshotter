@@ -9,9 +9,10 @@ package exporter
 import (
 	"time"
 
-	"github.com/containerd/nydus-snapshotter/pkg/metric/ttl"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
+	"github.com/containerd/nydus-snapshotter/pkg/metric/ttl"
 )
 
 var (
@@ -68,7 +69,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: []uint64{1, 4, 16, 64, 128, 512, 1024, 2048},
-		GetCounters: func(m *model.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetric) []uint64 {
 			return m.BlockCountRead
 		},
 	},
@@ -81,7 +82,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: MakeFopBuckets(),
-		GetCounters: func(m *model.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetric) []uint64 {
 			return m.FopHits
 		},
 	},
@@ -94,7 +95,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: MakeFopBuckets(),
-		GetCounters: func(m *model.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetric) []uint64 {
 			return m.FopErrors
 		},
 	},
@@ -107,7 +108,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: []uint64{1, 20, 50, 100, 500, 1000, 2000, 4000},
-		GetCounters: func(m *model.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetric) []uint64 {
 			return m.ReadLatencyDist
 		},
 	},

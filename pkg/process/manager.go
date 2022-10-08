@@ -18,9 +18,9 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
@@ -651,7 +651,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		d.Connected = true
 
-		if state != model.DaemonStateRunning {
+		if state != types.DaemonStateRunning {
 			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", state)
 			return nil
 		}

@@ -17,9 +17,9 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
@@ -145,14 +145,14 @@ func (d *Daemon) LogFile() string {
 // 1. INIT
 // 2. READY: All needed resources are ready.
 // 3. RUNNING
-func (d *Daemon) State() (model.DaemonState, error) {
+func (d *Daemon) State() (types.DaemonState, error) {
 	if err := d.ensureClient("getting daemon state"); err != nil {
-		return model.DaemonStateUnknown, err
+		return types.DaemonStateUnknown, err
 	}
 
 	info, err := d.client.GetDaemonInfo()
 	if err != nil {
-		return model.DaemonStateUnknown, err
+		return types.DaemonStateUnknown, err
 	}
 
 	return info.DaemonState(), nil
@@ -163,7 +163,7 @@ func (d *Daemon) State() (model.DaemonState, error) {
 //  1. INIT
 //  2. READY
 //  3. RUNNING
-func (d *Daemon) WaitUntilState(expected model.DaemonState) error {
+func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 	return retry.Do(func() error {
 		state, err := d.State()
 		if err != nil {
@@ -271,7 +271,7 @@ func (d *Daemon) sharedErofsUmount() error {
 	return nil
 }
 
-func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
+func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*types.FsMetric, error) {
 	if err := d.ensureClient("get metric"); err != nil {
 		return nil, err
 	}

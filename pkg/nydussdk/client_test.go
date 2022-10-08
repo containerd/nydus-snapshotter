@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 )
 
-var BTI = model.BuildTimeInfo{
+var BTI = types.BuildTimeInfo{
 	PackageVer: "1.1.0",
 	GitCommit:  "67f4ecc7acee6dd37234e6a697e72ac09d6cc8ba",
 	BuildTime:  "Thu, 28 Jan 2021 14:02:39 +0000",
@@ -36,7 +36,7 @@ func prepareNydusServer(t *testing.T) (string, func()) {
 	}
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		info := model.DaemonInfo{
+		info := types.DaemonInfo{
 			ID:      "testid",
 			Version: BTI,
 			State:   "RUNNING",
@@ -61,7 +61,7 @@ func TestNydusClient_CheckStatus(t *testing.T) {
 	require.Nil(t, err)
 	info, err := client.GetDaemonInfo()
 	require.Nil(t, err)
-	assert.Equal(t, info.DaemonState(), model.DaemonStateRunning)
+	assert.Equal(t, info.DaemonState(), types.DaemonStateRunning)
 	assert.Equal(t, "testid", info.ID)
 	assert.Equal(t, BTI, info.Version)
 }
