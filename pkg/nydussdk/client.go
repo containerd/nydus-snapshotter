@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -30,13 +31,19 @@ const (
 	endpointDaemonInfo = "/api/v1/daemon"
 	endpointMount      = "/api/v1/mount"
 	endpointMetrics    = "/api/v1/metrics"
-	endpointBlobs      = "/api/v2/blobs"
-	endpointTakeOver   = "/api/v1/daemon/fuse/takeover"
-	endpointSendFd     = "/api/v1/daemon/fuse/sendfd"
-	endpointStart      = "/api/v1/daemon/start"
+	// Command nydusd to retrieve its runtime states, which is used during failover
+	endpointTakeOver = "/api/v1/daemon/fuse/takeover"
+	// Command nydusd to send out its runtime states, which prepares failover.
+	endpointSendFd = "/api/v1/daemon/fuse/sendfd"
+	// Command nydusd to begin file system service.
+	endpointStart = "/api/v1/daemon/start"
+
+	// --- V2 API begins
+	endpointBlobs = "/api/v2/blobs"
 
 	defaultHTTPClientTimeout = 30 * time.Second
-	jsonContentType          = "application/json"
+
+	jsonContentType = "application/json"
 )
 
 type Interface interface {
@@ -51,6 +58,8 @@ type Interface interface {
 	Start() error
 }
 
+// Nydusd API server http client used to command nydusd's action and
+// query nydusd working status.
 type NydusdClient struct {
 	httpClient *http.Client
 }
@@ -175,16 +184,16 @@ func (c *NydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
 	err := c.simpleRequest(http.MethodGet, url, nil, func(resp *http.Response) error {
 		if err := decode(resp, &info); err != nil {
 			return err
-	}
+		}
 		return nil
 	})
 
 	if err != nil {
-			return nil, err
-		}
-
-		return &info, nil
+		return nil, err
 	}
+
+	return &info, nil
+}
 
 func (c *NydusdClient) Umount(mp string) error {
 	query := query{}
@@ -204,7 +213,7 @@ func (c *NydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetr
 	c.simpleRequest(http.MethodGet, url, nil, func(resp *http.Response) error {
 		if err := decode(resp, &m); err != nil {
 			return err
-	}
+		}
 		return nil
 	})
 
