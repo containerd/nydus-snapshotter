@@ -53,8 +53,8 @@ type Daemon struct {
 	nydusdThreadNum  int
 
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
-	client nydussdk.Interface `json:"-"`
-	Once   *sync.Once         `json:"-"`
+	client nydussdk.NydusdClient `json:"-"`
+	Once   *sync.Once            `json:"-"`
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`

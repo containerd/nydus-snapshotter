@@ -46,7 +46,7 @@ const (
 	jsonContentType = "application/json"
 )
 
-type Interface interface {
+type NydusdClient interface {
 	GetDaemonInfo() (*model.DaemonInfo, error)
 	SharedMount(sharedMountPoint, bootstrap, daemonConfig string) error
 	FscacheBindBlob(daemonConfig string) error
@@ -60,13 +60,13 @@ type Interface interface {
 
 // Nydusd API server http client used to command nydusd's action and
 // query nydusd working status.
-type NydusdClient struct {
+type nydusdClient struct {
 	httpClient *http.Client
 }
 
 type query = url.Values
 
-func (c *NydusdClient) url(path string, query query) (url string) {
+func (c *nydusdClient) url(path string, query query) (url string) {
 	url = fmt.Sprintf("http://unix%s", path)
 
 	if len(query) != 0 {
@@ -78,7 +78,7 @@ func (c *NydusdClient) url(path string, query query) (url string) {
 
 // A simple http client request wrapper with capability to take
 // request body and handle or process http response if result is expected.
-func (c *NydusdClient) simpleRequest(method string, url string, body io.Reader, respHandler func(resp *http.Response) error) error {
+func (c *nydusdClient) simpleRequest(method string, url string, body io.Reader, respHandler func(resp *http.Response) error) error {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return errors.Wrapf(err, "construct request %s", url)
@@ -162,14 +162,14 @@ func WaitUntilSocketExisted(sock string) error {
 		retry.Delay(100*time.Millisecond))
 }
 
-func NewNydusClient(sock string) (Interface, error) {
+func NewNydusClient(sock string) (NydusdClient, error) {
 	err := WaitUntilSocketExisted(sock)
 	if err != nil {
 		return nil, err
 	}
 	transport := buildTransport(sock)
 
-	return &NydusdClient{
+	return &nydusdClient{
 		httpClient: &http.Client{
 			Timeout:   defaultHTTPClientTimeout,
 			Transport: transport,
@@ -177,7 +177,7 @@ func NewNydusClient(sock string) (Interface, error) {
 	}, nil
 }
 
-func (c *NydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
+func (c *nydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
 	url := c.url(endpointDaemonInfo, query{})
 
 	var info model.DaemonInfo
@@ -195,14 +195,14 @@ func (c *NydusdClient) GetDaemonInfo() (*model.DaemonInfo, error) {
 	return &info, nil
 }
 
-func (c *NydusdClient) Umount(mp string) error {
+func (c *nydusdClient) Umount(mp string) error {
 	query := query{}
 	query.Add("mountpoint", mp)
 	url := c.url(endpointMount, query)
 	return c.simpleRequest(http.MethodDelete, url, nil, nil)
 }
 
-func (c *NydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
+func (c *nydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
 	query := query{}
 	if sharedDaemon {
 		query.Add("id", "/"+sid)
@@ -220,7 +220,7 @@ func (c *NydusdClient) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetr
 	return &m, nil
 }
 
-func (c *NydusdClient) SharedMount(mp, bootstrap, daemonConfig string) error {
+func (c *nydusdClient) SharedMount(mp, bootstrap, daemonConfig string) error {
 	// FIXME: Try not to load from on-disk file to reduce latency.
 	f, err := os.ReadFile(daemonConfig)
 	if err != nil {
@@ -239,7 +239,7 @@ func (c *NydusdClient) SharedMount(mp, bootstrap, daemonConfig string) error {
 	return c.simpleRequest(http.MethodPost, url, bytes.NewBuffer(body), nil)
 }
 
-func (c *NydusdClient) FscacheBindBlob(daemonConfig string) error {
+func (c *nydusdClient) FscacheBindBlob(daemonConfig string) error {
 	// FIXME: it brings extra IO latency!
 	body, err := os.ReadFile(daemonConfig)
 	if err != nil {
@@ -250,7 +250,7 @@ func (c *NydusdClient) FscacheBindBlob(daemonConfig string) error {
 	return c.simpleRequest(http.MethodPut, url, bytes.NewBuffer(body), nil)
 }
 
-func (c *NydusdClient) FscacheUnbindBlob(daemonConfig string) error {
+func (c *nydusdClient) FscacheUnbindBlob(daemonConfig string) error {
 	f, err := os.ReadFile(daemonConfig)
 	if err != nil {
 		return errors.Wrapf(err, "read daemon configuration %s", daemonConfig)
@@ -268,17 +268,17 @@ func (c *NydusdClient) FscacheUnbindBlob(daemonConfig string) error {
 	return c.simpleRequest(http.MethodDelete, url, nil, nil)
 }
 
-func (c *NydusdClient) TakeOver() error {
+func (c *nydusdClient) TakeOver() error {
 	url := c.url(endpointTakeOver, query{})
 	return c.simpleRequest(http.MethodPut, url, nil, nil)
 }
 
-func (c *NydusdClient) SendFd() error {
+func (c *nydusdClient) SendFd() error {
 	url := c.url(endpointSendFd, query{})
 	return c.simpleRequest(http.MethodPut, url, nil, nil)
 }
 
-func (c *NydusdClient) Start() error {
+func (c *nydusdClient) Start() error {
 	url := c.url(endpointStart, query{})
 	return c.simpleRequest(http.MethodPut, url, nil, nil)
 }
