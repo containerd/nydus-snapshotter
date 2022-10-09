@@ -23,7 +23,10 @@ import (
 const (
 	// NOTE: Below service endpoints are still experimental.
 
-	endpointDaemons        string = "/api/v1/daemons"
+	endpointDaemons string = "/api/v1/daemons"
+	// Retrieve daemons' persisted states in boltdb. Because the db file is always locked,
+	// it's very helpful to check daemon's record in database.
+	endpointDaemonRecords  string = "/api/v1/daemons/records"
 	endpointDaemonsUpgrade string = "/api/v1/daemons/upgrade"
 )
 
@@ -87,6 +90,7 @@ func NewSystemController(manager *manager.Manager, sock string) (*Controller, er
 func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
 	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPost)
+	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +136,14 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(respBody)
+	}
+}
+
+// TODO: Implement me!
+func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		daemons := sc.manager.ListDaemons()
+		log.L.Infof("list daemons %v", daemons)
 	}
 }
 
