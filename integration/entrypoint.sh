@@ -199,7 +199,7 @@ function nerdctl_prune_images {
 function start_single_container_multiple_daemons {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd mutiple
+    reboot_containerd multiple
 
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
 
@@ -209,7 +209,7 @@ function start_single_container_multiple_daemons {
 function start_multiple_containers_multiple_daemons {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd mutiple
+    reboot_containerd multiple
 
     nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}"
@@ -254,7 +254,7 @@ function start_single_container_on_stargz {
 function start_container_on_oci {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd mutiple
+    reboot_containerd multiple
 
     nerdctl --snapshotter nydus run -d --net none "${REDIS_OCI_IMAGE}"
     nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_OCI_IMAGE}"
@@ -270,7 +270,7 @@ function start_container_on_oci {
 function pull_remove_one_image {
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd mutiple
+    reboot_containerd multiple
 
     nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
     nerdctl --snapshotter nydus image rm "${JAVA_IMAGE}"
