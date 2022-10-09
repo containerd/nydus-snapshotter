@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package nydussdk
+package daemon
 
 import (
 	"bytes"

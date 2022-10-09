@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-package process
+package manager
 
 import (
 	"reflect"

@@ -19,7 +19,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
@@ -53,8 +52,8 @@ type Daemon struct {
 	nydusdThreadNum  int
 
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
-	client nydussdk.NydusdClient `json:"-"`
-	Once   *sync.Once            `json:"-"`
+	client NydusdClient `json:"-"`
+	Once   *sync.Once   `json:"-"`
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
@@ -286,7 +285,7 @@ func (d *Daemon) IsPrefetchDaemon() bool {
 }
 
 func (d *Daemon) initClient() error {
-	client, err := nydussdk.NewNydusClient(d.GetAPISock())
+	client, err := NewNydusClient(d.GetAPISock())
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nydus client")
 	}
