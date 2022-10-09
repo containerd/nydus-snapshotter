@@ -16,8 +16,10 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
+	"github.com/containerd/nydus-snapshotter/pkg/metric/exporter"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -28,6 +30,9 @@ const (
 	// it's very helpful to check daemon's record in database.
 	endpointDaemonRecords  string = "/api/v1/daemons/records"
 	endpointDaemonsUpgrade string = "/api/v1/daemons/upgrade"
+
+	// Export prometheus metrics
+	endpointPromMetrics string = "/metrics"
 )
 
 // Nydus-snapshotter might manage dozens of running nydus daemons, each daemon may have multiple
@@ -91,6 +96,12 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
 	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPost)
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
+
+	// Special registration for Prometheus metrics export
+	handler := promhttp.HandlerFor(exporter.Registry, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.HTTPErrorOnError,
+	})
+	sc.router.Handle(endpointPromMetrics, handler)
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
