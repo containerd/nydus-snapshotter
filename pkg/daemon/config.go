@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,6 +14,8 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/pkg/errors"
 )
+
+// Build runtime nydusd daemon object, which might be persisted later
 
 func WithSnapshotID(id string) NewDaemonOpt {
 	return func(d *Daemon) error {

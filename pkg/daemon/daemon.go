@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -111,19 +111,14 @@ func (d *Daemon) BootstrapFile() (string, error) {
 	return GetBootstrapFile(d.SnapshotDir, d.SnapshotID)
 }
 
+// Each nydusd daemon has a copy of configuration json file.
 func (d *Daemon) ConfigFile() string {
 	return filepath.Join(d.ConfigDir, "config.json")
 }
 
-// NydusdThreadNum returns `nydusd-thread-num` for nydusd if set,
-// otherwise will return the number of CPUs as default.
-func (d *Daemon) NydusdThreadNum() string {
-	if d.nydusdThreadNum > 0 {
-		return strconv.Itoa(d.nydusdThreadNum)
-	}
-	// if nydusd-thread-num is not set, return empty string
-	// to let manager don't set thread-num option.
-	return ""
+// NydusdThreadNum returns how many working threads are needed of a single nydusd
+func (d *Daemon) NydusdThreadNum() int {
+	return d.nydusdThreadNum
 }
 
 func (d *Daemon) GetAPISock() string {
