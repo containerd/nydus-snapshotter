@@ -18,8 +18,11 @@ import (
 const signalKilled = "signal: killed"
 
 var (
-	ErrAlreadyExists = errors.New("already exists")
-	ErrNotFound      = errors.New("not found")
+	ErrAlreadyExists   = errors.New("already exists")
+	ErrNotFound        = errors.New("not found")
+	ErrInvalidArgument = errors.New("invalid argument")
+	ErrUnavailable     = errors.New("unavailable")
+	ErrNotImplemented  = errors.New("not implemented") // represents not supported and unimplemented
 )
 
 // IsAlreadyExists returns true if the error is due to already exists
