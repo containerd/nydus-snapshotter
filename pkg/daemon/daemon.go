@@ -17,9 +17,9 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
@@ -53,8 +53,8 @@ type Daemon struct {
 	nydusdThreadNum  int
 
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
-	client nydussdk.Interface `json:"-"`
-	Once   *sync.Once         `json:"-"`
+	client nydussdk.NydusdClient `json:"-"`
+	Once   *sync.Once            `json:"-"`
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
@@ -141,23 +141,40 @@ func (d *Daemon) LogFile() string {
 	return filepath.Join(d.LogDir, "nydusd.log")
 }
 
-func (d *Daemon) CheckStatus() (*model.DaemonInfo, error) {
-	if err := d.ensureClient("check status"); err != nil {
-		return nil, err
+// Nydusd daemon current working state by requesting to nydusd:
+// 1. INIT
+// 2. READY: All needed resources are ready.
+// 3. RUNNING
+func (d *Daemon) State() (types.DaemonState, error) {
+	if err := d.ensureClient("getting daemon state"); err != nil {
+		return types.DaemonStateUnknown, err
 	}
 
-	return d.client.CheckStatus()
+	info, err := d.client.GetDaemonInfo()
+	if err != nil {
+		return types.DaemonStateUnknown, err
+	}
+
+	return info.DaemonState(), nil
 }
 
-func (d *Daemon) WaitUntilReady() error {
+// Waits for some time until daemon reaches the expected state.
+// For example:
+//  1. INIT
+//  2. READY
+//  3. RUNNING
+func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 	return retry.Do(func() error {
-		info, err := d.CheckStatus()
+		state, err := d.State()
 		if err != nil {
-			return errors.Wrap(err, "wait until daemon ready by checking status")
+			return errors.Wrapf(err, "wait until daemon is %s", expected)
 		}
-		if !info.Running() {
-			return fmt.Errorf("daemon %s is not ready: %v", d.ID, info)
+
+		if state != expected {
+			return errors.Errorf("daemon %s is not %s yet, current state %s",
+				d.ID, expected, state)
 		}
+
 		return nil
 	},
 		retry.Attempts(20), // totally wait for 2 seconds, should be enough
@@ -181,7 +198,7 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
-	return d.client.SharedMount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
+	return d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
 }
 
 func (d *Daemon) SharedUmount() error {
@@ -208,7 +225,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
 
-	if err := d.client.FscacheBindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.BindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
@@ -242,7 +259,7 @@ func (d *Daemon) sharedErofsUmount() error {
 		return err
 	}
 
-	if err := d.client.FscacheUnbindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.UnbindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
@@ -254,7 +271,7 @@ func (d *Daemon) sharedErofsUmount() error {
 	return nil
 }
 
-func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*model.FsMetric, error) {
+func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*types.FsMetric, error) {
 	if err := d.ensureClient("get metric"); err != nil {
 		return nil, err
 	}
@@ -278,6 +295,7 @@ func (d *Daemon) initClient() error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nydus client")
 	}
+
 	d.client = client
 	return nil
 }

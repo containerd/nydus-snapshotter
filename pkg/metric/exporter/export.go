@@ -17,7 +17,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 )
 
 type Opt func(*Exporter) error
@@ -52,7 +52,7 @@ func NewExporter(opts ...Opt) (*Exporter, error) {
 	return &exp, nil
 }
 
-func (e *Exporter) ExportFsMetrics(m *model.FsMetric, imageRef string) error {
+func (e *Exporter) ExportFsMetrics(m *types.FsMetric, imageRef string) error {
 	ReadCount.WithLabelValues(imageRef).Set(float64(m.DataRead))
 	OpenFdCount.WithLabelValues(imageRef).Set(float64(m.NrOpens))
 	OpenFdMaxCount.WithLabelValues(imageRef).Set(float64(m.NrMaxOpens))

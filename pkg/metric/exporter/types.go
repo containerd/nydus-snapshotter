@@ -9,7 +9,7 @@ package exporter
 import (
 	"fmt"
 
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk/model"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -48,7 +48,7 @@ func MakeFopBuckets() []uint64 {
 	return s
 }
 
-type GetCountersFn func(*model.FsMetric) []uint64
+type GetCountersFn func(*types.FsMetric) []uint64
 
 type FsMetricHistogram struct {
 	Desc        *prometheus.Desc
@@ -59,7 +59,7 @@ type FsMetricHistogram struct {
 	constHist prometheus.Metric
 }
 
-func (h *FsMetricHistogram) ToConstHistogram(m *model.FsMetric, imageRef string) (prometheus.Metric, error) {
+func (h *FsMetricHistogram) ToConstHistogram(m *types.FsMetric, imageRef string) (prometheus.Metric, error) {
 	var count, sum uint64
 	counters := h.GetCounters(m)
 	hmap := make(map[float64]uint64)

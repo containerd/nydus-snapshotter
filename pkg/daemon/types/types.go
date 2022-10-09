@@ -1,12 +1,11 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package model
-
-import "strings"
+package types
 
 type BuildTimeInfo struct {
 	PackageVer string `json:"package_ver"`
@@ -19,13 +18,20 @@ type BuildTimeInfo struct {
 type DaemonInfo struct {
 	ID      string        `json:"id"`
 	Version BuildTimeInfo `json:"version"`
-	State   string        `json:"state"`
+	State   DaemonState   `json:"state"`
 }
 
-func (info *DaemonInfo) Running() bool {
-	// Due to history reason, the daemon state returned by nydusd sock API has
-	// been changed from `Running` to `RUNNING`, so keeps compatibility here.
-	return strings.ToUpper(info.State) == "RUNNING"
+type DaemonState string
+
+const (
+	DaemonStateUnknown DaemonState = "UNKNOWN"
+	DaemonStateInit    DaemonState = "INIT"
+	DaemonStateReady   DaemonState = "READY"
+	DaemonStateRunning DaemonState = "RUNNING"
+)
+
+func (info *DaemonInfo) DaemonState() DaemonState {
+	return info.State
 }
 
 type ErrorMessage struct {
