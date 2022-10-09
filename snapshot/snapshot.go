@@ -24,7 +24,7 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
-	metrics "github.com/containerd/nydus-snapshotter/pkg/metric"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
 	"github.com/pkg/errors"

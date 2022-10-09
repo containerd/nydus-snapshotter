@@ -16,7 +16,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
-	"github.com/containerd/nydus-snapshotter/pkg/metric/exporter"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
