@@ -120,18 +120,18 @@ type SnapshotterConfig struct {
 	StartupFlag command.Args `toml:"snapshotter"`
 }
 
-func LoadShotterConfigFile(snapshotterConfigPath string) (*SnapshotterConfig, error) {
+func LoadSnapshotterConfig(snapshotterConfigPath string) (*SnapshotterConfig, error) {
 	var config SnapshotterConfig
 	// get nydus-snapshotter configuration from specified path of toml file
 	if snapshotterConfigPath == "" {
-		return nil, errors.New("snapshotter config path cannot be specified")
+		return nil, errors.New("snapshotter configuration path cannot be empty")
 	}
 	tree, err := toml.LoadFile(snapshotterConfigPath)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to load snapshotter config file %q", snapshotterConfigPath)
+		return nil, errors.Wrapf(err, "load snapshotter configuration file %q", snapshotterConfigPath)
 	}
 	if err = tree.Unmarshal(config); err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal snapshotter config file %q", snapshotterConfigPath)
+		return nil, errors.Wrapf(err, "unmarshal snapshotter configuration file %q", snapshotterConfigPath)
 	}
 	return &config, nil
 }

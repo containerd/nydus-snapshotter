@@ -40,7 +40,7 @@ func main() {
 			var (
 				cfg config.Config
 			)
-			if snapshotterCfg, err := config.LoadShotterConfigFile(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
+			if snapshotterCfg, err := config.LoadSnapshotterConfig(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
 				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
 					return errors.Wrap(err, "invalid configuration")
 				}
