@@ -17,7 +17,7 @@
    limitations under the License.
 */
 
-package process
+package manager
 
 // LivenessMonitor liveness of a nydusd daemon.
 type LivenessMonitor interface {

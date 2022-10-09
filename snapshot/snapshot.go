@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
+	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metric"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/pkg/errors"
@@ -30,7 +31,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
-	"github.com/containerd/nydus-snapshotter/pkg/process"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
 
@@ -47,7 +47,7 @@ type snapshotter struct {
 	// Storing snapshots' state, parentage ant other metadata
 	ms                   *storage.MetaStore
 	fs                   *fspkg.Filesystem
-	manager              *process.Manager
+	manager              *manager.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
 	syncRemove           bool
@@ -71,12 +71,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to new database")
 	}
 
-	rp, err := process.ParseRecoverPolicy(cfg.RecoverPolicy)
+	rp, err := manager.ParseRecoverPolicy(cfg.RecoverPolicy)
 	if err != nil {
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
 
-	pm, err := process.NewManager(process.Opt{
+	pm, err := manager.NewManager(manager.Opt{
 		NydusdBinaryPath: cfg.NydusdBinaryPath,
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
@@ -88,7 +88,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	}
 
 	opts := []fspkg.NewFSOpt{
-		fspkg.WithProcessManager(pm),
+		fspkg.WithManager(pm),
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),

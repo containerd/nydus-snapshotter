@@ -14,11 +14,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metric/exporter"
-	"github.com/containerd/nydus-snapshotter/pkg/process"
-	"github.com/pkg/errors"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -30,7 +32,7 @@ type Server struct {
 	listener    net.Listener
 	rootDir     string
 	metricsFile string
-	pm          *process.Manager
+	pm          *manager.Manager
 	exp         *exporter.Exporter
 }
 
@@ -56,7 +58,7 @@ func WithMetricsFile(metricsFile string) ServerOpt {
 	}
 }
 
-func WithProcessManager(pm *process.Manager) ServerOpt {
+func WithProcessManager(pm *manager.Manager) ServerOpt {
 	return func(s *Server) error {
 		s.pm = pm
 		return nil

@@ -14,7 +14,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
-	"github.com/containerd/nydus-snapshotter/pkg/process"
+	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/pkg/errors"
 )
@@ -50,7 +50,7 @@ func WithNydusImageBinaryPath(p string) NewFSOpt {
 	}
 }
 
-func WithProcessManager(pm *process.Manager) NewFSOpt {
+func WithManager(pm *manager.Manager) NewFSOpt {
 	return func(d *Filesystem) error {
 		if pm == nil {
 			return errors.New("process manager cannot be nil")

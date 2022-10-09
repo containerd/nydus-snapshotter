@@ -37,7 +37,6 @@ func TestBuildCommand(t *testing.T) {
 	assert.Equal(t, "singleton --fscache fs_cache_dir --fscache-threads 4 --apisock /dummy/apisock", actual1)
 }
 
-// pkg: github.com/containerd/nydus-snapshotter/pkg/process
 // cpu: Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 // BenchmarkBuildCommand-8   	  394146	      3084 ns/op
 // BenchmarkXxx-8            	 3933902	       281.4 ns/op

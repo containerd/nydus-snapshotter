@@ -35,7 +35,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
-	"github.com/containerd/nydus-snapshotter/pkg/process"
+	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
@@ -100,7 +100,7 @@ func init() {
 type Filesystem struct {
 	meta.FileSystemMeta
 	blobMgr              *BlobManager
-	manager              *process.Manager
+	manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
 	daemonCfg            config.DaemonConfig

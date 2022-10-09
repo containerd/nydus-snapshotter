@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,9 @@ var BTI = types.BuildTimeInfo{
 }
 
 func prepareNydusServer(t *testing.T) (string, func()) {
-	mockSocket := "testdata/nydus.sock"
+	dir, _ := os.MkdirTemp("", "nydus-snapshotter-test")
+	mockSocket := filepath.Join(dir, "nydusd.sock")
+
 	_, err := os.Stat(mockSocket)
 	if err == nil {
 		_ = os.Remove(mockSocket)
