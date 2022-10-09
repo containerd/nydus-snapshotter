@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 )
 
 // Define a policy how to fork nydusd daemon and attach file system instances to serve.
@@ -92,7 +93,7 @@ type Config struct {
 	ValidateSignature        bool          `toml:"validate_signature"`
 	NydusdBinaryPath         string        `toml:"nydusd_binary_path"`
 	NydusImageBinaryPath     string        `toml:"nydus_image_binary"`
-	DaemonMode               string        `toml:"daemon_mode"`
+	DaemonMode               DaemonMode    `toml:"daemon_mode"`
 	FsDriver                 string        `toml:"daemon_backend"`
 	SyncRemove               bool          `toml:"sync_remove"`
 	EnableMetrics            bool          `toml:"enable_metrics"`
@@ -155,12 +156,18 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	cfg.PublicKeyFile = startupFlag.PublicKeyFile
 	cfg.ValidateSignature = startupFlag.ValidateSignature
 
+	daemonMode, err := parseDaemonMode(startupFlag.DaemonMode)
+	if err != nil {
+		return err
+	}
+
 	// Give --shared-daemon higher priority
-	cfg.DaemonMode = startupFlag.DaemonMode
+	cfg.DaemonMode = daemonMode
 	if startupFlag.SharedDaemon {
 		cfg.DaemonMode = DaemonModeShared
 	}
-	if startupFlag.FsDriver == FsDriverFscache && startupFlag.DaemonMode != DaemonModeShared {
+
+	if startupFlag.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
