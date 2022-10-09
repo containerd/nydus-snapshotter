@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/pkg/errors"
 )
 
@@ -48,7 +47,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	// If nydusd fails startup, manager can't subscribe its death event.
 	// So we can ignore the subscribing error.
 	go func() {
-		if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+		if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
 			log.L.Errorf("Nydusd %s probably not started", d.ID)
 			return
 		}

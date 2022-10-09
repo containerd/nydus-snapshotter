@@ -19,7 +19,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/nydussdk"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
@@ -558,7 +557,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
 
 		go func() {
-			if err := nydussdk.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+			if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
 				log.L.Errorf("Nydusd %s probably not started", d.ID)
 				return
 			}
