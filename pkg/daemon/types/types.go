@@ -7,8 +7,6 @@
 
 package types
 
-import "strings"
-
 type BuildTimeInfo struct {
 	PackageVer string `json:"package_ver"`
 	GitCommit  string `json:"git_commit"`
@@ -20,43 +18,20 @@ type BuildTimeInfo struct {
 type DaemonInfo struct {
 	ID      string        `json:"id"`
 	Version BuildTimeInfo `json:"version"`
-	State   string        `json:"state"`
+	State   DaemonState   `json:"state"`
 }
 
-type DaemonState int
+type DaemonState string
 
 const (
-	DaemonStateUnknown DaemonState = iota
-	DaemonStateInit
-	DaemonStateReady
-	DaemonStateRunning
+	DaemonStateUnknown DaemonState = "UNKNOWN"
+	DaemonStateInit    DaemonState = "INIT"
+	DaemonStateReady   DaemonState = "READY"
+	DaemonStateRunning DaemonState = "RUNNING"
 )
 
 func (info *DaemonInfo) DaemonState() DaemonState {
-	s := info.State
-	switch {
-	case strings.EqualFold(s, "running"):
-		return DaemonStateRunning
-	case strings.EqualFold(s, "init"):
-		return DaemonStateInit
-	case strings.EqualFold(s, "ready"):
-		return DaemonStateReady
-	default:
-		return DaemonStateUnknown
-	}
-}
-
-func (s DaemonState) String() string {
-	switch {
-	case s == DaemonStateInit:
-		return "INIT"
-	case s == DaemonStateReady:
-		return "READY"
-	case s == DaemonStateRunning:
-		return "RUNNING"
-	default:
-		return "UNKNOWN"
-	}
+	return info.State
 }
 
 type ErrorMessage struct {
