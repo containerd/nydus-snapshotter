@@ -8,7 +8,6 @@ package fs
 
 import (
 	"os"
-	"strings"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
@@ -33,7 +32,7 @@ func WithMeta(root string) NewFSOpt {
 	}
 }
 
-func WithNydusdBinaryPath(p string, daemonMode string) NewFSOpt {
+func WithNydusdBinaryPath(p string, daemonMode config.DaemonMode) NewFSOpt {
 	return func(d *Filesystem) error {
 		if daemonMode != config.DaemonModeNone && p == "" {
 			return errors.New("nydusd binary path is required")
@@ -93,21 +92,9 @@ func WithVPCRegistry(vpcRegistry bool) NewFSOpt {
 	}
 }
 
-func WithDaemonMode(daemonMode string) NewFSOpt {
+func WithDaemonMode(daemonMode config.DaemonMode) NewFSOpt {
 	return func(d *Filesystem) error {
-		mode := strings.ToLower(daemonMode)
-		switch mode {
-		case config.DaemonModeNone:
-			d.mode = NoneInstance
-		case config.DaemonModeShared:
-			d.mode = SharedInstance
-		case config.DaemonModePrefetch:
-			d.mode = PrefetchInstance
-		case config.DaemonModeMultiple:
-			fallthrough
-		default:
-			d.mode = MultiInstance
-		}
+		d.mode = daemonMode
 		return nil
 	}
 }
