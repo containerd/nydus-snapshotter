@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,21 +21,53 @@ import (
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 )
 
+// Define a policy how to fork nydusd daemon and attach file system instances to serve.
+type DaemonMode string
+
 const (
-	DefaultDaemonMode  string = "multiple"
-	DaemonModeMultiple string = "multiple"
-	DaemonModeShared   string = "shared"
-	DaemonModeNone     string = "none"
-	DaemonModePrefetch string = "prefetch"
-	DefaultLogLevel    string = "info"
-	defaultGCPeriod           = 24 * time.Hour
+	// One nydusd, one rafs instance
+	DaemonModeMultiple DaemonMode = "multiple"
+	// One nydusd serves multiple rafs instances
+	DaemonModeShared DaemonMode = "shared"
+	// No nydusd daemon is needed to be started. Snapshotter does not start any nydusd
+	// and only interacts with containerd with mount slice to pass necessary configuration
+	// to container runtime
+	DaemonModeNone DaemonMode = "none"
+	// Nydusd daemon is started by serves no snapshot. Nydusd works as a simple blobs downloader to
+	// prepare blobcache files locally.
+	DaemonModePrefetch DaemonMode = "prefetch"
+	DaemonModeInvalid  DaemonMode = ""
+)
+
+func parseDaemonMode(m string) (DaemonMode, error) {
+	switch m {
+	case string(DaemonModeMultiple):
+		return DaemonModeMultiple, nil
+	case string(DaemonModeShared):
+		return DaemonModeShared, nil
+	case string(DaemonModeNone):
+		return DaemonModeNone, nil
+	case string(DaemonModePrefetch):
+		return DaemonModePrefetch, nil
+	default:
+		return DaemonModeInvalid, errdefs.ErrInvalidArgument
+	}
+}
+
+const (
+	DefaultDaemonMode DaemonMode = DaemonModeMultiple
+
+	DefaultLogLevel string = "info"
+	defaultGCPeriod        = 24 * time.Hour
 
 	defaultNydusDaemonConfigPath string = "/etc/nydus/config.json"
 	nydusdBinaryName             string = "nydusd"
 	nydusImageBinaryName         string = "nydus-image"
 
-	defaultRootDir             = "/var/lib/containerd-nydus"
-	oldDefaultRootDir          = "/var/lib/containerd-nydus-grpc"
+	defaultRootDir    = "/var/lib/containerd-nydus"
+	oldDefaultRootDir = "/var/lib/containerd-nydus-grpc"
+
+	// Log rotation
 	defaultRotateLogMaxSize    = 200 // 200 megabytes
 	defaultRotateLogMaxBackups = 10
 	defaultRotateLogMaxAge     = 0 // days

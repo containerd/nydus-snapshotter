@@ -44,7 +44,7 @@ type Daemon struct {
 	SnapshotDir      string
 	Pid              int
 	ImageID          string
-	DaemonMode       string
+	DaemonMode       config.DaemonMode
 	FsDriver         string
 	APISock          *string
 	RootMountPoint   *string

@@ -60,22 +60,6 @@ const (
 
 var nativeEndian binary.ByteOrder
 
-type Mode int
-
-const (
-	// A single nydusd serves all container images
-	SharedInstance Mode = iota
-	// One container image one nydusd topology
-	MultiInstance
-	// Nydusd is not needed to work as FUSE server (fusedev) or other fs drivers,
-	// just provide the mount slices to containerd via API `Mounts` in mount options,
-	// and do real mount by other components.
-	NoneInstance
-	// Nydusd does not fulfill any lazy-load (on-daemon) ability but only
-	// prefetches image data into local blob cache for other components
-	PrefetchInstance
-)
-
 type ImageMode int
 
 const (
@@ -115,7 +99,7 @@ type Filesystem struct {
 	logDir               string
 	logToStdout          bool
 	vpcRegistry          bool
-	mode                 Mode
+	mode                 config.DaemonMode
 	imageMode            ImageMode
 }
 
@@ -152,7 +136,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	var sharedDaemonConnected = false
 
 	// Try to bring up the shared daemon early.
-	if fs.mode == SharedInstance {
+	if fs.mode == config.DaemonModeShared {
 		// Situations that shared daemon is not found:
 		//   1. The first time this nydus-snapshotter runs
 		//   2. Daemon record is wrongly deleted from DB. Above reconnecting already gathers
@@ -173,7 +157,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	// Try to bring all persisted and stopped nydusds up and remount Rafs
 	if len(recoveringDaemons) != 0 {
 		for _, d := range recoveringDaemons {
-			if fs.mode == SharedInstance {
+			if fs.mode == config.DaemonModeShared {
 				if d.ID != daemon.SharedNydusDaemonID && sharedDaemonConnected {
 					if err := d.SharedMount(); err != nil {
 						return nil, errors.Wrap(err, "mount rafs when recovering")
@@ -268,7 +252,7 @@ func getBlobPath(dir string, blobDigest string) (string, error) {
 
 func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 	modeOpt := daemon.WithSharedDaemon()
-	if fs.mode == PrefetchInstance {
+	if fs.mode == config.DaemonModePrefetch {
 		modeOpt = daemon.WithPrefetchDaemon()
 	}
 
@@ -650,7 +634,7 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 			return d.MountPoint(), nil
 		}
 
-		if fs.mode == SharedInstance {
+		if fs.mode == config.DaemonModeShared {
 			return d.SharedAbsMountPoint(), nil
 		}
 
@@ -688,7 +672,7 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 	if err != nil {
 		return err
 	}
-	if fs.mode == SharedInstance || fs.mode == PrefetchInstance {
+	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
 		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
 		}
@@ -741,7 +725,7 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 }
 
 func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
-	if fs.mode == SharedInstance || fs.mode == PrefetchInstance {
+	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
 		// Check if daemon is already running
 		d := fs.getSharedDaemon()
 		if d != nil {
@@ -761,7 +745,7 @@ func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Da
 			// We don't need to wait instance to be ready in PrefetchInstance mode, as we want
 			// to return snapshot to containerd as soon as possible, and prefetch instance is
 			// only for prefetch.
-			if fs.mode != PrefetchInstance {
+			if fs.mode != config.DaemonModePrefetch {
 				if err := fs.WaitUntilReady(daemon.SharedNydusDaemonID); err != nil {
 					return nil, errors.Wrap(err, "failed to wait shared daemon")
 				}
@@ -890,7 +874,7 @@ func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 }
 
 func (fs *Filesystem) hasDaemon() bool {
-	return fs.mode != NoneInstance && fs.mode != PrefetchInstance
+	return fs.mode != config.DaemonModeNone && fs.mode != config.DaemonModePrefetch
 }
 
 func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {

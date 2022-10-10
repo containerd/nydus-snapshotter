@@ -216,7 +216,7 @@ func (s *DaemonStates) Size() int {
 type Manager struct {
 	store            Store
 	nydusdBinaryPath string
-	daemonMode       string
+	daemonMode       config.DaemonMode
 	// Where nydusd stores cache files for fscache driver
 	cacheDir string
 	// Daemon states are inserted when creating snapshots and nydusd and
@@ -240,7 +240,7 @@ type Manager struct {
 type Opt struct {
 	NydusdBinaryPath string
 	Database         *store.Database
-	DaemonMode       string
+	DaemonMode       config.DaemonMode
 	CacheDir         string
 	RecoverPolicy    DaemonRecoverPolicy
 }
