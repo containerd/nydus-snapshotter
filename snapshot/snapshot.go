@@ -24,8 +24,9 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
-	metrics "github.com/containerd/nydus-snapshotter/pkg/metric"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
+	"github.com/containerd/nydus-snapshotter/pkg/system"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -75,7 +76,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
 
-	pm, err := manager.NewManager(manager.Opt{
+	manager, err := manager.NewManager(manager.Opt{
 		NydusdBinaryPath: cfg.NydusdBinaryPath,
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
@@ -83,11 +84,19 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		RecoverPolicy:    rp,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to new process manager")
+		return nil, errors.Wrap(err, "create daemons manager")
+	}
+
+	if cfg.APISocket != "" {
+		systemController, err := system.NewSystemController(manager, cfg.APISocket)
+		if err != nil {
+			return nil, errors.Wrap(err, "create system controller")
+		}
+		go systemController.Run()
 	}
 
 	opts := []fspkg.NewFSOpt{
-		fspkg.WithManager(pm),
+		fspkg.WithManager(manager),
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
@@ -131,7 +140,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 			ctx,
 			metrics.WithRootDir(cfg.RootDir),
 			metrics.WithMetricsFile(cfg.MetricsFile),
-			metrics.WithProcessManager(pm),
+			metrics.WithProcessManager(manager),
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to new metric server")
@@ -170,7 +179,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		ms:                   ms,
 		syncRemove:           cfg.SyncRemove,
 		fs:                   nydusFs,
-		manager:              pm,
+		manager:              manager,
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,

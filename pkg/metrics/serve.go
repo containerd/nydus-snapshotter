@@ -9,7 +9,6 @@ package metrics
 import (
 	"context"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,9 +18,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
-	"github.com/containerd/nydus-snapshotter/pkg/metric/exporter"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 )
 
 type ServerOpt func(*Server) error
@@ -132,30 +129,10 @@ outer:
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	handler := promhttp.HandlerFor(exporter.Registry, promhttp.HandlerOpts{
-		ErrorHandling: promhttp.HTTPErrorOnError,
-	})
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", handler)
-	server := http.Server{
-		Handler: mux,
-	}
-
-	// Process manager starts to collect metrics from daemons periodically.
+	// Start to collect metrics from daemons periodically.
 	go func() {
 		s.collectDaemonMetric(ctx)
-		// log.G(ctx).Errorf("failed to collect daemon metric, err: %v", err)
 	}()
 
-	// Shutdown the server when stop is closed
-	go func() {
-		sig := <-ctx.Done()
-		log.G(ctx).Infof("caught signal %s: shutting down", sig)
-		if err := server.Shutdown(context.Background()); err != nil {
-			log.G(ctx).Errorf("failed to shutdown metric server, err: %v", err)
-		}
-	}()
-
-	// Run the server
-	return errors.Wrap(server.Serve(s.listener), "failed to start metrics server")
+	return nil
 }

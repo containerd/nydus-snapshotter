@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
-	"github.com/containerd/nydus-snapshotter/pkg/metric/ttl"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/ttl"
 )
 
 var (
