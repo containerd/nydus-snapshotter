@@ -34,6 +34,10 @@ build:
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 
+# Majorly for cross build for converter package since it is imported by other projects
+converter:
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/converter ./cmd/converter
+
 .PHONY: clear
 clear:
 	rm -f bin/*
