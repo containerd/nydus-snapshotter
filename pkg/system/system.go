@@ -63,8 +63,8 @@ type errorMessage struct {
 	Message string `json:"message"`
 }
 
-func newErrorMessage(code, message string) errorMessage {
-	return errorMessage{Code: code, Message: message}
+func newErrorMessage(message string) errorMessage {
+	return errorMessage{Code: defaultErrorCode, Message: message}
 }
 
 func (m *errorMessage) encode() string {
@@ -75,6 +75,22 @@ func (m *errorMessage) encode() string {
 		return ""
 	}
 	return string(msg)
+}
+
+func jsonResponse(w http.ResponseWriter, payload interface{}) {
+	respBody, err := json.Marshal(&payload)
+	if err != nil {
+		log.L.Errorf("marshal error, %s", err)
+		m := newErrorMessage(err.Error())
+		http.Error(w, m.encode(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(respBody); err != nil {
+		log.L.Errorf("write body %s", err)
+	}
 }
 
 type daemonInfo struct {
@@ -158,25 +174,15 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 			info = append(info, i)
 		}
 
-		respBody, err := json.Marshal(&info)
-		if err != nil {
-			log.L.Errorf("marshal error, %s", err)
-			m := newErrorMessage(defaultErrorCode, err.Error())
-			http.Error(w, m.encode(), http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(respBody)
+		jsonResponse(w, &info)
 	}
 }
 
 // TODO: Implement me!
 func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		daemons := sc.manager.ListDaemons()
-		log.L.Infof("list daemons %v", daemons)
+		m := newErrorMessage("not implemented")
+		http.Error(w, m.encode(), http.StatusNotImplemented)
 	}
 }
 
@@ -206,7 +212,7 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			log.L.Errorf("request %v, decode error %s", r, err)
-			m := newErrorMessage(defaultErrorCode, err.Error())
+			m := newErrorMessage(err.Error())
 			http.Error(w, m.encode(), http.StatusBadRequest)
 			return
 		}
@@ -221,7 +227,7 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 		for _, d := range daemons {
 			if err := upgradeNydusDaemon(d, c); err != nil {
 				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID, err)
-				m := newErrorMessage(defaultErrorCode, err.Error())
+				m := newErrorMessage(err.Error())
 				http.Error(w, m.encode(), http.StatusInternalServerError)
 				return
 			}
