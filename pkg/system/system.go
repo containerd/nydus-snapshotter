@@ -35,6 +35,8 @@ const (
 	endpointPromMetrics string = "/metrics"
 )
 
+const defaultErrorCode string = "Unknown"
+
 // Nydus-snapshotter might manage dozens of running nydus daemons, each daemon may have multiple
 // file system instances attached. For easy maintenance, the system controller can interact with
 // all the daemons in a consistent and automatic way.
@@ -54,6 +56,25 @@ type upgradeRequest struct {
 	NydusdPath string `json:"nydusd_path"`
 	Version    string `json:"version"`
 	Policy     string `json:"policy"`
+}
+
+type errorMessage struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func newErrorMessage(code, message string) errorMessage {
+	return errorMessage{Code: code, Message: message}
+}
+
+func (m *errorMessage) encode() string {
+	// This serialization can't fail
+	msg, err := json.Marshal(&m)
+	if err != nil {
+		log.L.Errorf("Failed to encode error message, %s", err)
+		return ""
+	}
+	return string(msg)
 }
 
 type daemonInfo struct {
@@ -140,7 +161,8 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		respBody, err := json.Marshal(&info)
 		if err != nil {
 			log.L.Errorf("marshal error, %s", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			m := newErrorMessage(defaultErrorCode, err.Error())
+			http.Error(w, m.encode(), http.StatusInternalServerError)
 			return
 		}
 
@@ -184,7 +206,8 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			log.L.Errorf("request %v, decode error %s", r, err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			m := newErrorMessage(defaultErrorCode, err.Error())
+			http.Error(w, m.encode(), http.StatusBadRequest)
 			return
 		}
 
@@ -198,7 +221,8 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 		for _, d := range daemons {
 			if err := upgradeNydusDaemon(d, c); err != nil {
 				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				m := newErrorMessage(defaultErrorCode, err.Error())
+				http.Error(w, m.encode(), http.StatusInternalServerError)
 				return
 			}
 		}
