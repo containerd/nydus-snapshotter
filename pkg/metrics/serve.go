@@ -110,7 +110,7 @@ outer:
 				if d.ID == daemon.SharedNydusDaemonID {
 					continue
 				}
-				fsMetrics, err := d.GetFsMetric(s.pm.IsSharedDaemon(), d.SnapshotID)
+				fsMetrics, err := d.GetFsMetrics(s.pm.IsSharedDaemon(), d.SnapshotID)
 				if err != nil {
 					log.G(ctx).Errorf("failed to get fs metric: %v", err)
 					continue
