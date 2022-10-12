@@ -461,6 +461,10 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		log.L.Warnf("Unable to unsubscribe, daemon ID %s", d.ID)
 	}
 
+	if err := m.SupervisorSet.DestroySupervisor(d.ID); err != nil {
+		log.L.Warnf("fail to delete supervisor for daemon %s, %s", d.ID, err)
+	}
+
 	log.L.Infof("Destroy nydusd daemon %s. Host mountpoint %s, snapshot %s", d.ID, d.HostMountPoint(), d.SnapshotID)
 
 	// Graceful nydusd termination will umount itself.
@@ -493,6 +497,7 @@ func (m *Manager) IsPrefetchDaemon() bool {
 }
 
 // Reconnect running daemons and rebuild daemons management states
+// It is invoked during nydus-snapshotter restarting
 // 1. Don't erase ever written record
 // 2. Just recover nydusd daemon states to manager's memory part.
 // 3. Manager in SharedDaemon mode should starts a nydusd when recovering
@@ -508,12 +513,13 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 	}
 
 	if err := m.store.WalkDaemons(ctx, func(d *daemon.Daemon) error {
-		log.L.WithField("daemon", d.ID).
-			WithField("mode", d.DaemonMode).
-			Info("found daemon in database")
 
 		m.daemonStates.RecoverDaemonState(d)
-
+		su := m.SupervisorSet.NewSupervisor(d.ID)
+		if su == nil {
+			return errors.Errorf("create supervisor for daemon %s error", d.ID)
+		}
+		d.Supervisor = su
 		d.ResetClient()
 
 		defer func() {
@@ -525,14 +531,14 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		// Do not check status on virtual daemons
 		if m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
-			log.L.WithField("daemon", d.ID).Infof("found virtual daemon")
+			log.L.Infof("Found virtual daemon %s", d.ImageID)
 			recoveringDaemons = append(recoveringDaemons, d)
 
 			// It a coincidence that virtual daemon has the same socket path with shared daemon.
 			// Check if nydusd can be connected before clear their vestiges.
 			_, err := d.State()
 			if err != nil {
-				log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+				log.L.Infof("Master daemon of virtual daemon %s should be dead, %s", d.ID, err)
 
 				if d.FsDriver == config.FsDriverFscache {
 					d.ClearVestige()
@@ -544,7 +550,8 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		state, err := d.State()
 		if err != nil {
-			log.L.WithField("daemon", d.ID).Warnf("failed to check daemon status: %v", err)
+			log.L.Infof("found DEAD daemon %s in mode %s during reconnecting, will recover it!, %s",
+				d.ID, d.DaemonMode, err)
 
 			// Skip so-called virtual daemon :-(
 			if d.ID == daemon.SharedNydusDaemonID || !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
@@ -563,11 +570,11 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		d.Connected = true
 
 		if state != types.DaemonStateRunning {
-			log.L.WithField("daemon", d.ID).Warnf("daemon is not running: %v", state)
+			log.L.Warnf("daemon %s is not running: %s", d.ID, state)
 			return nil
 		}
 
-		log.L.WithField("daemon", d.ID).Infof("found alive daemon")
+		log.L.Infof("found RUNNING daemon %s in mode %s during reconnecting", d.ID, d.DaemonMode)
 
 		go func() {
 			if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
@@ -577,6 +584,20 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 			if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
 				log.L.Errorf("Nydusd %s probably not started", d.ID)
+				return
+			}
+
+			// Snapshotter's lost the daemons' states after exit, refetch them.
+			su := d.Supervisor
+
+			if err := su.WaitForStatesTimeout(5 * time.Second); err != nil {
+				log.L.Errorf("Fail to receive daemon runtime states, %s", err)
+				return
+			}
+
+			if err := d.SendStates(); err != nil {
+				log.L.Errorf("Request daemon to send states, %s", err)
+				return
 			}
 		}()
 

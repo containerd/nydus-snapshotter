@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/pkg/errors"
 )
 
@@ -56,6 +58,28 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		// has set daemon's state to RUNNING or READY.
 		if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
 			log.L.Errorf("Nydusd %s probably not started", d.ID)
+			return
+		}
+
+
+		if d.Supervisor == nil {
+			return
+		}
+
+		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+			log.L.Errorf("daemon %s is not managed to reach RUNNING state", d.ID)
+			return
+		}
+
+		su := m.SupervisorSet.GetSupervisor(d.ID)
+		if err := su.WaitForStatesTimeout(5 * time.Second); err != nil {
+			log.L.Errorf("Fail to receive daemon runtime states, %s", err)
+			return
+		}
+
+		if err := d.SendStates(); err != nil {
+			log.L.Errorf("Request daemon to send states, %s", err)
+			return
 		}
 	}()
 
@@ -81,6 +105,10 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 	} else {
 		cmdOpts = append(cmdOpts, command.WithMode("fuse"))
 
+		if d.Supervisor != nil {
+			cmdOpts = append(cmdOpts, command.WithSupervisor(d.Supervisor.Sock()), command.WithID(d.ID))
+		}
+
 		if nydusdThreadNum != 0 {
 			cmdOpts = append(cmdOpts, command.WithThreadNum(nydusdThreadNum))
 		}
@@ -91,6 +119,7 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 			if err != nil {
 				return nil, errors.Wrapf(err, "locate bootstrap")
 			}
+
 			cmdOpts = append(cmdOpts,
 				command.WithConfig(d.ConfigFile()),
 				command.WithBootstrap(bootstrap),

@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
@@ -49,7 +50,8 @@ type Daemon struct {
 	APISock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
-	nydusdThreadNum  int
+	// FIXME: thread number won't be serialized and persisted.
+	nydusdThreadNum int
 
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
 	client NydusdClient `json:"-"`
@@ -58,6 +60,8 @@ type Daemon struct {
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
 	domainID  string     `json:"-"`
+	// Nil means this daemon object has no supervisor
+	Supervisor *supervisor.Supervisor `json:"-"`
 }
 
 func (d *Daemon) Lock() {
@@ -200,8 +204,31 @@ func (d *Daemon) SharedMount() error {
 	// Protect daemon client when it's being reset.
 	d.Lock()
 	defer d.Unlock()
+	if err := d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "mount rafs instance")
 
-	return d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
+	}
+
+	go func() {
+		su := d.Supervisor
+		if su == nil {
+			log.L.Errorf("Daemon %s has no supervisor", d.ID)
+			return
+		}
+		if err := su.WaitForStatesTimeout(10 * time.Second); err != nil {
+			log.L.Warnf("fail to receive states for %s", d.ID)
+			return
+		}
+
+		// TODO: This should be optional by checking snapshotter's configuration.
+		// FIXME: Is it possible the states are overwritten during two API mounts.
+		if err := d.SendStates(); err != nil {
+			log.L.Errorf("send daemon %s states", d.ID)
+			return
+		}
+	}()
+
+	return nil
 }
 
 func (d *Daemon) SharedUmount() error {
