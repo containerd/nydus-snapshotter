@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
@@ -34,10 +35,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
-
-	// Import the converter package so that it can be compiled during
-	// `go build` to ensure cross-compilation compatibility.
-	_ "github.com/containerd/nydus-snapshotter/pkg/converter"
 )
 
 var _ snapshots.Snapshotter = &snapshotter{}
@@ -845,4 +842,13 @@ func (o *snapshotter) snapshotRoot() string {
 
 func (o *snapshotter) snapshotDir(id string) string {
 	return filepath.Join(o.snapshotRoot(), id)
+}
+
+func getSupportsDType(dir string) (bool, error) {
+	return fs.SupportsDType(dir)
+}
+
+func lchown(target string, st os.FileInfo) error {
+	stat := st.Sys().(*syscall.Stat_t)
+	return os.Lchown(target, int(stat.Uid), int(stat.Gid))
 }

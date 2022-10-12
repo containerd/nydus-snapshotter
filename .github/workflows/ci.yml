@@ -93,7 +93,7 @@ jobs:
             ${{ runner.os }}-go
       - name: Build
         run: |
-          make -e GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }}
+          make -e GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} converter
 
   coverage:
     name: Code coverage
