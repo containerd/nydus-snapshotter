@@ -53,7 +53,7 @@ func NewMountRequest(source, config string) MountRequest {
 	}
 }
 
-type FsMetric struct {
+type FsMetrics struct {
 	FilesAccountEnabled       bool     `json:"files_account_enabled"`
 	AccessPatternEnabled      bool     `json:"access_pattern_enabled"`
 	MeasureLatency            bool     `json:"measure_latency"`

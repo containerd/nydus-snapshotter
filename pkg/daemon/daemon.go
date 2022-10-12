@@ -265,11 +265,11 @@ func (d *Daemon) sharedErofsUmount() error {
 	return nil
 }
 
-func (d *Daemon) GetFsMetric(sharedDaemon bool, sid string) (*types.FsMetric, error) {
-	if err := d.ensureClient("get metric"); err != nil {
+func (d *Daemon) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, error) {
+	if err := d.ensureClient("get metrics"); err != nil {
 		return nil, err
 	}
-	return d.client.GetFsMetric(sharedDaemon, sid)
+	return d.client.GetFsMetrics(sharedDaemon, sid)
 }
 
 func (d *Daemon) IsMultipleDaemon() bool {

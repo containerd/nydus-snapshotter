@@ -52,7 +52,7 @@ func NewExporter(opts ...Opt) (*Exporter, error) {
 	return &exp, nil
 }
 
-func (e *Exporter) ExportFsMetrics(m *types.FsMetric, imageRef string) error {
+func (e *Exporter) ExportFsMetrics(m *types.FsMetrics, imageRef string) error {
 	ReadCount.WithLabelValues(imageRef).Set(float64(m.DataRead))
 	OpenFdCount.WithLabelValues(imageRef).Set(float64(m.NrOpens))
 	OpenFdMaxCount.WithLabelValues(imageRef).Set(float64(m.NrMaxOpens))

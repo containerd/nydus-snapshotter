@@ -69,7 +69,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: []uint64{1, 4, 16, 64, 128, 512, 1024, 2048},
-		GetCounters: func(m *types.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetrics) []uint64 {
 			return m.BlockCountRead
 		},
 	},
@@ -82,7 +82,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: MakeFopBuckets(),
-		GetCounters: func(m *types.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetrics) []uint64 {
 			return m.FopHits
 		},
 	},
@@ -95,7 +95,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: MakeFopBuckets(),
-		GetCounters: func(m *types.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetrics) []uint64 {
 			return m.FopErrors
 		},
 	},
@@ -108,7 +108,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			prometheus.Labels{},
 		),
 		Buckets: []uint64{1, 20, 50, 100, 500, 1000, 2000, 4000},
-		GetCounters: func(m *types.FsMetric) []uint64 {
+		GetCounters: func(m *types.FsMetrics) []uint64 {
 			return m.ReadLatencyDist
 		},
 	},
