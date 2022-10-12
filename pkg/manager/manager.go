@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
@@ -152,6 +153,7 @@ func (s *DaemonStates) RemoveBySnapshotID(id string) *daemon.Daemon {
 	return s.GetBySnapshotID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
 }
 
+// Also recover daemon runtime state here
 func (s *DaemonStates) RecoverDaemonState(d *daemon.Daemon) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -250,6 +252,75 @@ type Opt struct {
 	RootDir string
 }
 
+func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
+	if err := d.Wait(); err != nil {
+		log.L.Warnf("fail to wait for daemon, %v", err)
+	}
+
+	// Starting a new nydusd will re-subscribe
+	if err := m.monitor.Unsubscribe(d.ID); err != nil {
+		log.L.Warnf("fail to unsubscribe daemon %s, %v", d.ID, err)
+	}
+
+	su := m.SupervisorSet.GetSupervisor(d.ID)
+	if err := su.SendStatesTimeout(time.Second * 10); err != nil {
+		log.L.Errorf("Send states error, %s", err)
+		return
+	}
+
+	// Failover nydusd still depends on the old supervisor
+
+	if err := m.StartDaemon(d); err != nil {
+		log.L.Errorf("fail to start daemon %s when recovering", d.ID)
+		return
+	}
+
+	if err := d.WaitUntilState(types.DaemonStateInit); err != nil {
+		log.L.Errorf("daemon din't reach state %s", types.DaemonStateInit)
+		return
+	}
+
+	if err := d.TakeOver(); err != nil {
+		log.L.Errorf("fail to takeover, %s", err)
+		return
+	}
+
+	if err := d.Start(); err != nil {
+		log.L.Errorf("fail to start service, %s", err)
+		return
+	}
+}
+
+func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
+	if err := d.Wait(); err != nil {
+		log.L.Warnf("fails to wait for daemon, %v", err)
+	}
+
+	// Starting a new nydusd will re-subscribe
+	if err := m.monitor.Unsubscribe(d.ID); err != nil {
+		log.L.Warnf("fails to unsubscribe daemon %s, %v", d.ID, err)
+	}
+
+	d.ClearVestige()
+	if err := m.StartDaemon(d); err != nil {
+		log.L.Errorf("fails to start daemon %s when recovering", d.ID)
+		return
+	}
+
+	// Mount rafs instance by http API
+	if d.IsSharedDaemon() {
+		daemons := m.daemonStates.List()
+		for _, d := range daemons {
+			if d.ID != daemon.SharedNydusDaemonID {
+				// FIXME: Virtual daemon has a separated client, so it skips checking unix socket's existence.
+				// This is really hacky, but I don't have better solution until rafs object is decoupled from daemon.
+				d.ResetClient()
+				if err := d.SharedMount(); err != nil {
+					log.L.Warnf("fail to mount rafs instance, %v", err)
+				}
+			}
+		}
+	}
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
@@ -257,45 +328,20 @@ func (m *Manager) handleDaemonDeathEvent() {
 		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
 
 		if m.RecoverPolicy == RecoverPolicyRestart {
-			go func(event deathEvent) {
-				d := m.GetByDaemonID(event.daemonID)
-				if d == nil {
-					log.L.Warnf("Daemon %s is not found", event.daemonID)
-					return
-				}
-
-				if err := d.Wait(); err != nil {
-					log.L.Warnf("fails to wait for daemon, %v", err)
-				}
-
-				// Starting a new nydusd will re-subscribe
-				if err := m.monitor.Unsubscribe(d.ID); err != nil {
-					log.L.Warnf("fails to unsubscribe daemon %s, %v", d.ID, err)
-				}
-
-				d.ClearVestige()
-				if err := m.StartDaemon(d); err != nil {
-					log.L.Errorf("fails to start daemon %s when recovering", d.ID)
-					return
-				}
-
-				// Mount rafs instance by http API
-				if d.IsSharedDaemon() {
-					daemons := m.daemonStates.List()
-					for _, d := range daemons {
-						if d.ID != daemon.SharedNydusDaemonID {
-							// FIXME: Virtual daemon has a separated client, so it skips checking unix socket's existence.
-							// This is really hacky, but I don't have better solution until rafs object is decoupled from daemon.
-							d.ResetClient()
-							if err := d.SharedMount(); err != nil {
-								log.L.Warnf("fail to mount rafs instance, %v", err)
-							}
-						}
-					}
-				}
-			}(ev)
+			d := m.GetByDaemonID(ev.daemonID)
+			if d == nil {
+				log.L.Warnf("Daemon %s was not found", ev.daemonID)
+				return
+			}
+			go m.doDaemonRestart(d)
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
-			log.L.Warnf("failover is not implemented now!")
+			log.L.Warnf("Do failover for daemon %s", ev.daemonID)
+			d := m.GetByDaemonID(ev.daemonID)
+			if d == nil {
+				log.L.Warnf("Daemon %s was not found", ev.daemonID)
+				return
+			}
+			go m.doDaemonFailover(d)
 		}
 	}
 }
