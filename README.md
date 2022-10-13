@@ -141,6 +141,26 @@ Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./d
 
 We can also use the `nydus-snapshotter` container image when we want to put Nydus stuffs inside a container. See the [nydus-snapshotter exmple](./misc/example/README.md) for how to setup and use it.
 
+## Integrate with Dragonfly to Distribute Images in P2P
+
+Nydus is also a sub-project of [Dragonfly](https://github.com/dragonflyoss/Dragonfly2). So it closely works with Dragonfly to distribute container images in a fast and efficient P2P fashion to reduce network latency and lower the pressure on a single-point of the registry.
+
+Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the containers startup. It is suggested to use Dragonfly mirror mode. To integrate with Dragonfly in the mirror mode, please provide registry mirror in nydusd's json configuration file in section `device.backend.mirrors`
+
+```json
+{
+  "mirrors": [
+    {
+      "host": "http://127.0.0.1:65001",
+      "headers": "https://index.docker.io/v1/",
+      "auth_through": false
+    }
+  ]
+}
+```
+
+`auth_through=false` means nydusd's authentication request will directly go to original registry rather than relayed by Dragonfly.
+
 ## Community
 
 Nydus aims to form a **vendor-neutral opensource** image distribution solution to all communities.
