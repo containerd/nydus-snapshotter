@@ -25,13 +25,15 @@ type DaemonCommand struct {
 	FscacheThreads string `type:"param" name:"fscache-threads"`
 	Upgrade        bool   `type:"flag" name:"upgrade" default:""`
 	ThreadNum      string `type:"param" name:"thread-num"`
-	Config         string `type:"param" name:"config"`
-	Bootstrap      string `type:"param" name:"bootstrap"`
-	Mountpoint     string `type:"param" name:"mountpoint"`
-	APISock        string `type:"param" name:"apisock"`
-	LogLevel       string `type:"param" name:"log-level"`
-	Supervisor     string `type:"param" name:"supervisor"`
-	LogFile        string `type:"param" name:"log-file"`
+	// `--id` is required by `--supervisor` when starting nydusd
+	ID         string `type:"param" name:"id"`
+	Config     string `type:"param" name:"config"`
+	Bootstrap  string `type:"param" name:"bootstrap"`
+	Mountpoint string `type:"param" name:"mountpoint"`
+	APISock    string `type:"param" name:"apisock"`
+	LogLevel   string `type:"param" name:"log-level"`
+	Supervisor string `type:"param" name:"supervisor"`
+	LogFile    string `type:"param" name:"log-file"`
 }
 
 // Build exec style command line
@@ -153,6 +155,12 @@ func WithLogLevel(l string) Opt {
 func WithSupervisor(s string) Opt {
 	return func(cmd *DaemonCommand) {
 		cmd.Supervisor = s
+	}
+}
+
+func WithID(id string) Opt {
+	return func(cmd *DaemonCommand) {
+		cmd.ID = id
 	}
 }
 
