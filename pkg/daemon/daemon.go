@@ -144,6 +144,10 @@ func (d *Daemon) State() (types.DaemonState, error) {
 		return types.DaemonStateUnknown, err
 	}
 
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
+
 	info, err := d.client.GetDaemonInfo()
 	if err != nil {
 		return types.DaemonStateUnknown, err
@@ -192,6 +196,10 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
+
 	return d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
 }
 
@@ -207,6 +215,10 @@ func (d *Daemon) SharedUmount() error {
 		return nil
 	}
 
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
+
 	return d.client.Umount(d.SharedMountPoint())
 }
 
@@ -218,6 +230,10 @@ func (d *Daemon) sharedErofsMount() error {
 	if err := os.MkdirAll(d.FscacheWorkDir(), 0755); err != nil {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
+
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
 
 	if err := d.client.BindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
@@ -252,6 +268,10 @@ func (d *Daemon) sharedErofsUmount() error {
 	if err := d.ensureClient("erofs umount"); err != nil {
 		return err
 	}
+
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
 
 	if err := d.client.UnbindBlob(d.ConfigFile()); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
@@ -305,6 +325,11 @@ func (d *Daemon) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, 
 	if err := d.ensureClient("get metrics"); err != nil {
 		return nil, err
 	}
+
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
+
 	return d.client.GetFsMetrics(sharedDaemon, sid)
 }
 
