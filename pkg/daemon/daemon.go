@@ -265,6 +265,42 @@ func (d *Daemon) sharedErofsUmount() error {
 	return nil
 }
 
+func (d *Daemon) SendStates() error {
+	if err := d.ensureClient("send states"); err != nil {
+		return err
+	}
+
+	if err := d.client.SendFd(); err != nil {
+		return errors.Wrap(err, "request to send states")
+	}
+
+	return nil
+}
+
+func (d *Daemon) TakeOver() error {
+	if err := d.ensureClient("takeover"); err != nil {
+		return err
+	}
+
+	if err := d.client.TakeOver(); err != nil {
+		return errors.Wrap(err, "request to take over")
+	}
+
+	return nil
+}
+
+func (d *Daemon) Start() error {
+	if err := d.ensureClient("start service"); err != nil {
+		return err
+	}
+
+	if err := d.client.Start(); err != nil {
+		return errors.Wrap(err, "request to start service")
+	}
+
+	return nil
+}
+
 func (d *Daemon) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, error) {
 	if err := d.ensureClient("get metrics"); err != nil {
 		return nil, err
