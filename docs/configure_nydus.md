@@ -34,6 +34,18 @@ cleanup_on_close = false
 kubeconfig_path = "$HOME/.kube/config"
 enable_kubeconfig_keychain = true
 recover_policy = "restart"
+
+[[resolver.host."source-registry1.com".mirrors]]
+host = "http://127.0.0.1:65001"
+insecure = false
+[resolver.host."source-registry1.com".mirrors.headers]
+"X-Dragonfly-Registry" = "http//source-registry1.com"
+
+[[resolver.host."source-registry1.com".mirrors]]
+host = "http://127.0.0.1:65001"
+insecure = true
+[resolver.host."source-registry1.com".mirrors.headers]
+"X-Dragonfly-Registry" = "https//source-registry1.com"
 ```
 
 ```json

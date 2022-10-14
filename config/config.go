@@ -117,8 +117,17 @@ type Config struct {
 	RecoverPolicy            string        `toml:"recover_policy"`
 }
 
+type ResoverConfig struct {
+	Host map[string]HostConfig `toml:"host"`
+}
+
+type HostConfig struct {
+	Mirrors []MirrorConfig `toml:"mirrors"`
+}
+
 type SnapshotterConfig struct {
-	StartupFlag command.Args `toml:"snapshotter"`
+	StartupFlag command.Args  `toml:"snapshotter"`
+	ResoverCfg  ResoverConfig `toml:"resolver"`
 }
 
 func LoadSnapshotterConfig(snapshotterConfigPath string) (*SnapshotterConfig, error) {
@@ -137,47 +146,50 @@ func LoadSnapshotterConfig(snapshotterConfigPath string) (*SnapshotterConfig, er
 	return &config, nil
 }
 
-func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
-	if startupFlag == nil {
+func SetConfig(snapshotterCfg *SnapshotterConfig, cfg *Config) error {
+	if snapshotterCfg == nil {
 		return errors.New("no startup parameter provided")
 	}
 	var daemonCfg DaemonConfig
-	if err := LoadConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
-		return errors.Wrapf(err, "failed to load config file %q", startupFlag.ConfigPath)
+	if err := LoadConfig(snapshotterCfg.StartupFlag.ConfigPath, &daemonCfg); err != nil {
+		return errors.Wrapf(err, "failed to load config file %q", snapshotterCfg.StartupFlag.ConfigPath)
 	}
 	cfg.DaemonCfg = daemonCfg
+	if mirrors, ok := snapshotterCfg.ResoverCfg.Host[cfg.DaemonCfg.Device.Backend.Config.Host]; ok && mirrors.Mirrors != nil && len(mirrors.Mirrors) > 0 {
+		cfg.DaemonCfg.Device.Backend.Config.Mirrors = mirrors.Mirrors
+	}
 
-	if startupFlag.ValidateSignature {
-		if startupFlag.PublicKeyFile == "" {
+	if snapshotterCfg.StartupFlag.ValidateSignature {
+		if snapshotterCfg.StartupFlag.PublicKeyFile == "" {
 			return errors.New("need to specify publicKey file for signature validation")
-		} else if _, err := os.Stat(startupFlag.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "failed to find publicKey file %q", startupFlag.PublicKeyFile)
+		} else if _, err := os.Stat(snapshotterCfg.StartupFlag.PublicKeyFile); err != nil {
+			return errors.Wrapf(err, "failed to find publicKey file %q", snapshotterCfg.StartupFlag.PublicKeyFile)
 		}
 	}
-	cfg.PublicKeyFile = startupFlag.PublicKeyFile
-	cfg.ValidateSignature = startupFlag.ValidateSignature
+	cfg.PublicKeyFile = snapshotterCfg.StartupFlag.PublicKeyFile
+	cfg.ValidateSignature = snapshotterCfg.StartupFlag.ValidateSignature
 
-	daemonMode, err := parseDaemonMode(startupFlag.DaemonMode)
+	daemonMode, err := parseDaemonMode(snapshotterCfg.StartupFlag.DaemonMode)
 	if err != nil {
 		return err
 	}
 
 	// Give --shared-daemon higher priority
 	cfg.DaemonMode = daemonMode
-	if startupFlag.SharedDaemon {
+	if snapshotterCfg.StartupFlag.SharedDaemon {
 		cfg.DaemonMode = DaemonModeShared
 	}
 
-	if startupFlag.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
+	if snapshotterCfg.StartupFlag.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
-	cfg.RootDir = startupFlag.RootDir
+	cfg.RootDir = snapshotterCfg.StartupFlag.RootDir
 	if len(cfg.RootDir) == 0 {
 		return errors.New("invalid empty root directory")
 	}
 
-	if startupFlag.RootDir == defaultRootDir {
+	if snapshotterCfg.StartupFlag.RootDir == defaultRootDir {
 		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
 			if len(entries) != 0 {
 				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
@@ -185,15 +197,15 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 		}
 	}
 
-	cfg.CacheDir = startupFlag.CacheDir
+	cfg.CacheDir = snapshotterCfg.StartupFlag.CacheDir
 	if len(cfg.CacheDir) == 0 {
 		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
 	}
 
-	cfg.LogLevel = startupFlag.LogLevel
+	cfg.LogLevel = snapshotterCfg.StartupFlag.LogLevel
 	// Always let options from CLI override those from configuration file.
-	cfg.LogToStdout = startupFlag.LogToStdout
-	cfg.LogDir = startupFlag.LogDir
+	cfg.LogToStdout = snapshotterCfg.StartupFlag.LogToStdout
+	cfg.LogDir = snapshotterCfg.StartupFlag.LogDir
 	if len(cfg.LogDir) == 0 {
 		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
@@ -203,29 +215,29 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
 	cfg.RotateLogCompress = defaultRotateLogCompress
 
-	d, err := time.ParseDuration(startupFlag.GCPeriod)
+	d, err := time.ParseDuration(snapshotterCfg.StartupFlag.GCPeriod)
 	if err != nil {
-		return errors.Wrapf(err, "parse gc period %v failed", startupFlag.GCPeriod)
+		return errors.Wrapf(err, "parse gc period %v failed", snapshotterCfg.StartupFlag.GCPeriod)
 	}
 	cfg.GCPeriod = d
 
-	cfg.Address = startupFlag.Address
-	cfg.APISocket = startupFlag.APISocket
-	cfg.CleanupOnClose = startupFlag.CleanupOnClose
-	cfg.ConvertVpcRegistry = startupFlag.ConvertVpcRegistry
-	cfg.DisableCacheManager = startupFlag.DisableCacheManager
-	cfg.EnableMetrics = startupFlag.EnableMetrics
-	cfg.EnableStargz = startupFlag.EnableStargz
-	cfg.EnableNydusOverlayFS = startupFlag.EnableNydusOverlayFS
-	cfg.FsDriver = startupFlag.FsDriver
-	cfg.MetricsFile = startupFlag.MetricsFile
-	cfg.NydusdBinaryPath = startupFlag.NydusdBinaryPath
-	cfg.NydusImageBinaryPath = startupFlag.NydusImageBinaryPath
-	cfg.NydusdThreadNum = startupFlag.NydusdThreadNum
-	cfg.SyncRemove = startupFlag.SyncRemove
-	cfg.KubeconfigPath = startupFlag.KubeconfigPath
-	cfg.EnableKubeconfigKeychain = startupFlag.EnableKubeconfigKeychain
-	cfg.RecoverPolicy = startupFlag.RecoverPolicy
+	cfg.Address = snapshotterCfg.StartupFlag.Address
+	cfg.APISocket = snapshotterCfg.StartupFlag.APISocket
+	cfg.CleanupOnClose = snapshotterCfg.StartupFlag.CleanupOnClose
+	cfg.ConvertVpcRegistry = snapshotterCfg.StartupFlag.ConvertVpcRegistry
+	cfg.DisableCacheManager = snapshotterCfg.StartupFlag.DisableCacheManager
+	cfg.EnableMetrics = snapshotterCfg.StartupFlag.EnableMetrics
+	cfg.EnableStargz = snapshotterCfg.StartupFlag.EnableStargz
+	cfg.EnableNydusOverlayFS = snapshotterCfg.StartupFlag.EnableNydusOverlayFS
+	cfg.FsDriver = snapshotterCfg.StartupFlag.FsDriver
+	cfg.MetricsFile = snapshotterCfg.StartupFlag.MetricsFile
+	cfg.NydusdBinaryPath = snapshotterCfg.StartupFlag.NydusdBinaryPath
+	cfg.NydusImageBinaryPath = snapshotterCfg.StartupFlag.NydusImageBinaryPath
+	cfg.NydusdThreadNum = snapshotterCfg.StartupFlag.NydusdThreadNum
+	cfg.SyncRemove = snapshotterCfg.StartupFlag.SyncRemove
+	cfg.KubeconfigPath = snapshotterCfg.StartupFlag.KubeconfigPath
+	cfg.EnableKubeconfigKeychain = snapshotterCfg.StartupFlag.EnableKubeconfigKeychain
+	cfg.RecoverPolicy = snapshotterCfg.StartupFlag.RecoverPolicy
 
 	return cfg.SetupNydusBinaryPaths()
 }

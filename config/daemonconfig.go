@@ -61,9 +61,10 @@ type DaemonConfig struct {
 }
 
 type MirrorConfig struct {
-	Host        string            `json:"host,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	AuthThrough bool              `json:"auth_through,omitempty"`
+	Host        string            `json:"host,omitempty" toml:"host"`
+	Headers     map[string]string `json:"headers,omitempty" toml:"headers"`
+	AuthThrough bool              `json:"auth_through,omitempty" toml:"-"`
+	Insecure    bool              `json:"insecure,omitempty" toml:"insecure"`
 }
 type BackendConfig struct {
 	// Localfs backend configs

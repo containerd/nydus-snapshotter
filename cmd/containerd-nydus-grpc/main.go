@@ -42,11 +42,11 @@ func main() {
 				cfg config.Config
 			)
 			if snapshotterCfg, err := config.LoadSnapshotterConfig(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
-				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
+				if err = config.SetConfig(snapshotterCfg, &cfg); err != nil {
 					return errors.Wrap(err, "invalid configuration")
 				}
 			} else {
-				if err := config.SetStartupParameter(flags.Args, &cfg); err != nil {
+				if err := config.SetConfig(&config.SnapshotterConfig{StartupFlag: *flags.Args}, &cfg); err != nil {
 					return errors.Wrap(err, "invalid argument")
 				}
 			}
