@@ -60,6 +60,7 @@ function stop_all_containers {
         echo "Killing containers ${containers}"
         for C in ${containers}; do
             nerdctl kill "${C}"
+            nerdctl stop "${C}"
             nerdctl rm "${C}"
         done
         return 1
