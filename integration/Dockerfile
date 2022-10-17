@@ -41,7 +41,7 @@ install -D -m 755 runc.amd64 /usr/local/bin/runc
 # Install nydusd nydus-image
 RUN  wget ${DOWNLOADS_MIRROR}/dragonflyoss/image-service/releases/download/v${NYDUS_VER}/nydus-static-v${NYDUS_VER}-linux-amd64.tgz && \
 tar xzf nydus-static-v${NYDUS_VER}-linux-amd64.tgz && \
-install -D -m 755 nydus-static/nydusd-fusedev /usr/local/bin/nydusd && \
+install -D -m 755 nydus-static/nydusd /usr/local/bin/nydusd && \
 install -D -m 755 nydus-static/nydus-image /usr/local/bin/nydus-image && \
 install -D -m 755 nydus-static/nydusctl /usr/local/bin/nydusctl
 

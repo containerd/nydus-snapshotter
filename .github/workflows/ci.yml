@@ -63,8 +63,8 @@ jobs:
           wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
           tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
           mkdir -p /usr/bin
-          sudo mv nydus-static/nydus-image nydus-static/nydusd-fusedev nydus-static/nydusify /usr/bin/
-          sudo ln /usr/bin/nydusd-fusedev /usr/bin/nydusd
+          sudo mv nydus-static/nydus-image nydus-static/nydusd nydus-static/nydusify /usr/bin/
+          sudo ln /usr/bin/nydusd /usr/bin/nydusd
 
           export PATH=$PATH:$(go env GOPATH)/bin
           make smoke
