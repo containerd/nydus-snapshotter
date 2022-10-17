@@ -10,6 +10,14 @@ Nydus supports lazy pulling feature since pulling image is one of the time-consu
 
 For more details about how to build Nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool and [acceld](https://github.com/goharbor/acceleration-service).
 
+## Architecture Based on FUSE
+
+![fuse arch](./docs/diagram/nydus_fuse_arch.svg)
+
+## Architecture Based on Fscache/Erofs
+
+![fscache arch](./docs/diagram/nydus_fscache_erofs__arch.svg)
+
 ## Building
 
 Just invoke `make` and check out the output executable binary `./bin/containerd-nydus-grpc`
@@ -37,12 +45,11 @@ Restart your containerd service making the change take effect. Assume that your 
 systemctl restart containerd
 ```
 
-## Get Nydusd Binary
+## Get Nydus Binaries
 
-Find a suitable `nydusd` release for you from [nydus releases page](https://github.com/dragonflyoss/image-service/releases).
-
-`nydusd-fusedev` is FUSE userspace daemon handling linux kernel FUSE requests from `/dev/fuse` frontend.
-`nydusd-virtiofs` is a virtiofs daemon handling guest kernel FUSE requests.
+Get `nydusd` `nydus-image` and `nydusctl` binaries from [nydus releases page](https://github.com/dragonflyoss/image-service/releases).
+It's suggested to install the binaries to your system path. `nydusd` is FUSE userspace daemon and a vhost-user-fs backend. Nydus-snapshotter
+will fork a nydusd process when necessary.
 
 ## Configure Nydus
 
@@ -55,23 +62,23 @@ Nydus-snapshotter is implemented as a [proxy plugin](https://github.com/containe
 
 Assume your server systemd based, install nydus-snapshotter:
 Note: `nydusd` and `nydus-image` should be found from $PATH.
+
 ```bash
 make install
 systemctl restart containerd
 ```
 
 Or you can start nydus-snapshotter manually.
+
 ```bash
-# `nydusd-path` is the path to nydusd binary
+# `nydusd-path` is the path to nydusd binary. If `nydusd` and `nydus-image` are installed, `--nydusd-path` and `--nydusimage-path`can be omitted.
+# Otherwise, provide them in below command line.
 # `address` is the domain socket that you configured in containerd configuration file
-# `root` is the path to Nydus snapshotter
 # `config-path` is the path to Nydus configuration file
+# The default nydus-snapshotter work directory is located at `/var/lib/containerd-nydus`
+
 $ ./containerd-nydus-grpc \
     --config-path /etc/nydusd-config.json \
-    --shared-daemon \
-    --log-level info \
-    --root /var/lib/containerd/io.containerd.snapshotter.v1.nydus \
-    --cache-dir /var/lib/nydus/cache \
     --address /run/containerd-nydus/containerd-nydus-grpc.sock \
     --nydusd-path /usr/local/bin/nydusd \
     --nydusimg-path /usr/local/bin/nydus-image \
@@ -131,7 +138,28 @@ nerdctl --snapshotter nydus run -it --rm ghcr.io/stargz-containers/fedora:35-esg
 Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./docs/crictl_dry_run.md) of using `crictl` can be found in [documents](./docs).
 
 ### Setup with nydus-snapshotter image
+
 We can also use the `nydus-snapshotter` container image when we want to put Nydus stuffs inside a container. See the [nydus-snapshotter exmple](./misc/example/README.md) for how to setup and use it.
+
+## Integrate with Dragonfly to Distribute Images in P2P
+
+Nydus is also a sub-project of [Dragonfly](https://github.com/dragonflyoss/Dragonfly2). So it closely works with Dragonfly to distribute container images in a fast and efficient P2P fashion to reduce network latency and lower the pressure on a single-point of the registry.
+
+Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the containers startup. It is suggested to use Dragonfly mirror mode. To integrate with Dragonfly in the mirror mode, please provide registry mirror in nydusd's json configuration file in section `device.backend.mirrors`
+
+```json
+{
+  "mirrors": [
+    {
+      "host": "http://127.0.0.1:65001",
+      "headers": "https://index.docker.io/v1/",
+      "auth_through": false
+    }
+  ]
+}
+```
+
+`auth_through=false` means nydusd's authentication request will directly go to original registry rather than relayed by Dragonfly.
 
 ## Community
 
