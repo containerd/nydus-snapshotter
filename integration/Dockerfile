@@ -5,7 +5,7 @@ ARG RUNC_VERSION=1.1.3
 ARG NYDUS_SNAPSHOTTER_PROJECT=/nydus-snapshotter
 # ARG DOWNLOADS_MIRROR="https://nydus-e2e.tos-cn-boe.volces.com"
 ARG DOWNLOADS_MIRROR="https://github.com"
-ARG NYDUS_VER=2.1.0-rc.3.1
+ARG NYDUS_VER=2.1.0-rc.4
 ARG NERDCTL_VER=0.22.2
 
 FROM golang:1.18.5-bullseye AS golang-base
@@ -41,7 +41,7 @@ install -D -m 755 runc.amd64 /usr/local/bin/runc
 # Install nydusd nydus-image
 RUN  wget ${DOWNLOADS_MIRROR}/dragonflyoss/image-service/releases/download/v${NYDUS_VER}/nydus-static-v${NYDUS_VER}-linux-amd64.tgz && \
 tar xzf nydus-static-v${NYDUS_VER}-linux-amd64.tgz && \
-install -D -m 755 nydus-static/nydusd-fusedev /usr/local/bin/nydusd && \
+install -D -m 755 nydus-static/nydusd /usr/local/bin/nydusd && \
 install -D -m 755 nydus-static/nydus-image /usr/local/bin/nydus-image && \
 install -D -m 755 nydus-static/nydusctl /usr/local/bin/nydusctl
 

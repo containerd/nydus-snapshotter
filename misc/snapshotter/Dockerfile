@@ -4,7 +4,7 @@ RUN apt update; apt install --no-install-recommends -y curl wget ca-certificates
 RUN export NYDUS_VERSION=$(curl --silent "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")'); \
     wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VERSION/nydus-static-$NYDUS_VERSION-linux-amd64.tgz; \
     tar xzf nydus-static-$NYDUS_VERSION-linux-amd64.tgz
-RUN mv nydus-static/* /; mv nydusd-fusedev nydusd
+RUN mv nydus-static/* /
 
 FROM ubuntu:20.04
 
