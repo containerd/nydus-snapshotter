@@ -53,7 +53,7 @@ func TestLoadConfig(t *testing.T) {
     "merging_size": 131072
   }
 }`)
-	var cfg DaemonConfig
+	var cfg FuseDaemonConfig
 	err := json.Unmarshal(buf, &cfg)
 	require.Nil(t, err)
 	require.Equal(t, cfg.FSPrefetch.Enable, true)

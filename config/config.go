@@ -82,39 +82,105 @@ const (
 )
 
 type Config struct {
-	Address                  string        `toml:"-"`
-	ConvertVpcRegistry       bool          `toml:"-"`
-	DaemonCfgPath            string        `toml:"daemon_cfg_path"`
-	DaemonCfg                DaemonConfig  `toml:"-"`
-	PublicKeyFile            string        `toml:"-"`
-	RootDir                  string        `toml:"-"`
-	CacheDir                 string        `toml:"cache_dir"`
-	GCPeriod                 time.Duration `toml:"gc_period"`
-	ValidateSignature        bool          `toml:"validate_signature"`
-	NydusdBinaryPath         string        `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath     string        `toml:"nydus_image_binary"`
-	DaemonMode               DaemonMode    `toml:"daemon_mode"`
-	FsDriver                 string        `toml:"daemon_backend"`
-	SyncRemove               bool          `toml:"sync_remove"`
-	EnableMetrics            bool          `toml:"enable_metrics"`
-	MetricsFile              string        `toml:"metrics_file"`
-	EnableStargz             bool          `toml:"enable_stargz"`
-	LogLevel                 string        `toml:"-"`
-	LogDir                   string        `toml:"log_dir"`
-	LogToStdout              bool          `toml:"log_to_stdout"`
-	DisableCacheManager      bool          `toml:"disable_cache_manager"`
-	EnableNydusOverlayFS     bool          `toml:"enable_nydus_overlayfs"`
-	NydusdThreadNum          int           `toml:"nydusd_thread_num"`
-	CleanupOnClose           bool          `toml:"cleanup_on_close"`
-	KubeconfigPath           string        `toml:"kubeconfig_path"`
-	EnableKubeconfigKeychain bool          `toml:"enable_kubeconfig_keychain"`
-	RotateLogMaxSize         int           `toml:"log_rotate_max_size"`
-	RotateLogMaxBackups      int           `toml:"log_rotate_max_backups"`
-	RotateLogMaxAge          int           `toml:"log_rotate_max_age"`
-	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
-	RotateLogCompress        bool          `toml:"log_rotate_compress"`
-	APISocket                string        `toml:"api_socket"`
-	RecoverPolicy            string        `toml:"recover_policy"`
+	Address                  string           `toml:"-"`
+	ConvertVpcRegistry       bool             `toml:"-"`
+	DaemonCfgPath            string           `toml:"daemon_cfg_path"`
+	DaemonCfg                FuseDaemonConfig `toml:"-"`
+	PublicKeyFile            string           `toml:"-"`
+	RootDir                  string           `toml:"-"`
+	CacheDir                 string           `toml:"cache_dir"`
+	GCPeriod                 time.Duration    `toml:"gc_period"`
+	ValidateSignature        bool             `toml:"validate_signature"`
+	NydusdBinaryPath         string           `toml:"nydusd_binary_path"`
+	NydusImageBinaryPath     string           `toml:"nydus_image_binary"`
+	DaemonMode               DaemonMode       `toml:"daemon_mode"`
+	FsDriver                 string           `toml:"daemon_backend"`
+	SyncRemove               bool             `toml:"sync_remove"`
+	EnableMetrics            bool             `toml:"enable_metrics"`
+	MetricsFile              string           `toml:"metrics_file"`
+	EnableStargz             bool             `toml:"enable_stargz"`
+	LogLevel                 string           `toml:"-"`
+	LogDir                   string           `toml:"log_dir"`
+	LogToStdout              bool             `toml:"log_to_stdout"`
+	DisableCacheManager      bool             `toml:"disable_cache_manager"`
+	EnableNydusOverlayFS     bool             `toml:"enable_nydus_overlayfs"`
+	NydusdThreadNum          int              `toml:"nydusd_thread_num"`
+	CleanupOnClose           bool             `toml:"cleanup_on_close"`
+	KubeconfigPath           string           `toml:"kubeconfig_path"`
+	EnableKubeconfigKeychain bool             `toml:"enable_kubeconfig_keychain"`
+	RotateLogMaxSize         int              `toml:"log_rotate_max_size"`
+	RotateLogMaxBackups      int              `toml:"log_rotate_max_backups"`
+	RotateLogMaxAge          int              `toml:"log_rotate_max_age"`
+	RotateLogLocalTime       bool             `toml:"log_rotate_local_time"`
+	RotateLogCompress        bool             `toml:"log_rotate_compress"`
+	APISocket                string           `toml:"api_socket"`
+	RecoverPolicy            string           `toml:"recover_policy"`
+}
+
+type DaemonConfigBase struct {
+	NydusdPath string           `toml:"nydusd_path"`
+	NydusImage string           `toml:"nydusimage_path"`
+	Config     FuseDaemonConfig `toml:"config"`
+}
+
+type LoggingConfig struct {
+	LogToStdout         bool   `toml:"log_to_stdout"`
+	LogLevel            string `toml:"level"`
+	LogDir              string `toml:"dir"`
+	RotateLogMaxSize    int    `toml:"log_rotate_max_size"`
+	RotateLogMaxBackups int    `toml:"log_rotate_max_backups"`
+	RotateLogMaxAge     int    `toml:"log_rotate_max_age"`
+	RotateLogLocalTime  bool   `toml:"log_rotate_local_time"`
+	RotateLogCompress   bool   `toml:"log_rotate_compress"`
+}
+
+type ImageConfig struct {
+	PublicKeyFile     string `toml:"public_key_file"`
+	ValidateSignature bool   `toml:"validate_signature"`
+}
+
+type SnapshotConfig struct {
+	EnableNydusOverlayFS bool `toml:"enable_nydus_overlayfs"`
+	SyncRemove           bool `toml:"sync_remove"`
+}
+
+type CacheManagerConfig struct {
+	Enable bool `toml:"enable"`
+	// Trigger GC gc_period after the specified period.
+	GCPeriod int `toml:"gc_period"`
+}
+
+type AuthConfig struct {
+	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
+	KubeconfigPath           string `toml:"kubeconfig_path"`
+}
+
+type RemoteConfig struct {
+	AuthConfig         AuthConfig `toml:"auth"`
+	ConvertVpcRegistry bool
+}
+
+type NewSnapshotterConfig struct {
+	// Configuration format version
+	Version int `toml:"version"`
+	// Snapshotter's root work directory
+	Root              string `toml:"root"`
+	ContainerdAddress string `toml:"containerd_address"`
+	APISocket         string `toml:"api_socket"`
+	DaemonMode        string `toml:"daemon_mode"`
+	RecoverPolicy     string `toml:"recover_policy"`
+	EnableStargz      bool   `toml:"enable_stargz"`
+	EnableMetrics     bool   `toml:"enable_metrics"`
+	FsDriver          string `toml:"fs_driver"`
+	// Clean up all the resources when snapshotter is closed
+	CleanupOnClose bool `toml:"cleanup_on_close"`
+
+	DaemonConfig       DaemonConfigBase   `toml:"daemon"`
+	SnapshotsConfig    SnapshotConfig     `toml:"snapshots"`
+	RemoteConfig       RemoteConfig       `toml:"remote"`
+	ImageConfig        ImageConfig        `toml:"image"`
+	CacheManagerConfig CacheManagerConfig `toml:"cache_manager"`
+	LoggingConfig      LoggingConfig      `toml:"log"`
 }
 
 type SnapshotterConfig struct {
@@ -141,8 +207,8 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	if startupFlag == nil {
 		return errors.New("no startup parameter provided")
 	}
-	var daemonCfg DaemonConfig
-	if err := LoadConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
+	var daemonCfg FuseDaemonConfig
+	if err := LoadRafsConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
 		return errors.Wrapf(err, "failed to load config file %q", startupFlag.ConfigPath)
 	}
 	cfg.DaemonCfg = daemonCfg
@@ -253,8 +319,8 @@ func (c *Config) FillupWithDefaults() error {
 	if len(c.LogDir) == 0 {
 		c.LogDir = filepath.Join(c.RootDir, logging.DefaultLogDirName)
 	}
-	var daemonCfg DaemonConfig
-	if err := LoadConfig(c.DaemonCfgPath, &daemonCfg); err != nil {
+	var daemonCfg FuseDaemonConfig
+	if err := LoadRafsConfig(c.DaemonCfgPath, &daemonCfg); err != nil {
 		return errors.Wrapf(err, "failed to load config file %q", c.DaemonCfgPath)
 	}
 	c.DaemonCfg = daemonCfg

@@ -1,0 +1,77 @@
+cleanup_on_close = false
+enable_stargz = false
+root = "/var/lib/containerd-nydus"
+version = 1
+
+[binaries]
+nydusd_path = "/usr/local/bin/nydusd"
+nydusimage_path = "/usr/local/bin/nydus-image"
+
+[log]
+# Snapshotter's log level
+level = "info"
+log_rotate_compress = true
+log_rotate_local_time = true
+log_rotate_max_age = 
+log_rotate_max_backups = 
+log_rotate_max_size = 
+log_to_stdout = false
+
+[system]
+collect_metrics = false
+# Management API server unix domain socket path
+socket = 
+
+[remote.auth]
+enable_kubeconfig_keychain = false
+kubeconfig_path = "/home/foo/.kube"
+
+[snapshot]
+enable_nydus_overlayfs = false
+sync_remove = false
+
+[daemon]
+# fuse or fscache
+fs_drvier = "fuse"
+# Specify nydusd log level
+log_level = "info"
+# How to process when daemon dies: "none", "restart", "failover"
+recover_policy = "restart"
+# Speicfy a configuration templiate file
+template_path = ""
+
+# configuration of remote backend storage. fuse and fscache 
+# can share the same backend configuration.
+[daemon.storage]
+connect_timeout = 5
+#  NOTE: mirrors and proxy can't be set at the same time
+mirrors = [{host = , headers = , auth_though = }]
+# proxy =
+disable_indexed_map = false
+# container images data can be cached locally
+enable_cache = true
+prefetch_config = {enable = true, threads_count = 8, merging_size = 1048576}
+retry_limit = 2
+scheme = "https"
+timeout = 5
+type = "registry"
+
+[daemon.fuse]
+# loading rafs metadata mode
+digest_validate = false
+enable_xattr = true
+iostats_files = false
+mode = "direct"
+
+# Nydusd works as a fscache/cachefiles userspace daemon
+[daemon.fscache]
+conig = {cache_tpye = "fscache"}
+type = "bootstrap"
+
+[cache_manager]
+enable = true
+gd_period = "24h"
+
+[image]
+public_key_file = "/path/to/key/file"
+validate_signature = true

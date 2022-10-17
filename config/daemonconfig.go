@@ -1,8 +1,9 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+* Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
- */
+*/
 
 package config
 
@@ -31,17 +32,21 @@ type FSPrefetch struct {
 	BandwidthRate int  `json:"bandwidth_rate"`
 }
 
+// Fscache configuration won't
 type FscacheDaemonConfig struct {
 	// These fields is only for fscache daemon.
-	Type     string `json:"type"`
-	ID       string `json:"id"`
+	Type string `json:"type"`
+	// Snapshotter fills
+	ID string `json:"id"`
+	// Snapshotter fills
 	DomainID string `json:"domain_id"`
 	Config   struct {
 		ID            string        `json:"id"`
 		BackendType   string        `json:"backend_type"`
 		BackendConfig BackendConfig `json:"backend_config"`
 		CacheType     string        `json:"cache_type"`
-		CacheConfig   struct {
+		// Snapshotter fills
+		CacheConfig struct {
 			WorkDir string `json:"work_dir"`
 		} `json:"cache_config"`
 		MetadataPath string `json:"metadata_path"`
@@ -49,7 +54,8 @@ type FscacheDaemonConfig struct {
 	FSPrefetch `json:"fs_prefetch,omitempty"`
 }
 
-type DaemonConfig struct {
+// Used when nydusd works as a FUSE daemon or vhost-user-fs backend
+type FuseDaemonConfig struct {
 	Device         DeviceConfig `json:"device"`
 	Mode           string       `json:"mode"`
 	DigestValidate bool         `json:"digest_validate"`
@@ -57,7 +63,6 @@ type DaemonConfig struct {
 	EnableXattr    bool         `json:"enable_xattr,omitempty"`
 
 	FSPrefetch `json:"fs_prefetch,omitempty"`
-	FscacheDaemonConfig
 }
 
 type MirrorConfig struct {
@@ -120,7 +125,7 @@ type DeviceConfig struct {
 	} `json:"cache"`
 }
 
-func LoadConfig(configFile string, cfg *DaemonConfig) error {
+func LoadRafsConfig(configFile string, cfg *FuseDaemonConfig) error {
 	b, err := os.ReadFile(configFile)
 	if err != nil {
 		return err
@@ -131,18 +136,33 @@ func LoadConfig(configFile string, cfg *DaemonConfig) error {
 	return nil
 }
 
-func SaveConfig(c interface{}, configFile string) error {
-	b, err := json.Marshal(c)
+func LoadFscacheConfig(configFile string, cfg *FscacheDaemonConfig) error {
+	b, err := os.ReadFile(configFile)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configFile, b, 0755)
+	if err := json.Unmarshal(b, cfg); err != nil {
+		return err
+	}
+	return nil
 }
 
-func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {
+// For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
+// We don't have to persist configuration file for fscache since its configuration
+// is passed through HTTP API.
+func DumpConfigFile(c interface{}, outputConfigPath string) error {
+	b, err := json.Marshal(c)
+	if err != nil {
+		return errors.Wrapf(err, "marshal config")
+	}
+
+	return os.WriteFile(outputConfigPath, b, 0644)
+}
+
+func NewDaemonConfig(fsDriver string, cfg FuseDaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (FuseDaemonConfig, error) {
 	image, err := registry.ParseImage(imageID)
 	if err != nil {
-		return DaemonConfig{}, errors.Wrapf(err, "failed to parse image %s", imageID)
+		return FuseDaemonConfig{}, errors.Wrapf(err, "failed to parse image %s", imageID)
 	}
 
 	backend := cfg.Device.Backend.BackendType
@@ -184,7 +204,7 @@ func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID stri
 	case backendTypeLocalfs:
 	case backendTypeOss:
 	default:
-		return DaemonConfig{}, errors.Errorf("unknown backend type %s", backend)
+		return FuseDaemonConfig{}, errors.Errorf("unknown backend type %s", backend)
 	}
 
 	return cfg, nil

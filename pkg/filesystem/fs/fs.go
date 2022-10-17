@@ -87,7 +87,7 @@ type Filesystem struct {
 	manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
-	daemonCfg            config.DaemonConfig
+	daemonCfg            config.FuseDaemonConfig
 	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
@@ -648,15 +648,15 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	return daemon.GetBootstrapFile(fs.SnapshotRoot(), id)
 }
 
-func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID string) (config.DaemonConfig, error) {
+func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID string) (config.FuseDaemonConfig, error) {
 	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
-		return config.DaemonConfig{}, fmt.Errorf("no image ID found in label")
+		return config.FuseDaemonConfig{}, fmt.Errorf("no image ID found in label")
 	}
 
 	cfg, err := config.NewDaemonConfig(fs.fsDriver, fs.daemonCfg, imageID, snapshotID, fs.vpcRegistry, labels)
 	if err != nil {
-		return config.DaemonConfig{}, err
+		return config.FuseDaemonConfig{}, err
 	}
 
 	if fs.cacheMgr != nil {
@@ -862,7 +862,7 @@ func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 		}
 		cfg.Config.MetadataPath = bootstrapPath
 		cfg.FscacheDaemonConfig.FSPrefetch = cfg.FSPrefetch
-		return config.SaveConfig(cfg.FscacheDaemonConfig, d.ConfigFile())
+		return config.DumpConfigFile(cfg.FscacheDaemonConfig, d.ConfigFile())
 	}
 
 	if fs.cacheMgr != nil {
@@ -870,7 +870,7 @@ func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 		// via snapshotter config option to let snapshotter handle blob cache GC.
 		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
 	}
-	return config.SaveConfig(cfg, d.ConfigFile())
+	return config.DumpConfigFile(cfg, d.ConfigFile())
 }
 
 func (fs *Filesystem) hasDaemon() bool {

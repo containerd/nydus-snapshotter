@@ -78,7 +78,7 @@ func WithVerifier(verifier *signature.Verifier) NewFSOpt {
 	}
 }
 
-func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
+func WithDaemonConfig(cfg config.FuseDaemonConfig) NewFSOpt {
 	return func(d *Filesystem) error {
 		d.daemonCfg = cfg
 		return nil
@@ -146,7 +146,7 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
 	}
 }
 
-func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
+func WithImageMode(cfg config.FuseDaemonConfig) NewFSOpt {
 	return func(d *Filesystem) error {
 		if cfg.Device.Backend.BackendType == "localfs" &&
 			len(cfg.Device.Backend.Config.Dir) != 0 {

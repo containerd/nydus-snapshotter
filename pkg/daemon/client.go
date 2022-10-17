@@ -266,7 +266,7 @@ func (c *nydusdClient) UnbindBlob(daemonConfig string) error {
 		return errors.Wrapf(err, "read daemon configuration %s", daemonConfig)
 	}
 
-	var cfg config.DaemonConfig
+	var cfg config.FuseDaemonConfig
 	if err := json.Unmarshal(f, &cfg); err != nil {
 		return errors.Wrap(err, "unmarshal daemon configuration")
 	}
