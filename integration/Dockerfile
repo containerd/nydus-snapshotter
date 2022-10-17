@@ -8,7 +8,7 @@ ARG DOWNLOADS_MIRROR="https://github.com"
 ARG NYDUS_VER=2.1.0-rc.4
 ARG NERDCTL_VER=0.22.2
 
-FROM golang:1.18.5-bullseye AS golang-base
+FROM golang:1.18.7-bullseye AS golang-base
 
 ARG CONTAINERD_VER
 ARG CONTAINERD_PROJECT
