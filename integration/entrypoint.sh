@@ -59,9 +59,9 @@ function stop_all_containers {
     else
         echo "Killing containers ${containers}"
         for C in ${containers}; do
-            nerdctl kill "${C}"
-            nerdctl stop "${C}"
-            nerdctl rm "${C}"
+            nerdctl kill "${C}" || true
+            nerdctl stop "${C}" || true
+            nerdctl rm "${C}" || true
         done
         return 1
     fi
@@ -392,7 +392,7 @@ function only_restart_snapshotter {
     c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
     c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
 
-    echo "killing nydusd"
+    echo "killing snapshotter"
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
