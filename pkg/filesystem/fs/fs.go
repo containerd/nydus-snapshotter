@@ -253,7 +253,7 @@ func getBlobPath(dir string, blobDigest string) (string, error) {
 	return filepath.Join(dir, digest.Encoded()), nil
 }
 
-func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
+func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 	modeOpt := daemon.WithSharedDaemon()
 	if fs.mode == config.DaemonModePrefetch {
 		modeOpt = daemon.WithPrefetchDaemon()
@@ -612,13 +612,15 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	}
 
 	id := filepath.Base(mountPoint)
-	log.L.Logger.Debugf("umount snapshot %s", id)
+
 	daemon := fs.manager.GetBySnapshotID(id)
 
 	if daemon == nil {
 		log.L.Infof("snapshot %s does not correspond to a nydusd", id)
 		return nil
 	}
+
+	log.L.Infof("umount snapshot %s, daemon ID %s", id, daemon.ID)
 
 	if err := fs.manager.DestroyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
@@ -724,7 +726,7 @@ func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
 // 2. Build command line
 // 3. Start daemon
 func (fs *Filesystem) initSharedDaemon() (err error) {
-	d, err := fs.newSharedDaemon()
+	d, err := fs.createSharedDaemon()
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize shared daemon")
 	}
@@ -774,7 +776,7 @@ func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Da
 				}
 			}
 		}
-		return fs.createSharedDaemon(snapshotID, imageID)
+		return fs.createVirtualDaemon(snapshotID, imageID)
 	}
 	return fs.createDaemon(snapshotID, imageID)
 }
@@ -839,7 +841,7 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 // Create a virtual daemon as placeholder in DB and daemon states cache to represent a Rafs mount.
 // It does not fork any new nydusd process. The rafs umount is always done by requesting to the running
 // nydusd API server.
-func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
+func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
 	var (
 		sharedDaemon *daemon.Daemon
 		d            *daemon.Daemon
