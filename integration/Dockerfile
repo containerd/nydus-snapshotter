@@ -26,7 +26,9 @@ ARG NERDCTL_VER
 
 ENV GOPROXY=https://goproxy.cn
 
-RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev sudo psmisc jq
+RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev sudo psmisc jq lsof net-tools
+
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Install containerd
 RUN wget ${DOWNLOADS_MIRROR}/containerd/containerd/releases/download/v${CONTAINERD_VER}/containerd-${CONTAINERD_VER}-linux-amd64.tar.gz && \
