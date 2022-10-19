@@ -459,6 +459,11 @@ func (d *Daemon) Wait() error {
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
 		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
 			log.L.Errorf("failed to process wait, %v", err)
+
+		} else {
+			// FIXME: Snapshotter can't wait for non-child process that exits and finishes unmounting.
+			// So mount point may still be residual. As a workaround, wait for some time.
+			time.Sleep(time.Millisecond * 500)
 		}
 	}
 
@@ -467,33 +472,37 @@ func (d *Daemon) Wait() error {
 
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
-	// This is best effort. So no need to handle its error.
-	log.L.Infof("Umounting %s when clear vestige", d.HostMountPoint())
+	log.L.Infof("Unmounting %s when clear vestige", d.HostMountPoint())
 
 	if err := mounter.Umount(d.HostMountPoint()); err != nil {
 		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
 	}
+
 	// Nydusd judges if it should enter failover phrase by checking
 	// if unix socket is existed and it can't be connected.
 	if err := os.Remove(d.GetAPISock()); err != nil {
 		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 	}
 
+	// TODO: Make me more clear and simple!
 	// Let't transport builder wait for nydusd startup again until it sees the created socket file.
 	d.ResetClient()
 }
 
+// Instantiate a daemon object
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{Pid: 0}
 	d.ID = newID()
 	d.DaemonMode = config.DefaultDaemonMode
 	d.Once = &sync.Once{}
+
 	for _, o := range opt {
 		err := o(d)
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	return d, nil
 }
 
@@ -504,6 +513,7 @@ func GetBootstrapFile(dir, id string) (string, error) {
 	if err == nil {
 		return bootstrap, nil
 	}
+
 	if os.IsNotExist(err) {
 		// check legacy location for backward compatibility
 		bootstrap = filepath.Join(dir, id, "fs", "image.boot")
