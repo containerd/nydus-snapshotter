@@ -61,7 +61,6 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			return
 		}
 
-
 		if d.Supervisor == nil {
 			return
 		}

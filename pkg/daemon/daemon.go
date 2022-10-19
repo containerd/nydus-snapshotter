@@ -318,6 +318,9 @@ func (d *Daemon) SendStates() error {
 		return err
 	}
 
+	d.Lock()
+	defer d.Unlock()
+
 	if err := d.client.SendFd(); err != nil {
 		return errors.Wrap(err, "request to send states")
 	}
@@ -330,6 +333,9 @@ func (d *Daemon) TakeOver() error {
 		return err
 	}
 
+	d.Lock()
+	defer d.Unlock()
+
 	if err := d.client.TakeOver(); err != nil {
 		return errors.Wrap(err, "request to take over")
 	}
@@ -341,6 +347,9 @@ func (d *Daemon) Start() error {
 	if err := d.ensureClient("start service"); err != nil {
 		return err
 	}
+
+	d.Lock()
+	defer d.Unlock()
 
 	if err := d.client.Start(); err != nil {
 		return errors.Wrap(err, "request to start service")
