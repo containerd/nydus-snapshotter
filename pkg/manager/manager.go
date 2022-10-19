@@ -525,23 +525,6 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	return nil
 }
 
-func (m *Manager) isOneDaemon() bool {
-	return m.daemonMode == config.DaemonModeShared ||
-		m.daemonMode == config.DaemonModePrefetch
-}
-
-func (m *Manager) isNoneDaemon() bool {
-	return m.daemonMode == config.DaemonModeNone
-}
-
-func (m *Manager) IsSharedDaemon() bool {
-	return m.daemonMode == config.DaemonModeShared
-}
-
-func (m *Manager) IsPrefetchDaemon() bool {
-	return m.daemonMode == config.DaemonModePrefetch
-}
-
 // Reconnect running daemons and rebuild daemons management states
 // It is invoked during nydus-snapshotter restarting
 // 1. Don't erase ever written record
