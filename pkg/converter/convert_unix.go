@@ -660,6 +660,7 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 		BuilderPath:   opt.BuilderPath,
 		WorkDir:       opt.WorkDir,
 		ChunkDictPath: opt.ChunkDictPath,
+		FsVersion:     opt.FsVersion,
 		WithTar:       true,
 	})
 	if err != nil {
