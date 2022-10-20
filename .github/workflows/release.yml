@@ -67,5 +67,6 @@ jobs:
         with:
           name: "Nydus Snapshotter ${{ env.tag }} Release"
           generate_release_notes: true
-          files: ${{ env.tarball }}
+          files: |
+            ${{ env.tarball }}
             ${{ env.tarball_shasum }}
