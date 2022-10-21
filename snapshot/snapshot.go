@@ -9,8 +9,6 @@ package snapshot
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +21,7 @@ import (
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
@@ -58,9 +57,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize verifier")
 	}
 
-	if cfg.DaemonMode == config.DaemonModePrefetch && !cfg.DaemonCfg.FSPrefetch.Enable {
-		log.G(ctx).Warnf("Daemon mode is %s but fs_prefetch is not enabled, change to %s mode", cfg.DaemonMode, config.DaemonModeNone)
-		cfg.DaemonMode = config.DaemonModeNone
+	daemonConfig, err := daemonconfig.NewDaemonConfig111(cfg.FsDriver, cfg.DaemonCfgPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "load daemon configuration")
 	}
 
 	db, err := store.NewDatabase(cfg.RootDir)
@@ -79,6 +78,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		DaemonMode:       cfg.DaemonMode,
 		CacheDir:         cfg.CacheDir,
 		RecoverPolicy:    rp,
+		DaemonConfig:     daemonConfig,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create daemons manager")
@@ -97,7 +97,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
-		fspkg.WithDaemonConfig(cfg.DaemonCfg),
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
 		fspkg.WithVerifier(verifier),
 		fspkg.WithDaemonMode(cfg.DaemonMode),
@@ -106,7 +105,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithLogDir(cfg.LogDir),
 		fspkg.WithLogToStdout(cfg.LogToStdout),
 		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
-		fspkg.WithImageMode(cfg.DaemonCfg),
 		fspkg.WithEnableStargz(cfg.EnableStargz),
 	}
 
@@ -636,70 +634,79 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return overlayMount(overlayOptions), nil
 	}
 
-	source, err := o.fs.BootstrapFile(id)
-	if err != nil {
-		return nil, err
-	}
+	// daemon := o.fs.manager.GetBySnapshotID(id)
 
-	cfg, err := o.fs.NewDaemonConfig(labels, id)
-	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("remoteMounts: failed to generate nydus config for snapshot %s, label: %v", id, labels))
-	}
+	// source, err := o.fs.BootstrapFile(id)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	b, err := json.Marshal(cfg)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
-	}
-	configContent := string(b)
-	// We already Marshal config and save it in configContent, reset Auth and
-	// RegistryToken so it could be printed and to make debug easier
-	cfg.Device.Backend.Config.Auth = ""
-	cfg.Device.Backend.Config.RegistryToken = ""
-	b, err = json.Marshal(cfg)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
-	}
-	log.G(ctx).Infof("Bootstrap file for snapshotID %s: %s, config %s", id, source, string(b))
+	// // cfg, err := o.fs.NewDaemonConfig(labels, id)
+	// // if err != nil {
+	// // 	return nil, errors.Wrapf(err, "generate nydus configuration for snapshot %s, label: %v", id, labels)
+	// // }
 
-	// get version from bootstrap
-	f, err := os.Open(source)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to open bootstrap")
-	}
-	defer f.Close()
+	// b, err := json.Marshal(cfg)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "marshal configuration")
+	// }
 
-	header := make([]byte, 4096)
-	sz, err := f.Read(header)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to read bootstrap")
-	}
-	version, err := fspkg.DetectFsVersion(header[0:sz])
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to detect filesystem version")
-	}
-	// when enable nydus-overlayfs, return unified mount slice for runc and kata
-	extraOption := &ExtraOption{
-		Source:      source,
-		Config:      configContent,
-		Snapshotdir: o.snapshotDir(s.ID),
-		Version:     version,
-	}
-	no, err := json.Marshal(extraOption)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal NydusOption")
-	}
-	// XXX: Log options without extraoptions as it might contain secrets.
-	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
-	// base64 to filter easily in `nydus-overlayfs`
-	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
-	overlayOptions = append(overlayOptions, opt)
-	return []mount.Mount{
-		{
-			Type:    "fuse.nydus-overlayfs",
-			Source:  "overlay",
-			Options: overlayOptions,
-		},
-	}, nil
+	// configContent := string(b)
+	// // We already Marshal config and save it in configContent, reset Auth and
+	// // RegistryToken so it could be printed and to make debug easier
+	// cfg.Device.Backend.Config.Auth = ""
+	// cfg.Device.Backend.Config.RegistryToken = ""
+
+	// b, err = json.Marshal(cfg)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "marshal config")
+	// }
+
+	// log.G(ctx).Infof("Bootstrap file for snapshotID %s: %s, config %s", id, source, string(b))
+
+	// // get version from bootstrap
+	// f, err := os.Open(source)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "open bootstrap")
+	// }
+	// defer f.Close()
+
+	// header := make([]byte, 4096)
+	// sz, err := f.Read(header)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "read bootstrap %s", source)
+	// }
+
+	// version, err := fspkg.DetectFsVersion(header[0:sz])
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "detect filesystem version")
+	// }
+
+	// // when enable nydus-overlayfs, return unified mount slice for runc and kata
+	// extraOption := &ExtraOption{
+	// 	Source:      source,
+	// 	Config:      configContent,
+	// 	Snapshotdir: o.snapshotDir(s.ID),
+	// 	Version:     version,
+	// }
+	// no, err := json.Marshal(extraOption)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "remoteMounts: failed to marshal NydusOption")
+	// }
+	// // XXX: Log options without extraoptions as it might contain secrets.
+	// log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
+	// // base64 to filter easily in `nydus-overlayfs`
+	// opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
+	// overlayOptions = append(overlayOptions, opt)
+	// return []mount.Mount{
+	// 	{
+	// 		Type:    "fuse.nydus-overlayfs",
+	// 		Source:  "overlay",
+	// 		Options: overlayOptions,
+	// 	},
+	// }, nil
+
+	return nil, nil
 }
 
 func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storage.Snapshot) ([]mount.Mount, error) {

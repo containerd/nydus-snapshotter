@@ -15,6 +15,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 )
 
@@ -23,6 +24,13 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.buildDaemonCommand(d)
 	if err != nil {
 		return errors.Wrapf(err, "create command for daemon %s", d.ID)
+	}
+
+	if d.Config != nil {
+		err = d.Config.DumpFile(d.ConfigFile())
+		if errors.Is(err, errdefs.ErrAlreadyExists) {
+			log.L.Warnf("Configuration file %s already exits", d.ConfigFile())
+		}
 	}
 
 	if err := cmd.Start(); err != nil {

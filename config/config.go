@@ -82,45 +82,43 @@ const (
 )
 
 type Config struct {
-	Address                  string           `toml:"-"`
-	ConvertVpcRegistry       bool             `toml:"-"`
-	DaemonCfgPath            string           `toml:"daemon_cfg_path"`
-	DaemonCfg                FuseDaemonConfig `toml:"-"`
-	PublicKeyFile            string           `toml:"-"`
-	RootDir                  string           `toml:"-"`
-	CacheDir                 string           `toml:"cache_dir"`
-	GCPeriod                 time.Duration    `toml:"gc_period"`
-	ValidateSignature        bool             `toml:"validate_signature"`
-	NydusdBinaryPath         string           `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath     string           `toml:"nydus_image_binary"`
-	DaemonMode               DaemonMode       `toml:"daemon_mode"`
-	FsDriver                 string           `toml:"daemon_backend"`
-	SyncRemove               bool             `toml:"sync_remove"`
-	EnableMetrics            bool             `toml:"enable_metrics"`
-	MetricsFile              string           `toml:"metrics_file"`
-	EnableStargz             bool             `toml:"enable_stargz"`
-	LogLevel                 string           `toml:"-"`
-	LogDir                   string           `toml:"log_dir"`
-	LogToStdout              bool             `toml:"log_to_stdout"`
-	DisableCacheManager      bool             `toml:"disable_cache_manager"`
-	EnableNydusOverlayFS     bool             `toml:"enable_nydus_overlayfs"`
-	NydusdThreadNum          int              `toml:"nydusd_thread_num"`
-	CleanupOnClose           bool             `toml:"cleanup_on_close"`
-	KubeconfigPath           string           `toml:"kubeconfig_path"`
-	EnableKubeconfigKeychain bool             `toml:"enable_kubeconfig_keychain"`
-	RotateLogMaxSize         int              `toml:"log_rotate_max_size"`
-	RotateLogMaxBackups      int              `toml:"log_rotate_max_backups"`
-	RotateLogMaxAge          int              `toml:"log_rotate_max_age"`
-	RotateLogLocalTime       bool             `toml:"log_rotate_local_time"`
-	RotateLogCompress        bool             `toml:"log_rotate_compress"`
-	APISocket                string           `toml:"api_socket"`
-	RecoverPolicy            string           `toml:"recover_policy"`
+	Address                  string        `toml:"-"`
+	ConvertVpcRegistry       bool          `toml:"-"`
+	DaemonCfgPath            string        `toml:"daemon_cfg_path"`
+	PublicKeyFile            string        `toml:"-"`
+	RootDir                  string        `toml:"-"`
+	CacheDir                 string        `toml:"cache_dir"`
+	GCPeriod                 time.Duration `toml:"gc_period"`
+	ValidateSignature        bool          `toml:"validate_signature"`
+	NydusdBinaryPath         string        `toml:"nydusd_binary_path"`
+	NydusImageBinaryPath     string        `toml:"nydus_image_binary"`
+	DaemonMode               DaemonMode    `toml:"daemon_mode"`
+	FsDriver                 string        `toml:"daemon_backend"`
+	SyncRemove               bool          `toml:"sync_remove"`
+	EnableMetrics            bool          `toml:"enable_metrics"`
+	MetricsFile              string        `toml:"metrics_file"`
+	EnableStargz             bool          `toml:"enable_stargz"`
+	LogLevel                 string        `toml:"-"`
+	LogDir                   string        `toml:"log_dir"`
+	LogToStdout              bool          `toml:"log_to_stdout"`
+	DisableCacheManager      bool          `toml:"disable_cache_manager"`
+	EnableNydusOverlayFS     bool          `toml:"enable_nydus_overlayfs"`
+	NydusdThreadNum          int           `toml:"nydusd_thread_num"`
+	CleanupOnClose           bool          `toml:"cleanup_on_close"`
+	KubeconfigPath           string        `toml:"kubeconfig_path"`
+	EnableKubeconfigKeychain bool          `toml:"enable_kubeconfig_keychain"`
+	RotateLogMaxSize         int           `toml:"log_rotate_max_size"`
+	RotateLogMaxBackups      int           `toml:"log_rotate_max_backups"`
+	RotateLogMaxAge          int           `toml:"log_rotate_max_age"`
+	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
+	RotateLogCompress        bool          `toml:"log_rotate_compress"`
+	APISocket                string        `toml:"api_socket"`
+	RecoverPolicy            string        `toml:"recover_policy"`
 }
 
 type DaemonConfigBase struct {
-	NydusdPath string           `toml:"nydusd_path"`
-	NydusImage string           `toml:"nydusimage_path"`
-	Config     FuseDaemonConfig `toml:"config"`
+	NydusdPath string `toml:"nydusd_path"`
+	NydusImage string `toml:"nydusimage_path"`
 }
 
 type LoggingConfig struct {
@@ -207,11 +205,6 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	if startupFlag == nil {
 		return errors.New("no startup parameter provided")
 	}
-	var daemonCfg FuseDaemonConfig
-	if err := LoadRafsConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
-		return errors.Wrapf(err, "failed to load config file %q", startupFlag.ConfigPath)
-	}
-	cfg.DaemonCfg = daemonCfg
 
 	if startupFlag.ValidateSignature {
 		if startupFlag.PublicKeyFile == "" {
@@ -222,6 +215,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	}
 	cfg.PublicKeyFile = startupFlag.PublicKeyFile
 	cfg.ValidateSignature = startupFlag.ValidateSignature
+	cfg.DaemonCfgPath = startupFlag.ConfigPath
 
 	daemonMode, err := parseDaemonMode(startupFlag.DaemonMode)
 	if err != nil {
@@ -296,7 +290,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	return cfg.SetupNydusBinaryPaths()
 }
 
-func (c *Config) FillupWithDefaults() error {
+func (c *Config) FillUpWithDefaults() error {
 	if c.LogLevel == "" {
 		c.LogLevel = DefaultLogLevel
 	}
@@ -319,11 +313,7 @@ func (c *Config) FillupWithDefaults() error {
 	if len(c.LogDir) == 0 {
 		c.LogDir = filepath.Join(c.RootDir, logging.DefaultLogDirName)
 	}
-	var daemonCfg FuseDaemonConfig
-	if err := LoadRafsConfig(c.DaemonCfgPath, &daemonCfg); err != nil {
-		return errors.Wrapf(err, "failed to load config file %q", c.DaemonCfgPath)
-	}
-	c.DaemonCfg = daemonCfg
+
 	return c.SetupNydusBinaryPaths()
 }
 

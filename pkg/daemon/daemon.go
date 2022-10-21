@@ -17,6 +17,7 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
@@ -55,8 +56,10 @@ type Daemon struct {
 	client NydusdClient `json:"-"`
 	Once   *sync.Once   `json:"-"`
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
-	Connected bool       `json:"-"`
-	mu        sync.Mutex `json:"-"`
+	Connected bool                      `json:"-"`
+	mu        sync.Mutex                `json:"-"`
+	domainID  string                    `json:"-"`
+	Config    daemonconfig.DaemonConfig `json:"-"`
 }
 
 func (d *Daemon) Lock() {
@@ -192,7 +195,9 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
-	return d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
+	cfg, _ := d.Config.DumpString()
+
+	return d.client.Mount(d.SharedMountPoint(), bootstrap, cfg)
 }
 
 func (d *Daemon) SharedUmount() error {
@@ -219,7 +224,9 @@ func (d *Daemon) sharedErofsMount() error {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
 
-	if err := d.client.BindBlob(d.ConfigFile()); err != nil {
+	cfg, _ := d.Config.DumpString()
+
+	if err := d.client.BindBlob(cfg); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
@@ -253,7 +260,7 @@ func (d *Daemon) sharedErofsUmount() error {
 		return err
 	}
 
-	if err := d.client.UnbindBlob(d.ConfigFile()); err != nil {
+	if err := d.client.UnbindBlob(d.domainID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 

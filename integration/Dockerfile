@@ -3,8 +3,8 @@ ARG CONTAINERD_VER=1.6.6
 ARG CONTAINERD_PROJECT=/containerd
 ARG RUNC_VERSION=1.1.3
 ARG NYDUS_SNAPSHOTTER_PROJECT=/nydus-snapshotter
-# ARG DOWNLOADS_MIRROR="https://nydus-e2e.tos-cn-boe.volces.com"
-ARG DOWNLOADS_MIRROR="https://github.com"
+ARG DOWNLOADS_MIRROR="https://nydus-e2e.tos-cn-boe.volces.com"
+# ARG DOWNLOADS_MIRROR="https://github.com"
 ARG NYDUS_VER=2.1.0-rc.3.1
 ARG NERDCTL_VER=0.22.2
 
@@ -18,11 +18,11 @@ ARG DOWNLOADS_MIRROR
 ARG NYDUS_VER
 ARG NERDCTL_VER
 
-# RUN echo '\
-# deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free\n\
-# deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-updates main contrib non-free\n\
-# deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-backports main contrib non-free\n\
-# deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bullseye-security main contrib non-free\n' > /etc/apt/sources.list
+RUN echo '\
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free\n\
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-updates main contrib non-free\n\
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-backports main contrib non-free\n\
+deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bullseye-security main contrib non-free\n' > /etc/apt/sources.list
 
 ENV GOPROXY=https://goproxy.cn
 

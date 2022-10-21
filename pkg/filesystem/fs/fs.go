@@ -1,8 +1,12 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+// Abstraction layer of underlying file systems. The file system could be mounted by one
+// or more nydusd daemons. fs package hides the details
 
 package fs
 
@@ -22,11 +26,13 @@ import (
 	"github.com/KarpelesLab/reflink"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
@@ -87,7 +93,6 @@ type Filesystem struct {
 	manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
-	daemonCfg            config.FuseDaemonConfig
 	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
@@ -100,7 +105,7 @@ type Filesystem struct {
 	logToStdout          bool
 	vpcRegistry          bool
 	mode                 config.DaemonMode
-	imageMode            ImageMode
+	// imageMode            ImageMode
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -114,15 +119,15 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			return nil, err
 		}
 	}
-	if fs.imageMode == PreLoad {
-		fs.blobMgr = NewBlobManager(fs.daemonCfg.Device.Backend.Config.Dir)
-		go func() {
-			err := fs.blobMgr.Run(ctx)
-			if err != nil {
-				log.G(ctx).Warnf("blob manager run failed %s", err)
-			}
-		}()
-	}
+	// if fs.imageMode == PreLoad {
+	// 	fs.blobMgr = NewBlobManager(fs.daemonCfg.Device.Backend.Config.Dir)
+	// 	go func() {
+	// 		err := fs.blobMgr.Run(ctx)
+	// 		if err != nil {
+	// 			log.G(ctx).Warnf("blob manager run failed %s", err)
+	// 		}
+	// 	}()
+	// }
 	fs.resolver = NewResolver()
 
 	var recoveringDaemons []*daemon.Daemon
@@ -522,6 +527,8 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
 
+	cfg := deepcopy.Copy(fs.manager.DaemonConfig).(daemonconfig.DaemonConfig)
+
 	d, err := fs.newDaemon(snapshotID, imageID)
 	// if daemon already exists for snapshotID, just return
 	if err != nil {
@@ -538,17 +545,31 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to find bootstrap file of daemon %s", d.ID))
+		return errors.Wrapf(err, "find bootstrap file of daemon %s", d.ID)
 	}
+	workDir := d.FscacheWorkDir()
+
+	params := map[string]string{
+		daemonconfig.Bootstrap: bootstrap,
+		// FIXME: Does nydusd really stores cache files here?
+		daemonconfig.WorkDir: workDir}
+
+	daemonconfig.SupplementDaemonConfig(cfg, imageID, d.SnapshotID, false, labels, params)
+
+	// Associate daemon config object when creating a new daemon object.
+	// Avoid reading disk file again and again
+	d.Config = cfg
+
 	// if publicKey is not empty we should verify bootstrap file of image
 	err = fs.verifier.Verify(labels, bootstrap)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to verify signature of daemon %s", d.ID))
+		return errors.Wrapf(err, "verify signature of daemon %s", d.ID)
 	}
+
 	err = fs.mount(d, labels)
 	if err != nil {
 		log.L.Errorf("failed to mount %s, %v", d.MountPoint(), err)
-		return errors.Wrap(err, fmt.Sprintf("failed to mount daemon %s", d.ID))
+		return errors.Wrapf(err, "mount file system by daemon %s", d.ID)
 	}
 
 	return nil
@@ -648,30 +669,16 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	return daemon.GetBootstrapFile(fs.SnapshotRoot(), id)
 }
 
-func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID string) (config.FuseDaemonConfig, error) {
+func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 	imageID, ok := labels[label.CRIImageRef]
 	if !ok {
-		return config.FuseDaemonConfig{}, fmt.Errorf("no image ID found in label")
+		return errors.Errorf("no image ID found in labels")
 	}
 
-	cfg, err := config.NewDaemonConfig(fs.fsDriver, fs.daemonCfg, imageID, snapshotID, fs.vpcRegistry, labels)
-	if err != nil {
-		return config.FuseDaemonConfig{}, err
-	}
+	daemonconfig.SupplementDaemonConfig(d.Config, imageID, d.SnapshotID, fs.vpcRegistry, labels, nil)
 
-	if fs.cacheMgr != nil {
-		// Overriding work_dir option of nyudsd config as we want to set it
-		// via snapshotter config option to let snapshotter handle blob cache GC.
-		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
-	}
-	return cfg, nil
-}
+	d.Config.DumpFile(d.ConfigDir)
 
-func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
-	err := fs.generateDaemonConfig(d, labels)
-	if err != nil {
-		return err
-	}
 	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
 		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
@@ -716,7 +723,7 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 	}()
 
 	if err := fs.manager.StartDaemon(d); err != nil {
-		return errors.Wrap(err, "failed to start shared daemon")
+		return errors.Wrap(err, "start shared daemon")
 	}
 
 	fs.sharedDaemon = d
@@ -845,32 +852,6 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 	}
 
 	return d, nil
-}
-
-// generateDaemonConfig generate Daemon configuration
-func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]string) error {
-	cfg, err := config.NewDaemonConfig(d.FsDriver, fs.daemonCfg, d.ImageID, d.SnapshotID, fs.vpcRegistry, labels)
-	if err != nil {
-		return errors.Wrapf(err, "failed to generate daemon config for daemon %s", d.ID)
-	}
-
-	if d.FsDriver == config.FsDriverFscache {
-		cfg.Config.CacheConfig.WorkDir = d.FscacheWorkDir()
-		bootstrapPath, err := d.BootstrapFile()
-		if err != nil {
-			return errors.Wrap(err, "get bootstrap path")
-		}
-		cfg.Config.MetadataPath = bootstrapPath
-		cfg.FscacheDaemonConfig.FSPrefetch = cfg.FSPrefetch
-		return config.DumpConfigFile(cfg.FscacheDaemonConfig, d.ConfigFile())
-	}
-
-	if fs.cacheMgr != nil {
-		// Overriding work_dir option of nydusd config as we want to set it
-		// via snapshotter config option to let snapshotter handle blob cache GC.
-		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
-	}
-	return config.DumpConfigFile(cfg, d.ConfigFile())
 }
 
 func (fs *Filesystem) hasDaemon() bool {
