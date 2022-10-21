@@ -156,6 +156,9 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	}
 	cfg.PublicKeyFile = startupFlag.PublicKeyFile
 	cfg.ValidateSignature = startupFlag.ValidateSignature
+	if len(cfg.DaemonCfg.DomainID) != 0 {
+		log.L.Warnf("Linux Kernel Shared Domain feature in use. make sure your kernel version >= 6.1")
+	}
 
 	daemonMode, err := parseDaemonMode(startupFlag.DaemonMode)
 	if err != nil {

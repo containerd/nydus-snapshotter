@@ -267,6 +267,7 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
+		daemon.WithDomainID(fs.daemonCfg.DomainID),
 		modeOpt,
 	)
 	if err != nil {
@@ -793,6 +794,7 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 		daemon.WithCustomMountPoint(customMountPoint),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
+		daemon.WithDomainID(fs.daemonCfg.DomainID),
 	); err != nil {
 		return nil, err
 	}
@@ -836,6 +838,7 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
+		daemon.WithDomainID(fs.daemonCfg.DomainID),
 	); err != nil {
 		return nil, err
 	}
