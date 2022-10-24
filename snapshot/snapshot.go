@@ -207,7 +207,9 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 	if err != nil {
 		return snapshots.Usage{}, err
 	}
+
 	upperPath := o.upperPath(id)
+
 	if info.Kind == snapshots.KindActive {
 		du, err := fs.DiskUsage(ctx, upperPath)
 		if err != nil {
@@ -215,6 +217,18 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 		}
 		usage = snapshots.Usage(du)
 	}
+
+	// Blob layers are all committed snapshots
+	if info.Kind == snapshots.KindCommitted {
+		blobDigest := info.Labels[label.CRILayerDigest]
+		// Try to get nydus meta layer/snapshot disk usage
+		cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
+		if err != nil {
+			return snapshots.Usage{}, errors.Wrapf(err, "try to get snapshot %s nydus disk usage", id)
+		}
+		usage.Add(cacheUsage)
+	}
+
 	return usage, nil
 }
 

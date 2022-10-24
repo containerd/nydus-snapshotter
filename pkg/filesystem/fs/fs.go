@@ -21,6 +21,7 @@ import (
 
 	"github.com/KarpelesLab/reflink"
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -567,6 +568,17 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	}
 
 	return nil
+}
+
+// How much space the layer/blob cache filesystem is occupying
+// The blob digest mush have `sha256:` prefixed, otherwise, throw errors.
+func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapshots.Usage, error) {
+	digest := digest.Digest(blobDigest)
+	if err := digest.Validate(); err != nil {
+		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %s", label.CRILayerDigest)
+	}
+	blobID := digest.Hex()
+	return fs.cacheMgr.CacheUsage(ctx, blobID)
 }
 
 // WaitUntilReady wait until daemon ready by snapshotID, it will wait until nydus domain socket established
