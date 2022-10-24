@@ -435,6 +435,33 @@ function kill_nydusd_recover_nydusd {
     detect_go_race
 }
 
+function ctr_snapshot_usage {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+
+    reboot_containerd "${daemon_mode}" fusedev restart
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+    pause 1
+
+    ctr snapshot --snapshotter nydus ls
+    ctr snapshot --snapshotter nydus usage
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+
+    ctr snapshot --snapshotter nydus ls
+    ctr snapshot --snapshotter nydus usage
+
+    detect_go_race
+}
+
 reboot_containerd multiple
 
 start_single_container_multiple_daemons
@@ -456,6 +483,9 @@ kill_snapshotter_and_nydusd_recover multiple
 
 kill_nydusd_recover_nydusd shared
 kill_nydusd_recover_nydusd multiple
+
+ctr_snapshot_usage multiple
+ctr_snapshot_usage shared
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
     start_multiple_containers_shared_daemon_fscache
