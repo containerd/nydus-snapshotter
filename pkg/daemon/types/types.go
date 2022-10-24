@@ -68,3 +68,13 @@ type FsMetrics struct {
 	NrMaxOpens                uint64   `json:"nr_max_opens"`
 	LastFopTp                 uint64   `json:"last_fop_tp"`
 }
+
+type CacheMetrics struct {
+	ID              string   `json:"id"`
+	UnderlyingFiles []string `json:"underlying_files"`
+	StorePath       string   `json:"store_path"`
+	PartialHits     uint64   `json:"partial_hits"`
+	WholeHits       uint64   `json:"whole_hits"`
+	Total           uint64   `json:"total"`
+	EntriesCount    uint32   `json:"entries_count"`
+}
