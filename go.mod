@@ -97,6 +97,13 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
+retract (
+	v0.11.0
+	v0.11.1
+	v0.11.2
+	v0.11.3
+)
+
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.81.0
 	github.com/opencontainers/image-spec => github.com/opencontainers/image-spec v1.0.2
