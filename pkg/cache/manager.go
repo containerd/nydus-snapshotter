@@ -1,13 +1,18 @@
 package cache
 
 import (
+	"context"
 	"os"
+	"path"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/continuity/fs"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
-	"github.com/pkg/errors"
 )
 
 type Manager struct {
@@ -105,4 +110,29 @@ func (m *Manager) AddSnapshot(imageID string, blobs []string) error {
 
 func (m *Manager) DelSnapshot(imageID string) error {
 	return m.db.DelSnapshot(imageID)
+}
+
+// Report each blob disk usage
+func (m *Manager) CacheUsage(ctx context.Context, blobID string) (snapshots.Usage, error) {
+	var usage snapshots.Usage
+
+	blobCachePath := path.Join(m.cacheDir, blobID)
+	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
+	blobMeta := path.Join(m.cacheDir, blobID+metaFileSuffix)
+
+	stuffs := []string{blobCachePath, blobChunkMap, blobMeta}
+
+	for _, f := range stuffs {
+		du, err := fs.DiskUsage(ctx, f)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				log.L.Debugf("Cache %s does not exist", f)
+				continue
+			}
+			return snapshots.Usage{}, err
+		}
+		usage.Add(snapshots.Usage(du))
+	}
+
+	return usage, nil
 }
