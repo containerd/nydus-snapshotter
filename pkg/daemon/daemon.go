@@ -334,6 +334,18 @@ func (d *Daemon) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, 
 	return d.client.GetFsMetrics(sharedDaemon, sid)
 }
 
+func (d *Daemon) GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMetrics, error) {
+	if err := d.ensureClient("get cache metrics"); err != nil {
+		return nil, err
+	}
+
+	// Protect daemon client when it's being reset.
+	d.Lock()
+	defer d.Unlock()
+
+	return d.client.GetCacheMetrics(sharedDaemon, sid)
+}
+
 func (d *Daemon) IsMultipleDaemon() bool {
 	return d.DaemonMode == config.DaemonModeMultiple
 }

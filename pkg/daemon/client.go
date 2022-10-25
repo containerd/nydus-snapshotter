@@ -31,6 +31,8 @@ const (
 	endpointDaemonInfo = "/api/v1/daemon"
 	endpointMount      = "/api/v1/mount"
 	endpointMetrics    = "/api/v1/metrics"
+	// Fetch metrics relevant to caches usage.
+	endpointCacheMetrics = "/api/v1/metrics/blobcache"
 	// Command nydusd to retrieve its runtime states, which is used during failover
 	endpointTakeOver = "/api/v1/daemon/fuse/takeover"
 	// Command nydusd to send out its runtime states, which prepares failover.
@@ -58,6 +60,7 @@ type NydusdClient interface {
 	UnbindBlob(daemonConfig string) error
 
 	GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, error)
+	GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMetrics, error)
 
 	TakeOver() error
 	SendFd() error
@@ -221,10 +224,22 @@ func (c *nydusdClient) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMet
 	url := c.url(endpointMetrics, query)
 	var m types.FsMetrics
 	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
-		if err := decode(resp, &m); err != nil {
-			return err
-		}
-		return nil
+		return decode(resp, &m)
+	})
+
+	return &m, nil
+}
+
+func (c *nydusdClient) GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMetrics, error) {
+	query := query{}
+	if sharedDaemon {
+		query.Add("id", "/"+sid)
+	}
+
+	url := c.url(endpointCacheMetrics, query)
+	var m types.CacheMetrics
+	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+		return decode(resp, &m)
 	})
 
 	return &m, nil
