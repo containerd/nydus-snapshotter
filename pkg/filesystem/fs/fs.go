@@ -569,8 +569,16 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	daemonconfig.SupplementDaemonConfig(cfg, imageID, d.SnapshotID, false, labels, params)
 
 	// Associate daemon config object when creating a new daemon object.
-	// Avoid reading disk file again and again
+	// Avoid reading disk file again and again.
+	// The daemon could be a virtual daemon representing a rafs mount
 	d.Config = cfg
+
+	// TODO: How to manage rafs configurations ondisk? separated json config file or DB record?
+	// In order to recover erofs mount, the configuration file has to be persisted.
+	err = d.Config.DumpFile(d.ConfigFile())
+	if errors.Is(err, errdefs.ErrAlreadyExists) {
+		log.L.Debugf("Configuration file %s already exits", d.ConfigFile())
+	}
 
 	// if publicKey is not empty we should verify bootstrap file of image
 	err = fs.verifier.Verify(labels, bootstrap)
@@ -578,9 +586,9 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		return errors.Wrapf(err, "verify signature of daemon %s", d.ID)
 	}
 
-	err = fs.mount(d, labels)
+	err = fs.mount(d)
 	if err != nil {
-		log.L.Errorf("failed to mount %s, %v", d.MountPoint(), err)
+		log.L.Errorf("failed to mount %s, %s", d.MountPoint(), err)
 		return errors.Wrapf(err, "mount file system by daemon %s", d.ID)
 	}
 
@@ -629,7 +637,6 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	}
 
 	id := filepath.Base(mountPoint)
-
 	daemon := fs.Manager.GetBySnapshotID(id)
 
 	if daemon == nil {
@@ -639,7 +646,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 
 	log.L.Infof("umount snapshot %s, daemon ID %s", id, daemon.ID)
 
-	if err := fs.Manager.DestrogyDaemon(daemon); err != nil {
+	if err := fs.Manager.DestroyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
 	}
 
@@ -690,14 +697,7 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	return daemon.GetBootstrapFile(fs.SnapshotRoot(), id)
 }
 
-func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
-	imageID, ok := labels[label.CRIImageRef]
-	if !ok {
-		return errors.Errorf("no image ID found in labels")
-	}
-
-	daemonconfig.SupplementDaemonConfig(d.Config, imageID, d.SnapshotID, fs.vpcRegistry, labels, nil)
-
+func (fs *Filesystem) mount(d *daemon.Daemon) error {
 	d.Config.DumpFile(d.ConfigDir)
 
 	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
@@ -727,6 +727,11 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 			}
 		}
 	}()
+
+	// Shared nydusd daemon does not need configuration to start process but
+	// it is loaded when requesting mount api
+	d.Config = fs.Manager.DaemonConfig
+	d.Config.DumpFile(d.ConfigFile())
 
 	if err := fs.Manager.StartDaemon(d); err != nil {
 		return errors.Wrap(err, "start shared daemon")
