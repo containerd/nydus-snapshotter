@@ -149,4 +149,3 @@ func WithFsDriver(fsDriver string) NewDaemonOpt {
 		return nil
 	}
 }
-

@@ -250,19 +250,20 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		return nil, errors.Wrap(err, "failed to get active mount")
 	}
 
-	if id, info, rErr := o.findMetaLayer(ctx, key); rErr == nil {
+	if id, _, rErr := o.findMetaLayer(ctx, key); rErr == nil {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
 			log.G(ctx).Errorf("snapshot %s is not ready, err: %v", id, err)
 			return nil, err
 		}
-		return o.remoteMounts(ctx, *s, id, info.Labels)
+		return o.remoteMounts(ctx, *s, id)
 	}
 
 	_, snap, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to get info for snapshot %s", key))
 	}
+
 	return o.mounts(ctx, &snap, *s)
 }
 
@@ -340,7 +341,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			} else if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
 				return nil, err
 			}
-			return o.remoteMounts(ctx, s, id, info.Labels)
+			return o.remoteMounts(ctx, s, id)
 		}
 	}
 
@@ -618,7 +619,7 @@ type ExtraOption struct {
 	Version     string `json:"fs_version"`
 }
 
-func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string, labels map[string]string) ([]mount.Mount, error) {
+func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
