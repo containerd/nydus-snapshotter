@@ -201,12 +201,16 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
+	cfg, err := d.Config.DumpString()
+	if err != nil {
+		return errors.Wrap(err, "dump instance configuration")
+	}
+
 	// Protect daemon client when it's being reset.
 	d.Lock()
 	defer d.Unlock()
-	if err := d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile()); err != nil {
+	if err := d.client.Mount(d.SharedMountPoint(), bootstrap, cfg); err != nil {
 		return errors.Wrapf(err, "mount rafs instance")
-
 	}
 
 	go func() {
@@ -255,6 +259,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return err
 	}
 
+	// TODO: Why fs cache needing this work dir?
 	if err := os.MkdirAll(d.FscacheWorkDir(), 0755); err != nil {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
@@ -263,13 +268,18 @@ func (d *Daemon) sharedErofsMount() error {
 	d.Lock()
 	defer d.Unlock()
 
-	if err := d.client.BindBlob(d.ConfigFile()); err != nil {
+	cfgStr, err := d.Config.DumpString()
+	if err != nil {
+		return err
+	}
+
+	if err := d.client.BindBlob(cfgStr); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
 	mountPoint := d.MountPoint()
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
-		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
+		return errors.Wrapf(err, "create mountpoint %s", mountPoint)
 	}
 
 	bootstrapPath, err := d.BootstrapFile()
@@ -278,7 +288,9 @@ func (d *Daemon) sharedErofsMount() error {
 	}
 	fscacheID := erofs.FscacheID(d.SnapshotID)
 
-	if err := erofs.Mount(bootstrapPath, d.domainID, fscacheID, mountPoint); err != nil {
+	cfg := d.Config.(*daemonconfig.FscacheDaemonConfig)
+
+	if err := erofs.Mount(bootstrapPath, cfg.DomainID, fscacheID, mountPoint); err != nil {
 		if !errdefs.IsErofsMounted(err) {
 			return errors.Wrapf(err, "mount erofs to %s", mountPoint)
 		}
@@ -301,7 +313,9 @@ func (d *Daemon) sharedErofsUmount() error {
 	d.Lock()
 	defer d.Unlock()
 
-	if err := d.client.UnbindBlob(d.ConfigFile()); err != nil {
+	cfg := d.Config.(*daemonconfig.FscacheDaemonConfig)
+
+	if err := d.client.UnbindBlob(cfg.DomainID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
