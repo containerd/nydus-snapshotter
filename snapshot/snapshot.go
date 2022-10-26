@@ -58,9 +58,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize verifier")
 	}
 
-	if cfg.DaemonMode == config.DaemonModePrefetch && !cfg.DaemonCfg.FSPrefetch.Enable {
-		log.G(ctx).Warnf("Daemon mode is %s but fs_prefetch is not enabled, change to %s mode", cfg.DaemonMode, config.DaemonModeNone)
-		cfg.DaemonMode = config.DaemonModeNone
+	daemonConfig, err := daemonconfig.NewDaemonConfig(cfg.FsDriver, cfg.DaemonCfgPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "load daemon configuration")
 	}
 
 	db, err := store.NewDatabase(cfg.RootDir)
@@ -80,6 +80,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		CacheDir:         cfg.CacheDir,
 		RootDir:          cfg.RootDir,
 		RecoverPolicy:    rp,
+		DaemonConfig:     daemonConfig,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create daemons manager")
@@ -98,7 +99,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
-		fspkg.WithDaemonConfig(cfg.DaemonCfg),
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
 		fspkg.WithVerifier(verifier),
 		fspkg.WithDaemonMode(cfg.DaemonMode),

@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -238,6 +239,9 @@ type Manager struct {
 	RecoverPolicy    DaemonRecoverPolicy
 	SupervisorSet    *supervisor.SupervisorsSet
 
+	// A basic configuration template loaded from the file
+	DaemonConfig daemonconfig.DaemonConfig
+
 	// Protects updating states cache and DB
 	mu sync.Mutex
 }
@@ -249,7 +253,8 @@ type Opt struct {
 	CacheDir         string
 	RecoverPolicy    DaemonRecoverPolicy
 	// Nydus-snapshotter work directory
-	RootDir string
+	RootDir      string
+	DaemonConfig daemonconfig.DaemonConfig
 }
 
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
@@ -373,6 +378,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		LivenessNotifier: make(chan deathEvent, 32),
 		RecoverPolicy:    opt.RecoverPolicy,
 		SupervisorSet:    supervisorSet,
+		DaemonConfig:     opt.DaemonConfig,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?

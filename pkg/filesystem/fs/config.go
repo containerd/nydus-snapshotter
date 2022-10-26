@@ -78,13 +78,6 @@ func WithVerifier(verifier *signature.Verifier) NewFSOpt {
 	}
 }
 
-func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.daemonCfg = cfg
-		return nil
-	}
-}
-
 func WithVPCRegistry(vpcRegistry bool) NewFSOpt {
 	return func(d *Filesystem) error {
 		d.vpcRegistry = vpcRegistry
