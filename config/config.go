@@ -233,7 +233,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	return cfg.SetupNydusBinaryPaths()
 }
 
-func (c *Config) FillupWithDefaults() error {
+func (c *Config) FillUpWithDefaults() error {
 	if c.LogLevel == "" {
 		c.LogLevel = DefaultLogLevel
 	}
