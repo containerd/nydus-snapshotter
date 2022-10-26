@@ -1,8 +1,12 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+// Abstraction layer of underlying file systems. The file system could be mounted by one
+// or more nydusd daemons. fs package hides the details
 
 package fs
 
@@ -83,11 +87,11 @@ func init() {
 
 type Filesystem struct {
 	meta.FileSystemMeta
-	blobMgr              *BlobManager
-	manager              *manager.Manager
+	blobMgr *BlobManager
+	// Managing all daemons serving filesystem.
+	Manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
-	daemonCfg            config.DaemonConfig
 	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
@@ -129,7 +133,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	var err error
 
 	// Try to reconnect to running daemons
-	if recoveringDaemons, err = fs.manager.Reconnect(ctx); err != nil {
+	if recoveringDaemons, err = fs.Manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
 
@@ -160,14 +164,14 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			if fs.mode == config.DaemonModeShared {
 				if d.ID != daemon.SharedNydusDaemonID && sharedDaemonConnected {
 					// FIXME: Fix the trick
-					d.Supervisor = fs.manager.SupervisorSet.GetSupervisor("shared_daemon")
+					d.Supervisor = fs.Manager.SupervisorSet.GetSupervisor("shared_daemon")
 					if err := d.SharedMount(); err != nil {
 						return nil, errors.Wrap(err, "mount rafs when recovering")
 					}
 				}
 			} else {
 				if !d.Connected {
-					if err := fs.manager.StartDaemon(d); err != nil {
+					if err := fs.Manager.StartDaemon(d); err != nil {
 						return nil, errors.Wrapf(err, "start nydusd %s", d.ID)
 					}
 				}
@@ -276,14 +280,14 @@ func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 		return nil, err
 	}
 
-	if err := fs.manager.NewDaemon(d); err != nil {
+	if err := fs.Manager.NewDaemon(d); err != nil {
 		if !errdefs.IsAlreadyExists(err) {
 			return nil, err
 		}
 	}
 
 	// Supervisor is strongly associated with real running nydusd daemon.
-	su := fs.manager.SupervisorSet.NewSupervisor(d.ID)
+	su := fs.Manager.SupervisorSet.NewSupervisor(d.ID)
 	if su == nil {
 		return nil, errors.Errorf("fail to create supervisor for daemon %s", d.ID)
 
@@ -543,7 +547,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	}
 	defer func() {
 		if err != nil {
-			_ = fs.manager.DestroyDaemon(d)
+			_ = fs.Manager.DestroyDaemon(d)
 		}
 	}()
 
@@ -593,7 +597,7 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 		return nil
 	}
 
-	d := fs.manager.GetBySnapshotID(snapshotID)
+	d := fs.Manager.GetBySnapshotID(snapshotID)
 	if d == nil {
 		return errdefs.ErrNotFound
 	}
@@ -608,7 +612,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 
 	id := filepath.Base(mountPoint)
 
-	daemon := fs.manager.GetBySnapshotID(id)
+	daemon := fs.Manager.GetBySnapshotID(id)
 
 	if daemon == nil {
 		log.L.Infof("snapshot %s does not correspond to a nydusd", id)
@@ -617,7 +621,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 
 	log.L.Infof("umount snapshot %s, daemon ID %s", id, daemon.ID)
 
-	if err := fs.manager.DestroyDaemon(daemon); err != nil {
+	if err := fs.Manager.DestrogyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
 	}
 
@@ -629,7 +633,7 @@ func (fs *Filesystem) Cleanup(ctx context.Context) error {
 		return nil
 	}
 
-	for _, d := range fs.manager.ListDaemons() {
+	for _, d := range fs.Manager.ListDaemons() {
 		err := fs.Umount(ctx, filepath.Dir(d.MountPoint()))
 		if err != nil {
 			log.G(ctx).Infof("failed to umount %s err %+v", d.MountPoint(), err)
@@ -647,7 +651,7 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 		return DummyMountpoint, nil
 	}
 
-	if d := fs.manager.GetBySnapshotID(snapshotID); d != nil {
+	if d := fs.Manager.GetBySnapshotID(snapshotID); d != nil {
 		// Working for fscache driver, only one nydusd with multiple mountpoints.
 		// So it is not ordinary SharedMode.
 		if d.FsDriver == config.FsDriverFscache {
@@ -714,14 +718,14 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 	// FIXME: Daemon record should not be removed after starting daemon failure.
 	defer func() {
 		if err != nil {
-			if err := fs.manager.DeleteDaemon(d); err != nil {
+			if err := fs.Manager.DeleteDaemon(d); err != nil {
 				log.L.Errorf("Start nydusd daemon error %v", err)
 			}
 		}
 	}()
 
-	if err := fs.manager.StartDaemon(d); err != nil {
-		return errors.Wrap(err, "failed to start shared daemon")
+	if err := fs.Manager.StartDaemon(d); err != nil {
+		return errors.Wrap(err, "start shared daemon")
 	}
 
 	fs.sharedDaemon = d
@@ -768,7 +772,7 @@ func (fs *Filesystem) getSharedDaemon() *daemon.Daemon {
 		return fs.sharedDaemon
 	}
 
-	d := fs.manager.GetByDaemonID(daemon.SharedNydusDaemonID)
+	d := fs.Manager.GetByDaemonID(daemon.SharedNydusDaemonID)
 	return d
 }
 
@@ -779,7 +783,7 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 		err error
 	)
 
-	d = fs.manager.GetBySnapshotID(snapshotID)
+	d = fs.Manager.GetBySnapshotID(snapshotID)
 	if d != nil {
 		return nil, errdefs.ErrAlreadyExists
 	}
@@ -803,12 +807,12 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 		return nil, err
 	}
 
-	if err = fs.manager.NewDaemon(d); err != nil {
+	if err = fs.Manager.NewDaemon(d); err != nil {
 		return nil, err
 	}
 
 	// Supervisor is strongly associated with real running nydusd daemon.
-	su := fs.manager.SupervisorSet.NewSupervisor(d.ID)
+	su := fs.Manager.SupervisorSet.NewSupervisor(d.ID)
 	if su == nil {
 		return nil, errors.Errorf("fail to create supervisor for daemon %s", d.ID)
 
@@ -828,7 +832,7 @@ func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*d
 		err          error
 	)
 
-	d = fs.manager.GetBySnapshotID(snapshotID)
+	d = fs.Manager.GetBySnapshotID(snapshotID)
 	if d != nil {
 		return nil, errdefs.ErrAlreadyExists
 	}
@@ -860,7 +864,7 @@ func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*d
 	}
 
 	// FIXME: It's a little tricky
-	d.Supervisor = fs.manager.SupervisorSet.GetSupervisor("shared_daemon")
+	d.Supervisor = fs.Manager.SupervisorSet.GetSupervisor("shared_daemon")
 
 	return d, nil
 }

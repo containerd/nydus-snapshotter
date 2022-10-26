@@ -55,7 +55,7 @@ func WithManager(pm *manager.Manager) NewFSOpt {
 			return errors.New("process manager cannot be nil")
 		}
 
-		d.manager = pm
+		d.Manager = pm
 		return nil
 	}
 }
