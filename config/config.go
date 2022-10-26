@@ -85,7 +85,6 @@ type Config struct {
 	Address                  string        `toml:"-"`
 	ConvertVpcRegistry       bool          `toml:"-"`
 	DaemonCfgPath            string        `toml:"daemon_cfg_path"`
-	DaemonCfg                DaemonConfig  `toml:"-"`
 	PublicKeyFile            string        `toml:"-"`
 	RootDir                  string        `toml:"-"`
 	CacheDir                 string        `toml:"cache_dir"`
@@ -141,11 +140,6 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	if startupFlag == nil {
 		return errors.New("no startup parameter provided")
 	}
-	var daemonCfg DaemonConfig
-	if err := LoadConfig(startupFlag.ConfigPath, &daemonCfg); err != nil {
-		return errors.Wrapf(err, "failed to load config file %q", startupFlag.ConfigPath)
-	}
-	cfg.DaemonCfg = daemonCfg
 
 	if startupFlag.ValidateSignature {
 		if startupFlag.PublicKeyFile == "" {
@@ -156,10 +150,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	}
 	cfg.PublicKeyFile = startupFlag.PublicKeyFile
 	cfg.ValidateSignature = startupFlag.ValidateSignature
-	if len(cfg.DaemonCfg.DomainID) != 0 {
-		log.L.Warnf("Linux Kernel Shared Domain feature in use. make sure your kernel version >= 6.1")
-	}
-
+	cfg.DaemonCfgPath = startupFlag.ConfigPath
 	daemonMode, err := parseDaemonMode(startupFlag.DaemonMode)
 	if err != nil {
 		return err
@@ -256,11 +247,7 @@ func (c *Config) FillUpWithDefaults() error {
 	if len(c.LogDir) == 0 {
 		c.LogDir = filepath.Join(c.RootDir, logging.DefaultLogDirName)
 	}
-	var daemonCfg DaemonConfig
-	if err := LoadConfig(c.DaemonCfgPath, &daemonCfg); err != nil {
-		return errors.Wrapf(err, "failed to load config file %q", c.DaemonCfgPath)
-	}
-	c.DaemonCfg = daemonCfg
+
 	return c.SetupNydusBinaryPaths()
 }
 
