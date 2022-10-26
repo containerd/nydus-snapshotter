@@ -1,5 +1,8 @@
-//go:build linux
-// +build linux
+/*
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 package erofs
 
@@ -16,7 +19,9 @@ func Mount(bootstrapPath, domainID, fscacheID, mountPoint string) error {
 	mount := unix.Mount
 	var opts string
 
-	if domainID != "" {
+	// Nydusd must have domain_id specified and it is set to fsid if it is
+	// never specified.
+	if domainID != "" && domainID != fscacheID {
 		opts = fmt.Sprintf("domain_id=%s,fsid=%s", domainID, fscacheID)
 	} else {
 		opts = "fsid=" + fscacheID
