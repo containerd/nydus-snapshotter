@@ -150,9 +150,3 @@ func WithFsDriver(fsDriver string) NewDaemonOpt {
 	}
 }
 
-func WithDomainID(domainID string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.domainID = domainID
-		return nil
-	}
-}

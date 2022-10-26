@@ -16,6 +16,7 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
@@ -58,9 +59,9 @@ type Daemon struct {
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
-	domainID  string     `json:"-"`
 	// Nil means this daemon object has no supervisor
-	Supervisor *supervisor.Supervisor `json:"-"`
+	Supervisor *supervisor.Supervisor    `json:"-"`
+	Config     daemonconfig.DaemonConfig `json:"-"`
 }
 
 func (d *Daemon) Lock() {
