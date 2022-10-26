@@ -557,6 +557,14 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		d.Supervisor = su
 		d.ResetClient()
 
+		cfg, err := daemonconfig.NewDaemonConfig(d.FsDriver, d.ConfigFile())
+		if err != nil {
+			log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(), err)
+			return err
+		}
+
+		d.Config = cfg
+
 		defer func() {
 			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
 			// But the socket file may be residual and will be cleared before starting a new nydusd.
