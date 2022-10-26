@@ -10,10 +10,7 @@
       }
     },
     "cache": {
-      "type": "blobcache",
-      "config": {
-        "work_dir": "/var/lib/nydus/cache"
-      }
+      "type": "blobcache"
     }
   },
   "mode": "direct",
