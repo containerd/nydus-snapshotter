@@ -560,11 +560,15 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		return errors.Wrapf(err, "find bootstrap file of daemon %s", d.ID)
 	}
 	workDir := d.FscacheWorkDir()
+	// Nydusd uses cache manager's directory to store blob caches. So cache
+	// manager knows where to find those blobs.
+	cacheDir := fs.cacheMgr.CacheDir()
 
 	params := map[string]string{
 		daemonconfig.Bootstrap: bootstrap,
 		// FIXME: Does nydusd really stores cache files here?
-		daemonconfig.WorkDir: workDir}
+		daemonconfig.WorkDir:  workDir,
+		daemonconfig.CacheDir: cacheDir}
 
 	daemonconfig.SupplementDaemonConfig(cfg, imageID, d.SnapshotID, false, labels, params)
 
