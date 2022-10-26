@@ -139,16 +139,6 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
 	}
 }
 
-func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *Filesystem) error {
-		if cfg.Device.Backend.BackendType == "localfs" &&
-			len(cfg.Device.Backend.Config.Dir) != 0 {
-			d.imageMode = PreLoad
-		}
-		return nil
-	}
-}
-
 func WithEnableStargz(enable bool) NewFSOpt {
 	return func(d *Filesystem) error {
 		if enable {

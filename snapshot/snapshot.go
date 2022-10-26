@@ -108,7 +108,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithLogDir(cfg.LogDir),
 		fspkg.WithLogToStdout(cfg.LogToStdout),
 		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
-		fspkg.WithImageMode(cfg.DaemonCfg),
 		fspkg.WithEnableStargz(cfg.EnableStargz),
 	}
 

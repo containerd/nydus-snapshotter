@@ -89,12 +89,10 @@ func init() {
 
 type Filesystem struct {
 	meta.FileSystemMeta
-	blobMgr *BlobManager
 	// Managing all daemons serving filesystem.
 	Manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
-	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
 	fsDriver             string
@@ -106,7 +104,6 @@ type Filesystem struct {
 	logToStdout          bool
 	vpcRegistry          bool
 	mode                 config.DaemonMode
-	imageMode            ImageMode
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -120,16 +117,6 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			return nil, err
 		}
 	}
-	if fs.imageMode == PreLoad {
-		fs.blobMgr = NewBlobManager(fs.daemonCfg.Device.Backend.Config.Dir)
-		go func() {
-			err := fs.blobMgr.Run(ctx)
-			if err != nil {
-				log.G(ctx).Warnf("blob manager run failed %s", err)
-			}
-		}()
-	}
-	fs.resolver = NewResolver()
 
 	var recoveringDaemons []*daemon.Daemon
 	var err error
@@ -184,80 +171,6 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	return &fs, nil
 }
 
-func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, blobDigest string, async bool) error {
-	if fs.blobMgr == nil {
-		return nil
-	}
-	return fs.blobMgr.Remove(blobDigest, async)
-}
-
-// Download blobs and bootstrap in nydus-snapshotter for preheating container image usage. It has to
-// enable blobs manager when start nydus-snapshotter
-func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
-	if fs.blobMgr == nil {
-		return nil
-	}
-
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		log.G(ctx).Infof("total nydus prepare data layer duration %d ms", duration.Milliseconds())
-	}()
-
-	ref, layerDigest := registry.ParseLabels(labels)
-	if ref == "" || layerDigest == "" {
-		return fmt.Errorf("can not find ref and digest from label %+v", labels)
-	}
-	blobPath, err := getBlobPath(fs.blobMgr.GetBlobDir(), layerDigest)
-	if err != nil {
-		return errors.Wrap(err, "failed to get blob path")
-	}
-	_, err = os.Stat(blobPath)
-	if err == nil {
-		log.G(ctx).Debugf("%s blob layer already exists", blobPath)
-		return nil
-	} else if !os.IsNotExist(err) {
-		return errors.Wrap(err, "Unexpected error, we can't handle it")
-	}
-
-	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
-	if err != nil {
-		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
-	}
-	defer readerCloser.Close()
-
-	blobFile, err := os.CreateTemp(fs.blobMgr.GetBlobDir(), "downloading-")
-	if err != nil {
-		return errors.Wrap(err, "create temp file for downloading blob")
-	}
-	defer func() {
-		if err != nil {
-			os.Remove(blobFile.Name())
-		}
-		blobFile.Close()
-	}()
-
-	_, err = io.Copy(blobFile, readerCloser)
-	if err != nil {
-		return errors.Wrap(err, "write blob to local file")
-	}
-	err = os.Rename(blobFile.Name(), blobPath)
-	if err != nil {
-		return errors.Wrap(err, "rename temp file as blob file")
-	}
-	os.Chmod(blobFile.Name(), 0440)
-
-	return nil
-}
-
-func getBlobPath(dir string, blobDigest string) (string, error) {
-	digest, err := digest.Parse(blobDigest)
-	if err != nil {
-		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
-	}
-	return filepath.Join(dir, digest.Encoded()), nil
-}
-
 func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 	modeOpt := daemon.WithSharedDaemon()
 	if fs.mode == config.DaemonModePrefetch {
@@ -275,7 +188,6 @@ func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
-		daemon.WithDomainID(fs.daemonCfg.DomainID),
 		modeOpt,
 	)
 	if err != nil {
