@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
@@ -647,25 +648,12 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return nil, err
 	}
 
-	cfg, err := o.fs.NewDaemonConfig(labels, id)
-	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("remoteMounts: failed to generate nydus config for snapshot %s, label: %v", id, labels))
-	}
+	daemon := o.fs.Manager.GetBySnapshotID(id)
 
-	b, err := json.Marshal(cfg)
+	configContent, err := daemon.Config.DumpString()
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
 	}
-	configContent := string(b)
-	// We already Marshal config and save it in configContent, reset Auth and
-	// RegistryToken so it could be printed and to make debug easier
-	cfg.Device.Backend.Config.Auth = ""
-	cfg.Device.Backend.Config.RegistryToken = ""
-	b, err = json.Marshal(cfg)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
-	}
-	log.G(ctx).Infof("Bootstrap file for snapshotID %s: %s, config %s", id, source, string(b))
 
 	// get version from bootstrap
 	f, err := os.Open(source)
