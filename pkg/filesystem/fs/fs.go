@@ -160,6 +160,8 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		for _, d := range recoveringDaemons {
 			if fs.mode == config.DaemonModeShared {
 				if d.ID != daemon.SharedNydusDaemonID && sharedDaemonConnected {
+					// FIXME: Fix the trick
+					d.Supervisor = fs.manager.SupervisorSet.GetSupervisor("shared_daemon")
 					if err := d.SharedMount(); err != nil {
 						return nil, errors.Wrap(err, "mount rafs when recovering")
 					}
@@ -251,7 +253,7 @@ func getBlobPath(dir string, blobDigest string) (string, error) {
 	return filepath.Join(dir, digest.Encoded()), nil
 }
 
-func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
+func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 	modeOpt := daemon.WithSharedDaemon()
 	if fs.mode == config.DaemonModePrefetch {
 		modeOpt = daemon.WithPrefetchDaemon()
@@ -280,6 +282,14 @@ func (fs *Filesystem) newSharedDaemon() (*daemon.Daemon, error) {
 			return nil, err
 		}
 	}
+
+	// Supervisor is strongly associated with real running nydusd daemon.
+	su := fs.manager.SupervisorSet.NewSupervisor(d.ID)
+	if su == nil {
+		return nil, errors.Errorf("fail to create supervisor for daemon %s", d.ID)
+
+	}
+	d.Supervisor = su
 
 	return d, nil
 }
@@ -602,13 +612,15 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	}
 
 	id := filepath.Base(mountPoint)
-	log.L.Logger.Debugf("umount snapshot %s", id)
+
 	daemon := fs.manager.GetBySnapshotID(id)
 
 	if daemon == nil {
 		log.L.Infof("snapshot %s does not correspond to a nydusd", id)
 		return nil
 	}
+
+	log.L.Infof("umount snapshot %s, daemon ID %s", id, daemon.ID)
 
 	if err := fs.manager.DestroyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
@@ -673,7 +685,7 @@ func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID strin
 	}
 
 	if fs.cacheMgr != nil {
-		// Overriding work_dir option of nyudsd config as we want to set it
+		// Overriding work_dir option of nydusd config as we want to set it
 		// via snapshotter config option to let snapshotter handle blob cache GC.
 		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
 	}
@@ -690,7 +702,7 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 			return errors.Wrapf(err, "failed to shared mount")
 		}
 	} else if err := fs.manager.StartDaemon(d); err != nil {
-		return errors.Wrapf(err, "start daemon err")
+		return errors.Wrapf(err, "start daemon")
 	}
 	return nil
 }
@@ -714,7 +726,7 @@ func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
 // 2. Build command line
 // 3. Start daemon
 func (fs *Filesystem) initSharedDaemon() (err error) {
-	d, err := fs.newSharedDaemon()
+	d, err := fs.createSharedDaemon()
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize shared daemon")
 	}
@@ -764,7 +776,7 @@ func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Da
 				}
 			}
 		}
-		return fs.createSharedDaemon(snapshotID, imageID)
+		return fs.createVirtualDaemon(snapshotID, imageID)
 	}
 	return fs.createDaemon(snapshotID, imageID)
 }
@@ -815,13 +827,21 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 		return nil, err
 	}
 
+	// Supervisor is strongly associated with real running nydusd daemon.
+	su := fs.manager.SupervisorSet.NewSupervisor(d.ID)
+	if su == nil {
+		return nil, errors.Errorf("fail to create supervisor for daemon %s", d.ID)
+
+	}
+	d.Supervisor = su
+
 	return d, nil
 }
 
 // Create a virtual daemon as placeholder in DB and daemon states cache to represent a Rafs mount.
 // It does not fork any new nydusd process. The rafs umount is always done by requesting to the running
 // nydusd API server.
-func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
+func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
 	var (
 		sharedDaemon *daemon.Daemon
 		d            *daemon.Daemon
@@ -858,6 +878,9 @@ func (fs *Filesystem) createSharedDaemon(snapshotID string, imageID string) (*da
 	if err = fs.manager.NewDaemon(d); err != nil {
 		return nil, err
 	}
+
+	// FIXME: It's a little tricky
+	d.Supervisor = fs.manager.SupervisorSet.GetSupervisor("shared_daemon")
 
 	return d, nil
 }

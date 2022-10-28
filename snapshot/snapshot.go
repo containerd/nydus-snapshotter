@@ -78,6 +78,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		Database:         db,
 		DaemonMode:       cfg.DaemonMode,
 		CacheDir:         cfg.CacheDir,
+		RootDir:          cfg.RootDir,
 		RecoverPolicy:    rp,
 	})
 	if err != nil {
@@ -408,7 +409,8 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 }
 
 func (o *snapshotter) Remove(ctx context.Context, key string) error {
-	log.G(ctx).Infof("remove snapshot with key %s", key)
+	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
+	log.L.Infof("remove snapshot with key %s", key)
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return err
@@ -799,6 +801,11 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 		return nil, err
 	}
 
+	// For example:
+	// 23:default/24/sha256:8c2ed532dce363da2d08489f385c432f7c0ee4509ab4e20eb2778803916adc93
+	// 24:sha256:c858413d9e5162c287028d630128ea4323d5029bf8a093af783480b38cf8d44e
+	// 25:sha256:fcb51e3c865d96542718beba0bb247376e4c78e039412c5d30c989872e66b6d5
+
 	fd, err := os.Open(o.snapshotRoot())
 	if err != nil {
 		return nil, err
@@ -836,7 +843,10 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	// On a remote snapshot, the layer is mounted on the "mnt" directory.
 	// We use Filesystem's Unmount API so that it can do necessary finalization
 	// before/after the unmount.
-	log.G(ctx).WithField("dir", dir).Infof("cleanupSnapshotDirectory %s", dir)
+
+	// For example: cleanupSnapshotDirectory /var/lib/containerd-nydus/snapshots/34" dir=/var/lib/containerd-nydus/snapshots/34
+	log.L.Infof("cleanupSnapshotDirectory %s", dir)
+
 	if err := o.fs.Umount(ctx, dir); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
 	}

@@ -8,7 +8,6 @@
 package daemon
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
@@ -49,7 +49,8 @@ type Daemon struct {
 	APISock          *string
 	RootMountPoint   *string
 	CustomMountPoint *string
-	nydusdThreadNum  int
+	// FIXME: thread number won't be serialized and persisted.
+	nydusdThreadNum int
 
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
 	client NydusdClient `json:"-"`
@@ -58,6 +59,8 @@ type Daemon struct {
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
 	domainID  string     `json:"-"`
+	// Nil means this daemon object has no supervisor
+	Supervisor *supervisor.Supervisor `json:"-"`
 }
 
 func (d *Daemon) Lock() {
@@ -200,8 +203,31 @@ func (d *Daemon) SharedMount() error {
 	// Protect daemon client when it's being reset.
 	d.Lock()
 	defer d.Unlock()
+	if err := d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile()); err != nil {
+		return errors.Wrapf(err, "mount rafs instance")
 
-	return d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile())
+	}
+
+	go func() {
+		su := d.Supervisor
+		if su == nil {
+			log.L.Warnf("Daemon %s has no supervisor", d.ID)
+			return
+		}
+		if err := su.WaitStatesTimeout(10 * time.Second); err != nil {
+			log.L.Warnf("fail to receive states for %s, %s", d.ID, err)
+			return
+		}
+
+		// TODO: This should be optional by checking snapshotter's configuration.
+		// FIXME: Is it possible the states are overwritten during two API mounts.
+		if err := d.SendStates(); err != nil {
+			log.L.Errorf("send daemon %s states, %s", d.ID, err)
+			return
+		}
+	}()
+
+	return nil
 }
 
 func (d *Daemon) SharedUmount() error {
@@ -291,6 +317,9 @@ func (d *Daemon) SendStates() error {
 		return err
 	}
 
+	d.Lock()
+	defer d.Unlock()
+
 	if err := d.client.SendFd(); err != nil {
 		return errors.Wrap(err, "request to send states")
 	}
@@ -303,6 +332,9 @@ func (d *Daemon) TakeOver() error {
 		return err
 	}
 
+	d.Lock()
+	defer d.Unlock()
+
 	if err := d.client.TakeOver(); err != nil {
 		return errors.Wrap(err, "request to take over")
 	}
@@ -314,6 +346,9 @@ func (d *Daemon) Start() error {
 	if err := d.ensureClient("start service"); err != nil {
 		return err
 	}
+
+	d.Lock()
+	defer d.Unlock()
 
 	if err := d.client.Start(); err != nil {
 		return errors.Wrap(err, "request to start service")
@@ -418,7 +453,6 @@ func (d *Daemon) Terminate() error {
 func (d *Daemon) Wait() error {
 	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
 	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
-
 	d.Lock()
 	defer d.Unlock()
 
@@ -432,6 +466,9 @@ func (d *Daemon) Wait() error {
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
 		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
 			log.L.Errorf("failed to process wait, %v", err)
+
+		} else {
+			mount.WaitUntilUnmounted(d.HostMountPoint())
 		}
 	}
 
@@ -440,33 +477,37 @@ func (d *Daemon) Wait() error {
 
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
-	// This is best effort. So no need to handle its error.
-	log.L.Infof("Umounting %s when clear vestige", d.HostMountPoint())
+	log.L.Infof("Unmounting %s when clear vestige", d.HostMountPoint())
 
 	if err := mounter.Umount(d.HostMountPoint()); err != nil {
 		log.L.Warnf("Can't umount %s, %v", *d.RootMountPoint, err)
 	}
+
 	// Nydusd judges if it should enter failover phrase by checking
 	// if unix socket is existed and it can't be connected.
 	if err := os.Remove(d.GetAPISock()); err != nil {
 		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 	}
 
+	// TODO: Make me more clear and simple!
 	// Let't transport builder wait for nydusd startup again until it sees the created socket file.
 	d.ResetClient()
 }
 
+// Instantiate a daemon object
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{Pid: 0}
 	d.ID = newID()
 	d.DaemonMode = config.DefaultDaemonMode
 	d.Once = &sync.Once{}
+
 	for _, o := range opt {
 		err := o(d)
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	return d, nil
 }
 
@@ -477,6 +518,7 @@ func GetBootstrapFile(dir, id string) (string, error) {
 	if err == nil {
 		return bootstrap, nil
 	}
+
 	if os.IsNotExist(err) {
 		// check legacy location for backward compatibility
 		bootstrap = filepath.Join(dir, id, "fs", "image.boot")
@@ -485,5 +527,6 @@ func GetBootstrapFile(dir, id string) (string, error) {
 			return bootstrap, nil
 		}
 	}
-	return "", errors.Wrap(err, fmt.Sprintf("failed to find bootstrap file for ID %s", id))
+
+	return "", errors.Wrapf(err, "find bootstrap file for daemon ID %s", id)
 }

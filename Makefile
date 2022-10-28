@@ -74,7 +74,7 @@ smoke:
 
 .PHONY: integration
 integration:
-	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-s -w -X "main.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "main.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	$(SUDO) DOCKER_BUILDKIT=1 docker build -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
 	$(SUDO) docker run --rm --privileged -v /root/.docker:/root/.docker -v `go env GOMODCACHE`:/go/pkg/mod \
 	-v `go env GOCACHE`:/root/.cache/go-build -v `pwd`:/nydus-snapshotter \

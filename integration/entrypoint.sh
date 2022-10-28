@@ -59,8 +59,9 @@ function stop_all_containers {
     else
         echo "Killing containers ${containers}"
         for C in ${containers}; do
-            nerdctl kill "${C}"
-            nerdctl rm "${C}"
+            nerdctl kill "${C}" || true
+            nerdctl stop "${C}" || true
+            nerdctl rm "${C}" || true
         done
         return 1
     fi
@@ -391,7 +392,7 @@ function only_restart_snapshotter {
     c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
     c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
 
-    echo "killing nydusd"
+    echo "killing snapshotter"
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
@@ -462,6 +463,43 @@ function ctr_snapshot_usage {
     detect_go_race
 }
 
+function kill_multiple_nydusd_recover_failover {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+
+    reboot_containerd "${daemon_mode}" fusedev failover
+
+    c1=$(nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}")
+
+    pause 1
+
+    nerdctl kill "$c1" || true
+    nerdctl kill "$c2 " || true
+
+    echo "killing nydusd"
+    killall -9 nydusd || true
+
+    echo "start new containers"
+
+    c1=$(nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}")
+
+    pause 1
+
+    nerdctl kill "$c1" || true
+    nerdctl kill "$c2 " || true
+
+    echo "killing nydusd again"
+    killall -9 nydusd || true
+
+    c1=$(nerdctl --snapshotter nydus run -d --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_IMAGE}")
+
+    detect_go_race
+}
+
 reboot_containerd multiple
 
 start_single_container_multiple_daemons
@@ -481,8 +519,8 @@ only_restart_snapshotter multiple
 kill_snapshotter_and_nydusd_recover shared
 kill_snapshotter_and_nydusd_recover multiple
 
-kill_nydusd_recover_nydusd shared
-kill_nydusd_recover_nydusd multiple
+# kill_multiple_nydusd_recover_failover multiple
+# kill_multiple_nydusd_recover_failover shared
 
 ctr_snapshot_usage multiple
 ctr_snapshot_usage shared

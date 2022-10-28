@@ -8,7 +8,7 @@ ARG DOWNLOADS_MIRROR="https://github.com"
 ARG NYDUS_VER=2.1.0-rc.4
 ARG NERDCTL_VER=0.22.2
 
-FROM golang:1.18.5-bullseye AS golang-base
+FROM golang:1.18.7-bullseye AS golang-base
 
 ARG CONTAINERD_VER
 ARG CONTAINERD_PROJECT
@@ -26,7 +26,9 @@ ARG NERDCTL_VER
 
 ENV GOPROXY=https://goproxy.cn
 
-RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev sudo psmisc jq
+RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev sudo psmisc jq lsof net-tools
+
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Install containerd
 RUN wget ${DOWNLOADS_MIRROR}/containerd/containerd/releases/download/v${CONTAINERD_VER}/containerd-${CONTAINERD_VER}-linux-amd64.tar.gz && \
