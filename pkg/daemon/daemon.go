@@ -396,18 +396,6 @@ func (d *Daemon) GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMet
 	return d.client.GetCacheMetrics(sharedDaemon, sid)
 }
 
-func (d *Daemon) IsMultipleDaemon() bool {
-	return d.DaemonMode == config.DaemonModeMultiple
-}
-
-func (d *Daemon) IsSharedDaemon() bool {
-	return d.DaemonMode == config.DaemonModeShared
-}
-
-func (d *Daemon) IsPrefetchDaemon() bool {
-	return d.DaemonMode == config.DaemonModePrefetch
-}
-
 func (d *Daemon) initClient() error {
 	client, err := NewNydusClient(d.GetAPISock())
 	if err != nil {
