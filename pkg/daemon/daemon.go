@@ -8,7 +8,6 @@
 package daemon
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -212,18 +211,18 @@ func (d *Daemon) SharedMount() error {
 	go func() {
 		su := d.Supervisor
 		if su == nil {
-			log.L.Errorf("Daemon %s has no supervisor", d.ID)
+			log.L.Warnf("Daemon %s has no supervisor", d.ID)
 			return
 		}
 		if err := su.WaitForStatesTimeout(10 * time.Second); err != nil {
-			log.L.Warnf("fail to receive states for %s", d.ID)
+			log.L.Warnf("fail to receive states for %s, %s", d.ID, err)
 			return
 		}
 
 		// TODO: This should be optional by checking snapshotter's configuration.
 		// FIXME: Is it possible the states are overwritten during two API mounts.
 		if err := d.SendStates(); err != nil {
-			log.L.Errorf("send daemon %s states", d.ID)
+			log.L.Errorf("send daemon %s states, %s", d.ID, err)
 			return
 		}
 	}()
@@ -454,7 +453,6 @@ func (d *Daemon) Terminate() error {
 func (d *Daemon) Wait() error {
 	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
 	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
-
 	d.Lock()
 	defer d.Unlock()
 
@@ -470,9 +468,7 @@ func (d *Daemon) Wait() error {
 			log.L.Errorf("failed to process wait, %v", err)
 
 		} else {
-			// FIXME: Snapshotter can't wait for non-child process that exits and finishes unmounting.
-			// So mount point may still be residual. As a workaround, wait for some time.
-			time.Sleep(time.Millisecond * 500)
+			mount.WaitUntilUnmounted(d.HostMountPoint())
 		}
 	}
 
@@ -531,5 +527,6 @@ func GetBootstrapFile(dir, id string) (string, error) {
 			return bootstrap, nil
 		}
 	}
-	return "", errors.Wrap(err, fmt.Sprintf("failed to find bootstrap file for ID %s", id))
+
+	return "", errors.Wrapf(err, "find bootstrap file for daemon ID %s", id)
 }
