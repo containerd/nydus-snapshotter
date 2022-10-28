@@ -71,7 +71,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		}
 
 		su := m.SupervisorSet.GetSupervisor(d.ID)
-		if err := su.WaitForStatesTimeout(5 * time.Second); err != nil {
+		if err := su.WaitStatesTimeout(5 * time.Second); err != nil {
 			log.L.Errorf("Fail to receive daemon runtime states, %s", err)
 			return
 		}

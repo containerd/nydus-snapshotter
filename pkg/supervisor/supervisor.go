@@ -110,8 +110,7 @@ func (su *Supervisor) load(data []byte, oob []byte) (nData uint, nOob int, err e
 	return nData, nOob, nil
 }
 
-func (su *Supervisor) WaitForStatesTimeout(to time.Duration) error {
-
+func (su *Supervisor) WaitStatesTimeout(to time.Duration) error {
 	if err := os.Remove(su.path); err != nil {
 		if !os.IsNotExist(err) {
 			log.L.Warnf("Unable to remove existed socket file %s, %s", su.path, err)
@@ -209,7 +208,6 @@ func (su *Supervisor) WaitForStatesTimeout(to time.Duration) error {
 }
 
 func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
-
 	// It is used to receive before
 	if err := os.Remove(su.path); err != nil {
 		if !os.IsNotExist(err) {

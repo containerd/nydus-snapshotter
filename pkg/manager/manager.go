@@ -619,7 +619,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 			// Snapshotter's lost the daemons' states after exit, refetch them.
 			su := d.Supervisor
 
-			if err := su.WaitForStatesTimeout(5 * time.Second); err != nil {
+			if err := su.WaitStatesTimeout(5 * time.Second); err != nil {
 				log.L.Errorf("Fail to receive daemon runtime states, %s", err)
 				return
 			}

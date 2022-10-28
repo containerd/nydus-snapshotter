@@ -214,7 +214,7 @@ func (d *Daemon) SharedMount() error {
 			log.L.Warnf("Daemon %s has no supervisor", d.ID)
 			return
 		}
-		if err := su.WaitForStatesTimeout(10 * time.Second); err != nil {
+		if err := su.WaitStatesTimeout(10 * time.Second); err != nil {
 			log.L.Warnf("fail to receive states for %s, %s", d.ID, err)
 			return
 		}

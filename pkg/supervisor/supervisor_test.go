@@ -31,7 +31,7 @@ func TestSupervisor(t *testing.T) {
 	su1 := supervisorSet.NewSupervisor("su1")
 	assert.NotNil(t, su1)
 
-	err = su1.WaitForStatesTimeout(2 * time.Second)
+	err = su1.WaitStatesTimeout(2 * time.Second)
 	assert.Nil(t, err, "%v", err)
 	sock := su1.Sock()
 
