@@ -1,9 +1,9 @@
 /*
-/*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
-*/
+ */
 
 package snapshot
 
@@ -17,21 +17,26 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
+
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+
+	blob "github.com/containerd/nydus-snapshotter/pkg/blob"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
+	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
-	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
 	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -46,6 +51,7 @@ type snapshotter struct {
 	// Storing snapshots' state, parentage ant other metadata
 	ms                   *storage.MetaStore
 	fs                   *fspkg.Filesystem
+	blobMgr              *blob.BlobManager
 	manager              *manager.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
@@ -66,7 +72,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	db, err := store.NewDatabase(cfg.RootDir)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to new database")
+		return nil, errors.Wrap(err, "create database")
 	}
 
 	rp, err := manager.ParseRecoverPolicy(cfg.RecoverPolicy)
@@ -119,7 +125,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 			FsDriver: cfg.FsDriver,
 		})
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to new cache manager")
+			return nil, errors.Wrap(err, "create cache manager")
 		}
 		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
 	}
@@ -133,6 +139,23 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
 	}
 
+	var blobMgr *blob.BlobManager
+	// With fuse driver enabled and a fuse daemon configuration with "localfs"
+	// storage backend, it indicates that a Blobs Manager is needed to download
+	// blobs from registry alone with no help of nydusd or containerd.
+	if fuseConfig, ok := daemonConfig.(*daemonconfig.FuseDaemonConfig); ok {
+		if fuseConfig.Device.Backend.BackendType == "localfs" &&
+			len(fuseConfig.Device.Backend.Config.Dir) != 0 {
+			blobMgr = blob.NewBlobManager(fuseConfig.Device.Backend.Config.Dir, resolve.NewResolver())
+			go func() {
+				err := blobMgr.Run(ctx)
+				if err != nil {
+					log.G(ctx).Warnf("blob manager run failed %s", err)
+				}
+			}()
+		}
+	}
+
 	if cfg.EnableMetrics {
 		metricServer, err := metrics.NewServer(
 			ctx,
@@ -141,12 +164,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 			metrics.WithProcessManager(manager),
 		)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to new metric server")
+			return nil, errors.Wrap(err, "create metrics server")
 		}
 		// Start metrics http server.
 		go func() {
 			if err := metricServer.Serve(ctx); err != nil {
-				log.G(ctx).Error(err)
+				log.L.Errorf("Failed to start metrics server, %s", err)
 			}
 		}()
 	}
@@ -181,6 +204,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
+		blobMgr:              blobMgr,
 	}, nil
 }
 
@@ -284,10 +308,13 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		// check if image layer is nydus data layer
 		if o.fs.IsNydusDataLayer(ctx, base.Labels) {
 			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
-			err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
-			if err != nil {
-				logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
-				return nil, err
+
+			if o.blobMgr != nil {
+				err = o.blobMgr.PrepareBlobLayer(s, base.Labels)
+				if err != nil {
+					logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
+					return nil, err
+				}
 			}
 
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
@@ -461,8 +488,8 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 						log.G(ctx).WithError(err).WithField("path", dir).Warn("failed to remove directory")
 					}
 				}
-				if cleanupBlob {
-					if err := o.fs.CleanupBlobLayer(ctx, blobDigest, false); err != nil {
+				if cleanupBlob && o.blobMgr != nil {
+					if err := o.blobMgr.CleanupBlobLayer(ctx, blobDigest, false); err != nil {
 						log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
 					}
 				}
@@ -470,8 +497,8 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}()
 	} else {
 		defer func() {
-			if cleanupBlob {
-				if err := o.fs.CleanupBlobLayer(ctx, blobDigest, true); err != nil {
+			if cleanupBlob && o.blobMgr != nil {
+				if err := o.blobMgr.CleanupBlobLayer(ctx, blobDigest, true); err != nil {
 					log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
 				}
 			}
