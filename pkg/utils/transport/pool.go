@@ -80,9 +80,12 @@ func redirect(endpointURL string, tr http.RoundTripper) (url string, err error) 
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to request to %q", endpointURL)
 	}
+
 	defer func() {
 		_, err := io.Copy(io.Discard, res.Body)
-		log.L.Warnf("Discard body failed %s", err)
+		if err != nil {
+			log.L.Warnf("Discard body failed %s", err)
+		}
 		res.Body.Close()
 	}()
 
