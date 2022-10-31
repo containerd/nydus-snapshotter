@@ -3,7 +3,7 @@
     "backend": {
       "type": "localfs",
       "config": {
-        "dir": "/tmp/blobs/"
+        "dir": "/var/lib/containerd-nydus/cache/"
       }
     },
     "cache": {
