@@ -51,7 +51,7 @@ type snapshotter struct {
 	// Storing snapshots' state, parentage ant other metadata
 	ms                   *storage.MetaStore
 	fs                   *fspkg.Filesystem
-	blobMgr              *blob.BlobManager
+	blobMgr              *blob.Manager
 	manager              *manager.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
@@ -139,10 +139,10 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
 	}
 
-	var blobMgr *blob.BlobManager
 	// With fuse driver enabled and a fuse daemon configuration with "localfs"
 	// storage backend, it indicates that a Blobs Manager is needed to download
 	// blobs from registry alone with no help of nydusd or containerd.
+	var blobMgr *blob.Manager
 	if fuseConfig, ok := daemonConfig.(*daemonconfig.FuseDaemonConfig); ok {
 		if fuseConfig.Device.Backend.BackendType == "localfs" &&
 			len(fuseConfig.Device.Backend.Config.Dir) != 0 {

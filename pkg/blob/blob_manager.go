@@ -23,14 +23,14 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
-type BlobManager struct {
+type Manager struct {
 	blobDir   string
 	eventChan chan string
 	resolver  *resolve.Resolver
 }
 
-func NewBlobManager(blobDir string, resolver *resolve.Resolver) *BlobManager {
-	return &BlobManager{
+func NewBlobManager(blobDir string, resolver *resolve.Resolver) *Manager {
+	return &Manager{
 		blobDir: blobDir,
 		// TODO(tianqian.zyf): Remove hardcode chan buffer
 		eventChan: make(chan string, 8),
@@ -46,7 +46,7 @@ func getBlobPath(dir string, blobDigest string) (string, error) {
 	return filepath.Join(dir, digest.Encoded()), nil
 }
 
-func (b *BlobManager) Run(ctx context.Context) error {
+func (b *Manager) Run(ctx context.Context) error {
 	log.G(ctx).Info("blob manager goroutine start...")
 	for {
 		select {
@@ -64,15 +64,15 @@ func (b *BlobManager) Run(ctx context.Context) error {
 	}
 }
 
-func (b *BlobManager) GetBlobDir() string {
+func (b *Manager) GetBlobDir() string {
 	return b.blobDir
 }
 
-func (b *BlobManager) cleanupBlob(id string) error {
+func (b *Manager) cleanupBlob(id string) error {
 	return os.Remove(filepath.Join(b.blobDir, id))
 }
 
-func (b *BlobManager) decodeID(id string) (string, error) {
+func (b *Manager) decodeID(id string) (string, error) {
 	digest, err := digest.Parse(id)
 	if err != nil {
 		return "", errors.Wrapf(err, "invalid blob layer digest %s", id)
@@ -80,7 +80,7 @@ func (b *BlobManager) decodeID(id string) (string, error) {
 	return digest.Encoded(), nil
 }
 
-func (b *BlobManager) Remove(id string, async bool) error {
+func (b *Manager) Remove(id string, async bool) error {
 	id, err := b.decodeID(id)
 	if err != nil {
 		return err
@@ -92,13 +92,13 @@ func (b *BlobManager) Remove(id string, async bool) error {
 	return b.cleanupBlob(id)
 }
 
-func (b *BlobManager) CleanupBlobLayer(ctx context.Context, blobDigest string, async bool) error {
+func (b *Manager) CleanupBlobLayer(ctx context.Context, blobDigest string, async bool) error {
 	return b.Remove(blobDigest, async)
 }
 
 // Download blobs and bootstrap in nydus-snapshotter for preheating container image usage. It has to
 // enable blobs manager when start nydus-snapshotter
-func (b *BlobManager) PrepareBlobLayer(snapshot storage.Snapshot, labels map[string]string) error {
+func (b *Manager) PrepareBlobLayer(snapshot storage.Snapshot, labels map[string]string) error {
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
