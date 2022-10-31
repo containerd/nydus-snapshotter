@@ -106,11 +106,6 @@ func (d *Daemon) HostMountPoint() (mnt string) {
 	return
 }
 
-// Keep this for backwards compatibility
-func (d *Daemon) OldMountPoint() string {
-	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
-}
-
 func (d *Daemon) BootstrapFile() (string, error) {
 	return GetBootstrapFile(d.SnapshotDir, d.SnapshotID)
 }
