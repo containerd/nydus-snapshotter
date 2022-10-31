@@ -7,6 +7,7 @@
 set -eEuo pipefail
 
 FSCACHE_NYDUSD_CONFIG=/etc/nydus/nydusd-config.fscache.json
+FUSE_NYDUSD_LOCALFS_CONFIG=/etc/nydus/nydusd-config-localfs.json
 
 CONTAINERD_ROOT=/var/lib/containerd/
 CONTAINERD_STATUS=/run/containerd/
@@ -153,6 +154,11 @@ function reboot_containerd {
         nydusd_config=/etc/nydus/config.json
     else
         nydusd_config="$FSCACHE_NYDUSD_CONFIG"
+    fi
+
+    # Override nydus configuration, this configuration is usually set by each case
+    if [[ -n ${NYDUS_CONFIG_PATH:-} ]]; then
+        nydusd_config=${NYDUS_CONFIG_PATH}
     fi
 
     # rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/* || fuser -m "${REMOTE_SNAPSHOTTER_ROOT}/mnt" && false
@@ -500,6 +506,39 @@ function kill_multiple_nydusd_recover_failover {
     detect_go_race
 }
 
+function blob_manager_pull_preheat {
+    local daemon_mode=$1
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+
+    # Don't forget unset me.
+    NYDUS_CONFIG_PATH=${FUSE_NYDUSD_LOCALFS_CONFIG}
+
+    reboot_containerd "${daemon_mode}" fusedev failover
+
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${TOMCAT_IMAGE}"
+
+    pause 1
+
+    is_cache_cleared && true
+    validate_mnt_number 0
+
+    nerdctl --snapshotter nydus image rm --force "${JAVA_IMAGE}"
+    nerdctl --snapshotter nydus image rm --force "${WORDPRESS_IMAGE}"
+
+    # Deleteing with flag --async as a fuzzer
+    nerdctl --snapshotter nydus image rm --force --async "${TOMCAT_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${TOMCAT_IMAGE}"
+
+    is_cache_cleared || true
+
+    detect_go_race
+
+    unset NYDUS_CONFIG_PATH
+}
+
 reboot_containerd multiple
 
 start_single_container_multiple_daemons
@@ -524,6 +563,8 @@ kill_snapshotter_and_nydusd_recover multiple
 
 ctr_snapshot_usage multiple
 ctr_snapshot_usage shared
+
+blob_manager_pull_preheat multiple fusedev
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
     start_multiple_containers_shared_daemon_fscache

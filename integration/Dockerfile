@@ -54,6 +54,7 @@ install -D -m 755 nerdctl /usr/local/bin/nerdctl
 
 # Install fscache driver configuration file
 COPY misc/snapshotter/nydusd-config.fscache.json /etc/nydus/nydusd-config.fscache.json
+COPY misc/snapshotter/nydusd-config-localfs.json /etc/nydus/nydusd-config-localfs.json
 
 VOLUME [ "/var/lib" ]
 
