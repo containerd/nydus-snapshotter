@@ -132,7 +132,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
 	// container rootfs doesn't need daemon
-	hasDaemon := cfg.DaemonMode != config.DaemonModeNone && cfg.DaemonMode != config.DaemonModePrefetch
+	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
 
 	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
 	if err != nil {
@@ -353,20 +353,10 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 
 			logCtx.Infof("found nydus meta layer id %s", id)
 
-			if o.manager.IsPrefetchDaemon() {
-				// Prepare prefetch mount in background, so we could return Mounts
-				// info to containerd as soon as possible.
-				go func() {
-					logCtx.Infof("Prepare prefetch daemon for id %s", id)
-					err := o.prepareRemoteSnapshot(ctx, id, info.Labels)
-					// failure of prefetch mount is not fatal, just print a warning
-					if err != nil {
-						logCtx.WithError(err).Warnf("Prepare prefetch mount failed for id %s", id)
-					}
-				}()
-			} else if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
+			if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
 				return nil, err
 			}
+
 			return o.remoteMounts(ctx, s, id)
 		}
 	}

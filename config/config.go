@@ -33,11 +33,8 @@ const (
 	// No nydusd daemon is needed to be started. Snapshotter does not start any nydusd
 	// and only interacts with containerd with mount slice to pass necessary configuration
 	// to container runtime
-	DaemonModeNone DaemonMode = "none"
-	// Nydusd daemon is started by serves no snapshot. Nydusd works as a simple blobs downloader to
-	// prepare blobcache files locally.
-	DaemonModePrefetch DaemonMode = "prefetch"
-	DaemonModeInvalid  DaemonMode = ""
+	DaemonModeNone    DaemonMode = "none"
+	DaemonModeInvalid DaemonMode = ""
 )
 
 func parseDaemonMode(m string) (DaemonMode, error) {
@@ -48,8 +45,6 @@ func parseDaemonMode(m string) (DaemonMode, error) {
 		return DaemonModeShared, nil
 	case string(DaemonModeNone):
 		return DaemonModeNone, nil
-	case string(DaemonModePrefetch):
-		return DaemonModePrefetch, nil
 	default:
 		return DaemonModeInvalid, errdefs.ErrInvalidArgument
 	}

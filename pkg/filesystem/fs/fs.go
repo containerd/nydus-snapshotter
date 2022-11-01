@@ -611,13 +611,14 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 func (fs *Filesystem) mount(d *daemon.Daemon) error {
 	d.Config.DumpFile(d.ConfigDir)
 
-	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
+	if fs.mode == config.DaemonModeShared {
 		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
 		}
 	} else if err := fs.Manager.StartDaemon(d); err != nil {
 		return errors.Wrapf(err, "start daemon")
 	}
+
 	return nil
 }
 
@@ -654,7 +655,7 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 }
 
 func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
-	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
+	if fs.mode == config.DaemonModeShared {
 		// Check if daemon is already running
 		d := fs.getSharedDaemon()
 		if d != nil {
@@ -674,10 +675,8 @@ func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Da
 			// We don't need to wait instance to be ready in PrefetchInstance mode, as we want
 			// to return snapshot to containerd as soon as possible, and prefetch instance is
 			// only for prefetch.
-			if fs.mode != config.DaemonModePrefetch {
-				if err := fs.WaitUntilReady(daemon.SharedNydusDaemonID); err != nil {
-					return nil, errors.Wrap(err, "failed to wait shared daemon")
-				}
+			if err := fs.WaitUntilReady(daemon.SharedNydusDaemonID); err != nil {
+				return nil, errors.Wrap(err, "failed to wait shared daemon")
 			}
 		}
 		return fs.createVirtualDaemon(snapshotID, imageID)
@@ -788,7 +787,7 @@ func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*d
 }
 
 func (fs *Filesystem) hasDaemon() bool {
-	return fs.mode != config.DaemonModeNone && fs.mode != config.DaemonModePrefetch
+	return fs.mode != config.DaemonModeNone
 }
 
 func isRafsV6(buf []byte) bool {

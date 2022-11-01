@@ -9,7 +9,7 @@ package manager
 import "github.com/containerd/nydus-snapshotter/config"
 
 func (m *Manager) isOneDaemon() bool {
-	return m.daemonMode == config.DaemonModeShared || m.daemonMode == config.DaemonModePrefetch
+	return m.daemonMode == config.DaemonModeShared
 }
 
 func (m *Manager) isNoneDaemon() bool {
@@ -18,8 +18,4 @@ func (m *Manager) isNoneDaemon() bool {
 
 func (m *Manager) IsSharedDaemon() bool {
 	return m.daemonMode == config.DaemonModeShared
-}
-
-func (m *Manager) IsPrefetchDaemon() bool {
-	return m.daemonMode == config.DaemonModePrefetch
 }
