@@ -45,7 +45,6 @@ type Daemon struct {
 	SnapshotDir      string
 	Pid              int
 	ImageID          string
-	DaemonMode       config.DaemonMode
 	FsDriver         string
 	APISock          *string
 	RootMountPoint   *string
@@ -496,7 +495,6 @@ func (d *Daemon) ClearVestige() {
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{Pid: 0}
 	d.ID = newID()
-	d.DaemonMode = config.DefaultDaemonMode
 	d.Once = &sync.Once{}
 
 	for _, o := range opt {

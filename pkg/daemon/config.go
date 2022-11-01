@@ -115,20 +115,6 @@ func WithImageID(imageID string) NewDaemonOpt {
 	}
 }
 
-func WithSharedDaemon() NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.DaemonMode = config.DaemonModeShared
-		return nil
-	}
-}
-
-func WithPrefetchDaemon() NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.DaemonMode = config.DaemonModePrefetch
-		return nil
-	}
-}
-
 func WithAPISock(apiSock string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		d.APISock = &apiSock

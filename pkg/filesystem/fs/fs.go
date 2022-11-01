@@ -172,10 +172,6 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 }
 
 func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
-	modeOpt := daemon.WithSharedDaemon()
-	if fs.mode == config.DaemonModePrefetch {
-		modeOpt = daemon.WithPrefetchDaemon()
-	}
 
 	d, err := daemon.NewDaemon(
 		daemon.WithID(daemon.SharedNydusDaemonID),
@@ -188,7 +184,6 @@ func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
-		modeOpt,
 	)
 	if err != nil {
 		return nil, err

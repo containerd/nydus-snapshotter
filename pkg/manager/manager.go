@@ -313,7 +313,7 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	}
 
 	// Mount rafs instance by http API
-	if d.IsSharedDaemon() {
+	if m.IsSharedDaemon() {
 		daemons := m.daemonStates.List()
 		for _, d := range daemons {
 			if d.ID != daemon.SharedNydusDaemonID {
@@ -467,7 +467,7 @@ func (m *Manager) ListDaemons() []*daemon.Daemon {
 
 func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	resource := []string{d.ConfigDir, d.LogDir}
-	if d.IsMultipleDaemon() {
+	if !m.isOneDaemon() {
 		resource = append(resource, d.SocketDir)
 	}
 
@@ -593,8 +593,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		state, err := d.State()
 		if err != nil {
-			log.L.Infof("found DEAD daemon %s in mode %s during reconnecting, will recover it!, %s",
-				d.ID, d.DaemonMode, err)
+			log.L.Infof("found DEAD daemon %s during reconnecting, will recover it!, %s", d.ID, err)
 
 			// Skip so-called virtual daemon :-(
 			if d.ID == daemon.SharedNydusDaemonID || !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
@@ -617,7 +616,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 			return nil
 		}
 
-		log.L.Infof("found RUNNING daemon %s in mode %s during reconnecting", d.ID, d.DaemonMode)
+		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID)
 
 		go func() {
 			if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
