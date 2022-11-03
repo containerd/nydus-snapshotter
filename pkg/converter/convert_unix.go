@@ -13,7 +13,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -794,7 +793,6 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 
 	blobDigests := <-blobDigestChan
 	blobDescs := []ocispec.Descriptor{}
-	blobIDs := []string{}
 	for _, blobDigest := range blobDigests {
 		blobInfo, err := cs.Info(ctx, blobDigest)
 		if err != nil {
@@ -810,12 +808,6 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 			},
 		}
 		blobDescs = append(blobDescs, blobDesc)
-		blobIDs = append(blobIDs, blobDigest.Hex())
-	}
-
-	blobIDsBytes, err := json.Marshal(blobIDs)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "marshal blob ids")
 	}
 
 	if opt.FsVersion == "" {
@@ -831,8 +823,6 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 			LayerAnnotationFSVersion:    opt.FsVersion,
 			// Use this annotation to identify nydus bootstrap layer.
 			LayerAnnotationNydusBootstrap: "true",
-			// Track all blob digests for nydus snapshotter.
-			LayerAnnotationNydusBlobIDs: string(blobIDsBytes),
 		},
 	}
 

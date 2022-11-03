@@ -9,7 +9,6 @@ package fs
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -894,24 +893,6 @@ func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 
 func (fs *Filesystem) hasDaemon() bool {
 	return fs.mode != config.DaemonModeNone && fs.mode != config.DaemonModePrefetch
-}
-
-func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
-	var result []string
-	if idStr, ok := labels[label.NydusDataBlobIDs]; ok {
-		if err := json.Unmarshal([]byte(idStr), &result); err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-
-	// FIXME: for stargz layer, just return empty blobs here, we
-	// need to rethink how to implement blob cache GC for stargz.
-	if fs.StargzLayer(labels) {
-		return nil, nil
-	}
-
-	return nil, errors.New("no blob ids found")
 }
 
 func isRafsV6(buf []byte) bool {
