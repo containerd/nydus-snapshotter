@@ -317,11 +317,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				}
 			}
 
-			logCtx.Infof("found nydus meta layer id %s, prepare remote snapshot", id)
-
-			if err := o.fs.AddSnapshot(info.Labels); err != nil {
-				return nil, errors.Wrap(err, "cache manager failed to add snapshot")
-			}
+			logCtx.Infof("found nydus meta layer id %s", id)
 
 			if o.manager.IsPrefetchDaemon() {
 				// Prepare prefetch mount in background, so we could return Mounts
@@ -416,41 +412,35 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}
 	}()
 
-	_, snap, _, err := storage.GetInfo(ctx, key)
+	_, info, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
-		return errors.Wrap(err, "failed to get snapshot")
+		return errors.Wrap(err, "get snapshot")
 	}
 
-	// workaround for cacheMgr
-	// It is not necessary to execute successfully, even if it fails, it does not affect removing snapshot
-	if snap.Labels != nil {
-		if _, ok := snap.Labels[label.TargetSnapshotRef]; ok {
-			if imageID, ok := snap.Labels[label.CRIImageRef]; ok {
-				if err := o.fs.DelSnapshot(imageID); err != nil {
-					log.G(ctx).WithError(err).Warn("failed to delete snapshot in cache manager")
-				}
-			} else {
-				log.G(ctx).WithError(err).Warnf("failed to get image ref from snapshot label %#v", snap.Labels)
-
+	if info.Kind == snapshots.KindCommitted {
+		blobDigest := info.Labels[label.CRILayerDigest]
+		go func() {
+			if err := o.fs.RemoveCache(blobDigest); err != nil {
+				log.L.WithError(err).Errorf("Failed to remove cache %s", blobDigest)
 			}
-		}
+		}()
 	}
 
 	_, _, err = storage.Remove(ctx, key)
 	if err != nil {
-		return errors.Wrap(err, "failed to remove")
+		return errors.Wrapf(err, "failed to remove key %s", key)
 	}
 	var blobDigest string
-	_, cleanupBlob := snap.Labels[label.NydusDataLayer]
+	_, cleanupBlob := info.Labels[label.NydusDataLayer]
 	if cleanupBlob {
-		blobDigest = snap.Labels[label.CRILayerDigest]
+		blobDigest = info.Labels[label.CRILayerDigest]
 	}
 
 	if o.syncRemove {
 		var removals []string
 		removals, err = o.getCleanupDirectories(ctx)
 		if err != nil {
-			return errors.Wrap(err, "unable to get directories for removal")
+			return errors.Wrap(err, "get directories for removal")
 		}
 
 		// Remove directories after the transaction is closed, failures must not
