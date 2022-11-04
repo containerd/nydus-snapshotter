@@ -71,7 +71,8 @@ type Daemon struct {
 	Supervisor *supervisor.Supervisor
 	Config     daemonconfig.DaemonConfig
 
-	ref int32
+	ref   int32
+	State types.DaemonState
 }
 
 func (d *Daemon) Lock() {
@@ -136,6 +137,11 @@ func (d *Daemon) AddInstance(r *Rafs) {
 // 2. READY: All needed resources are ready.
 // 3. RUNNING
 func (d *Daemon) GetState() (types.DaemonState, error) {
+	// Daemon caches the RUNNING state if it ever be retrieved.
+	if d.State == types.DaemonStateRunning {
+		return d.State, nil
+	}
+
 	c, err := d.GetClient()
 	if err != nil {
 		return types.DaemonStateUnknown, errors.Wrapf(err, "get daemon state")
@@ -145,7 +151,13 @@ func (d *Daemon) GetState() (types.DaemonState, error) {
 		return types.DaemonStateUnknown, err
 	}
 
-	return info.DaemonState(), nil
+	st := info.DaemonState()
+
+	if st == types.DaemonStateRunning {
+		d.State = types.DaemonStateRunning
+	}
+
+	return st, nil
 }
 
 // Waits for some time until daemon reaches the expected state.
