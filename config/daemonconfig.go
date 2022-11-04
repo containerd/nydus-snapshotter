@@ -64,7 +64,7 @@ type MirrorConfig struct {
 	Host                string            `json:"host,omitempty"`
 	Headers             map[string]string `json:"headers,omitempty"`
 	AuthThrough         bool              `json:"auth_through,omitempty"`
-	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
+	HealthCheckInterval uint64            `json:"health_check_interval,omitempty"`
 	FailureLimit        uint8             `json:"failure_limit,omitempty"`
 	PingURL             string            `json:"ping_url,omitempty"`
 }
@@ -100,12 +100,12 @@ type BackendConfig struct {
 		URL           string `json:"url,omitempty"`
 		Fallback      bool   `json:"fallback"`
 		PingURL       string `json:"ping_url,omitempty"`
-		CheckInterval int    `json:"check_interval,omitempty"`
+		CheckInterval uint64 `json:"check_interval,omitempty"`
 		UseHTTP       bool   `json:"use_http,omitempty"`
 	} `json:"proxy,omitempty"`
-	Timeout        int `json:"timeout,omitempty"`
-	ConnectTimeout int `json:"connect_timeout,omitempty"`
-	RetryLimit     int `json:"retry_limit,omitempty"`
+	Timeout        uint32 `json:"timeout,omitempty"`
+	ConnectTimeout uint32 `json:"connect_timeout,omitempty"`
+	RetryLimit     uint8  `json:"retry_limit,omitempty"`
 }
 
 type DeviceConfig struct {
