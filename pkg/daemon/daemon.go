@@ -135,7 +135,7 @@ func (d *Daemon) AddInstance(r *Rafs) {
 // 1. INIT
 // 2. READY: All needed resources are ready.
 // 3. RUNNING
-func (d *Daemon) State() (types.DaemonState, error) {
+func (d *Daemon) GetState() (types.DaemonState, error) {
 	c, err := d.GetClient()
 	if err != nil {
 		return types.DaemonStateUnknown, errors.Wrapf(err, "get daemon state")
@@ -155,7 +155,7 @@ func (d *Daemon) State() (types.DaemonState, error) {
 //  3. RUNNING
 func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 	return retry.Do(func() error {
-		state, err := d.State()
+		state, err := d.GetState()
 		if err != nil {
 			return errors.Wrapf(err, "wait until daemon is %s", expected)
 		}
