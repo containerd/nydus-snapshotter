@@ -46,7 +46,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
-// RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtener(256)
+// RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtended(256)
 // RafsV5 layout: 8K superblock
 // So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
 const MaxSuperBlockSize = 8 * 1024
@@ -633,7 +633,7 @@ func (fs *Filesystem) mount(d *daemon.Daemon) error {
 func (fs *Filesystem) initSharedDaemon() (err error) {
 	d, err := fs.createSharedDaemon()
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize shared daemon")
+		return errors.Wrap(err, "initialize shared daemon")
 	}
 
 	// FIXME: Daemon record should not be removed after starting daemon failure.
@@ -647,11 +647,14 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 
 	// Shared nydusd daemon does not need configuration to start process but
 	// it is loaded when requesting mount api
+	// Dump the configuration file since it is reloaded when recovering the nydusd
 	d.Config = fs.Manager.DaemonConfig
 	err = d.Config.DumpFile(d.ConfigFile())
-	if err != nil {
+	if err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
 		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile())
 	}
+
+	err = nil
 
 	if err := fs.Manager.StartDaemon(d); err != nil {
 		return errors.Wrap(err, "start shared daemon")
@@ -662,7 +665,7 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 	return
 }
 
-func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
+func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
 	if fs.mode == config.DaemonModeShared {
 		// Check if daemon is already running
 		d := fs.getSharedDaemon()

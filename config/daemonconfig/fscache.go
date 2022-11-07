@@ -28,7 +28,7 @@ type FscacheDaemonConfig struct {
 	// Snapshotter fills
 	ID       string `json:"id"`
 	DomainID string `json:"domain_id"`
-	Config   struct {
+	Config   *struct {
 		ID            string        `json:"id"`
 		BackendType   string        `json:"backend_type"`
 		BackendConfig BackendConfig `json:"backend_config"`
@@ -52,6 +52,11 @@ func LoadFscacheConfig(p string) (*FscacheDaemonConfig, error) {
 	if err = json.Unmarshal(b, &cfg); err != nil {
 		return nil, errors.Wrapf(err, "unmarshal")
 	}
+
+	if cfg.Config == nil {
+		return nil, errors.New("invalid fscache configuration")
+	}
+
 	return &cfg, nil
 }
 

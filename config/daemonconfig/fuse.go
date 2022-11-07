@@ -19,11 +19,11 @@ const CacheDir string = "cachedir"
 
 // Used when nydusd works as a FUSE daemon or vhost-user-fs backend
 type FuseDaemonConfig struct {
-	Device         DeviceConfig `json:"device"`
-	Mode           string       `json:"mode"`
-	DigestValidate bool         `json:"digest_validate"`
-	IOStatsFiles   bool         `json:"iostats_files,omitempty"`
-	EnableXattr    bool         `json:"enable_xattr,omitempty"`
+	Device         *DeviceConfig `json:"device"`
+	Mode           string        `json:"mode"`
+	DigestValidate bool          `json:"digest_validate"`
+	IOStatsFiles   bool          `json:"iostats_files,omitempty"`
+	EnableXattr    bool          `json:"enable_xattr,omitempty"`
 
 	FSPrefetch `json:"fs_prefetch,omitempty"`
 }
@@ -47,6 +47,11 @@ func LoadFuseConfig(p string) (*FuseDaemonConfig, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, errors.Wrapf(err, "unmarshal %s", p)
 	}
+
+	if cfg.Device == nil {
+		return nil, errors.New("invalid fuse daemon configuration")
+	}
+
 	return &cfg, nil
 }
 
