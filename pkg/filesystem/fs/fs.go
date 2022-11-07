@@ -473,11 +473,14 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 
 	params := map[string]string{
 		daemonconfig.Bootstrap: bootstrap,
-		// FIXME: Does nydusd really stores cache files here?
+		// Fscache driver stores blob cache bitmap and blob header files here
 		daemonconfig.WorkDir:  workDir,
 		daemonconfig.CacheDir: cacheDir}
 
-	daemonconfig.SupplementDaemonConfig(cfg, imageID, d.SnapshotID, false, labels, params)
+	err = daemonconfig.SupplementDaemonConfig(cfg, imageID, d.SnapshotID, false, labels, params)
+	if err != nil {
+		return errors.Wrap(err, "supplement configuration")
+	}
 
 	// Associate daemon config object when creating a new daemon object.
 	// Avoid reading disk file again and again.
@@ -487,8 +490,12 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	// TODO: How to manage rafs configurations ondisk? separated json config file or DB record?
 	// In order to recover erofs mount, the configuration file has to be persisted.
 	err = d.Config.DumpFile(d.ConfigFile())
-	if errors.Is(err, errdefs.ErrAlreadyExists) {
-		log.L.Debugf("Configuration file %s already exits", d.ConfigFile())
+	if err != nil {
+		if errors.Is(err, errdefs.ErrAlreadyExists) {
+			log.L.Debugf("Configuration file %s already exits", d.ConfigFile())
+		} else {
+			return errors.Wrap(err, "dump daemon configuration file")
+		}
 	}
 
 	// if publicKey is not empty we should verify bootstrap file of image
@@ -609,8 +616,6 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 }
 
 func (fs *Filesystem) mount(d *daemon.Daemon) error {
-	d.Config.DumpFile(d.ConfigDir)
-
 	if fs.mode == config.DaemonModeShared {
 		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
@@ -643,7 +648,10 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 	// Shared nydusd daemon does not need configuration to start process but
 	// it is loaded when requesting mount api
 	d.Config = fs.Manager.DaemonConfig
-	d.Config.DumpFile(d.ConfigFile())
+	err = d.Config.DumpFile(d.ConfigFile())
+	if err != nil {
+		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile())
+	}
 
 	if err := fs.Manager.StartDaemon(d); err != nil {
 		return errors.Wrap(err, "start shared daemon")
