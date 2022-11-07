@@ -18,8 +18,6 @@ const (
 	// client is trying to prepare.
 	TargetSnapshotRef = "containerd.io/snapshot.ref"
 
-	// Annotation containing ids of data blobs referenced by the image, set by image builders.
-	NydusDataBlobIDs = "containerd.io/snapshot/nydus-blob-ids"
 	// A bool flag to mark the blob as a Nydus data blob, set by image builders.
 	NydusDataLayer = "containerd.io/snapshot/nydus-blob"
 	// A bool flag to mark the blob as a nydus bootstrap, set by image builders.
@@ -34,7 +32,7 @@ const (
 	// A bool flag to mark the blob as a estargz data blob, set by the snapshotter.
 	StargzLayer = "containerd.io/snapshot/stargz"
 
-	// volatileOpt is a key of an optional lablel to each snapshot.
+	// volatileOpt is a key of an optional label to each snapshot.
 	// If this optional label of a snapshot is specified, when mounted to rootdir
 	// this snapshot will include volatile option
 	OverlayfsVolatileOpt = "containerd.io/snapshot/overlay.volatile"

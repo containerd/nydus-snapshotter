@@ -9,7 +9,6 @@ package fs
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -577,6 +576,15 @@ func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapsh
 	return fs.cacheMgr.CacheUsage(ctx, blobID)
 }
 
+func (fs *Filesystem) RemoveCache(blobDigest string) error {
+	digest := digest.Digest(blobDigest)
+	if err := digest.Validate(); err != nil {
+		return errors.Wrapf(err, "invalid blob digest from label %s", label.CRILayerDigest)
+	}
+	blobID := digest.Hex()
+	return fs.cacheMgr.RemoveBlobCache(blobID)
+}
+
 // WaitUntilReady wait until daemon ready by snapshotID, it will wait until nydus domain socket established
 // and the status of nydusd daemon must be ready
 func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
@@ -591,19 +599,6 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 	}
 
 	return d.WaitUntilState(types.DaemonStateRunning)
-}
-
-func (fs *Filesystem) DelSnapshot(imageID string) error {
-	if fs.cacheMgr == nil {
-		return nil
-	}
-
-	if err := fs.cacheMgr.DelSnapshot(imageID); err != nil {
-		return errors.Wrap(err, "del snapshot err")
-	}
-	log.L.Debugf("remove snapshot %s\n", imageID)
-	fs.cacheMgr.SchedGC()
-	return nil
 }
 
 func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
@@ -705,21 +700,6 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 		return errors.Wrapf(err, "start daemon")
 	}
 	return nil
-}
-
-func (fs *Filesystem) AddSnapshot(labels map[string]string) error {
-	// Do nothing if there's no cacheMgr
-	if fs.cacheMgr == nil {
-		return nil
-	}
-
-	imageID, _ := registry.ParseLabels(labels)
-	blobs, err := fs.getBlobIDs(labels)
-	if err != nil {
-		return err
-	}
-	log.L.Infof("image %s with blob caches %v", imageID, blobs)
-	return fs.cacheMgr.AddSnapshot(imageID, blobs)
 }
 
 // 1. Create a daemon instance
@@ -913,24 +893,6 @@ func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]s
 
 func (fs *Filesystem) hasDaemon() bool {
 	return fs.mode != config.DaemonModeNone && fs.mode != config.DaemonModePrefetch
-}
-
-func (fs *Filesystem) getBlobIDs(labels map[string]string) ([]string, error) {
-	var result []string
-	if idStr, ok := labels[label.NydusDataBlobIDs]; ok {
-		if err := json.Unmarshal([]byte(idStr), &result); err != nil {
-			return nil, err
-		}
-		return result, nil
-	}
-
-	// FIXME: for stargz layer, just return empty blobs here, we
-	// need to rethink how to implement blob cache GC for stargz.
-	if fs.StargzLayer(labels) {
-		return nil, nil
-	}
-
-	return nil, errors.New("no blob ids found")
 }
 
 func isRafsV6(buf []byte) bool {
