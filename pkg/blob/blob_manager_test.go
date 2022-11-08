@@ -1,4 +1,9 @@
-package fs
+/*
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package blob
 
 import (
 	"context"
@@ -6,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 )
 
 func Test_Remove(t *testing.T) {
@@ -22,7 +29,7 @@ func Test_Remove(t *testing.T) {
 	file.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	blobMgr := NewBlobManager(dir)
+	blobMgr := NewBlobManager(dir, resolve.NewResolver())
 	go func() {
 		blobMgr.Run(ctx)
 	}()
@@ -36,7 +43,7 @@ func Test_Remove(t *testing.T) {
 }
 
 func Test_decodeID(t *testing.T) {
-	blobMgr := NewBlobManager("dir")
+	blobMgr := NewBlobManager("dir", resolve.NewResolver())
 	tests := []struct {
 		name     string
 		id       string

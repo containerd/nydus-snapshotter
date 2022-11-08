@@ -113,7 +113,7 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		}
 
 		switch {
-		case d.IsMultipleDaemon():
+		case !m.isOneDaemon():
 			bootstrap, err := d.BootstrapFile()
 			if err != nil {
 				return nil, errors.Wrapf(err, "locate bootstrap")
@@ -128,7 +128,7 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 			cmdOpts = append(cmdOpts, command.WithMountpoint(d.HostMountPoint()))
 
 		default:
-			return nil, errors.Errorf("invalid daemon mode %s ", d.DaemonMode)
+			return nil, errors.Errorf("invalid daemon mode %s ", m.daemonMode)
 		}
 	}
 

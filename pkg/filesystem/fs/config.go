@@ -11,10 +11,10 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
+	"github.com/containerd/nydus-snapshotter/pkg/stargz"
 	"github.com/pkg/errors"
 )
 
@@ -55,7 +55,7 @@ func WithManager(pm *manager.Manager) NewFSOpt {
 			return errors.New("process manager cannot be nil")
 		}
 
-		d.manager = pm
+		d.Manager = pm
 		return nil
 	}
 }
@@ -74,13 +74,6 @@ func WithCacheManager(cm *cache.Manager) NewFSOpt {
 func WithVerifier(verifier *signature.Verifier) NewFSOpt {
 	return func(d *Filesystem) error {
 		d.verifier = verifier
-		return nil
-	}
-}
-
-func WithDaemonConfig(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.daemonCfg = cfg
 		return nil
 	}
 }
@@ -142,16 +135,6 @@ func WithLogToStdout(logToStdout bool) NewFSOpt {
 func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
 	return func(d *Filesystem) error {
 		d.nydusdThreadNum = nydusdThreadNum
-		return nil
-	}
-}
-
-func WithImageMode(cfg config.DaemonConfig) NewFSOpt {
-	return func(d *Filesystem) error {
-		if cfg.Device.Backend.BackendType == "localfs" &&
-			len(cfg.Device.Backend.Config.Dir) != 0 {
-			d.imageMode = PreLoad
-		}
 		return nil
 	}
 }

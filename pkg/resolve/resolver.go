@@ -1,10 +1,11 @@
 /*
  * Copyright (c) 2021. Alibaba Cloud. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package fs
+package resolve
 
 import (
 	"fmt"
@@ -52,13 +53,13 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 
 	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, errors.Wrapf(err, "faild to new http get %s", url)
+		return nil, errors.Wrapf(err, "failed to new http get %s", url)
 	}
 
 	client := newRetryHTTPClient(tr)
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, errors.Wrapf(err, "faild to http get %s", url)
+		return nil, errors.Wrapf(err, "failed to http get %s", url)
 	}
 
 	if res.StatusCode != http.StatusOK {

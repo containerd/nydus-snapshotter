@@ -22,7 +22,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
@@ -53,8 +52,8 @@ const (
 type NydusdClient interface {
 	GetDaemonInfo() (*types.DaemonInfo, error)
 
-	Mount(sharedMountPoint, bootstrap, daemonConfig string) error
-	Umount(sharedMountPoint string) error
+	Mount(mountpoint, bootstrap, daemonConfig string) error
+	Umount(mountpoint string) error
 
 	BindBlob(daemonConfig string) error
 	UnbindBlob(daemonConfig string) error
@@ -245,14 +244,9 @@ func (c *nydusdClient) GetCacheMetrics(sharedDaemon bool, sid string) (*types.Ca
 	return &m, nil
 }
 
+// `daemonConfig` a json string represents daemon configuration.
 func (c *nydusdClient) Mount(mp, bootstrap, daemonConfig string) error {
-	// FIXME: Try not to load from on-disk file to reduce latency.
-	f, err := os.ReadFile(daemonConfig)
-	if err != nil {
-		return errors.Wrapf(err, "read nydusd configurations %s", daemonConfig)
-	}
-
-	body, err := json.Marshal(types.NewMountRequest(bootstrap, string(f)))
+	cmd, err := json.Marshal(types.NewMountRequest(bootstrap, daemonConfig))
 	if err != nil {
 		return errors.Wrap(err, "construct mount request")
 	}
@@ -261,33 +255,17 @@ func (c *nydusdClient) Mount(mp, bootstrap, daemonConfig string) error {
 	query.Add("mountpoint", mp)
 	url := c.url(endpointMount, query)
 
-	return c.request(http.MethodPost, url, bytes.NewBuffer(body), nil)
+	return c.request(http.MethodPost, url, bytes.NewBuffer(cmd), nil)
 }
 
 func (c *nydusdClient) BindBlob(daemonConfig string) error {
-	// FIXME: it brings extra IO latency!
-	body, err := os.ReadFile(daemonConfig)
-	if err != nil {
-		return errors.Wrapf(err, "read daemon configuration %s", daemonConfig)
-	}
-
 	url := c.url(endpointBlobs, query{})
-	return c.request(http.MethodPut, url, bytes.NewBuffer(body), nil)
+	return c.request(http.MethodPut, url, bytes.NewBuffer([]byte(daemonConfig)), nil)
 }
 
-func (c *nydusdClient) UnbindBlob(daemonConfig string) error {
-	f, err := os.ReadFile(daemonConfig)
-	if err != nil {
-		return errors.Wrapf(err, "read daemon configuration %s", daemonConfig)
-	}
-
-	var cfg config.DaemonConfig
-	if err := json.Unmarshal(f, &cfg); err != nil {
-		return errors.Wrap(err, "unmarshal daemon configuration")
-	}
-
+func (c *nydusdClient) UnbindBlob(domainID string) error {
 	query := query{}
-	query.Add("domain_id", cfg.DomainID)
+	query.Add("domain_id", domainID)
 	url := c.url(endpointBlobs, query)
 
 	return c.request(http.MethodDelete, url, nil, nil)

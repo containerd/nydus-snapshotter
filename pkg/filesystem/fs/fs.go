@@ -1,8 +1,12 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+// Abstraction layer of underlying file systems. The file system could be mounted by one
+// or more nydusd daemons. fs package hides the details
 
 package fs
 
@@ -22,25 +26,27 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/fs/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
+	"github.com/containerd/nydus-snapshotter/pkg/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
-// RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtener(256)
+// RafsV6 layout: 1k + SuperBlock(128) + SuperBlockExtended(256)
 // RafsV5 layout: 8K superblock
 // So we only need to read the MaxSuperBlockSize size to include both v5 and v6 superblocks
 const MaxSuperBlockSize = 8 * 1024
@@ -83,12 +89,10 @@ func init() {
 
 type Filesystem struct {
 	meta.FileSystemMeta
-	blobMgr              *BlobManager
-	manager              *manager.Manager
+	// Managing all daemons serving filesystem.
+	Manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
-	daemonCfg            config.DaemonConfig
-	resolver             *Resolver
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
 	fsDriver             string
@@ -100,7 +104,6 @@ type Filesystem struct {
 	logToStdout          bool
 	vpcRegistry          bool
 	mode                 config.DaemonMode
-	imageMode            ImageMode
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -114,22 +117,12 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			return nil, err
 		}
 	}
-	if fs.imageMode == PreLoad {
-		fs.blobMgr = NewBlobManager(fs.daemonCfg.Device.Backend.Config.Dir)
-		go func() {
-			err := fs.blobMgr.Run(ctx)
-			if err != nil {
-				log.G(ctx).Warnf("blob manager run failed %s", err)
-			}
-		}()
-	}
-	fs.resolver = NewResolver()
 
 	var recoveringDaemons []*daemon.Daemon
 	var err error
 
 	// Try to reconnect to running daemons
-	if recoveringDaemons, err = fs.manager.Reconnect(ctx); err != nil {
+	if recoveringDaemons, err = fs.Manager.Reconnect(ctx); err != nil {
 		return nil, errors.Wrap(err, "failed to reconnect daemons")
 	}
 
@@ -160,14 +153,14 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			if fs.mode == config.DaemonModeShared {
 				if d.ID != daemon.SharedNydusDaemonID && sharedDaemonConnected {
 					// FIXME: Fix the trick
-					d.Supervisor = fs.manager.SupervisorSet.GetSupervisor("shared_daemon")
+					d.Supervisor = fs.Manager.SupervisorSet.GetSupervisor("shared_daemon")
 					if err := d.SharedMount(); err != nil {
 						return nil, errors.Wrap(err, "mount rafs when recovering")
 					}
 				}
 			} else {
 				if !d.Connected {
-					if err := fs.manager.StartDaemon(d); err != nil {
+					if err := fs.Manager.StartDaemon(d); err != nil {
 						return nil, errors.Wrapf(err, "start nydusd %s", d.ID)
 					}
 				}
@@ -178,85 +171,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	return &fs, nil
 }
 
-func (fs *Filesystem) CleanupBlobLayer(ctx context.Context, blobDigest string, async bool) error {
-	if fs.blobMgr == nil {
-		return nil
-	}
-	return fs.blobMgr.Remove(blobDigest, async)
-}
-
-// Download blobs and bootstrap in nydus-snapshotter for preheating container image usage. It has to
-// enable blobs manager when start nydus-snapshotter
-func (fs *Filesystem) PrepareBlobLayer(ctx context.Context, snapshot storage.Snapshot, labels map[string]string) error {
-	if fs.blobMgr == nil {
-		return nil
-	}
-
-	start := time.Now()
-	defer func() {
-		duration := time.Since(start)
-		log.G(ctx).Infof("total nydus prepare data layer duration %d ms", duration.Milliseconds())
-	}()
-
-	ref, layerDigest := registry.ParseLabels(labels)
-	if ref == "" || layerDigest == "" {
-		return fmt.Errorf("can not find ref and digest from label %+v", labels)
-	}
-	blobPath, err := getBlobPath(fs.blobMgr.GetBlobDir(), layerDigest)
-	if err != nil {
-		return errors.Wrap(err, "failed to get blob path")
-	}
-	_, err = os.Stat(blobPath)
-	if err == nil {
-		log.G(ctx).Debugf("%s blob layer already exists", blobPath)
-		return nil
-	} else if !os.IsNotExist(err) {
-		return errors.Wrap(err, "Unexpected error, we can't handle it")
-	}
-
-	readerCloser, err := fs.resolver.Resolve(ref, layerDigest, labels)
-	if err != nil {
-		return errors.Wrapf(err, "failed to resolve from ref %s, digest %s", ref, layerDigest)
-	}
-	defer readerCloser.Close()
-
-	blobFile, err := os.CreateTemp(fs.blobMgr.GetBlobDir(), "downloading-")
-	if err != nil {
-		return errors.Wrap(err, "create temp file for downloading blob")
-	}
-	defer func() {
-		if err != nil {
-			os.Remove(blobFile.Name())
-		}
-		blobFile.Close()
-	}()
-
-	_, err = io.Copy(blobFile, readerCloser)
-	if err != nil {
-		return errors.Wrap(err, "write blob to local file")
-	}
-	err = os.Rename(blobFile.Name(), blobPath)
-	if err != nil {
-		return errors.Wrap(err, "rename temp file as blob file")
-	}
-	os.Chmod(blobFile.Name(), 0440)
-
-	return nil
-}
-
-func getBlobPath(dir string, blobDigest string) (string, error) {
-	digest, err := digest.Parse(blobDigest)
-	if err != nil {
-		return "", errors.Wrapf(err, "invalid layer digest %s", blobDigest)
-	}
-	return filepath.Join(dir, digest.Encoded()), nil
-}
-
 func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
-	modeOpt := daemon.WithSharedDaemon()
-	if fs.mode == config.DaemonModePrefetch {
-		modeOpt = daemon.WithPrefetchDaemon()
-	}
 
 	d, err := daemon.NewDaemon(
 		daemon.WithID(daemon.SharedNydusDaemonID),
@@ -269,21 +184,19 @@ func (fs *Filesystem) createSharedDaemon() (*daemon.Daemon, error) {
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
-		daemon.WithDomainID(fs.daemonCfg.DomainID),
-		modeOpt,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := fs.manager.NewDaemon(d); err != nil {
+	if err := fs.Manager.NewDaemon(d); err != nil {
 		if !errdefs.IsAlreadyExists(err) {
 			return nil, err
 		}
 	}
 
 	// Supervisor is strongly associated with real running nydusd daemon.
-	su := fs.manager.SupervisorSet.NewSupervisor(d.ID)
+	su := fs.Manager.SupervisorSet.NewSupervisor(d.ID)
 	if su == nil {
 		return nil, errors.Errorf("fail to create supervisor for daemon %s", d.ID)
 
@@ -533,6 +446,8 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		return fmt.Errorf("failed to find image ref of snapshot %s, labels %v", snapshotID, labels)
 	}
 
+	cfg := deepcopy.Copy(fs.Manager.DaemonConfig).(daemonconfig.DaemonConfig)
+
 	d, err := fs.newDaemon(snapshotID, imageID)
 	// if daemon already exists for snapshotID, just return
 	if err != nil {
@@ -543,23 +458,56 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	}
 	defer func() {
 		if err != nil {
-			_ = fs.manager.DestroyDaemon(d)
+			_ = fs.Manager.DestroyDaemon(d)
 		}
 	}()
 
 	bootstrap, err := d.BootstrapFile()
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to find bootstrap file of daemon %s", d.ID))
+		return errors.Wrapf(err, "find bootstrap file of daemon %s", d.ID)
 	}
+	workDir := d.FscacheWorkDir()
+	// Nydusd uses cache manager's directory to store blob caches. So cache
+	// manager knows where to find those blobs.
+	cacheDir := fs.cacheMgr.CacheDir()
+
+	params := map[string]string{
+		daemonconfig.Bootstrap: bootstrap,
+		// Fscache driver stores blob cache bitmap and blob header files here
+		daemonconfig.WorkDir:  workDir,
+		daemonconfig.CacheDir: cacheDir}
+
+	err = daemonconfig.SupplementDaemonConfig(cfg, imageID, d.SnapshotID, false, labels, params)
+	if err != nil {
+		return errors.Wrap(err, "supplement configuration")
+	}
+
+	// Associate daemon config object when creating a new daemon object.
+	// Avoid reading disk file again and again.
+	// The daemon could be a virtual daemon representing a rafs mount
+	d.Config = cfg
+
+	// TODO: How to manage rafs configurations ondisk? separated json config file or DB record?
+	// In order to recover erofs mount, the configuration file has to be persisted.
+	err = d.Config.DumpFile(d.ConfigFile())
+	if err != nil {
+		if errors.Is(err, errdefs.ErrAlreadyExists) {
+			log.L.Debugf("Configuration file %s already exits", d.ConfigFile())
+		} else {
+			return errors.Wrap(err, "dump daemon configuration file")
+		}
+	}
+
 	// if publicKey is not empty we should verify bootstrap file of image
 	err = fs.verifier.Verify(labels, bootstrap)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to verify signature of daemon %s", d.ID))
+		return errors.Wrapf(err, "verify signature of daemon %s", d.ID)
 	}
-	err = fs.mount(d, labels)
+
+	err = fs.mount(d)
 	if err != nil {
-		log.L.Errorf("failed to mount %s, %v", d.MountPoint(), err)
-		return errors.Wrap(err, fmt.Sprintf("failed to mount daemon %s", d.ID))
+		log.L.Errorf("failed to mount %s, %s", d.MountPoint(), err)
+		return errors.Wrapf(err, "mount file system by daemon %s", d.ID)
 	}
 
 	return nil
@@ -593,7 +541,7 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 		return nil
 	}
 
-	d := fs.manager.GetBySnapshotID(snapshotID)
+	d := fs.Manager.GetBySnapshotID(snapshotID)
 	if d == nil {
 		return errdefs.ErrNotFound
 	}
@@ -607,8 +555,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 	}
 
 	id := filepath.Base(mountPoint)
-
-	daemon := fs.manager.GetBySnapshotID(id)
+	daemon := fs.Manager.GetBySnapshotID(id)
 
 	if daemon == nil {
 		log.L.Infof("snapshot %s does not correspond to a nydusd", id)
@@ -617,7 +564,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountPoint string) error {
 
 	log.L.Infof("umount snapshot %s, daemon ID %s", id, daemon.ID)
 
-	if err := fs.manager.DestroyDaemon(daemon); err != nil {
+	if err := fs.Manager.DestroyDaemon(daemon); err != nil {
 		return errors.Wrap(err, "destroy daemon err")
 	}
 
@@ -629,7 +576,7 @@ func (fs *Filesystem) Cleanup(ctx context.Context) error {
 		return nil
 	}
 
-	for _, d := range fs.manager.ListDaemons() {
+	for _, d := range fs.Manager.ListDaemons() {
 		err := fs.Umount(ctx, filepath.Dir(d.MountPoint()))
 		if err != nil {
 			log.G(ctx).Infof("failed to umount %s err %+v", d.MountPoint(), err)
@@ -647,7 +594,7 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 		return DummyMountpoint, nil
 	}
 
-	if d := fs.manager.GetBySnapshotID(snapshotID); d != nil {
+	if d := fs.Manager.GetBySnapshotID(snapshotID); d != nil {
 		// Working for fscache driver, only one nydusd with multiple mountpoints.
 		// So it is not ordinary SharedMode.
 		if d.FsDriver == config.FsDriverFscache {
@@ -668,37 +615,15 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	return daemon.GetBootstrapFile(fs.SnapshotRoot(), id)
 }
 
-func (fs *Filesystem) NewDaemonConfig(labels map[string]string, snapshotID string) (config.DaemonConfig, error) {
-	imageID, ok := labels[label.CRIImageRef]
-	if !ok {
-		return config.DaemonConfig{}, fmt.Errorf("no image ID found in label")
-	}
-
-	cfg, err := config.NewDaemonConfig(fs.fsDriver, fs.daemonCfg, imageID, snapshotID, fs.vpcRegistry, labels)
-	if err != nil {
-		return config.DaemonConfig{}, err
-	}
-
-	if fs.cacheMgr != nil {
-		// Overriding work_dir option of nydusd config as we want to set it
-		// via snapshotter config option to let snapshotter handle blob cache GC.
-		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
-	}
-	return cfg, nil
-}
-
-func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
-	err := fs.generateDaemonConfig(d, labels)
-	if err != nil {
-		return err
-	}
-	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
+func (fs *Filesystem) mount(d *daemon.Daemon) error {
+	if fs.mode == config.DaemonModeShared {
 		if err := d.SharedMount(); err != nil {
 			return errors.Wrapf(err, "failed to shared mount")
 		}
-	} else if err := fs.manager.StartDaemon(d); err != nil {
+	} else if err := fs.Manager.StartDaemon(d); err != nil {
 		return errors.Wrapf(err, "start daemon")
 	}
+
 	return nil
 }
 
@@ -708,20 +633,31 @@ func (fs *Filesystem) mount(d *daemon.Daemon, labels map[string]string) error {
 func (fs *Filesystem) initSharedDaemon() (err error) {
 	d, err := fs.createSharedDaemon()
 	if err != nil {
-		return errors.Wrap(err, "failed to initialize shared daemon")
+		return errors.Wrap(err, "initialize shared daemon")
 	}
 
 	// FIXME: Daemon record should not be removed after starting daemon failure.
 	defer func() {
 		if err != nil {
-			if err := fs.manager.DeleteDaemon(d); err != nil {
+			if err := fs.Manager.DeleteDaemon(d); err != nil {
 				log.L.Errorf("Start nydusd daemon error %v", err)
 			}
 		}
 	}()
 
-	if err := fs.manager.StartDaemon(d); err != nil {
-		return errors.Wrap(err, "failed to start shared daemon")
+	// Shared nydusd daemon does not need configuration to start process but
+	// it is loaded when requesting mount api
+	// Dump the configuration file since it is reloaded when recovering the nydusd
+	d.Config = fs.Manager.DaemonConfig
+	err = d.Config.DumpFile(d.ConfigFile())
+	if err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
+		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile())
+	}
+
+	err = nil
+
+	if err := fs.Manager.StartDaemon(d); err != nil {
+		return errors.Wrap(err, "start shared daemon")
 	}
 
 	fs.sharedDaemon = d
@@ -729,8 +665,8 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 	return
 }
 
-func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Daemon, retErr error) {
-	if fs.mode == config.DaemonModeShared || fs.mode == config.DaemonModePrefetch {
+func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (*daemon.Daemon, error) {
+	if fs.mode == config.DaemonModeShared {
 		// Check if daemon is already running
 		d := fs.getSharedDaemon()
 		if d != nil {
@@ -750,10 +686,8 @@ func (fs *Filesystem) newDaemon(snapshotID string, imageID string) (_ *daemon.Da
 			// We don't need to wait instance to be ready in PrefetchInstance mode, as we want
 			// to return snapshot to containerd as soon as possible, and prefetch instance is
 			// only for prefetch.
-			if fs.mode != config.DaemonModePrefetch {
-				if err := fs.WaitUntilReady(daemon.SharedNydusDaemonID); err != nil {
-					return nil, errors.Wrap(err, "failed to wait shared daemon")
-				}
+			if err := fs.WaitUntilReady(daemon.SharedNydusDaemonID); err != nil {
+				return nil, errors.Wrap(err, "failed to wait shared daemon")
 			}
 		}
 		return fs.createVirtualDaemon(snapshotID, imageID)
@@ -768,7 +702,7 @@ func (fs *Filesystem) getSharedDaemon() *daemon.Daemon {
 		return fs.sharedDaemon
 	}
 
-	d := fs.manager.GetByDaemonID(daemon.SharedNydusDaemonID)
+	d := fs.Manager.GetByDaemonID(daemon.SharedNydusDaemonID)
 	return d
 }
 
@@ -779,7 +713,7 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 		err error
 	)
 
-	d = fs.manager.GetBySnapshotID(snapshotID)
+	d = fs.Manager.GetBySnapshotID(snapshotID)
 	if d != nil {
 		return nil, errdefs.ErrAlreadyExists
 	}
@@ -798,17 +732,16 @@ func (fs *Filesystem) createDaemon(snapshotID string, imageID string) (*daemon.D
 		daemon.WithCustomMountPoint(customMountPoint),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
-		daemon.WithDomainID(fs.daemonCfg.DomainID),
 	); err != nil {
 		return nil, err
 	}
 
-	if err = fs.manager.NewDaemon(d); err != nil {
+	if err = fs.Manager.NewDaemon(d); err != nil {
 		return nil, err
 	}
 
 	// Supervisor is strongly associated with real running nydusd daemon.
-	su := fs.manager.SupervisorSet.NewSupervisor(d.ID)
+	su := fs.Manager.SupervisorSet.NewSupervisor(d.ID)
 	if su == nil {
 		return nil, errors.Errorf("fail to create supervisor for daemon %s", d.ID)
 
@@ -828,7 +761,7 @@ func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*d
 		err          error
 	)
 
-	d = fs.manager.GetBySnapshotID(snapshotID)
+	d = fs.Manager.GetBySnapshotID(snapshotID)
 	if d != nil {
 		return nil, errdefs.ErrAlreadyExists
 	}
@@ -850,49 +783,22 @@ func (fs *Filesystem) createVirtualDaemon(snapshotID string, imageID string) (*d
 		daemon.WithLogToStdout(fs.logToStdout),
 		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
 		daemon.WithFsDriver(fs.fsDriver),
-		daemon.WithDomainID(fs.daemonCfg.DomainID),
 	); err != nil {
 		return nil, err
 	}
 
-	if err = fs.manager.NewDaemon(d); err != nil {
+	if err = fs.Manager.NewDaemon(d); err != nil {
 		return nil, err
 	}
 
 	// FIXME: It's a little tricky
-	d.Supervisor = fs.manager.SupervisorSet.GetSupervisor("shared_daemon")
+	d.Supervisor = fs.Manager.SupervisorSet.GetSupervisor("shared_daemon")
 
 	return d, nil
 }
 
-// generateDaemonConfig generate Daemon configuration
-func (fs *Filesystem) generateDaemonConfig(d *daemon.Daemon, labels map[string]string) error {
-	cfg, err := config.NewDaemonConfig(d.FsDriver, fs.daemonCfg, d.ImageID, d.SnapshotID, fs.vpcRegistry, labels)
-	if err != nil {
-		return errors.Wrapf(err, "failed to generate daemon config for daemon %s", d.ID)
-	}
-
-	if d.FsDriver == config.FsDriverFscache {
-		cfg.Config.CacheConfig.WorkDir = d.FscacheWorkDir()
-		bootstrapPath, err := d.BootstrapFile()
-		if err != nil {
-			return errors.Wrap(err, "get bootstrap path")
-		}
-		cfg.Config.MetadataPath = bootstrapPath
-		cfg.FscacheDaemonConfig.FSPrefetch = cfg.FSPrefetch
-		return config.SaveConfig(cfg.FscacheDaemonConfig, d.ConfigFile())
-	}
-
-	if fs.cacheMgr != nil {
-		// Overriding work_dir option of nydusd config as we want to set it
-		// via snapshotter config option to let snapshotter handle blob cache GC.
-		cfg.Device.Cache.Config.WorkDir = fs.cacheMgr.CacheDir()
-	}
-	return config.SaveConfig(cfg, d.ConfigFile())
-}
-
 func (fs *Filesystem) hasDaemon() bool {
-	return fs.mode != config.DaemonModeNone && fs.mode != config.DaemonModePrefetch
+	return fs.mode != config.DaemonModeNone
 }
 
 func isRafsV6(buf []byte) bool {

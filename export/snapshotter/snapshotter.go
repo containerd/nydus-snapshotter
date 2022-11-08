@@ -25,8 +25,8 @@ func init() {
 			if cfg.RootDir == "" {
 				cfg.RootDir = ic.Root
 			}
-			if err := cfg.FillupWithDefaults(); err != nil {
-				return nil, errors.New("failed to fillup nydus configuration with defaults")
+			if err := cfg.FillUpWithDefaults(); err != nil {
+				return nil, errors.New("failed to fill up nydus configuration with defaults")
 			}
 
 			rs, err := snapshot.NewSnapshotter(ic.Context, cfg)

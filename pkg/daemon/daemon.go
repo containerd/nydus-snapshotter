@@ -16,6 +16,7 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
@@ -44,7 +45,6 @@ type Daemon struct {
 	SnapshotDir      string
 	Pid              int
 	ImageID          string
-	DaemonMode       config.DaemonMode
 	FsDriver         string
 	APISock          *string
 	RootMountPoint   *string
@@ -58,9 +58,9 @@ type Daemon struct {
 	// It should only be used to distinguish daemons that needs to be started when restarting nydus-snapshotter
 	Connected bool       `json:"-"`
 	mu        sync.Mutex `json:"-"`
-	domainID  string     `json:"-"`
 	// Nil means this daemon object has no supervisor
-	Supervisor *supervisor.Supervisor `json:"-"`
+	Supervisor *supervisor.Supervisor    `json:"-"`
+	Config     daemonconfig.DaemonConfig `json:"-"`
 }
 
 func (d *Daemon) Lock() {
@@ -103,11 +103,6 @@ func (d *Daemon) HostMountPoint() (mnt string) {
 	}
 
 	return
-}
-
-// Keep this for backwards compatibility
-func (d *Daemon) OldMountPoint() string {
-	return filepath.Join(d.SnapshotDir, d.SnapshotID, "fs")
 }
 
 func (d *Daemon) BootstrapFile() (string, error) {
@@ -200,12 +195,16 @@ func (d *Daemon) SharedMount() error {
 		return err
 	}
 
+	cfg, err := d.Config.DumpString()
+	if err != nil {
+		return errors.Wrap(err, "dump instance configuration")
+	}
+
 	// Protect daemon client when it's being reset.
 	d.Lock()
 	defer d.Unlock()
-	if err := d.client.Mount(d.SharedMountPoint(), bootstrap, d.ConfigFile()); err != nil {
+	if err := d.client.Mount(d.SharedMountPoint(), bootstrap, cfg); err != nil {
 		return errors.Wrapf(err, "mount rafs instance")
-
 	}
 
 	go func() {
@@ -254,6 +253,7 @@ func (d *Daemon) sharedErofsMount() error {
 		return err
 	}
 
+	// TODO: Why fs cache needing this work dir?
 	if err := os.MkdirAll(d.FscacheWorkDir(), 0755); err != nil {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", d.FscacheWorkDir())
 	}
@@ -262,13 +262,18 @@ func (d *Daemon) sharedErofsMount() error {
 	d.Lock()
 	defer d.Unlock()
 
-	if err := d.client.BindBlob(d.ConfigFile()); err != nil {
+	cfgStr, err := d.Config.DumpString()
+	if err != nil {
+		return err
+	}
+
+	if err := d.client.BindBlob(cfgStr); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
 	mountPoint := d.MountPoint()
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
-		return errors.Wrapf(err, "failed to create mount dir %s", mountPoint)
+		return errors.Wrapf(err, "create mountpoint %s", mountPoint)
 	}
 
 	bootstrapPath, err := d.BootstrapFile()
@@ -277,7 +282,9 @@ func (d *Daemon) sharedErofsMount() error {
 	}
 	fscacheID := erofs.FscacheID(d.SnapshotID)
 
-	if err := erofs.Mount(bootstrapPath, d.domainID, fscacheID, mountPoint); err != nil {
+	cfg := d.Config.(*daemonconfig.FscacheDaemonConfig)
+
+	if err := erofs.Mount(bootstrapPath, cfg.DomainID, fscacheID, mountPoint); err != nil {
 		if !errdefs.IsErofsMounted(err) {
 			return errors.Wrapf(err, "mount erofs to %s", mountPoint)
 		}
@@ -300,7 +307,9 @@ func (d *Daemon) sharedErofsUmount() error {
 	d.Lock()
 	defer d.Unlock()
 
-	if err := d.client.UnbindBlob(d.ConfigFile()); err != nil {
+	cfg := d.Config.(*daemonconfig.FscacheDaemonConfig)
+
+	if err := d.client.UnbindBlob(cfg.DomainID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
@@ -379,18 +388,6 @@ func (d *Daemon) GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMet
 	defer d.Unlock()
 
 	return d.client.GetCacheMetrics(sharedDaemon, sid)
-}
-
-func (d *Daemon) IsMultipleDaemon() bool {
-	return d.DaemonMode == config.DaemonModeMultiple
-}
-
-func (d *Daemon) IsSharedDaemon() bool {
-	return d.DaemonMode == config.DaemonModeShared
-}
-
-func (d *Daemon) IsPrefetchDaemon() bool {
-	return d.DaemonMode == config.DaemonModePrefetch
 }
 
 func (d *Daemon) initClient() error {
@@ -498,7 +495,6 @@ func (d *Daemon) ClearVestige() {
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{Pid: 0}
 	d.ID = newID()
-	d.DaemonMode = config.DefaultDaemonMode
 	d.Once = &sync.Once{}
 
 	for _, o := range opt {

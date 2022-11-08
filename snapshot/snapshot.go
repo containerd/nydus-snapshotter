@@ -1,9 +1,9 @@
 /*
-/*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
-*/
+ */
 
 package snapshot
 
@@ -17,20 +17,26 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
+
+	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+
+	blob "github.com/containerd/nydus-snapshotter/pkg/blob"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
+	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
-	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
 	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -45,6 +51,7 @@ type snapshotter struct {
 	// Storing snapshots' state, parentage ant other metadata
 	ms                   *storage.MetaStore
 	fs                   *fspkg.Filesystem
+	blobMgr              *blob.Manager
 	manager              *manager.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
@@ -58,14 +65,14 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize verifier")
 	}
 
-	if cfg.DaemonMode == config.DaemonModePrefetch && !cfg.DaemonCfg.FSPrefetch.Enable {
-		log.G(ctx).Warnf("Daemon mode is %s but fs_prefetch is not enabled, change to %s mode", cfg.DaemonMode, config.DaemonModeNone)
-		cfg.DaemonMode = config.DaemonModeNone
+	daemonConfig, err := daemonconfig.NewDaemonConfig(cfg.FsDriver, cfg.DaemonCfgPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "load daemon configuration")
 	}
 
 	db, err := store.NewDatabase(cfg.RootDir)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to new database")
+		return nil, errors.Wrap(err, "create database")
 	}
 
 	rp, err := manager.ParseRecoverPolicy(cfg.RecoverPolicy)
@@ -80,6 +87,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		CacheDir:         cfg.CacheDir,
 		RootDir:          cfg.RootDir,
 		RecoverPolicy:    rp,
+		DaemonConfig:     daemonConfig,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create daemons manager")
@@ -98,7 +106,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
-		fspkg.WithDaemonConfig(cfg.DaemonCfg),
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
 		fspkg.WithVerifier(verifier),
 		fspkg.WithDaemonMode(cfg.DaemonMode),
@@ -107,7 +114,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithLogDir(cfg.LogDir),
 		fspkg.WithLogToStdout(cfg.LogToStdout),
 		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
-		fspkg.WithImageMode(cfg.DaemonCfg),
 		fspkg.WithEnableStargz(cfg.EnableStargz),
 	}
 
@@ -119,18 +125,35 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 			FsDriver: cfg.FsDriver,
 		})
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to new cache manager")
+			return nil, errors.Wrap(err, "create cache manager")
 		}
 		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
 	}
 
 	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
 	// container rootfs doesn't need daemon
-	hasDaemon := cfg.DaemonMode != config.DaemonModeNone && cfg.DaemonMode != config.DaemonModePrefetch
+	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
 
 	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
+	}
+
+	// With fuse driver enabled and a fuse daemon configuration with "localfs"
+	// storage backend, it indicates that a Blobs Manager is needed to download
+	// blobs from registry alone with no help of nydusd or containerd.
+	var blobMgr *blob.Manager
+	if fuseConfig, ok := daemonConfig.(*daemonconfig.FuseDaemonConfig); ok {
+		if fuseConfig.Device.Backend.BackendType == "localfs" &&
+			len(fuseConfig.Device.Backend.Config.Dir) != 0 {
+			blobMgr = blob.NewBlobManager(fuseConfig.Device.Backend.Config.Dir, resolve.NewResolver())
+			go func() {
+				err := blobMgr.Run(ctx)
+				if err != nil {
+					log.G(ctx).Warnf("blob manager run failed %s", err)
+				}
+			}()
+		}
 	}
 
 	if cfg.EnableMetrics {
@@ -141,12 +164,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 			metrics.WithProcessManager(manager),
 		)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to new metric server")
+			return nil, errors.Wrap(err, "create metrics server")
 		}
 		// Start metrics http server.
 		go func() {
 			if err := metricServer.Serve(ctx); err != nil {
-				log.G(ctx).Error(err)
+				log.L.Errorf("Failed to start metrics server, %s", err)
 			}
 		}()
 	}
@@ -181,6 +204,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
+		blobMgr:              blobMgr,
 	}, nil
 }
 
@@ -249,19 +273,20 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		return nil, errors.Wrap(err, "failed to get active mount")
 	}
 
-	if id, info, rErr := o.findMetaLayer(ctx, key); rErr == nil {
+	if id, _, rErr := o.findMetaLayer(ctx, key); rErr == nil {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
 			log.G(ctx).Errorf("snapshot %s is not ready, err: %v", id, err)
 			return nil, err
 		}
-		return o.remoteMounts(ctx, *s, id, info.Labels)
+		return o.remoteMounts(ctx, *s, id)
 	}
 
 	_, snap, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to get info for snapshot %s", key))
 	}
+
 	return o.mounts(ctx, &snap, *s)
 }
 
@@ -283,10 +308,13 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		// check if image layer is nydus data layer
 		if o.fs.IsNydusDataLayer(ctx, base.Labels) {
 			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
-			err = o.fs.PrepareBlobLayer(ctx, s, base.Labels)
-			if err != nil {
-				logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
-				return nil, err
+
+			if o.blobMgr != nil {
+				err = o.blobMgr.PrepareBlobLayer(s, base.Labels)
+				if err != nil {
+					logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
+					return nil, err
+				}
 			}
 
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
@@ -325,21 +353,11 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 
 			logCtx.Infof("found nydus meta layer id %s", id)
 
-			if o.manager.IsPrefetchDaemon() {
-				// Prepare prefetch mount in background, so we could return Mounts
-				// info to containerd as soon as possible.
-				go func() {
-					logCtx.Infof("Prepare prefetch daemon for id %s", id)
-					err := o.prepareRemoteSnapshot(ctx, id, info.Labels)
-					// failure of prefetch mount is not fatal, just print a warning
-					if err != nil {
-						logCtx.WithError(err).Warnf("Prepare prefetch mount failed for id %s", id)
-					}
-				}()
-			} else if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
+			if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
 				return nil, err
 			}
-			return o.remoteMounts(ctx, s, id, info.Labels)
+
+			return o.remoteMounts(ctx, s, id)
 		}
 	}
 
@@ -460,8 +478,8 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 						log.G(ctx).WithError(err).WithField("path", dir).Warn("failed to remove directory")
 					}
 				}
-				if cleanupBlob {
-					if err := o.fs.CleanupBlobLayer(ctx, blobDigest, false); err != nil {
+				if cleanupBlob && o.blobMgr != nil {
+					if err := o.blobMgr.CleanupBlobLayer(ctx, blobDigest, false); err != nil {
 						log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
 					}
 				}
@@ -469,8 +487,8 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}()
 	} else {
 		defer func() {
-			if cleanupBlob {
-				if err := o.fs.CleanupBlobLayer(ctx, blobDigest, true); err != nil {
+			if cleanupBlob && o.blobMgr != nil {
+				if err := o.blobMgr.CleanupBlobLayer(ctx, blobDigest, true); err != nil {
 					log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
 				}
 			}
@@ -617,7 +635,7 @@ type ExtraOption struct {
 	Version     string `json:"fs_version"`
 }
 
-func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string, labels map[string]string) ([]mount.Mount, error) {
+func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
@@ -647,25 +665,12 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return nil, err
 	}
 
-	cfg, err := o.fs.NewDaemonConfig(labels, id)
-	if err != nil {
-		return nil, errors.Wrapf(err, fmt.Sprintf("remoteMounts: failed to generate nydus config for snapshot %s, label: %v", id, labels))
-	}
+	daemon := o.fs.Manager.GetBySnapshotID(id)
 
-	b, err := json.Marshal(cfg)
+	configContent, err := daemon.Config.DumpString()
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
 	}
-	configContent := string(b)
-	// We already Marshal config and save it in configContent, reset Auth and
-	// RegistryToken so it could be printed and to make debug easier
-	cfg.Device.Backend.Config.Auth = ""
-	cfg.Device.Backend.Config.RegistryToken = ""
-	b, err = json.Marshal(cfg)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
-	}
-	log.G(ctx).Infof("Bootstrap file for snapshotID %s: %s, config %s", id, source, string(b))
 
 	// get version from bootstrap
 	f, err := os.Open(source)

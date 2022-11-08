@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -238,6 +239,9 @@ type Manager struct {
 	RecoverPolicy    DaemonRecoverPolicy
 	SupervisorSet    *supervisor.SupervisorsSet
 
+	// A basic configuration template loaded from the file
+	DaemonConfig daemonconfig.DaemonConfig
+
 	// Protects updating states cache and DB
 	mu sync.Mutex
 }
@@ -249,7 +253,8 @@ type Opt struct {
 	CacheDir         string
 	RecoverPolicy    DaemonRecoverPolicy
 	// Nydus-snapshotter work directory
-	RootDir string
+	RootDir      string
+	DaemonConfig daemonconfig.DaemonConfig
 }
 
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
@@ -308,7 +313,7 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	}
 
 	// Mount rafs instance by http API
-	if d.IsSharedDaemon() {
+	if m.IsSharedDaemon() {
 		daemons := m.daemonStates.List()
 		for _, d := range daemons {
 			if d.ID != daemon.SharedNydusDaemonID {
@@ -373,6 +378,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		LivenessNotifier: make(chan deathEvent, 32),
 		RecoverPolicy:    opt.RecoverPolicy,
 		SupervisorSet:    supervisorSet,
+		DaemonConfig:     opt.DaemonConfig,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
@@ -461,7 +467,7 @@ func (m *Manager) ListDaemons() []*daemon.Daemon {
 
 func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	resource := []string{d.ConfigDir, d.LogDir}
-	if d.IsMultipleDaemon() {
+	if !m.isOneDaemon() {
 		resource = append(resource, d.SocketDir)
 	}
 
@@ -551,6 +557,14 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 		d.Supervisor = su
 		d.ResetClient()
 
+		cfg, err := daemonconfig.NewDaemonConfig(d.FsDriver, d.ConfigFile())
+		if err != nil {
+			log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(), err)
+			return err
+		}
+
+		d.Config = cfg
+
 		defer func() {
 			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
 			// But the socket file may be residual and will be cleared before starting a new nydusd.
@@ -579,8 +593,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 
 		state, err := d.State()
 		if err != nil {
-			log.L.Infof("found DEAD daemon %s in mode %s during reconnecting, will recover it!, %s",
-				d.ID, d.DaemonMode, err)
+			log.L.Infof("found DEAD daemon %s during reconnecting, will recover it!, %s", d.ID, err)
 
 			// Skip so-called virtual daemon :-(
 			if d.ID == daemon.SharedNydusDaemonID || !m.isOneDaemon() && d.ID != daemon.SharedNydusDaemonID {
@@ -603,7 +616,7 @@ func (m *Manager) Reconnect(ctx context.Context) ([]*daemon.Daemon, error) {
 			return nil
 		}
 
-		log.L.Infof("found RUNNING daemon %s in mode %s during reconnecting", d.ID, d.DaemonMode)
+		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID)
 
 		go func() {
 			if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {

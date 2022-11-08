@@ -1,10 +1,11 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package config
+package daemonconfig
 
 import (
 	"encoding/json"
@@ -12,52 +13,47 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
 
+type StorageBackendType = string
+
 const (
-	backendTypeLocalfs  = "localfs"
-	backendTypeOss      = "oss"
-	backendTypeRegistry = "registry"
+	backendTypeLocalfs  StorageBackendType = "localfs"
+	backendTypeOss      StorageBackendType = "oss"
+	backendTypeRegistry StorageBackendType = "registry"
 )
 
-type FSPrefetch struct {
-	Enable        bool `json:"enable"`
-	PrefetchAll   bool `json:"prefetch_all"`
-	ThreadsCount  int  `json:"threads_count"`
-	MergingSize   int  `json:"merging_size"`
-	BandwidthRate int  `json:"bandwidth_rate"`
+type DaemonConfig interface {
+	// Provide stuffs relevant to accessing registry apart from auth
+	Supplement(host, repo, snapshotID string, params map[string]string)
+	// Provide auth
+	FillAuth(kc *auth.PassKeyChain)
+	StorageBackendType() string
+	DumpString() (string, error)
+	DumpFile(path string) error
 }
 
-type FscacheDaemonConfig struct {
-	// These fields is only for fscache daemon.
-	Type     string `json:"type"`
-	ID       string `json:"id"`
-	DomainID string `json:"domain_id"`
-	Config   struct {
-		ID            string        `json:"id"`
-		BackendType   string        `json:"backend_type"`
-		BackendConfig BackendConfig `json:"backend_config"`
-		CacheType     string        `json:"cache_type"`
-		CacheConfig   struct {
-			WorkDir string `json:"work_dir"`
-		} `json:"cache_config"`
-		MetadataPath string `json:"metadata_path"`
-	} `json:"config"`
-	FSPrefetch `json:"fs_prefetch,omitempty"`
-}
-
-type DaemonConfig struct {
-	Device         DeviceConfig `json:"device"`
-	Mode           string       `json:"mode"`
-	DigestValidate bool         `json:"digest_validate"`
-	IOStatsFiles   bool         `json:"iostats_files,omitempty"`
-	EnableXattr    bool         `json:"enable_xattr,omitempty"`
-
-	FSPrefetch `json:"fs_prefetch,omitempty"`
-	FscacheDaemonConfig
+// Daemon configurations factory
+func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
+	switch fsDriver {
+	case config.FsDriverFscache:
+		cfg, err := LoadFscacheConfig(path)
+		if err != nil {
+			return nil, err
+		}
+		return cfg, nil
+	case config.FsDriverFusedev:
+		cfg, err := LoadFuseConfig(path)
+		if err != nil {
+			return nil, err
+		}
+		return cfg, nil
+	default:
+		return nil, errors.New("unsupported")
+	}
 }
 
 type MirrorConfig struct {
@@ -123,35 +119,33 @@ type DeviceConfig struct {
 	} `json:"cache"`
 }
 
-func LoadConfig(configFile string, cfg *DaemonConfig) error {
-	b, err := os.ReadFile(configFile)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(b, cfg); err != nil {
-		return err
-	}
-	return nil
-}
-
-func SaveConfig(c interface{}, configFile string) error {
+// For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
+// We don't have to persist configuration file for fscache since its configuration
+// is passed through HTTP API.
+func DumpConfigFile(c interface{}, path string) error {
 	b, err := json.Marshal(c)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "marshal config")
 	}
-	return os.WriteFile(configFile, b, 0755)
+
+	return os.WriteFile(path, b, 0644)
 }
 
-func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID string, vpcRegistry bool, labels map[string]string) (DaemonConfig, error) {
+func DumpConfigString(c interface{}) (string, error) {
+	b, err := json.Marshal(c)
+	return string(b), err
+}
+
+// Achieve a daemon configuration from template or snapshotter's configuration
+func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
+	vpcRegistry bool, labels map[string]string, params map[string]string) error {
+
 	image, err := registry.ParseImage(imageID)
 	if err != nil {
-		return DaemonConfig{}, errors.Wrapf(err, "failed to parse image %s", imageID)
+		return errors.Wrapf(err, "parse image %s", imageID)
 	}
 
-	backend := cfg.Device.Backend.BackendType
-	if fsDriver == FsDriverFscache {
-		backend = cfg.Config.BackendType
-	}
+	backend := c.StorageBackendType()
 
 	switch backend {
 	case backendTypeRegistry:
@@ -162,35 +156,21 @@ func NewDaemonConfig(fsDriver string, cfg DaemonConfig, imageID, snapshotID stri
 			// For docker.io images, we should use index.docker.io
 			registryHost = "index.docker.io"
 		}
-		keyChain := auth.GetRegistryKeyChain(registryHost, labels)
+
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
-		backendConfig := &cfg.Device.Backend.Config
-		if fsDriver == FsDriverFscache {
-			backendConfig = &cfg.Config.BackendConfig
-			fscacheID := erofs.FscacheID(snapshotID)
-			cfg.ID = fscacheID
-			if len(cfg.DomainID) == 0 {
-				cfg.DomainID = fscacheID
-			}
-			cfg.Config.ID = fscacheID
-		}
-		if keyChain != nil {
-			if keyChain.TokenBase() {
-				backendConfig.RegistryToken = keyChain.Password
-			} else {
-				backendConfig.Auth = keyChain.ToBase64()
-			}
-		}
-		backendConfig.Host = registryHost
-		backendConfig.Repo = image.Repo
-	// Localfs and OSS backends don't need any update, just use the provided config in template
+		keyChain := auth.GetRegistryKeyChain(registryHost, labels)
+		c.Supplement(registryHost, image.Repo, snapshotID, params)
+		c.FillAuth(keyChain)
+
+	// Localfs and OSS backends don't need any update,
+	// just use the provided config in template
 	case backendTypeLocalfs:
 	case backendTypeOss:
 	default:
-		return DaemonConfig{}, errors.Errorf("unknown backend type %s", backend)
+		return errors.Errorf("unknown backend type %s", backend)
 	}
 
-	return cfg, nil
+	return nil
 }
