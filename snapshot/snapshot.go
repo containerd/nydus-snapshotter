@@ -532,6 +532,7 @@ func (o *snapshotter) workPath(id string) string {
 	return filepath.Join(o.root, "snapshots", id, "work")
 }
 
+// The first return value is a snapshots.Info containing only the labels, so info.Labels is the only meaningful field
 func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, key, parent string, opts []snapshots.Opt) (info *snapshots.Info, _ storage.Snapshot, err error) {
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
