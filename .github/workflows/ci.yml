@@ -17,9 +17,9 @@ jobs:
         with:
           go-version: "1.19.1"
       - name: Check out code
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
       - name: cache go mod
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
@@ -43,9 +43,9 @@ jobs:
         with:
           go-version: "1.18.6"
       - name: Check out code
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
       - name: cache go mod
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
@@ -81,9 +81,9 @@ jobs:
         with:
           go-version: "1.18.6"
       - name: Check out code
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
       - name: cache go mod
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
@@ -104,9 +104,9 @@ jobs:
         with:
           go-version: "1.18.6"
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: cache go mod
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
