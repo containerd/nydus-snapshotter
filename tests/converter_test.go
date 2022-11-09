@@ -12,7 +12,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -36,8 +35,6 @@ import (
 )
 
 const envNydusdPath = "NYDUS_NYDUSD"
-
-var fsVersion = flag.String("fs-version", "5", "specifie the fs version for test")
 
 func hugeString(mb int) string {
 	var buf strings.Builder
@@ -121,16 +118,7 @@ func writeToFile(t *testing.T, reader io.Reader, fileName string) {
 	require.NoError(t, err)
 }
 
-var expectedFileTree = map[string]string{
-	"dir-1":        "",
-	"dir-1/file-2": "lower-file-2",
-	"dir-2":        "",
-	"dir-2/file-1": hugeString(3),
-	"dir-2/file-2": "upper-file-2",
-	"dir-2/file-3": "upper-file-3",
-}
-
-func buildChunkDictTar(t *testing.T) io.ReadCloser {
+func buildChunkDictTar(t *testing.T, n int) io.ReadCloser {
 	pr, pw := io.Pipe()
 	tw := tar.NewWriter(pw)
 
@@ -138,9 +126,10 @@ func buildChunkDictTar(t *testing.T) io.ReadCloser {
 		defer pw.Close()
 
 		writeDirToTar(t, tw, "dir-1")
-		writeFileToTar(t, tw, "dir-1/file-1", "lower-file-1")
-		writeFileToTar(t, tw, "dir-1/file-2", "lower-file-2")
-		writeFileToTar(t, tw, "dir-1/file-3", "lower-file-3")
+
+		for i := 1; i < n; i++ {
+			writeFileToTar(t, tw, fmt.Sprintf("dir-1/file-%d", i), fmt.Sprintf("lower-file-%d", i))
+		}
 
 		require.NoError(t, tw.Close())
 	}()
@@ -148,7 +137,9 @@ func buildChunkDictTar(t *testing.T) io.ReadCloser {
 	return pr
 }
 
-func buildOCILowerTar(t *testing.T) io.ReadCloser {
+func buildOCILowerTar(t *testing.T, n int) (io.ReadCloser, map[string]string) {
+	fileTree := map[string]string{}
+
 	pr, pw := io.Pipe()
 	tw := tar.NewWriter(pw)
 
@@ -156,19 +147,31 @@ func buildOCILowerTar(t *testing.T) io.ReadCloser {
 		defer pw.Close()
 
 		writeDirToTar(t, tw, "dir-1")
-		writeFileToTar(t, tw, "dir-1/file-1", "lower-file-1")
-		writeFileToTar(t, tw, "dir-1/file-2", "lower-file-2")
+		fileTree["dir-1"] = ""
+
+		for i := 1; i < n; i++ {
+			writeFileToTar(t, tw, fmt.Sprintf("dir-1/file-%d", i), fmt.Sprintf("lower-file-%d", i))
+			fileTree[fmt.Sprintf("dir-1/file-%d", i)] = fmt.Sprintf("lower-file-%d", i)
+		}
 
 		writeDirToTar(t, tw, "dir-2")
+		fileTree["dir-2"] = ""
+
 		writeFileToTar(t, tw, "dir-2/file-1", "lower-file-1")
+		fileTree["dir-2/file-1"] = "lower-file-1"
 
 		require.NoError(t, tw.Close())
 	}()
 
-	return pr
+	return pr, fileTree
 }
 
-func buildOCIUpperTar(t *testing.T, teePath string) io.ReadCloser {
+func buildOCIUpperTar(t *testing.T, teePath string, lowerFileTree map[string]string) (io.ReadCloser, map[string]string) {
+	if lowerFileTree == nil {
+		lowerFileTree = map[string]string{}
+	}
+
+	hugeStr := hugeString(3)
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -184,21 +187,37 @@ func buildOCIUpperTar(t *testing.T, teePath string) io.ReadCloser {
 		}
 
 		writeDirToTar(t, tw, "dir-1")
+		lowerFileTree["dir-1"] = ""
+
 		writeFileToTar(t, tw, "dir-1/.wh.file-1", "")
+		delete(lowerFileTree, "dir-1/file-1")
 
 		writeDirToTar(t, tw, "dir-2")
+		lowerFileTree["dir-2"] = ""
+
 		writeFileToTar(t, tw, "dir-2/.wh..wh..opq", "")
-		writeFileToTar(t, tw, "dir-2/file-1", expectedFileTree["dir-2/file-1"])
+		for k := range lowerFileTree {
+			if strings.HasPrefix(k, "dir-2/") {
+				delete(lowerFileTree, k)
+			}
+		}
+
+		writeFileToTar(t, tw, "dir-2/file-1", hugeStr)
+		lowerFileTree["dir-2/file-1"] = hugeStr
+
 		writeFileToTar(t, tw, "dir-2/file-2", "upper-file-2")
+		lowerFileTree["dir-2/file-2"] = "upper-file-2"
+
 		writeFileToTar(t, tw, "dir-2/file-3", "upper-file-3")
+		lowerFileTree["dir-2/file-3"] = "upper-file-3"
 
 		require.NoError(t, tw.Close())
 	}()
 
-	return pr
+	return pr, lowerFileTree
 }
 
-func convertLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fsVersion string) (string, digest.Digest) {
+func packLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fsVersion string) (string, digest.Digest) {
 	var data bytes.Buffer
 	writer := io.Writer(&data)
 
@@ -242,19 +261,12 @@ func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt) (string, dig
 	return tarPath, digest
 }
 
-func verify(t *testing.T, workDir string) {
+func verify(t *testing.T, workDir string, expectedFileTree map[string]string) {
 	mountDir := filepath.Join(workDir, "mnt")
 	blobDir := filepath.Join(workDir, "blobs")
 	nydusdPath := os.Getenv(envNydusdPath)
 	if nydusdPath == "" {
 		nydusdPath = "nydusd"
-	}
-	mode := "cached"
-	digestValidate := true
-	// Currently v6 does not support digestValidate, and only direct mode is supported
-	if *fsVersion == "6" {
-		mode = "direct"
-		digestValidate = false
 	}
 	config := NydusdConfig{
 		EnablePrefetch: true,
@@ -266,8 +278,8 @@ func verify(t *testing.T, workDir string) {
 		BlobCacheDir:   filepath.Join(workDir, "cache"),
 		APISockPath:    filepath.Join(workDir, "nydusd-api.sock"),
 		MountPath:      mountDir,
-		Mode:           mode,
-		DigestValidate: digestValidate,
+		Mode:           "direct",
+		DigestValidate: false,
 	}
 
 	nydusd, err := NewNydusd(config)
@@ -307,11 +319,11 @@ func verify(t *testing.T, workDir string) {
 	require.Equal(t, expectedFileTree, actualFileTree)
 }
 
-func buildChunkDict(t *testing.T, workDir string) (string, string) {
-	dictOCITarReader := buildChunkDictTar(t)
+func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, string) {
+	dictOCITarReader := buildChunkDictTar(t, n)
 
 	blobDir := filepath.Join(workDir, "blobs")
-	nydusTarPath, lowerNydusBlobDigest := convertLayer(t, dictOCITarReader, "", blobDir, *fsVersion)
+	nydusTarPath, lowerNydusBlobDigest := packLayer(t, dictOCITarReader, "", blobDir, fsVersion)
 	ra, err := local.OpenReader(nydusTarPath)
 	require.NoError(t, err)
 	defer ra.Close()
@@ -346,14 +358,19 @@ func buildChunkDict(t *testing.T, workDir string) (string, string) {
 	return bootstrapPath, filepath.Base(dictBlobPath)
 }
 
-// sudo go test -v -count=1 -run TestConverter ./tests
-func TestConverter(t *testing.T) {
+// sudo go test -v -count=1 -run TestPack ./tests
+func TestPack(t *testing.T) {
+	testPack(t, "5")
+	testPack(t, "6")
+}
+
+func testPack(t *testing.T, fsVersion string) {
 	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
 
-	lowerOCITarReader := buildOCILowerTar(t)
-	upperOCITarReader := buildOCIUpperTar(t, "")
+	lowerOCITarReader, expectedLowerFileTree := buildOCILowerTar(t, 100)
+	upperOCITarReader, expectedOverlayFileTree := buildOCIUpperTar(t, "", expectedLowerFileTree)
 
 	blobDir := filepath.Join(workDir, "blobs")
 	err = os.MkdirAll(blobDir, 0755)
@@ -367,10 +384,10 @@ func TestConverter(t *testing.T) {
 	err = os.MkdirAll(mountDir, 0755)
 	require.NoError(t, err)
 
-	chunkDictBootstrapPath, chunkDictBlobHash := buildChunkDict(t, workDir)
+	chunkDictBootstrapPath, chunkDictBlobHash := buildChunkDict(t, workDir, fsVersion, 100)
 
-	lowerNydusTarPath, lowerNydusBlobDigest := convertLayer(t, lowerOCITarReader, chunkDictBootstrapPath, blobDir, *fsVersion)
-	upperNydusTarPath, upperNydusBlobDigest := convertLayer(t, upperOCITarReader, chunkDictBootstrapPath, blobDir, *fsVersion)
+	lowerNydusTarPath, lowerNydusBlobDigest := packLayer(t, lowerOCITarReader, chunkDictBootstrapPath, blobDir, fsVersion)
+	upperNydusTarPath, upperNydusBlobDigest := packLayer(t, upperOCITarReader, chunkDictBootstrapPath, blobDir, fsVersion)
 
 	lowerTarRa, err := local.OpenReader(lowerNydusTarPath)
 	require.NoError(t, err)
@@ -400,20 +417,55 @@ func TestConverter(t *testing.T) {
 		ChunkDictPath: chunkDictBootstrapPath,
 	})
 	require.NoError(t, err)
-	expectedBlobDigests := []digest.Digest{digest.NewDigestFromHex(string(digest.SHA256), chunkDictBlobHash), upperNydusBlobDigest}
+	chunkDictBlobDigest := digest.NewDigestFromHex(string(digest.SHA256), chunkDictBlobHash)
+	expectedBlobDigests := []digest.Digest{chunkDictBlobDigest, upperNydusBlobDigest}
 	require.Equal(t, expectedBlobDigests, blobDigests)
 
-	verify(t, workDir)
+	verify(t, workDir, expectedOverlayFileTree)
 	dropCache(t)
-	verify(t, workDir)
+	verify(t, workDir, expectedOverlayFileTree)
 
 	ensureFile(t, filepath.Join(cacheDir, chunkDictBlobHash)+".chunk_map")
 	ensureNoFile(t, filepath.Join(cacheDir, lowerNydusBlobDigest.Hex())+".chunk_map")
 	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".chunk_map")
 }
 
-// sudo go test -v -count=1 -run TestContainerdImageConvert ./tests
-func TestContainerdImageConvert(t *testing.T) {
+// sudo go test -v -count=1 -run TestUnpack ./tests
+func TestUnpack(t *testing.T) {
+	testUnpack(t, "5")
+	testUnpack(t, "6")
+}
+
+func testUnpack(t *testing.T, fsVersion string) {
+	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+
+	ociTar := filepath.Join(workDir, "oci.tar")
+	ociTarReader, _ := buildOCIUpperTar(t, ociTar, nil)
+	nydusTar, _ := packLayer(t, ociTarReader, "", workDir, fsVersion)
+
+	tarTa, err := local.OpenReader(nydusTar)
+	require.NoError(t, err)
+	defer tarTa.Close()
+
+	_, newTarDigest := unpackLayer(t, workDir, tarTa)
+
+	ociTarReader, err = os.OpenFile(ociTar, os.O_RDONLY, 0644)
+	require.NoError(t, err)
+	ociTarDigest, err := digest.Canonical.FromReader(ociTarReader)
+	require.NoError(t, err)
+
+	require.Equal(t, ociTarDigest, newTarDigest)
+}
+
+// sudo go test -v -count=1 -run TestImageConvert ./tests
+func TestImageConvert(t *testing.T) {
+	testImageConvert(t, "5")
+	testImageConvert(t, "6")
+}
+
+func testImageConvert(t *testing.T, fsVersion string) {
 	const (
 		srcImageRef    = "docker.io/library/nginx:latest"
 		targetImageRef = "localhost:5000/nydus/nginx:nydus-latest"
@@ -432,7 +484,7 @@ func TestContainerdImageConvert(t *testing.T) {
 	defer os.RemoveAll(workDir)
 	nydusOpts := &converter.PackOption{
 		WorkDir:   workDir,
-		FsVersion: "5",
+		FsVersion: fsVersion,
 	}
 	convertFunc := converter.LayerConvertFunc(*nydusOpts)
 	convertHooks := containerdconverter.ConvertHooks{
@@ -477,27 +529,4 @@ func TestContainerdImageConvert(t *testing.T) {
 		t.Fatalf("failed to check image %s: %v, \noutput:\n%s", targetImageRef, err, output)
 		return
 	}
-}
-
-func TestUnpack(t *testing.T) {
-	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
-	require.NoError(t, err)
-	defer os.RemoveAll(workDir)
-
-	ociTar := filepath.Join(workDir, "oci.tar")
-	ociTarReader := buildOCIUpperTar(t, ociTar)
-	nydusTar, _ := convertLayer(t, ociTarReader, "", workDir, *fsVersion)
-
-	tarTa, err := local.OpenReader(nydusTar)
-	require.NoError(t, err)
-	defer tarTa.Close()
-
-	_, newTarDigest := unpackLayer(t, workDir, tarTa)
-
-	ociTarReader, err = os.OpenFile(ociTar, os.O_RDONLY, 0644)
-	require.NoError(t, err)
-	ociTarDigest, err := digest.Canonical.FromReader(ociTarReader)
-	require.NoError(t, err)
-
-	require.Equal(t, ociTarDigest, newTarDigest)
 }
