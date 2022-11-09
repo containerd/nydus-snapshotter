@@ -22,6 +22,8 @@ const (
 	NydusDataLayer = "containerd.io/snapshot/nydus-blob"
 	// A bool flag to mark the blob as a nydus bootstrap, set by image builders.
 	NydusMetaLayer = "containerd.io/snapshot/nydus-bootstrap"
+	// A bool flag to mark the blob as a nydus ref metadata, set by image builders.
+	NydusRefLayer = "containerd.io/snapshot/nydus-ref"
 	// Annotation containing secret to pull images from registry, set by the snapshotter.
 	NydusImagePullSecret = "containerd.io/snapshot/pullsecret"
 	// Annotation containing username to pull images from registry, set by the snapshotter.
