@@ -39,7 +39,6 @@ linters:
     - dogsled
     # - nilnil
     - unparam
-    - unused
     - nilerr
     # - goerr113
     - exportloopref
