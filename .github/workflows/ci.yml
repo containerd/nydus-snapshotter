@@ -27,7 +27,7 @@ jobs:
             ${{ runner.os }}-go
       - name: Build
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.49.0
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
           export PATH=$PATH:$(go env GOPATH)/bin
           make
           make test
