@@ -18,12 +18,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/transport"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/pkg/errors"
 
 	"github.com/containerd/stargz-snapshotter/estargz"
 )

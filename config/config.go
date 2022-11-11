@@ -9,6 +9,7 @@ package config
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -24,6 +25,8 @@ import (
 
 // Define a policy how to fork nydusd daemon and attach file system instances to serve.
 type DaemonMode string
+
+var SnapshotsDir string
 
 const (
 	// One nydusd, one rafs instance
@@ -163,8 +166,11 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 
 	cfg.RootDir = startupFlag.RootDir
 	if len(cfg.RootDir) == 0 {
-		return errors.New("invalid empty root directory")
+		return errors.New("empty root directory")
 	}
+
+	// Snapshots does not have to bind to any runtime daemon.
+	SnapshotsDir = path.Join(cfg.RootDir, "snapshots")
 
 	if startupFlag.RootDir == defaultRootDir {
 		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {

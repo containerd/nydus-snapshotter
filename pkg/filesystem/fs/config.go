@@ -139,6 +139,13 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
 	}
 }
 
+func WithRootMountpoint(mountpoint string) NewFSOpt {
+	return func(d *Filesystem) error {
+		d.rootMountpoint = mountpoint
+		return nil
+	}
+}
+
 func WithEnableStargz(enable bool) NewFSOpt {
 	return func(d *Filesystem) error {
 		if enable {

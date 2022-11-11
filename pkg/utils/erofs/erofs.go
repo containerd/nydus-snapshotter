@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func Mount(bootstrapPath, domainID, fscacheID, mountPoint string) error {
+func Mount(bootstrapPath, domainID, fscacheID, mountpoint string) error {
 	mount := unix.Mount
 	var opts string
 
@@ -26,14 +26,14 @@ func Mount(bootstrapPath, domainID, fscacheID, mountPoint string) error {
 	} else {
 		opts = "fsid=" + fscacheID
 	}
-	log.L.Infof("Mount erofs to %s with options %s", mountPoint, opts)
+	log.L.Infof("Mount erofs to %s with options %s", mountpoint, opts)
 
-	if err := mount("erofs", mountPoint, "erofs", 0, opts); err != nil {
+	if err := mount("erofs", mountpoint, "erofs", 0, opts); err != nil {
 		if errors.Is(err, unix.EINVAL) && domainID != "" {
-			log.L.Errorf("mount erofs with shared domain failed," +
+			log.L.Errorf("mount erofs with shared domain failed, " +
 				"If using this feature, make sure your Linux kernel version >= 6.1")
 		}
-		return errors.Wrapf(err, "failed to mount erofs")
+		return errors.Wrapf(err, "mount erofs at %s", mountpoint)
 	}
 
 	return nil

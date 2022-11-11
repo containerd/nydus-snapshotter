@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +17,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/log"
-	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 )
@@ -107,19 +107,28 @@ outer:
 		case <-timer.C:
 			daemons := s.pm.ListDaemons()
 			for _, d := range daemons {
-				if d.ID == daemon.SharedNydusDaemonID {
-					continue
-				}
-				fsMetrics, err := d.GetFsMetrics(s.pm.IsSharedDaemon(), d.SnapshotID)
-				if err != nil {
-					log.G(ctx).Errorf("failed to get fs metric: %v", err)
-					continue
+
+				for _, i := range d.Instances.List() {
+					var sid string
+
+					if i.GetMountpoint() == d.HostMountpoint() {
+						sid = ""
+					} else {
+						sid = i.SnapshotID
+					}
+
+					fsMetrics, err := d.GetFsMetrics(sid)
+					if err != nil {
+						log.G(ctx).Errorf("failed to get fs metric: %v", err)
+						continue
+					}
+
+					if err := s.exp.ExportFsMetrics(fsMetrics, i.ImageID); err != nil {
+						log.G(ctx).Errorf("failed to export fs metrics for %s: %v", i.ImageID, err)
+						continue
+					}
 				}
 
-				if err := s.exp.ExportFsMetrics(fsMetrics, d.ImageID); err != nil {
-					log.G(ctx).Errorf("failed to export fs metrics for %s: %v", d.ImageID, err)
-					continue
-				}
 			}
 		case <-ctx.Done():
 			log.G(ctx).Infof("cancel daemon metrics collecting")

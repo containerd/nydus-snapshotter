@@ -58,8 +58,8 @@ type NydusdClient interface {
 	BindBlob(daemonConfig string) error
 	UnbindBlob(daemonConfig string) error
 
-	GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, error)
-	GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMetrics, error)
+	GetFsMetrics(sid string) (*types.FsMetrics, error)
+	GetCacheMetrics(sid string) (*types.CacheMetrics, error)
 
 	TakeOver() error
 	SendFd() error
@@ -214,9 +214,9 @@ func (c *nydusdClient) Umount(mp string) error {
 	return c.request(http.MethodDelete, url, nil, nil)
 }
 
-func (c *nydusdClient) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMetrics, error) {
+func (c *nydusdClient) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 	query := query{}
-	if sharedDaemon {
+	if sid != "" {
 		query.Add("id", "/"+sid)
 	}
 
@@ -229,9 +229,9 @@ func (c *nydusdClient) GetFsMetrics(sharedDaemon bool, sid string) (*types.FsMet
 	return &m, nil
 }
 
-func (c *nydusdClient) GetCacheMetrics(sharedDaemon bool, sid string) (*types.CacheMetrics, error) {
+func (c *nydusdClient) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {
 	query := query{}
-	if sharedDaemon {
+	if sid != "" {
 		query.Add("id", "/"+sid)
 	}
 
