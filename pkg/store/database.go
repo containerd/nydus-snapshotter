@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -50,7 +51,9 @@ func NewDatabase(rootDir string) (*Database, error) {
 		return nil, err
 	}
 
-	db, err := bolt.Open(f, 0600, nil)
+	opts := bolt.Options{Timeout: time.Second * 4}
+
+	db, err := bolt.Open(f, 0600, &opts)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +135,14 @@ func getObject(bucket *bolt.Bucket, key string, obj interface{}) error {
 }
 
 func (db *Database) initDatabase() error {
-	return db.db.Update(func(tx *bolt.Tx) error {
+	var notV1 = false
+	err := db.db.Update(func(tx *bolt.Tx) error {
+
+		bk := tx.Bucket(v1RootBucket)
+		if bk == nil {
+			notV1 = true
+		}
+
 		// Must create v1 bucket
 		bk, err := tx.CreateBucketIfNotExists(v1RootBucket)
 		if err != nil {
@@ -146,8 +156,18 @@ func (db *Database) initDatabase() error {
 		if _, err := bk.CreateBucketIfNotExists(instancesBucket); err != nil {
 			return errors.Wrapf(err, "bucket %s", instancesBucket)
 		}
+
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	if notV1 {
+		db.tryTranslateRecords()
+	}
+
+	return nil
 }
 
 func (db *Database) Close() error {
