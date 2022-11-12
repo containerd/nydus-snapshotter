@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 
@@ -62,4 +63,39 @@ func Test_daemon(t *testing.T) {
 	})
 	require.Nil(t, err)
 	require.Equal(t, len(ids2), 0)
+}
+
+func TestLegacyRecordsMultipleDaemonModes(t *testing.T) {
+	src, _ := os.Open("testdata/nydus_multiple_compat.db")
+
+	defer src.Close()
+
+	dst, _ := os.Create("testdata/nydus.db")
+
+	t.Cleanup(func() {
+		os.RemoveAll("testdata/nydus.db")
+	})
+
+	_, err := io.Copy(dst, src)
+	require.Nil(t, err)
+	dst.Close()
+	NewDatabase("testdata")
+
+}
+
+func TestLegacyRecordsSharedDaemonModes(t *testing.T) {
+	src, _ := os.Open("testdata/nydus_shared_compat.db")
+
+	defer src.Close()
+
+	dst, _ := os.Create("testdata/nydus.db")
+
+	t.Cleanup(func() {
+		os.RemoveAll("testdata/nydus.db")
+	})
+
+	_, err := io.Copy(dst, src)
+	require.Nil(t, err)
+	dst.Close()
+	NewDatabase("testdata")
 }
