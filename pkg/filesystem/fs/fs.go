@@ -54,7 +54,6 @@ type Filesystem struct {
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
 	fsDriver             string
-	nydusdBinaryPath     string
 	nydusImageBinaryPath string
 	nydusdThreadNum      int
 	logLevel             string

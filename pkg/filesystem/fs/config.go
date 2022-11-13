@@ -32,16 +32,6 @@ func WithMeta(root string) NewFSOpt {
 	}
 }
 
-func WithNydusdBinaryPath(p string, daemonMode config.DaemonMode) NewFSOpt {
-	return func(d *Filesystem) error {
-		if daemonMode != config.DaemonModeNone && p == "" {
-			return errors.New("nydusd binary path is required")
-		}
-		d.nydusdBinaryPath = p
-		return nil
-	}
-}
-
 func WithNydusImageBinaryPath(p string) NewFSOpt {
 	return func(d *Filesystem) error {
 		d.nydusImageBinaryPath = p

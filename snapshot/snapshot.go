@@ -107,7 +107,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithManager(manager),
-		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
