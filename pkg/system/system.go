@@ -8,16 +8,22 @@ package system
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -69,7 +75,6 @@ func newErrorMessage(message string) errorMessage {
 }
 
 func (m *errorMessage) encode() string {
-	// This serialization can't fail
 	msg, err := json.Marshal(&m)
 	if err != nil {
 		log.L.Errorf("Failed to encode error message, %s", err)
@@ -96,12 +101,10 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 
 type daemonInfo struct {
 	ID             string `json:"id"`
-	SnapshotID     string `json:"snapshot_id"`
 	Pid            int    `json:"pid"`
-	ImageID        string `json:"image_id"`
 	APISock        string `json:"api_socket"`
 	SupervisorPath string
-	SnapshotDir    string
+	Instances      map[string]*daemon.Rafs `json:"instances"`
 }
 
 func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
@@ -129,7 +132,7 @@ func NewSystemController(manager *manager.Manager, sock string) (*Controller, er
 
 func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
-	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPost)
+	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPut)
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
 
 	// Special registration for Prometheus metrics export
@@ -147,10 +150,11 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		info := make([]daemonInfo, 0, 10)
 
 		for _, d := range daemons {
-
-			i := daemonInfo{ID: d.ID(),
-				Pid: d.Pid()}
-
+			i := daemonInfo{
+				ID:        d.ID(),
+				Pid:       d.Pid(),
+				Instances: d.Instances.List(),
+			}
 			info = append(info, i)
 		}
 
@@ -205,7 +209,7 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 		// process in daemons manager
 		// TODO: daemon client has a method to query daemon version and information.
 		for _, d := range daemons {
-			if err := upgradeNydusDaemon(d, c); err != nil {
+			if err := sc.upgradeNydusDaemon(d, c); err != nil {
 				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
 				m := newErrorMessage(err.Error())
 				http.Error(w, m.encode(), http.StatusInternalServerError)
@@ -234,7 +238,91 @@ func (sc *Controller) Run() error {
 // New API socket path
 // Supervisor path does not need to be changed
 // Provide minimal parameters since most of it can be recovered by nydusd states
-func upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
+// Create a new daemon in Manger to take over the service
+func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
-	return errdefs.ErrNotImplemented
+
+	manager := sc.manager
+
+	var new daemon.Daemon
+	new.States = d.States
+	new.CloneInstances(d)
+
+	s := path.Base(d.GetAPISock())
+	next, err := buildNextAPISocket(s)
+	if err != nil {
+		return err
+	}
+
+	upgradingSocket := path.Join(path.Dir(d.GetAPISock()), next)
+	new.States.APISocket = upgradingSocket
+
+	cmd, err := manager.BuildDaemonCommand(&new, c.NydusdPath, true)
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return errors.Wrap(err, "start process")
+	}
+
+	if err := new.WaitUntilState(types.DaemonStateInit); err != nil {
+		return errors.Wrap(err, "wait until init state")
+	}
+
+	if err := new.TakeOver(); err != nil {
+		return errors.Wrap(err, "take over resources")
+	}
+
+	if err := new.WaitUntilState(types.DaemonStateReady); err != nil {
+		return errors.Wrap(err, "wait unit ready state")
+	}
+
+	if err := manager.UnsubscribeDaemonEvent(d); err != nil {
+		return errors.Wrap(err, "unsubscribe daemon event")
+	}
+
+	// Let the older daemon exit without umount
+	if err := d.Exit(); err != nil {
+		return errors.Wrap(err, "old daemon exits")
+	}
+
+	if err := new.Start(); err != nil {
+		return errors.Wrap(err, "start file system service")
+	}
+
+	if err := manager.SubscribeDaemonEvent(&new); err != nil {
+		return &json.InvalidUnmarshalError{}
+	}
+
+	log.L.Infof("Started service of upgraded daemon on socket %s", new.GetAPISock())
+
+	if err := manager.UpdateDaemon(&new); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func buildNextAPISocket(cur string) (string, error) {
+	n := strings.Split(cur, ".")
+	if len(n) != 2 {
+		return "", errdefs.ErrInvalidArgument
+	}
+	r := regexp.MustCompile(`[0-9]+`)
+	m := r.Find([]byte(n[0]))
+	var num int
+	if m == nil {
+		num = 1
+	} else {
+		var err error
+		num, err = strconv.Atoi(string(m))
+		if err != nil {
+			return "", err
+		}
+		num++
+	}
+
+	nextSocket := fmt.Sprintf("api%d.sock", num)
+	return nextSocket, nil
 }
