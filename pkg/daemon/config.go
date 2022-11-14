@@ -9,6 +9,7 @@ package daemon
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -16,7 +17,6 @@ import (
 )
 
 // Build runtime nydusd daemon object, which might be persisted later
-
 func WithSocketDir(dir string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		s := filepath.Join(dir, d.ID())
@@ -24,7 +24,7 @@ func WithSocketDir(dir string) NewDaemonOpt {
 		if err := os.MkdirAll(s, 0755); err != nil {
 			return errors.Wrapf(err, "create socket dir %s", s)
 		}
-		d.States.SocketDir = s
+		d.States.APISocket = path.Join(s, "api.sock")
 		return nil
 	}
 }

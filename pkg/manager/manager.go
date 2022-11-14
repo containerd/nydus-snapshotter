@@ -10,6 +10,7 @@ package manager
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"sync"
 	"time"
@@ -433,7 +434,8 @@ func (m *Manager) ListDaemons() []*daemon.Daemon {
 func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	resource := []string{d.States.ConfigDir, d.States.LogDir}
 	if !m.IsSharedDaemon() {
-		resource = append(resource, d.States.SocketDir)
+		socketDir := path.Dir(d.GetAPISock())
+		resource = append(resource, socketDir)
 	}
 
 	for _, dir := range resource {

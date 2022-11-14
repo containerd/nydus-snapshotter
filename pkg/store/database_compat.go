@@ -85,7 +85,7 @@ func (db *Database) tryTranslateRecords() error {
 				States: daemon.States{
 					ID:         d.ID,
 					ProcessID:  d.Pid,
-					SocketDir:  d.SnapshotDir,
+					APISocket:  path.Join(d.SnapshotDir, "api.sock"),
 					FsDriver:   d.FsDriver,
 					Mountpoint: *d.RootMountPoint,
 					LogDir:     d.LogDir,
@@ -99,7 +99,7 @@ func (db *Database) tryTranslateRecords() error {
 				States: daemon.States{
 					ID:         d.ID,
 					ProcessID:  d.Pid,
-					SocketDir:  d.SocketDir,
+					APISocket:  path.Join(d.SocketDir, "api.sock"),
 					FsDriver:   d.FsDriver,
 					Mountpoint: mp,
 					LogDir:     d.LogDir,
