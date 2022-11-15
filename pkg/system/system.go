@@ -12,13 +12,14 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gorilla/mux"
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
-	"github.com/gorilla/mux"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -94,16 +95,13 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 }
 
 type daemonInfo struct {
-	ID         string `json:"id"`
-	SnapshotID string `json:"snapshot_id"`
-	Pid        int    `json:"pid"`
-	ImageID    string `json:"image_id"`
-	APISock    string `json:"api_socket"`
-	// TODO: trim me, only for trace and analyze purpose at this stage
-	RootMountPoint   string
-	CustomMountPoint string
-	SupervisorPath   string
-	SnapshotDir      string
+	ID             string `json:"id"`
+	SnapshotID     string `json:"snapshot_id"`
+	Pid            int    `json:"pid"`
+	ImageID        string `json:"image_id"`
+	APISock        string `json:"api_socket"`
+	SupervisorPath string
+	SnapshotDir    string
 }
 
 func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
@@ -149,27 +147,9 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		info := make([]daemonInfo, 0, 10)
 
 		for _, d := range daemons {
-			RootMountPointGetter := func() string {
-				if d.RootMountPoint != nil {
-					return *d.RootMountPoint
-				}
-				return ""
-			}
 
-			CustomMountPointGetter := func() string {
-				if d.CustomMountPoint != nil {
-					return *d.CustomMountPoint
-				}
-				return ""
-			}
-
-			i := daemonInfo{ID: d.ID,
-				SnapshotID:       d.SnapshotID,
-				Pid:              d.Pid,
-				ImageID:          d.ImageID,
-				RootMountPoint:   RootMountPointGetter(),
-				CustomMountPoint: CustomMountPointGetter(),
-				SnapshotDir:      d.SnapshotDir}
+			i := daemonInfo{ID: d.ID(),
+				Pid: d.Pid()}
 
 			info = append(info, i)
 		}
@@ -226,7 +206,7 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 		// TODO: daemon client has a method to query daemon version and information.
 		for _, d := range daemons {
 			if err := upgradeNydusDaemon(d, c); err != nil {
-				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID, err)
+				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
 				m := newErrorMessage(err.Error())
 				http.Error(w, m.encode(), http.StatusInternalServerError)
 				return
@@ -255,6 +235,6 @@ func (sc *Controller) Run() error {
 // Supervisor path does not need to be changed
 // Provide minimal parameters since most of it can be recovered by nydusd states
 func upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
-	log.L.Infof("Upgrading nydusd %s, request %v", d.ID, c)
+	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
 	return errdefs.ErrNotImplemented
 }

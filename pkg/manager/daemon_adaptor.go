@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
@@ -24,7 +23,7 @@ import (
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.buildDaemonCommand(d)
 	if err != nil {
-		return errors.Wrapf(err, "create command for daemon %s", d.ID)
+		return errors.Wrapf(err, "create command for daemon %s", d.ID())
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -34,7 +33,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	d.Lock()
 	defer d.Unlock()
 
-	d.Pid = cmd.Process.Pid
+	d.States.ProcessID = cmd.Process.Pid
 
 	// Update both states cache and DB
 	// TODO: Is it right to commit daemon before nydusd successfully started?
@@ -50,14 +49,14 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	// So we can ignore the subscribing error.
 	go func() {
 		if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
-			log.L.Errorf("Nydusd %s probably not started", d.ID)
+			log.L.Errorf("Nydusd %s probably not started", d.ID())
 			return
 		}
 
 		// TODO: It's better to subscribe death event when snapshotter
 		// has set daemon's state to RUNNING or READY.
-		if err := m.monitor.Subscribe(d.ID, d.GetAPISock(), m.LivenessNotifier); err != nil {
-			log.L.Errorf("Nydusd %s probably not started", d.ID)
+		if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+			log.L.Errorf("Nydusd %s probably not started", d.ID())
 			return
 		}
 
@@ -66,18 +65,19 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		}
 
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
-			log.L.Errorf("daemon %s is not managed to reach RUNNING state", d.ID)
+			log.L.Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
 			return
 		}
 
-		su := m.SupervisorSet.GetSupervisor(d.ID)
-		if err := su.WaitStatesTimeout(5 * time.Second); err != nil {
-			log.L.Errorf("Fail to receive daemon runtime states, %s", err)
-			return
-		}
-
-		if err := d.SendStates(); err != nil {
-			log.L.Errorf("Request daemon to send states, %s", err)
+		su := d.Supervisor
+		err = su.FetchDaemonStates(func() error {
+			if err := d.SendStates(); err != nil {
+				return errors.Wrapf(err, "send daemon %s states", d.ID())
+			}
+			return nil
+		})
+		if err != nil {
+			log.L.Errorf("send states")
 			return
 		}
 	}()
@@ -92,7 +92,7 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 
 	nydusdThreadNum := d.NydusdThreadNum()
 
-	if d.FsDriver == config.FsDriverFscache {
+	if d.States.FsDriver == config.FsDriverFscache {
 		cmdOpts = append(cmdOpts,
 			command.WithMode("singleton"),
 			command.WithFscacheDriver(m.cacheDir))
@@ -105,7 +105,7 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		cmdOpts = append(cmdOpts, command.WithMode("fuse"))
 
 		if d.Supervisor != nil {
-			cmdOpts = append(cmdOpts, command.WithSupervisor(d.Supervisor.Sock()), command.WithID(d.ID))
+			cmdOpts = append(cmdOpts, command.WithSupervisor(d.Supervisor.Sock()), command.WithID(d.ID()))
 		}
 
 		if nydusdThreadNum != 0 {
@@ -113,19 +113,20 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		}
 
 		switch {
-		case !m.isOneDaemon():
-			bootstrap, err := d.BootstrapFile()
+		case !m.IsSharedDaemon():
+			rafs := d.Instances.Head()
+			bootstrap, err := rafs.BootstrapFile()
 			if err != nil {
-				return nil, errors.Wrapf(err, "locate bootstrap")
+				return nil, errors.Wrapf(err, "locate bootstrap %s", bootstrap)
 			}
 
 			cmdOpts = append(cmdOpts,
-				command.WithConfig(d.ConfigFile()),
+				command.WithConfig(d.ConfigFile("")),
 				command.WithBootstrap(bootstrap),
-				command.WithMountpoint(d.MountPoint()))
+				command.WithMountpoint(d.HostMountpoint()))
 
-		case m.isOneDaemon():
-			cmdOpts = append(cmdOpts, command.WithMountpoint(d.HostMountPoint()))
+		case m.IsSharedDaemon():
+			cmdOpts = append(cmdOpts, command.WithMountpoint(d.HostMountpoint()))
 
 		default:
 			return nil, errors.Errorf("invalid daemon mode %s ", m.daemonMode)
@@ -134,9 +135,9 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 
 	cmdOpts = append(cmdOpts,
 		command.WithAPISock(d.GetAPISock()),
-		command.WithLogLevel(d.LogLevel))
+		command.WithLogLevel(d.States.LogLevel))
 
-	if !d.LogToStdout {
+	if !d.States.LogToStdout {
 		cmdOpts = append(cmdOpts, command.WithLogFile(d.LogFile()))
 	}
 

@@ -35,7 +35,8 @@ func (m *Mounter) Umount(target string) error {
 		return err
 	}
 
-	return syscall.Unmount(target, syscall.MNT_FORCE)
+	// return syscall.Unmount(target, syscall.MNT_FORCE)
+	return syscall.Unmount(target, 0)
 }
 
 func normalizePath(path string) (realPath string, err error) {

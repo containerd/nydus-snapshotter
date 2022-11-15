@@ -342,6 +342,8 @@ function kill_snapshotter_and_nydusd_recover {
 
     echo "killing nydusd"
     killall -9 nydusd || true
+
+    echo "killing nydus-snapshotter"
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"

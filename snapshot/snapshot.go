@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -31,8 +32,11 @@ import (
 
 	blob "github.com/containerd/nydus-snapshotter/pkg/blob"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/layout"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
+
 	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
@@ -103,7 +107,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	opts := []fspkg.NewFSOpt{
 		fspkg.WithManager(manager),
-		fspkg.WithNydusdBinaryPath(cfg.NydusdBinaryPath, cfg.DaemonMode),
 		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
 		fspkg.WithMeta(cfg.RootDir),
 		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
@@ -113,6 +116,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		fspkg.WithLogLevel(cfg.LogLevel),
 		fspkg.WithLogDir(cfg.LogDir),
 		fspkg.WithLogToStdout(cfg.LogToStdout),
+		fspkg.WithRootMountpoint(path.Join(cfg.RootDir, "mnt")),
 		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
 		fspkg.WithEnableStargz(cfg.EnableStargz),
 	}
@@ -306,7 +310,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	// Handle nydus/stargz image data layers.
 	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
 		// check if image layer is nydus data layer
-		if o.fs.IsNydusDataLayer(ctx, base.Labels) {
+		if isNydusDataLayer(base.Labels) {
 			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
 
 			if o.blobMgr != nil {
@@ -321,7 +325,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 			}
-		} else if !o.fs.IsNydusMetaLayer(ctx, base.Labels) {
+		} else if !isNydusMetaLayer(base.Labels) {
 			// Check if image layer is estargz layer
 			if ok, ref, layerDigest, blob := o.fs.IsStargzDataLayer(ctx, base.Labels); ok {
 				err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, base.Labels)
@@ -390,7 +394,6 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 }
 
 func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
-	log.G(ctx).Infof("commit snapshot with key %s", key)
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return err
@@ -410,6 +413,8 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
+	log.G(ctx).Infof("commit snapshot with key %s snapshot id %s", key, id)
+
 	usage, err := fs.DiskUsage(ctx, o.upperPath(id))
 	if err != nil {
 		return err
@@ -423,12 +428,11 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 }
 
 func (o *snapshotter) Remove(ctx context.Context, key string) error {
-	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
-	log.L.Infof("remove snapshot with key %s", key)
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		if err != nil {
 			if rerr := t.Rollback(); rerr != nil {
@@ -437,10 +441,13 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}
 	}()
 
-	_, info, _, err := storage.GetInfo(ctx, key)
+	id, info, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
 		return errors.Wrap(err, "get snapshot")
 	}
+
+	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
+	log.L.Infof("remove snapshot with key %s snapshot id %s", key, id)
 
 	if info.Kind == snapshots.KindCommitted {
 		blobDigest := info.Labels[label.CRILayerDigest]
@@ -665,7 +672,9 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return nil, err
 	}
 
-	daemon := o.fs.Manager.GetBySnapshotID(id)
+	instance := daemon.RafsSet.Get(id)
+	// TODO: How to dump configuration if no daemon is ever created?
+	daemon := o.fs.Manager.GetByDaemonID(instance.DaemonID)
 
 	configContent, err := daemon.Config.DumpString()
 	if err != nil {
@@ -684,7 +693,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to read bootstrap")
 	}
-	version, err := fspkg.DetectFsVersion(header[0:sz])
+	version, err := layout.DetectFsVersion(header[0:sz])
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: failed to detect filesystem version")
 	}

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,16 +14,20 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 )
 
-// Nydus daemons and snapshots persistence storage.
+// Nydus daemons and fs instances persistence storage.
 type Store interface {
-	GetByDaemonID(id string) (*daemon.Daemon, error)
-	GetBySnapshotID(snapshotID string) (*daemon.Daemon, error)
 	// If the daemon is inserted to DB before, return error ErrAlreadyExisted.
-	Add(*daemon.Daemon) error
-	Update(d *daemon.Daemon) error
-	Delete(*daemon.Daemon) error
-	WalkDaemons(ctx context.Context, cb func(*daemon.Daemon) error) error
+	AddDaemon(d *daemon.Daemon) error
+	UpdateDaemon(d *daemon.Daemon) error
+	DeleteDaemon(id string) error
+	WalkDaemons(ctx context.Context, cb func(*daemon.States) error) error
 	CleanupDaemons(ctx context.Context) error
+
+	AddInstance(r *daemon.Rafs) error
+	DeleteInstance(snapshotID string) error
+	WalkInstances(ctx context.Context, cb func(*daemon.Rafs) error) error
+
+	NextInstanceSeq() (uint64, error)
 }
 
 var _ Store = &store.DaemonStore{}

@@ -20,6 +20,8 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 
+	"golang.org/x/net/context"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
 )
 
@@ -73,6 +75,7 @@ type Supervisor struct {
 	fd          int
 	dataStorage StatesStorage
 	mu          sync.Mutex
+	sem         *semaphore.Weighted
 }
 
 func (su *Supervisor) save(data []byte, fd int) {
@@ -110,7 +113,10 @@ func (su *Supervisor) load(data []byte, oob []byte) (nData uint, nOob int, err e
 	return nData, nOob, nil
 }
 
-func (su *Supervisor) WaitStatesTimeout(to time.Duration) error {
+// There are several stages from different goroutines to trigger sending daemon states
+// the waiter will overlap each other causing the UDS being deleted.
+// But we don't want to keep the server listen for ever.
+func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) {
 	if err := os.Remove(su.path); err != nil {
 		if !os.IsNotExist(err) {
 			log.L.Warnf("Unable to remove existed socket file %s, %s", su.path, err)
@@ -119,7 +125,7 @@ func (su *Supervisor) WaitStatesTimeout(to time.Duration) error {
 
 	listener, err := net.Listen("unix", su.path)
 	if err != nil {
-		return errors.Wrapf(err, "listen on socket %s", su.path)
+		return nil, errors.Wrapf(err, "listen on socket %s", su.path)
 	}
 
 	receiver := func() error {
@@ -193,18 +199,20 @@ func (su *Supervisor) WaitStatesTimeout(to time.Duration) error {
 			}
 
 		}()
+
+		go func() {
+			if err := receiver(); err != nil {
+				log.L.Errorf("receiver fails, %s", err)
+			}
+			if to > 0 {
+				cancelTimer <- 1
+			}
+		}()
+
+		return nil, nil
 	}
 
-	go func() {
-		if err := receiver(); err != nil {
-			log.L.Errorf("receiver fails, %s", err)
-		}
-		if to > 0 {
-			cancelTimer <- 1
-		}
-	}()
-
-	return nil
+	return receiver, nil
 }
 
 func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
@@ -286,6 +294,24 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 	return nil
 }
 
+func (su *Supervisor) FetchDaemonStates(trigger func() error) error {
+	su.sem.Acquire(context.TODO(), 1)
+	defer su.sem.Release(1)
+
+	receiver, err := su.waitStatesTimeout(0)
+	if err != nil {
+		return errors.Wrapf(err, "wait states on %s", su.Sock())
+	}
+
+	err = trigger()
+	if err != nil {
+		return errors.Wrapf(err, "trigger on %s", su.Sock())
+	}
+
+	// FIXME: With Timeout context!
+	return receiver()
+}
+
 // The unix domain socket on which nydus daemon is connected to
 func (su *Supervisor) Sock() string {
 	return su.path
@@ -319,6 +345,7 @@ func (ss *SupervisorsSet) NewSupervisor(id string) *Supervisor {
 		// Negative value means no FD was ever held.
 		fd:          -1,
 		dataStorage: newMemStatesStorage(),
+		sem:         semaphore.NewWeighted(1),
 	}
 
 	ss.mu.Lock()

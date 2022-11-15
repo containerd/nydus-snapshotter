@@ -9,6 +9,7 @@ package daemon
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -16,55 +17,35 @@ import (
 )
 
 // Build runtime nydusd daemon object, which might be persisted later
-
-func WithSnapshotID(id string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.SnapshotID = id
-		return nil
-	}
-}
-
-func WithID(id string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.ID = id
-		return nil
-	}
-}
-
-func WithConfigDir(dir string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		s := filepath.Join(dir, d.ID)
-		// this may be failed, should handle that
-		if err := os.MkdirAll(s, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create config dir %s", s)
-		}
-		d.ConfigDir = s
-		return nil
-	}
-}
-
 func WithSocketDir(dir string) NewDaemonOpt {
 	return func(d *Daemon) error {
-		s := filepath.Join(dir, d.ID)
+		s := filepath.Join(dir, d.ID())
 		// this may be failed, should handle that
 		if err := os.MkdirAll(s, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create socket dir %s", s)
+			return errors.Wrapf(err, "create socket dir %s", s)
 		}
-		d.SocketDir = s
+		d.States.APISocket = path.Join(s, "api.sock")
+		return nil
+	}
+}
+
+func WithRef(ref int32) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.ref = ref
 		return nil
 	}
 }
 
 func WithLogDir(dir string) NewDaemonOpt {
 	return func(d *Daemon) error {
-		d.LogDir = filepath.Join(dir, d.ID)
+		d.States.LogDir = filepath.Join(dir, d.ID())
 		return nil
 	}
 }
 
 func WithLogToStdout(logToStdout bool) NewDaemonOpt {
 	return func(d *Daemon) error {
-		d.LogToStdout = logToStdout
+		d.States.LogToStdout = logToStdout
 		return nil
 	}
 }
@@ -72,66 +53,43 @@ func WithLogToStdout(logToStdout bool) NewDaemonOpt {
 func WithLogLevel(logLevel string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		if logLevel == "" {
-			d.LogLevel = config.DefaultLogLevel
+			d.States.LogLevel = config.DefaultLogLevel
 		} else {
-			d.LogLevel = logLevel
+			d.States.LogLevel = logLevel
 		}
 		return nil
 	}
 }
 
-// In Shared mode, it is the mountpoint where single nydusd mounts
-func WithRootMountPoint(rootMountPoint string) NewDaemonOpt {
+func WithConfigDir(dir string) NewDaemonOpt {
 	return func(d *Daemon) error {
-		if err := os.MkdirAll(rootMountPoint, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create rootMountPoint %s", rootMountPoint)
+		s := filepath.Join(dir, d.ID())
+		// this may be failed, should handle that
+		if err := os.MkdirAll(s, 0755); err != nil {
+			return errors.Wrapf(err, "failed to create config dir %s", s)
 		}
-		d.RootMountPoint = &rootMountPoint
+		d.States.ConfigDir = s
 		return nil
 	}
 }
 
-func WithCustomMountPoint(customMountPoint string) NewDaemonOpt {
+func WithMountpoint(mountpoint string) NewDaemonOpt {
 	return func(d *Daemon) error {
-		if err := os.MkdirAll(customMountPoint, 0755); err != nil {
-			return errors.Wrapf(err, "failed to create customMountPoint %s", customMountPoint)
-		}
-		d.CustomMountPoint = &customMountPoint
-		return nil
-	}
-}
-
-func WithSnapshotDir(dir string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.SnapshotDir = dir
-		return nil
-	}
-}
-
-func WithImageID(imageID string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.ImageID = imageID
-		return nil
-	}
-}
-
-func WithAPISock(apiSock string) NewDaemonOpt {
-	return func(d *Daemon) error {
-		d.APISock = &apiSock
+		d.States.Mountpoint = mountpoint
 		return nil
 	}
 }
 
 func WithNydusdThreadNum(nydusdThreadNum int) NewDaemonOpt {
 	return func(d *Daemon) error {
-		d.nydusdThreadNum = nydusdThreadNum
+		d.States.ThreadNum = nydusdThreadNum
 		return nil
 	}
 }
 
 func WithFsDriver(fsDriver string) NewDaemonOpt {
 	return func(d *Daemon) error {
-		d.FsDriver = fsDriver
+		d.States.FsDriver = fsDriver
 		return nil
 	}
 }

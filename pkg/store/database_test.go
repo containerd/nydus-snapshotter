@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"io"
 	"os"
 	"testing"
 
@@ -22,9 +23,9 @@ func Test_daemon(t *testing.T) {
 
 	ctx := context.TODO()
 	// Add daemons
-	d1 := daemon.Daemon{ID: "d1"}
-	d2 := daemon.Daemon{ID: "d2"}
-	d3 := daemon.Daemon{ID: "d3"}
+	d1 := daemon.Daemon{States: daemon.States{ID: "d1"}}
+	d2 := daemon.Daemon{States: daemon.States{ID: "d2"}}
+	d3 := daemon.Daemon{States: daemon.States{ID: "d3"}}
 	err = db.SaveDaemon(ctx, &d1)
 	require.Nil(t, err)
 	err = db.SaveDaemon(ctx, &d2)
@@ -41,7 +42,7 @@ func Test_daemon(t *testing.T) {
 
 	// Check records
 	ids := make(map[string]string)
-	_ = db.WalkDaemons(ctx, func(info *daemon.Daemon) error {
+	_ = db.WalkDaemons(ctx, func(info *daemon.States) error {
 		ids[info.ID] = ""
 		return nil
 	})
@@ -56,10 +57,45 @@ func Test_daemon(t *testing.T) {
 	err = db.CleanupDaemons(ctx)
 	require.Nil(t, err)
 	ids2 := make([]string, 0)
-	err = db.WalkDaemons(ctx, func(info *daemon.Daemon) error {
+	err = db.WalkDaemons(ctx, func(info *daemon.States) error {
 		ids2 = append(ids2, info.ID)
 		return nil
 	})
 	require.Nil(t, err)
 	require.Equal(t, len(ids2), 0)
+}
+
+func TestLegacyRecordsMultipleDaemonModes(t *testing.T) {
+	src, _ := os.Open("testdata/nydus_multiple_compat.db")
+
+	defer src.Close()
+
+	dst, _ := os.Create("testdata/nydus.db")
+
+	t.Cleanup(func() {
+		os.RemoveAll("testdata/nydus.db")
+	})
+
+	_, err := io.Copy(dst, src)
+	require.Nil(t, err)
+	dst.Close()
+	NewDatabase("testdata")
+
+}
+
+func TestLegacyRecordsSharedDaemonModes(t *testing.T) {
+	src, _ := os.Open("testdata/nydus_shared_compat.db")
+
+	defer src.Close()
+
+	dst, _ := os.Create("testdata/nydus.db")
+
+	t.Cleanup(func() {
+		os.RemoveAll("testdata/nydus.db")
+	})
+
+	_, err := io.Copy(dst, src)
+	require.Nil(t, err)
+	dst.Close()
+	NewDatabase("testdata")
 }
