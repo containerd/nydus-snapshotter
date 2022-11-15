@@ -389,6 +389,14 @@ func (m *Manager) NewInstance(r *daemon.Rafs) error {
 	return m.store.AddInstance(r)
 }
 
+func (m *Manager) Lock() {
+	m.mu.Lock()
+}
+
+func (m *Manager) Unlock() {
+	m.mu.Unlock()
+}
+
 func (m *Manager) SubscribeDaemonEvent(d *daemon.Daemon) error {
 	if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
 		log.L.Errorf("Nydusd %s probably not started", d.ID())

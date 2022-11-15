@@ -190,6 +190,9 @@ func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Req
 // 6. Delete the old nydusd executive
 func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sc.manager.Lock()
+		defer sc.manager.Unlock()
+
 		daemons := sc.manager.ListDaemons()
 
 		var c upgradeRequest
@@ -248,11 +251,8 @@ func (sc *Controller) Run() error {
 	return nil
 }
 
-// TODO: Implement me!
-// New API socket path
-// Supervisor path does not need to be changed
-// Provide minimal parameters since most of it can be recovered by nydusd states
-// Create a new daemon in Manger to take over the service
+// Provide minimal parameters since most of it can be recovered by nydusd states.
+// Create a new daemon in Manger to take over the service.
 func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
 
@@ -318,6 +318,8 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 	return nil
 }
 
+// Name next api socket path based on currently api socket path listened on.
+// The principle is to add a suffix number to api[0-9]+.sock
 func buildNextAPISocket(cur string) (string, error) {
 	n := strings.Split(cur, ".")
 	if len(n) != 2 {
