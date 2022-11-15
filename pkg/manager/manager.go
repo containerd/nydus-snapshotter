@@ -194,7 +194,7 @@ func (s *DaemonStates) Size() int {
 // to avoid frequently operating DB
 type Manager struct {
 	store            Store
-	nydusdBinaryPath string
+	NydusdBinaryPath string
 	daemonMode       config.DaemonMode
 	// Where nydusd stores cache files for fscache driver
 	cacheDir string
@@ -340,7 +340,7 @@ func NewManager(opt Opt) (*Manager, error) {
 
 	mgr := &Manager{
 		store:            s,
-		nydusdBinaryPath: opt.NydusdBinaryPath,
+		NydusdBinaryPath: opt.NydusdBinaryPath,
 		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
 		daemonStates:     newDaemonStates(),

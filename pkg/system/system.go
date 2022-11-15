@@ -170,7 +170,7 @@ func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// POST /api/v1/nydusd/upgrade
+// PUT /api/v1/nydusd/upgrade
 // body: {"nydusd_path": "/path/to/new/nydusd", "version": "v2.2.1", "policy": "rolling"}
 // Possible policy: rolling, immediate
 // Live upgrade procedure:
@@ -193,28 +193,42 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 		daemons := sc.manager.ListDaemons()
 
 		var c upgradeRequest
+		var err error
+		var statusCode int
 
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		defer func() {
+			if err != nil {
+				m := newErrorMessage(err.Error())
+				http.Error(w, m.encode(), statusCode)
+			}
+		}()
+
+		err = json.NewDecoder(r.Body).Decode(&c)
+		if err != nil {
 			log.L.Errorf("request %v, decode error %s", r, err)
-			m := newErrorMessage(err.Error())
-			http.Error(w, m.encode(), http.StatusBadRequest)
+			statusCode = http.StatusBadRequest
 			return
 		}
 
 		// TODO: Keep the nydusd executive path in Daemon state and persis it since nydusd
 		// can run on both versions.
 		// Create a dedicated directory storing nydusd of various versions?
-
-		// TODO: Let struct `Daemon` have a method to start a process rather than forking
-		// process in daemons manager
 		// TODO: daemon client has a method to query daemon version and information.
 		for _, d := range daemons {
-			if err := sc.upgradeNydusDaemon(d, c); err != nil {
+			err = sc.upgradeNydusDaemon(d, c)
+			if err != nil {
 				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
-				m := newErrorMessage(err.Error())
-				http.Error(w, m.encode(), http.StatusInternalServerError)
+				statusCode = http.StatusInternalServerError
 				return
 			}
+		}
+
+		err = os.Rename(c.NydusdPath, sc.manager.NydusdBinaryPath)
+		if err != nil {
+			log.L.Errorf("Rename nydusd binary from %s to  %s failed, %v",
+				c.NydusdPath, sc.manager.NydusdBinaryPath, err)
+			statusCode = http.StatusInternalServerError
+			return
 		}
 	}
 }
