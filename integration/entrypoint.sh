@@ -24,13 +24,6 @@ STARGZ_IMAGE=${TOMCAT_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
 REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-ghcr.io/stargz-containers/redis:6.2.6-org}
 WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-org}
 
-# JAVA_IMAGE=${JAVA_IMAGE:-hub.byted.org/gechangwei/java:latest-nydus-v6}
-# WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-hub.byted.org/gechangwei/wordpress:latest-nydus-v6}
-# TOMCAT_IMAGE=${TOMCAT_IMAGE:-hub.byted.org/gechangwei/tomcat:latest-nydus-v5}
-# STARGZ_IMAGE=${TOMCAT_IMAGE:-hub.byted.org/gechangwei/java:latest-stargz}
-# REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-hub.byted.org/gechangwei/redis:latest}
-# WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-hub.byted.org/gechangwei/wordpress:latest}
-
 PLUGIN=nydus
 
 RETRYNUM=30
