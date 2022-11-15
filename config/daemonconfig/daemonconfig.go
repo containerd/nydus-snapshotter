@@ -128,7 +128,7 @@ func DumpConfigFile(c interface{}, path string) error {
 		return errors.Wrapf(err, "marshal config")
 	}
 
-	return os.WriteFile(path, b, 0644)
+	return os.WriteFile(path, b, 0600)
 }
 
 func DumpConfigString(c interface{}) (string, error) {

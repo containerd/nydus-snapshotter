@@ -116,6 +116,9 @@ func (su *Supervisor) load(data []byte, oob []byte) (nData uint, nOob int, err e
 // There are several stages from different goroutines to trigger sending daemon states
 // the waiter will overlap each other causing the UDS being deleted.
 // But we don't want to keep the server listen for ever.
+// `to` equal to zero indicates that caller should call the receiver the receive stats
+// when it thinks is appropriate. `to` is not zero, no receiver callback will be returned.
+// Then this method is responsible to receive states inside.
 func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) {
 	if err := os.Remove(su.path); err != nil {
 		if !os.IsNotExist(err) {
@@ -209,6 +212,8 @@ func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) 
 			}
 		}()
 
+		// With non-zero timeout parameter, call should be aware that receiver is nil
+		//nolint: nilnil
 		return nil, nil
 	}
 
