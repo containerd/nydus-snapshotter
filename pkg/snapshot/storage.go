@@ -16,7 +16,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type WalkFunc = func(snapshots.Info) bool
+type WalkFunc = func(id string, info snapshots.Info) bool
 
 func GetSnapshotInfo(ctx context.Context, ms *storage.MetaStore, key string) (string, snapshots.Info, snapshots.Usage, error) {
 	ctx, t, err := ms.TransactionContext(ctx, false)
@@ -48,27 +48,37 @@ func GetSnapshot(ctx context.Context, ms *storage.MetaStore, key string) (*stora
 	return &s, nil
 }
 
-func FindSnapshot(ctx context.Context, ms *storage.MetaStore, key string, fn WalkFunc) (string, snapshots.Info, error) {
+// Iterate all the parents of a  snapshot specified by `key`
+// Stop the iteration once callback `fn` is invoked successfully and return current iterated snapshot
+func IterateParentSnapshots(ctx context.Context, ms *storage.MetaStore, key string, fn WalkFunc) (string, snapshots.Info, error) {
 	ctx, t, err := ms.TransactionContext(ctx, false)
 	if err != nil {
 		return "", snapshots.Info{}, err
 	}
-	defer t.Rollback()
+
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err).Errorf("Rollback traction %s", key)
+		}
+	}()
+
 	for cKey := key; cKey != ""; {
 		id, info, _, err := storage.GetInfo(ctx, cKey)
 		if err != nil {
-			log.G(ctx).WithError(err).Warnf("failed to get info of %q", cKey)
+			log.L.WithError(err).Warnf("failed to get snapshot info of %q", cKey)
 			return "", snapshots.Info{}, err
 		}
-		if fn(info) {
+
+		if fn(id, info) {
 			return id, info, nil
 		}
 
-		log.G(ctx).Infof("id %s is data layer, continue to check parent layer", id)
+		log.L.Debugf("continue to check snapshot %s parent", id)
 
 		cKey = info.Parent
 	}
-	return "", snapshots.Info{}, fmt.Errorf("failed to find meta layer of key %s", key)
+
+	return "", snapshots.Info{}, errdefs.ErrNotFound
 }
 
 func UpdateSnapshotInfo(ctx context.Context, ms *storage.MetaStore, info snapshots.Info, fieldPaths ...string) (snapshots.Info, error) {
