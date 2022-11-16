@@ -292,9 +292,9 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	if info.Kind == snapshots.KindActive {
 		pKey := info.Parent
 		pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey)
-	if err != nil {
+		if err != nil {
 			return nil, errors.Wrapf(err, "get snapshot %s info", pKey)
-	}
+		}
 
 		if isNydusMetaLayer(info.Labels) {
 			err = o.fs.WaitUntilReady(pID)
@@ -425,29 +425,40 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 	defer func() {
 		if err != nil {
 			if rerr := t.Rollback(); rerr != nil {
-				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
+				log.L.WithError(rerr).Warn("failed to rollback transaction")
 			}
 		}
 	}()
 
 	// grab the existing id
-	id, _, _, err := storage.GetInfo(ctx, key)
+	id, info, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
 		return err
 	}
 
-	log.G(ctx).Infof("commit snapshot with key %s snapshot id %s", key, id)
+	log.L.Infof("commit snapshot with key %s snapshot id %s", key, id)
 
-	usage, err := fs.DiskUsage(ctx, o.upperPath(id))
-	if err != nil {
-		return err
+	var usage fs.Usage
+	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
+	// Nydus disk usage calculation will be delayed until containerd queries.
+	if !isNydusMetaLayer(info.Labels) && !isNydusDataLayer(info.Labels) {
+		usage, err = fs.DiskUsage(ctx, o.upperPath(id))
+		if err != nil {
+			return err
+		}
 	}
 
 	if _, err = storage.CommitActive(ctx, key, name, snapshots.Usage(usage), opts...); err != nil {
-		return errors.Wrap(err, "failed to commit snapshot")
+		return errors.Wrapf(err, "commit active snapshot %s", key)
 	}
 
-	return t.Commit()
+	// Let rollback catch the commit error
+	err = t.Commit()
+	if err != nil {
+		return errors.Wrapf(err, "commit snapshot %s", key)
+	}
+
+	return err
 }
 
 func (o *snapshotter) Remove(ctx context.Context, key string) error {
