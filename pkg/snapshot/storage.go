@@ -8,11 +8,11 @@ package snapshot
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 )
 
@@ -23,7 +23,13 @@ func GetSnapshotInfo(ctx context.Context, ms *storage.MetaStore, key string) (st
 	if err != nil {
 		return "", snapshots.Info{}, snapshots.Usage{}, err
 	}
-	defer t.Rollback()
+
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err).Errorf("Rollback traction %s", key)
+		}
+	}()
+
 	id, info, usage, err := storage.GetInfo(ctx, key)
 	if err != nil {
 		return "", snapshots.Info{}, snapshots.Usage{}, err
@@ -37,14 +43,18 @@ func GetSnapshot(ctx context.Context, ms *storage.MetaStore, key string) (*stora
 	if err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err).Errorf("Rollback traction %s", key)
+		}
+	}()
+
 	s, err := storage.GetSnapshot(ctx, key)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get active mount")
+		return nil, errors.Wrap(err, "get snapshot")
 	}
-	err = t.Rollback()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to rollback transaction")
-	}
+
 	return &s, nil
 }
 
@@ -88,7 +98,9 @@ func UpdateSnapshotInfo(ctx context.Context, ms *storage.MetaStore, info snapsho
 	}
 	info, err = storage.UpdateInfo(ctx, info, fieldPaths...)
 	if err != nil {
-		t.Rollback()
+		if rerr := t.Rollback(); rerr != nil {
+			log.L.WithError(rerr).Errorf("update snapshot info")
+		}
 		return snapshots.Info{}, err
 	}
 	if err := t.Commit(); err != nil {

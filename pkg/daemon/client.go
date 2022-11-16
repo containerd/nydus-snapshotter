@@ -217,9 +217,11 @@ func (c *nydusdClient) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 
 	url := c.url(endpointMetrics, query)
 	var m types.FsMetrics
-	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		return decode(resp, &m)
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return &m, nil
 }
@@ -232,9 +234,11 @@ func (c *nydusdClient) GetCacheMetrics(sid string) (*types.CacheMetrics, error) 
 
 	url := c.url(endpointCacheMetrics, query)
 	var m types.CacheMetrics
-	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		return decode(resp, &m)
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return &m, nil
 }

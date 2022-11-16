@@ -159,7 +159,8 @@ func NewNydusd(conf NydusdConfig) (*Nydusd, error) {
 }
 
 func (nydusd *Nydusd) Mount() error {
-	nydusd.Umount()
+	// Ignore the error since the nydusd may not ever start
+	_ = nydusd.Umount()
 
 	args := []string{
 		"--config",

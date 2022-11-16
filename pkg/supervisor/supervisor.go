@@ -300,7 +300,10 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 }
 
 func (su *Supervisor) FetchDaemonStates(trigger func() error) error {
-	su.sem.Acquire(context.TODO(), 1)
+	if err := su.sem.Acquire(context.TODO(), 1); err != nil {
+		return err
+	}
+
 	defer su.sem.Release(1)
 
 	receiver, err := su.waitStatesTimeout(0)

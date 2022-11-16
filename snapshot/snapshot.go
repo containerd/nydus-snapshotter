@@ -103,7 +103,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
-		go systemController.Run()
+		go func() {
+			if err := systemController.Run(); err != nil {
+				log.L.WithError(err).Error("Failed to start system controller")
+			}
+		}()
 	}
 
 	opts := []fspkg.NewFSOpt{
@@ -543,7 +547,12 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 	if err != nil {
 		return err
 	}
-	defer t.Rollback()
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err)
+		}
+	}()
+
 	return storage.WalkInfo(ctx, fn, fs...)
 }
 
@@ -874,7 +883,13 @@ func (o *snapshotter) cleanupDirectories(ctx context.Context) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer t.Rollback()
+
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err)
+		}
+	}()
+
 	return o.getCleanupDirectories(ctx)
 }
 

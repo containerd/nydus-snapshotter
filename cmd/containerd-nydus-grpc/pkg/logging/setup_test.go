@@ -25,12 +25,15 @@ const (
 
 func GetRotateLogFileNumbers(testLogDir string, suffix string) int {
 	i := 0
-	filepath.Walk(testLogDir, func(fname string, fi os.FileInfo, err error) error {
+	err := filepath.Walk(testLogDir, func(fname string, fi os.FileInfo, err error) error {
 		if !fi.IsDir() && strings.HasSuffix(fname, suffix) {
 			i++
 		}
 		return nil
 	})
+	if err != nil {
+		log.L.Fatal("walk path")
+	}
 	return i
 }
 

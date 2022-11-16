@@ -461,9 +461,10 @@ func (d *Daemon) Wait() error {
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
 		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
 			log.L.Errorf("failed to process wait, %v", err)
-
 		} else {
-			mount.WaitUntilUnmounted(d.HostMountpoint())
+			if err := mount.WaitUntilUnmounted(d.HostMountpoint()); err != nil {
+				log.L.WithError(err).Errorf("umount %s", d.HostMountpoint())
+			}
 		}
 	}
 

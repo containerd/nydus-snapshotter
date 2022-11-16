@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/containerd/nydus-snapshotter/pkg/resolve"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_Remove(t *testing.T) {
@@ -31,9 +32,11 @@ func Test_Remove(t *testing.T) {
 	defer cancel()
 	blobMgr := NewBlobManager(dir, resolve.NewResolver())
 	go func() {
-		blobMgr.Run(ctx)
+		err := blobMgr.Run(ctx)
+		assert.Nil(t, err)
 	}()
-	blobMgr.Remove(id, true)
+	err = blobMgr.Remove(id, true)
+	assert.Nil(t, err)
 	// wait to deleted the file
 	time.Sleep(time.Millisecond * 100)
 	_, err = os.Stat(filepath.Join(dir, "sha256:"+id))

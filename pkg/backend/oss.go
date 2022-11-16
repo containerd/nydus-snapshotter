@@ -141,7 +141,10 @@ func (b *OSSBackend) push(ra content.ReaderAt, blobDigest digest.Digest) error {
 		}
 
 		if err := g.Wait(); err != nil {
-			b.bucket.AbortMultipartUpload(imur)
+			if err := b.bucket.AbortMultipartUpload(imur); err != nil {
+				close(partsChan)
+				return errors.Wrap(err, "aborting upload")
+			}
 			close(partsChan)
 			return errors.Wrap(err, "upload parts")
 		}
