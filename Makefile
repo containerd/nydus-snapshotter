@@ -1,5 +1,6 @@
 all: clear build
 
+PKG = github.com/containerd/nydus-snapshotter
 PACKAGES ?= $(shell go list ./... | grep -v /tests)
 SUDO = $(shell which sudo)
 GO_EXECUTABLE_PATH ?= $(shell which go)
@@ -25,7 +26,7 @@ else
 FS_DRIVER = fusedev
 endif
 
-LDFLAGS = -s -w -X main.Version=${VERSION} -X main.Reversion=$(REVISION) -X main.BuildTimestamp=$(BUILD_TIMESTAMP)
+LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Reversion=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
 
 .PHONY: build
 build:
@@ -74,7 +75,7 @@ smoke:
 
 .PHONY: integration
 integration:
-	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "main.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "${PKG}/version.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	$(SUDO) DOCKER_BUILDKIT=1 docker build -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
 	$(SUDO) docker run --name nydus-snapshotter_e2e --rm --privileged -v /root/.docker:/root/.docker -v `go env GOMODCACHE`:/go/pkg/mod \
 	-v `go env GOCACHE`:/root/.cache/go-build -v `pwd`:/nydus-snapshotter \

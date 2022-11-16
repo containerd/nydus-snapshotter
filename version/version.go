@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package main
+package version
 
 import "runtime"
 
 var (
-
 	// Version holds the complete version number. Filled in at linking time.
 	Version = "unknown"
 
@@ -20,5 +19,6 @@ var (
 	// GoVersion is Go tree's version.
 	GoVersion = runtime.Version()
 
+	// BuildTimestamp is timestamp of building.
 	BuildTimestamp = "unknown"
 )
