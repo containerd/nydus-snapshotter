@@ -1,11 +1,10 @@
 /*
- * Copyright (c) 2020. Ant Group. All rights reserved.
  * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package daemonconfig
+package config
 
 import (
 	"encoding/json"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
@@ -39,20 +37,20 @@ type DaemonConfig interface {
 // Daemon configurations factory
 func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
 	switch fsDriver {
-	case config.FsDriverFscache:
+	case FsDriverFscache:
 		cfg, err := LoadFscacheConfig(path)
 		if err != nil {
 			return nil, err
 		}
 		return cfg, nil
-	case config.FsDriverFusedev:
+	case FsDriverFusedev:
 		cfg, err := LoadFuseConfig(path)
 		if err != nil {
 			return nil, err
 		}
 		return cfg, nil
 	default:
-		return nil, errors.Errorf("unsupported, fs driver %s", fsDriver)
+		return nil, errors.New("unsupported")
 	}
 }
 

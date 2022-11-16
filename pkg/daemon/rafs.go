@@ -19,7 +19,7 @@ import (
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/config"
 )
 
 const (

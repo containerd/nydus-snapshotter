@@ -16,8 +16,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/log"
-	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/internal/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
@@ -68,7 +67,7 @@ type Daemon struct {
 	client NydusdClient
 	// Nil means this daemon object has no supervisor
 	Supervisor *supervisor.Supervisor
-	Config     daemonconfig.DaemonConfig
+	Config     config.DaemonConfig
 
 	ref int32
 }
@@ -193,7 +192,7 @@ func (d *Daemon) SharedMount(rafs *Rafs) error {
 		return err
 	}
 
-	c, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
+	c, err := config.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
 	if err != nil {
 		return errors.Wrapf(err, "Failed to reload instance configuration %s",
 			d.ConfigFile(rafs.SnapshotID))
@@ -264,7 +263,7 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 	d.Lock()
 	defer d.Unlock()
 
-	c, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
+	c, err := config.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
 	if err != nil {
 		log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(rafs.SnapshotID), err)
 		return err
@@ -290,7 +289,7 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 	}
 	fscacheID := erofs.FscacheID(rafs.SnapshotID)
 
-	cfg := c.(*daemonconfig.FscacheDaemonConfig)
+	cfg := c.(*config.FscacheDaemonConfig)
 	rafs.AddAnnotation(AnnoFsCacheDomainID, cfg.DomainID)
 
 	if err := erofs.Mount(bootstrapPath, cfg.DomainID, fscacheID, mountPoint); err != nil {

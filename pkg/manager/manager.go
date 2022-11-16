@@ -18,8 +18,8 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/internal/config"
+	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -196,7 +196,7 @@ func (s *DaemonStates) Size() int {
 type Manager struct {
 	store            Store
 	nydusdBinaryPath string
-	daemonMode       config.DaemonMode
+	daemonMode       command.DaemonMode
 	// Where nydusd stores cache files for fscache driver
 	cacheDir string
 	// Daemon states are inserted when creating snapshots and nydusd and
@@ -215,7 +215,7 @@ type Manager struct {
 	SupervisorSet    *supervisor.SupervisorsSet
 
 	// A basic configuration template loaded from the file
-	DaemonConfig daemonconfig.DaemonConfig
+	DaemonConfig config.DaemonConfig
 
 	// Protects updating states cache and DB
 	mu sync.Mutex
@@ -224,12 +224,12 @@ type Manager struct {
 type Opt struct {
 	NydusdBinaryPath string
 	Database         *store.Database
-	DaemonMode       config.DaemonMode
+	DaemonMode       command.DaemonMode
 	CacheDir         string
 	RecoverPolicy    DaemonRecoverPolicy
 	// Nydus-snapshotter work directory
 	RootDir      string
-	DaemonConfig daemonconfig.DaemonConfig
+	DaemonConfig config.DaemonConfig
 }
 
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
@@ -521,7 +521,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		d.ResetClient()
 
 		if d.States.FsDriver == config.FsDriverFusedev {
-			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
+			cfg, err := config.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
 			if err != nil {
 				log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
 				return err

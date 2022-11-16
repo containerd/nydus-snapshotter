@@ -7,51 +7,87 @@
 package command
 
 import (
-	"github.com/sirupsen/logrus"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/slices"
 	"github.com/urfave/cli/v2"
 )
 
+// Define a policy how to fork nydusd daemon and attach file system instances to serve.
+type Args struct {
+	Address                  string     `toml:"address"`
+	LogLevel                 string     `toml:"log_level"`
+	LogDir                   string     `toml:"log_dir"`
+	ConfigPath               string     `toml:"config_path"`
+	RootDir                  string     `toml:"root_dir"`
+	CacheDir                 string     `toml:"cache_dir"`
+	GCPeriod                 string     `toml:"gc_period"`
+	ValidateSignature        bool       `toml:"validate_signature"`
+	PublicKeyFile            string     `toml:"public_key_file"`
+	ConvertVpcRegistry       bool       `toml:"convert_vpc_registry"`
+	NydusdBinaryPath         string     `toml:"nydusd_binary_path"`
+	NydusImageBinaryPath     string     `toml:"nydus_image_binary_path"`
+	SharedDaemon             bool       `toml:"-"`
+	DaemonMode               DaemonMode `toml:"daemon_mode"`
+	FsDriver                 string     `toml:"fs_driver"`
+	SyncRemove               bool       `toml:"sync_remove"`
+	EnableMetrics            bool       `toml:"enable_metrics"`
+	MetricsFile              string     `toml:"metrics_file"`
+	EnableStargz             bool       `toml:"enable_stargz"`
+	DisableCacheManager      bool       `toml:"disable_cache_manager"`
+	LogToStdout              bool       `toml:"log_to_stdout"`
+	EnableNydusOverlayFS     bool       `toml:"enable_nydus_overlay_fs"`
+	NydusdThreadNum          int        `toml:"nydusd_thread_num"`
+	CleanupOnClose           bool       `toml:"cleanup_on_close"`
+	KubeconfigPath           string     `toml:"kubeconfig_path"`
+	EnableKubeconfigKeychain bool       `toml:"enable_kubeconfig_keychain"`
+	RecoverPolicy            string     `toml:"recover_policy"`
+	PrintVersion             bool       `toml:"-"`
+	APISocket                string
+}
+
+// Define a policy how to fork nydusd daemon and attach file system instances to serve.
+type DaemonMode string
+
 const (
-	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultLogLevel          = logrus.InfoLevel
-	defaultRootDir           = "/var/lib/containerd-nydus"
-	defaultAPISocket         = "/var/lib/containerd-nydus/api.sock"
-	defaultGCPeriod          = "24h"
-	defaultPublicKey         = "/signing/nydus-image-signing-public.key"
-	DefaultDaemonMode string = "multiple"
-	FsDriverFusedev   string = "fusedev"
+	// One nydusd, one rafs instance.
+	DaemonModeMultiple DaemonMode = "multiple"
+	// One nydusd serves multiple rafs instances.
+	DaemonModeShared DaemonMode = "shared"
+	// No nydusd daemon is needed to be started. Snapshotter does not start any nydusd
+	// and only interacts with containerd with mount slice to pass necessary configuration
+	// to container runtime.
+	DaemonModeNone DaemonMode = "none"
 )
 
-type Args struct {
-	Address                  string `toml:"address"`
-	LogLevel                 string `toml:"log_level"`
-	LogDir                   string `toml:"log_dir"`
-	ConfigPath               string `toml:"config_path"`
-	RootDir                  string `toml:"root_dir"`
-	CacheDir                 string `toml:"cache_dir"`
-	GCPeriod                 string `toml:"gc_period"`
-	ValidateSignature        bool   `toml:"validate_signature"`
-	PublicKeyFile            string `toml:"public_key_file"`
-	ConvertVpcRegistry       bool   `toml:"convert_vpc_registry"`
-	NydusdBinaryPath         string `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath     string `toml:"nydus_image_binary_path"`
-	SharedDaemon             bool   `toml:"-"`
-	DaemonMode               string `toml:"daemon_mode"`
-	FsDriver                 string `toml:"fs_driver"`
-	SyncRemove               bool   `toml:"sync_remove"`
-	EnableMetrics            bool   `toml:"enable_metrics"`
-	MetricsFile              string `toml:"metrics_file"`
-	EnableStargz             bool   `toml:"enable_stargz"`
-	DisableCacheManager      bool   `toml:"disable_cache_manager"`
-	LogToStdout              bool   `toml:"log_to_stdout"`
-	EnableNydusOverlayFS     bool   `toml:"enable_nydus_overlay_fs"`
-	NydusdThreadNum          int    `toml:"nydusd_thread_num"`
-	CleanupOnClose           bool   `toml:"cleanup_on_close"`
-	KubeconfigPath           string `toml:"kubeconfig_path"`
-	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
-	RecoverPolicy            string `toml:"recover_policy"`
-	PrintVersion             bool   `toml:"-"`
-	APISocket                string
+// UnmarshalText implements the toml.UnmarshalText func.
+func (d *DaemonMode) UnmarshalText(b []byte) error {
+	*d = DaemonMode(b)
+	return d.validate()
+}
+
+// MarshalText implements the toml.MarshalText func.
+func (d *DaemonMode) MarshalText() ([]byte, error) {
+	return []byte(string(*d)), nil
+}
+
+// Validate parameters.
+func (d *DaemonMode) validate() error {
+	if !slices.Contains([]DaemonMode{DaemonModeMultiple, DaemonModeShared, DaemonModeNone}, *d) {
+		return errdefs.ErrInvalidArgument
+	}
+
+	return nil
+}
+
+// Set implements the cli.Generic interface.
+func (d *DaemonMode) Set(value string) error {
+	*d = DaemonMode(value)
+	return nil
+}
+
+// String implements the cli.Generic interface.
+func (d *DaemonMode) String() string {
+	return string(*d)
 }
 
 type Flags struct {
@@ -97,12 +133,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to automatically convert the image to vpc registry to accelerate image pulling",
 			Destination: &args.ConvertVpcRegistry,
 		},
-		&cli.StringFlag{
+		&cli.GenericFlag{
 			Name:        "daemon-mode",
-			Value:       DefaultDaemonMode,
+			Value:       &args.DaemonMode,
 			Aliases:     []string{"M"},
 			Usage:       "set daemon working `MODE`, one of \"multiple\", \"shared\" or \"none\"",
-			Destination: &args.DaemonMode,
+			DefaultText: string(DefaultDaemonMode),
 		},
 		&cli.BoolFlag{
 			Name:        "disable-cache-manager",

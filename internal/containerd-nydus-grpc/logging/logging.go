@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Ant Group. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,8 +30,8 @@ type RotateLogArgs struct {
 	RotateLogCompress   bool
 }
 
-func SetUp(logLevel string, logToStdout bool, logDir string,
-	rootDir string, logRotateArgs *RotateLogArgs) error {
+func New(logLevel string, logToStdout bool, logDir string,
+	rootDir string, logRotateArgs RotateLogArgs) error {
 	lvl, err := logrus.ParseLevel(logLevel)
 	if err != nil {
 		return err
@@ -41,26 +41,19 @@ func SetUp(logLevel string, logToStdout bool, logDir string,
 	if logToStdout {
 		logrus.SetOutput(os.Stdout)
 	} else {
-		if logRotateArgs == nil {
-			return errors.New("logRotateArgs is needed when logToStdout is false")
-		}
-		if len(logDir) == 0 {
-			logDir = filepath.Join(rootDir, DefaultLogDirName)
-		}
 		if err := os.MkdirAll(logDir, 0755); err != nil {
 			return errors.Wrapf(err, "create log dir %s", logDir)
 		}
 		logFile := filepath.Join(logDir, defaultLogFileName)
 
-		lumberjackLogger := &lumberjack.Logger{
+		logrus.SetOutput(&lumberjack.Logger{
 			Filename:   logFile,
 			MaxSize:    logRotateArgs.RotateLogMaxSize,
 			MaxBackups: logRotateArgs.RotateLogMaxBackups,
 			MaxAge:     logRotateArgs.RotateLogMaxAge,
 			Compress:   logRotateArgs.RotateLogCompress,
 			LocalTime:  logRotateArgs.RotateLogLocalTime,
-		}
-		logrus.SetOutput(lumberjackLogger)
+		})
 	}
 
 	logrus.SetFormatter(&logrus.TextFormatter{

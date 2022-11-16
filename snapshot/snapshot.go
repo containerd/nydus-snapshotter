@@ -27,8 +27,8 @@ import (
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
 
-	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/internal/config"
+	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 
 	blob "github.com/containerd/nydus-snapshotter/pkg/blob"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
@@ -69,7 +69,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "failed to initialize verifier")
 	}
 
-	daemonConfig, err := daemonconfig.NewDaemonConfig(cfg.FsDriver, cfg.DaemonCfgPath)
+	daemonConfig, err := config.NewDaemonConfig(cfg.FsDriver, cfg.DaemonCfgPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "load daemon configuration")
 	}
@@ -136,7 +136,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
 	// container rootfs doesn't need daemon
-	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
+	hasDaemon := cfg.DaemonMode != command.DaemonModeNone
 
 	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
 	if err != nil {
@@ -147,7 +147,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	// storage backend, it indicates that a Blobs Manager is needed to download
 	// blobs from registry alone with no help of nydusd or containerd.
 	var blobMgr *blob.Manager
-	if fuseConfig, ok := daemonConfig.(*daemonconfig.FuseDaemonConfig); ok {
+	if fuseConfig, ok := daemonConfig.(*config.FuseDaemonConfig); ok {
 		if fuseConfig.Device.Backend.BackendType == "localfs" &&
 			len(fuseConfig.Device.Backend.Config.Dir) != 0 {
 			blobMgr = blob.NewBlobManager(fuseConfig.Device.Backend.Config.Dir, resolve.NewResolver())

@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package daemonconfig
+package config
 
 import (
 	"encoding/json"
 	"os"
-	"path"
 
 	"github.com/pkg/errors"
 
@@ -80,9 +79,6 @@ func (c *FuseDaemonConfig) DumpString() (string, error) {
 	return DumpConfigString(c)
 }
 
-func (c *FuseDaemonConfig) DumpFile(f string) error {
-	if err := os.MkdirAll(path.Dir(f), 0755); err != nil {
-		return err
-	}
-	return DumpConfigFile(c, f)
+func (c *FuseDaemonConfig) DumpFile(path string) error {
+	return DumpConfigFile(c, path)
 }

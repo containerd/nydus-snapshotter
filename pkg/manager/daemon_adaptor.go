@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/log"
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"

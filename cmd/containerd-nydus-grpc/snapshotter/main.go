@@ -11,7 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/signals"
 	"github.com/containerd/nydus-snapshotter/snapshot"

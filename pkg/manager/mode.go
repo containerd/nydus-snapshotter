@@ -6,8 +6,8 @@
 
 package manager
 
-import "github.com/containerd/nydus-snapshotter/config"
+import "github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 
 func (m *Manager) IsSharedDaemon() bool {
-	return m.daemonMode == config.DaemonModeShared
+	return m.daemonMode == command.DaemonModeShared
 }

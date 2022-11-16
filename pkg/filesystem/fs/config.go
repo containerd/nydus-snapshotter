@@ -9,7 +9,8 @@ package fs
 import (
 	"os"
 
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/config"
+	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
@@ -75,7 +76,7 @@ func WithVPCRegistry(vpcRegistry bool) NewFSOpt {
 	}
 }
 
-func WithDaemonMode(daemonMode config.DaemonMode) NewFSOpt {
+func WithDaemonMode(daemonMode command.DaemonMode) NewFSOpt {
 	return func(d *Filesystem) error {
 		d.mode = daemonMode
 		return nil

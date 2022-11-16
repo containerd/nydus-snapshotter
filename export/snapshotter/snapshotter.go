@@ -5,7 +5,7 @@ import (
 	"github.com/containerd/containerd/plugin"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/config"
 	"github.com/containerd/nydus-snapshotter/snapshot"
 )
 

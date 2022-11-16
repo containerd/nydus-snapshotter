@@ -38,7 +38,7 @@ func TestSetUp(t *testing.T) {
 	// Try to clean previously created test directory.
 	os.RemoveAll(TestLogDirName)
 
-	logRotateArgs := &RotateLogArgs{
+	logRotateArgs := RotateLogArgs{
 		RotateLogMaxSize:    1, // 1MB
 		RotateLogMaxBackups: 5,
 		RotateLogMaxAge:     0,
@@ -47,13 +47,13 @@ func TestSetUp(t *testing.T) {
 	}
 	logLevel := logrus.InfoLevel.String()
 
-	err := SetUp(logLevel, true, TestLogDirName, TestRootDirName, nil)
+	err := New(logLevel, true, TestLogDirName, TestRootDirName, RotateLogArgs{})
 	assert.NilError(t, err, nil)
 
-	err = SetUp(logLevel, false, TestLogDirName, TestRootDirName, nil)
+	err = New(logLevel, false, TestLogDirName, TestRootDirName, RotateLogArgs{})
 	assert.ErrorContains(t, err, "logRotateArgs is needed when logToStdout is false")
 
-	err = SetUp(logLevel, false, TestLogDirName, TestRootDirName, logRotateArgs)
+	err = New(logLevel, false, TestLogDirName, TestRootDirName, logRotateArgs)
 	assert.NilError(t, err)
 	for i := 0; i < 100000; i++ { // total 9.1MB
 		log.L.Infof("test log, now: %s", time.Now().Format("2006-01-02 15:04:05"))

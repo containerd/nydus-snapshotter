@@ -19,7 +19,7 @@ import (
 	"github.com/KarpelesLab/reflink"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"

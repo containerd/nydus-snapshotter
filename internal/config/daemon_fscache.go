@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package daemonconfig
+package config
 
 import (
 	"encoding/json"
 	"os"
-	"path"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -65,7 +64,6 @@ func (c *FscacheDaemonConfig) StorageBackendType() string {
 	return c.Config.BackendType
 }
 
-// Each fscache/erofs has a configuration with different fscache ID built from snapshot ID.
 func (c *FscacheDaemonConfig) Supplement(host, repo, snapshotID string, params map[string]string) {
 	c.Config.BackendConfig.Host = host
 	c.Config.BackendConfig.Repo = repo
@@ -104,10 +102,6 @@ func (c *FscacheDaemonConfig) DumpString() (string, error) {
 	return DumpConfigString(c)
 }
 
-func (c *FscacheDaemonConfig) DumpFile(f string) error {
-	if err := os.MkdirAll(path.Dir(f), 0755); err != nil {
-		return err
-	}
-
-	return DumpConfigFile(c, f)
+func (c *FscacheDaemonConfig) DumpFile(path string) error {
+	return DumpConfigFile(c, path)
 }

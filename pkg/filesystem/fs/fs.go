@@ -22,8 +22,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/internal/config"
+	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
@@ -60,7 +60,7 @@ type Filesystem struct {
 	logDir               string
 	logToStdout          bool
 	vpcRegistry          bool
-	mode                 config.DaemonMode
+	mode                 command.DaemonMode
 	rootMountpoint       string
 }
 
@@ -84,7 +84,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 
 	// Try to bring up the shared daemon early.
 	// With found recovering daemons, it must be the case that snapshotter is being restarted.
-	if fs.mode == config.DaemonModeShared && len(liveDaemons) == 0 && len(recoveringDaemons) == 0 {
+	if fs.mode == command.DaemonModeShared && len(liveDaemons) == 0 && len(recoveringDaemons) == 0 {
 		// Situations that shared daemon is not found:
 		//   1. The first time this nydus-snapshotter runs
 		//   2. Daemon record is wrongly deleted from DB. Above reconnecting already gathers
@@ -223,13 +223,13 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	cacheDir := fs.cacheMgr.CacheDir()
 
 	params := map[string]string{
-		daemonconfig.Bootstrap: bootstrap,
+		config.Bootstrap: bootstrap,
 		// Fscache driver stores blob cache bitmap and blob header files here
-		daemonconfig.WorkDir:  workDir,
-		daemonconfig.CacheDir: cacheDir}
+		config.WorkDir:  workDir,
+		config.CacheDir: cacheDir}
 
-	cfg := deepcopy.Copy(fs.Manager.DaemonConfig).(daemonconfig.DaemonConfig)
-	err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
+	cfg := deepcopy.Copy(fs.Manager.DaemonConfig).(config.DaemonConfig)
+	err = config.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
 	if err != nil {
 		return errors.Wrap(err, "supplement configuration")
 	}
@@ -366,7 +366,7 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 // daemon mountpoint to rafs mountpoint
 // calculate rafs mountpoint for snapshots mount slice.
 func (fs *Filesystem) mount(d *daemon.Daemon, r *daemon.Rafs) error {
-	if fs.mode == config.DaemonModeShared {
+	if fs.mode == command.DaemonModeShared {
 		if fs.fsDriver == config.FsDriverFusedev {
 			r.SetMountpoint(path.Join(d.HostMountpoint(), r.SnapshotID))
 		} else {
@@ -472,5 +472,5 @@ func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daem
 }
 
 func (fs *Filesystem) hasDaemon() bool {
-	return fs.mode != config.DaemonModeNone
+	return fs.mode != command.DaemonModeNone
 }
