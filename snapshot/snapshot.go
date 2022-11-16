@@ -342,10 +342,8 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				}
 			}
 		}
-	}
-
-	// Mount image for running container, which has a nydus/stargz image as parent.
-	if prepareForContainer(*base) {
+	} else {
+		// Mount image for running container, which has a nydus/stargz image as parent.
 		logCtx.Infof("prepare for container layer %s", key)
 		if id, info, err := o.findMetaLayer(ctx, key); err == nil {
 			// For stargz layer, we need to merge all bootstraps into one.
@@ -376,11 +374,6 @@ func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, sn
 		}
 		return ok
 	})
-}
-
-func prepareForContainer(info snapshots.Info) bool {
-	_, ok := info.Labels[label.CRIImageLayers]
-	return !ok
 }
 
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
