@@ -146,7 +146,11 @@ func (b *Manager) PrepareBlobLayer(snapshot storage.Snapshot, labels map[string]
 	if err != nil {
 		return errors.Wrap(err, "rename temp file as blob file")
 	}
-	os.Chmod(blobFile.Name(), 0440)
+
+	err = os.Chmod(blobPath, 0440)
+	if err != nil {
+		return errors.Wrapf(err, "chmod blob %s", blobPath)
+	}
 
 	return nil
 }
