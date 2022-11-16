@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/version"
 )
 
 func main() {
@@ -27,15 +28,15 @@ func main() {
 	app := &cli.App{
 		Name:        "containerd-nydus-grpc",
 		Usage:       "Nydus remote snapshotter for containerd",
-		Version:     Version,
+		Version:     version.Version,
 		Flags:       flags.F,
 		HideVersion: true,
 		Action: func(c *cli.Context) error {
 			if flags.Args.PrintVersion {
-				fmt.Println("Version:    ", Version)
-				fmt.Println("Reversion:  ", Reversion)
-				fmt.Println("Go version: ", GoVersion)
-				fmt.Println("Build time: ", BuildTimestamp)
+				fmt.Println("Version:    ", version.Version)
+				fmt.Println("Reversion:  ", version.Reversion)
+				fmt.Println("Go version: ", version.GoVersion)
+				fmt.Println("Build time: ", version.BuildTimestamp)
 				return nil
 			}
 			var (
@@ -63,7 +64,7 @@ func main() {
 				return errors.Wrap(err, "failed to set up logger")
 			}
 
-			log.L.Infof("Start nydus-snapshotter. PID %d Version %s", os.Getpid(), Version)
+			log.L.Infof("Start nydus-snapshotter. PID %d Version %s", os.Getpid(), version.Version)
 
 			return snapshotter.Start(ctx, cfg)
 		},
