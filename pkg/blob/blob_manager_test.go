@@ -32,10 +32,10 @@ func Test_Remove(t *testing.T) {
 	defer cancel()
 	blobMgr := NewBlobManager(dir, resolve.NewResolver())
 	go func() {
-		err := blobMgr.Run(ctx)
-		assert.Nil(t, err)
+		// This goroutine can be canceled, so ignore error
+		_ = blobMgr.Run(ctx)
 	}()
-	err = blobMgr.Remove(id, true)
+	err = blobMgr.Remove("sha256:"+id, true)
 	assert.Nil(t, err)
 	// wait to deleted the file
 	time.Sleep(time.Millisecond * 100)

@@ -53,7 +53,7 @@ func (b *Manager) Run(ctx context.Context) error {
 		case id := <-b.eventChan:
 			err := b.cleanupBlob(id)
 			if err != nil {
-				log.G(ctx).Warnf("delete blob %s failed", id)
+				log.G(ctx).WithError(err).Warnf("delete blob %s failed", id)
 			} else {
 				log.G(ctx).Infof("delete blob %s success", id)
 			}
