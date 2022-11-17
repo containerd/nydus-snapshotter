@@ -91,7 +91,7 @@ type Config struct {
 	NydusdBinaryPath         string        `toml:"nydusd_binary_path"`
 	NydusImageBinaryPath     string        `toml:"nydus_image_binary"`
 	DaemonMode               DaemonMode    `toml:"daemon_mode"`
-	FsDriver                 string        `toml:"daemon_backend"`
+	FsDriver                 string        `toml:"fs_driver"`
 	SyncRemove               bool          `toml:"sync_remove"`
 	EnableMetrics            bool          `toml:"enable_metrics"`
 	MetricsFile              string        `toml:"metrics_file"`

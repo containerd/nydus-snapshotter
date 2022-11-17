@@ -217,6 +217,9 @@ type Manager struct {
 	// A basic configuration template loaded from the file
 	DaemonConfig daemonconfig.DaemonConfig
 
+	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
+	FsDriver string
+
 	// Protects updating states cache and DB
 	mu sync.Mutex
 }
@@ -230,6 +233,8 @@ type Opt struct {
 	// Nydus-snapshotter work directory
 	RootDir      string
 	DaemonConfig daemonconfig.DaemonConfig
+	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
+	FsDriver string
 }
 
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
@@ -350,6 +355,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		RecoverPolicy:    opt.RecoverPolicy,
 		SupervisorSet:    supervisorSet,
 		DaemonConfig:     opt.DaemonConfig,
+		FsDriver:         opt.FsDriver,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
@@ -502,6 +508,13 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		opt := make([]daemon.NewDaemonOpt, 0)
 		var d, _ = daemon.NewDaemon(opt...)
 		d.States = *s
+
+		// It can't change snapshotter's fs driver to a different one from a daemon that ever created in the past.
+		if d.States.FsDriver != m.FsDriver {
+			return errors.Wrapf(errdefs.ErrInvalidArgument,
+				"can't recover from the last restart, the specified fs-driver=%s mismatches with the last fs-driver=%s",
+				d.States.FsDriver, m.FsDriver)
+		}
 
 		if m.SupervisorSet != nil {
 			su := m.SupervisorSet.NewSupervisor(d.ID())

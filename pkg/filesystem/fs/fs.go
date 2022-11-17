@@ -434,7 +434,6 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 // createDaemon create new nydus daemon by snapshotID and imageID
 // For fscache driver, no need to provide mountpoint to nydusd daemon.
 func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daemon, err error) {
-
 	opts := []daemon.NewDaemonOpt{
 		daemon.WithRef(ref),
 		daemon.WithSocketDir(fs.SocketRoot()),

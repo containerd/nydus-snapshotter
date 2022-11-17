@@ -91,6 +91,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		CacheDir:         cfg.CacheDir,
 		RootDir:          cfg.RootDir,
 		RecoverPolicy:    rp,
+		FsDriver:         cfg.FsDriver,
 		DaemonConfig:     daemonConfig,
 	})
 	if err != nil {
