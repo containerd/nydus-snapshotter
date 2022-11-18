@@ -305,20 +305,18 @@ func (m *Manager) handleDaemonDeathEvent() {
 	for ev := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
 
+		d := m.GetByDaemonID(ev.daemonID)
+		if d == nil {
+			log.L.Warnf("Daemon %s was not found", ev.daemonID)
+			return
+		}
+
+		d.State = types.DaemonStateUnknown
 		if m.RecoverPolicy == RecoverPolicyRestart {
-			d := m.GetByDaemonID(ev.daemonID)
-			if d == nil {
-				log.L.Warnf("Daemon %s was not found", ev.daemonID)
-				return
-			}
+			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
-			log.L.Warnf("Do failover for daemon %s", ev.daemonID)
-			d := m.GetByDaemonID(ev.daemonID)
-			if d == nil {
-				log.L.Warnf("Daemon %s was not found", ev.daemonID)
-				return
-			}
+			log.L.Infof("Do failover for daemon %s", ev.daemonID)
 			go m.doDaemonFailover(d)
 		}
 	}
