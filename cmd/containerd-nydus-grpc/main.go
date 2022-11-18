@@ -39,16 +39,16 @@ func main() {
 				fmt.Println("Build time: ", version.BuildTimestamp)
 				return nil
 			}
-			var (
-				cfg config.Config
-			)
+
+			var cfg config.Config
+
 			if snapshotterCfg, err := config.LoadSnapshotterConfig(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
 				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
-					return errors.Wrap(err, "invalid configuration")
+					return errors.Wrap(err, "parse parameters")
 				}
 			} else {
 				if err := config.SetStartupParameter(flags.Args, &cfg); err != nil {
-					return errors.Wrap(err, "invalid argument")
+					return errors.Wrap(err, "parse parameters")
 				}
 			}
 
@@ -61,10 +61,11 @@ func main() {
 				RotateLogCompress:   cfg.RotateLogCompress,
 			}
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir, logRotateArgs); err != nil {
-				return errors.Wrap(err, "failed to set up logger")
+				return errors.Wrap(err, "set up logger")
 			}
 
-			log.L.Infof("Start nydus-snapshotter. PID %d Version %s", os.Getpid(), version.Version)
+			log.L.Infof("Start nydus-snapshotter. PID %d Version %s FsDriver %s DaemonMode %s",
+				os.Getpid(), version.Version, cfg.FsDriver, cfg.DaemonMode)
 
 			return snapshotter.Start(ctx, cfg)
 		},
