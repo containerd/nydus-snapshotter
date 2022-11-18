@@ -86,7 +86,7 @@ func makeConfig(conf NydusdConfig) error {
 		return errors.New("prepare config template for Nydusd")
 	}
 
-	if err := os.WriteFile(conf.ConfigPath, ret.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(conf.ConfigPath, ret.Bytes(), 0600); err != nil {
 		return errors.New("write config file for Nydusd")
 	}
 
