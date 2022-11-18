@@ -518,8 +518,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 			d.Supervisor = su
 		}
 
-		d.ResetClient()
-
 		if d.States.FsDriver == config.FsDriverFusedev {
 			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
 			if err != nil {
@@ -529,13 +527,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 
 			d.Config = cfg
 		}
-
-		defer func() {
-			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
-			// But the socket file may be residual and will be cleared before starting a new nydusd.
-			// So clear the client by assigning nil
-			d.ResetClient()
-		}()
 
 		state, err := d.State()
 		if err != nil {
@@ -551,7 +542,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		}
 
 		// FIXME: Should put the a daemon back file system shared damon field.
-
 		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID())
 		liveDaemons[d.ID()] = d
 

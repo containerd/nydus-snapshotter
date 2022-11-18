@@ -175,12 +175,7 @@ func WaitUntilSocketExisted(sock string) error {
 }
 
 func NewNydusClient(sock string) (NydusdClient, error) {
-	err := WaitUntilSocketExisted(sock)
-	if err != nil {
-		return nil, err
-	}
 	transport := buildTransport(sock)
-
 	return &nydusdClient{
 		httpClient: &http.Client{
 			Timeout:   defaultHTTPClientTimeout,
