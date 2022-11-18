@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -71,7 +72,10 @@ type Daemon struct {
 	Supervisor *supervisor.Supervisor
 	Config     daemonconfig.DaemonConfig
 
-	ref int32
+	stateGetterGroup singleflight.Group
+
+	ref   int32
+	State types.DaemonState
 }
 
 func (d *Daemon) Lock() {
@@ -135,7 +139,7 @@ func (d *Daemon) AddInstance(r *Rafs) {
 // 1. INIT
 // 2. READY: All needed resources are ready.
 // 3. RUNNING
-func (d *Daemon) State() (types.DaemonState, error) {
+func (d *Daemon) GetState() (types.DaemonState, error) {
 	c, err := d.GetClient()
 	if err != nil {
 		return types.DaemonStateUnknown, errors.Wrapf(err, "get daemon state")
@@ -145,7 +149,11 @@ func (d *Daemon) State() (types.DaemonState, error) {
 		return types.DaemonStateUnknown, err
 	}
 
-	return info.DaemonState(), nil
+	st := info.DaemonState()
+
+	d.State = st
+
+	return st, nil
 }
 
 // Waits for some time until daemon reaches the expected state.
@@ -154,23 +162,36 @@ func (d *Daemon) State() (types.DaemonState, error) {
 //  2. READY
 //  3. RUNNING
 func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
-	return retry.Do(func() error {
-		state, err := d.State()
-		if err != nil {
-			return errors.Wrapf(err, "wait until daemon is %s", expected)
-		}
+	stateGetter := func() (v any, err error) {
+		err = retry.Do(func() error {
+			if expected == d.State {
+				return nil
+			}
 
-		if state != expected {
-			return errors.Errorf("daemon %s is not %s yet, current state %s",
-				d.ID(), expected, state)
-		}
+			state, err := d.GetState()
+			if err != nil {
+				return errors.Wrapf(err, "wait until daemon is %s", expected)
+			}
 
-		return nil
-	},
-		retry.Attempts(20), // totally wait for 2 seconds, should be enough
-		retry.LastErrorOnly(true),
-		retry.Delay(100*time.Millisecond),
-	)
+			if state != expected {
+				return errors.Errorf("daemon %s is not %s yet, current state %s",
+					d.ID(), expected, state)
+			}
+
+			return nil
+		},
+			retry.Attempts(20), // totally wait for 2 seconds, should be enough
+			retry.LastErrorOnly(true),
+			retry.Delay(100*time.Millisecond),
+		)
+
+		return
+	}
+
+	_, err, shared := d.stateGetterGroup.Do(d.ID(), stateGetter)
+	log.L.Debugf("Get daemon %s with shared result: %v ", d.ID(), shared)
+
+	return err
 }
 
 func (d *Daemon) SharedMount(rafs *Rafs) error {

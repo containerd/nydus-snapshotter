@@ -528,7 +528,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 			d.Config = cfg
 		}
 
-		state, err := d.State()
+		state, err := d.GetState()
 		if err != nil {
 			log.L.Warnf("Daemon %s died somehow. Clean up its vestige!, %s", d.ID(), err)
 			recoveringDaemons[d.ID()] = d

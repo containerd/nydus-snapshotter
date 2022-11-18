@@ -15,13 +15,13 @@ type BuildTimeInfo struct {
 	Rustc      string `json:"rustc"`
 }
 
+type DaemonState string
+
 type DaemonInfo struct {
 	ID      string        `json:"id"`
 	Version BuildTimeInfo `json:"version"`
 	State   DaemonState   `json:"state"`
 }
-
-type DaemonState string
 
 const (
 	DaemonStateUnknown DaemonState = "UNKNOWN"
