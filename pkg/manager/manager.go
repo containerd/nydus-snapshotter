@@ -535,11 +535,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 				d.States.FsDriver, m.FsDriver)
 		}
 
-		if m.SupervisorSet != nil {
-			su := m.SupervisorSet.NewSupervisor(d.ID())
-			d.Supervisor = su
-		}
-
 		m.daemonStates.RecoverDaemonState(d)
 
 		if m.SupervisorSet != nil {

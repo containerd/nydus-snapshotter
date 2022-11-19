@@ -299,7 +299,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountpoint string) error {
 
 	log.L.Infof("umount snapshot %s, daemon ID %s", snapshotID, daemon.ID())
 
-	daemon.Instances.Remove(snapshotID)
+	daemon.RemoveInstance(snapshotID)
 	if err := daemon.UmountInstance(instance); err != nil {
 		return errors.Wrapf(err, "umount instance %s", snapshotID)
 	}
@@ -309,8 +309,7 @@ func (fs *Filesystem) Umount(ctx context.Context, mountpoint string) error {
 	}
 
 	// Once daemon's reference reaches 0, destroy the whole daemon
-	ref := daemon.DecRef()
-	if ref == 0 {
+	if daemon.GetRef() == 0 {
 		if err := fs.Manager.DestroyDaemon(daemon); err != nil {
 			return errors.Wrapf(err, "destroy daemon %s", daemon.ID())
 		}

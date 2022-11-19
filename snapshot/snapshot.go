@@ -139,8 +139,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
 	}
 
-	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
-	// container rootfs doesn't need daemon
 	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
 
 	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
