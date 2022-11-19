@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,7 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
-	snapshotsapi "github.com/containerd/containerd/api/services/snapshots/v1"
+	api "github.com/containerd/containerd/api/services/snapshots/v1"
 	"github.com/containerd/containerd/contrib/snapshotservice"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
@@ -24,26 +25,35 @@ type ServeOptions struct {
 	ListeningSocketPath string
 }
 
-func Serve(ctx context.Context, rs snapshots.Snapshotter, options ServeOptions, stop <-chan struct{}) error {
+func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, stop <-chan struct{}) error {
 	err := ensureSocketNotExists(options.ListeningSocketPath)
 	if err != nil {
 		return err
 	}
 	rpc := grpc.NewServer()
-	snapshotsapi.RegisterSnapshotsServer(rpc, snapshotservice.FromSnapshotter(rs))
-	l, err := net.Listen("unix", options.ListeningSocketPath)
+	if rpc == nil {
+		return errors.New("start RPC server")
+	}
+	api.RegisterSnapshotsServer(rpc, snapshotservice.FromSnapshotter(sn))
+	listener, err := net.Listen("unix", options.ListeningSocketPath)
 	if err != nil {
-		return errors.Wrapf(err, "error on listen socket %q", options.ListeningSocketPath)
+		return errors.Wrapf(err, "listen socket %q", options.ListeningSocketPath)
 	}
 	go func() {
-		sig := <-stop
-		log.G(ctx).Infof("caught signal %s: shutting down", sig)
-		err := l.Close()
-		if err != nil {
-			log.G(ctx).Errorf("failed to close listener %s, err: %v", options.ListeningSocketPath, err)
+		<-stop
+
+		log.L.Infof("Shutting down nydus-snapshotter!")
+
+		if err := sn.Close(); err != nil {
+			log.L.WithError(err).Errorf("Closing snapshotter error")
+		}
+
+		if err := listener.Close(); err != nil {
+			log.L.Errorf("failed to close listener %s, err: %v", options.ListeningSocketPath, err)
 		}
 	}()
-	return rpc.Serve(l)
+
+	return rpc.Serve(listener)
 }
 
 func ensureSocketNotExists(listeningSocketPath string) error {

@@ -561,6 +561,9 @@ func (o *snapshotter) Close() error {
 			log.L.Errorf("failed to clean up remote snapshot, err %v", err)
 		}
 	}
+
+	o.fs.TryStopSharedDaemon()
+
 	return o.ms.Close()
 }
 

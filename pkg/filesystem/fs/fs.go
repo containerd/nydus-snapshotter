@@ -99,23 +99,23 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		//		a new nydusd for it.
 		// TODO: We still need to consider shared daemon the time sequence of initializing daemon,
 		// start daemon commit its state to DB and retrieving its state.
-			log.L.Infof("initializing the shared nydus daemon")
-			if err := fs.initSharedDaemon(); err != nil {
-				return nil, errors.Wrap(err, "start shared nydusd daemon")
-			}
+		log.L.Infof("initializing the shared nydus daemon")
+		if err := fs.initSharedDaemon(); err != nil {
+			return nil, errors.Wrap(err, "start shared nydusd daemon")
 		}
+	}
 
 	// Try to bring all persisted and stopped nydusd up and remount Rafs
-		for _, d := range recoveringDaemons {
-			if err := fs.Manager.StartDaemon(d); err != nil {
-				return nil, errors.Wrapf(err, "start daemon %s", d.ID())
-			}
-			if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+	for _, d := range recoveringDaemons {
+		if err := fs.Manager.StartDaemon(d); err != nil {
+			return nil, errors.Wrapf(err, "start daemon %s", d.ID())
+		}
+		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			return nil, errors.Wrapf(err, "wait for daemon %s", d.ID())
-			}
-			if err := d.RecoveredMountInstances(); err != nil {
+		}
+		if err := d.RecoveredMountInstances(); err != nil {
 			return nil, errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
-			}
+		}
 
 		// Found shared daemon
 		// Fscache userspace daemon has no host mountpoint.
@@ -356,10 +356,10 @@ func (fs *Filesystem) Teardown(ctx context.Context) error {
 	for _, d := range fs.Manager.ListDaemons() {
 		for _, instance := range d.Instances.List() {
 			err := fs.Umount(ctx, instance.SnapshotID)
-		if err != nil {
+			if err != nil {
 				log.L.Errorf("Failed to umount snapshot %s, %s", instance.SnapshotID, err)
+			}
 		}
-	}
 	}
 
 	return nil
@@ -440,8 +440,6 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile(""))
 	}
 
-	err = nil
-
 	if err := fs.Manager.StartDaemon(d); err != nil {
 		return errors.Wrap(err, "start shared daemon")
 	}
@@ -449,6 +447,17 @@ func (fs *Filesystem) initSharedDaemon() (err error) {
 	fs.sharedDaemon = d
 
 	return
+}
+
+func (fs *Filesystem) TryStopSharedDaemon() {
+	sharedDaemon := fs.getSharedDaemon()
+	if sharedDaemon != nil {
+		if sharedDaemon.GetRef() == 1 {
+			if err := fs.Manager.DestroyDaemon(sharedDaemon); err != nil {
+				log.L.WithError(err).Errorf("Terminate shared daemon %s failed", sharedDaemon.ID())
+			}
+		}
+	}
 }
 
 // createDaemon create new nydus daemon by snapshotID and imageID
