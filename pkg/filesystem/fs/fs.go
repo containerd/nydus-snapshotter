@@ -14,7 +14,6 @@ import (
 	"context"
 	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
@@ -64,6 +63,14 @@ type Filesystem struct {
 	rootMountpoint       string
 }
 
+func (fs *Filesystem) tryRetainSharedDaemon(d *daemon.Daemon) {
+	// FsDriver can be changed between two startups.
+	if d.HostMountpoint() == fs.rootMountpoint || fs.fsDriver == config.FsDriverFscache {
+		fs.sharedDaemon = d
+		d.IncRef()
+	}
+}
+
 // NewFileSystem initialize Filesystem instance
 // TODO(chge): `Filesystem` abstraction is not suggestive. A snapshotter
 // can mount many Rafs/Erofs file systems
@@ -92,27 +99,33 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		//		a new nydusd for it.
 		// TODO: We still need to consider shared daemon the time sequence of initializing daemon,
 		// start daemon commit its state to DB and retrieving its state.
-		if d := fs.getSharedDaemon(); d == nil {
 			log.L.Infof("initializing the shared nydus daemon")
 			if err := fs.initSharedDaemon(); err != nil {
 				return nil, errors.Wrap(err, "start shared nydusd daemon")
 			}
 		}
-	}
 
 	// Try to bring all persisted and stopped nydusd up and remount Rafs
-	if len(recoveringDaemons) != 0 {
 		for _, d := range recoveringDaemons {
 			if err := fs.Manager.StartDaemon(d); err != nil {
 				return nil, errors.Wrapf(err, "start daemon %s", d.ID())
 			}
 			if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
-				return nil, errors.Wrapf(err, "recover daemon %s", d.ID())
+			return nil, errors.Wrapf(err, "wait for daemon %s", d.ID())
 			}
 			if err := d.RecoveredMountInstances(); err != nil {
-				return nil, errors.Wrapf(err, "recover daemons")
+			return nil, errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
 			}
-		}
+
+		// Found shared daemon
+		// Fscache userspace daemon has no host mountpoint.
+		fs.tryRetainSharedDaemon(d)
+
+	}
+
+	for _, d := range liveDaemons {
+		// Found shared daemon
+		fs.tryRetainSharedDaemon(d)
 	}
 
 	return &fs, nil
@@ -197,8 +210,8 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	}()
 
 	var d *daemon.Daemon
-	if fs.sharedDaemon != nil {
-		d = fs.sharedDaemon
+	if fs.getSharedDaemon() != nil {
+		d = fs.getSharedDaemon()
 		d.AddInstance(rafs)
 	} else {
 		mp, err := fs.decideDaemonMountpoint(rafs)
