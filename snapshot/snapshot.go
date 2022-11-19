@@ -556,7 +556,7 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 
 func (o *snapshotter) Close() error {
 	if o.cleanupOnClose {
-		err := o.fs.Cleanup(context.Background())
+		err := o.fs.Teardown(context.Background())
 		if err != nil {
 			log.L.Errorf("failed to clean up remote snapshot, err %v", err)
 		}
@@ -899,7 +899,8 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	// For example: cleanupSnapshotDirectory /var/lib/containerd-nydus/snapshots/34" dir=/var/lib/containerd-nydus/snapshots/34
 	log.L.Infof("cleanupSnapshotDirectory %s", dir)
 
-	if err := o.fs.Umount(ctx, dir); err != nil && !os.IsNotExist(err) {
+	snapshotID := filepath.Base(dir)
+	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
 	}
 

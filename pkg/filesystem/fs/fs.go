@@ -279,15 +279,14 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 	return nil
 }
 
-func (fs *Filesystem) Umount(ctx context.Context, mountpoint string) error {
+func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 	if !fs.hasDaemon() {
 		return nil
 	}
 
-	snapshotID := filepath.Base(mountpoint)
 	instance := daemon.RafsSet.Get(snapshotID)
 	if instance == nil {
-		log.L.Debugf("Not a instance. ID %s, mountpoint %s", snapshotID, mountpoint)
+		log.L.Debugf("Not a rafs instance. ID %s", snapshotID)
 		return nil
 	}
 
@@ -338,13 +337,18 @@ func (fs *Filesystem) RemoveCache(blobDigest string) error {
 	return fs.cacheMgr.RemoveBlobCache(blobID)
 }
 
-func (fs *Filesystem) Cleanup(ctx context.Context) error {
+// Try to stop all the running daemons if they are not referenced by any snapshots
+// Clean up resources along with the daemons.
+func (fs *Filesystem) Teardown(ctx context.Context) error {
 	for _, d := range fs.Manager.ListDaemons() {
-		err := fs.Umount(ctx, filepath.Dir(d.HostMountpoint()))
+		for _, instance := range d.Instances.List() {
+			err := fs.Umount(ctx, instance.SnapshotID)
 		if err != nil {
-			log.G(ctx).Infof("failed to umount %s err %#v", d.HostMountpoint(), err)
+				log.L.Errorf("Failed to umount snapshot %s, %s", instance.SnapshotID, err)
 		}
 	}
+	}
+
 	return nil
 }
 
