@@ -26,7 +26,7 @@ else
 FS_DRIVER = fusedev
 endif
 
-LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Reversion=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
+LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
 
 .PHONY: build
 build:

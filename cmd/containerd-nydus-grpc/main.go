@@ -34,7 +34,7 @@ func main() {
 		Action: func(c *cli.Context) error {
 			if flags.Args.PrintVersion {
 				fmt.Println("Version:    ", version.Version)
-				fmt.Println("Reversion:  ", version.Reversion)
+				fmt.Println("Revision:   ", version.Revision)
 				fmt.Println("Go version: ", version.GoVersion)
 				fmt.Println("Build time: ", version.BuildTimestamp)
 				return nil
