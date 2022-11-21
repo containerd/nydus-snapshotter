@@ -63,14 +63,19 @@ func (m *Manager) CacheDir() string {
 }
 
 // Report each blob disk usage
+// TODO: For fscache cache files, the cache files are managed by nydusd and Linux kernel
+// We don't know how it manages cache files. A method to address this is to query nydusd.
+// So we can't report cache usage in the case of fscache now
 func (m *Manager) CacheUsage(ctx context.Context, blobID string) (snapshots.Usage, error) {
 	var usage snapshots.Usage
 
 	blobCachePath := path.Join(m.cacheDir, blobID)
+	// For backward compatibility
+	blobCacheSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix)
 	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
 	blobMeta := path.Join(m.cacheDir, blobID+metaFileSuffix)
 
-	stuffs := []string{blobCachePath, blobChunkMap, blobMeta}
+	stuffs := []string{blobCachePath, blobCacheSuffixedPath, blobChunkMap, blobMeta}
 
 	for _, f := range stuffs {
 		du, err := fs.DiskUsage(ctx, f)
