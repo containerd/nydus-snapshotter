@@ -23,6 +23,13 @@ const (
 	Bootstrap string = "bootstrap"
 )
 
+type BlobPrefetchConfig struct {
+	Enable        bool `json:"enable"`
+	ThreadsCount  int  `json:"threads_count"`
+	MergingSize   int  `json:"merging_size"`
+	BandwidthRate int  `json:"bandwidth_rate"`
+}
+
 type FscacheDaemonConfig struct {
 	// These fields is only for fscache daemon.
 	Type string `json:"type"`
@@ -38,9 +45,9 @@ type FscacheDaemonConfig struct {
 		CacheConfig struct {
 			WorkDir string `json:"work_dir"`
 		} `json:"cache_config"`
-		MetadataPath string `json:"metadata_path"`
+		BlobPrefetchConfig BlobPrefetchConfig `json:"prefetch_config"`
+		MetadataPath       string             `json:"metadata_path"`
 	} `json:"config"`
-	FSPrefetch `json:"fs_prefetch,omitempty"`
 }
 
 // Load Fscache configuration template file
