@@ -104,7 +104,16 @@ type daemonInfo struct {
 	Pid            int    `json:"pid"`
 	APISock        string `json:"api_socket"`
 	SupervisorPath string
-	Instances      map[string]*daemon.Rafs `json:"instances"`
+	Reference      int    `json:"reference"`
+	HostMountpoint string `json:"mountpoint"`
+
+	Instances map[string]rafsInstanceInfo `json:"instances"`
+}
+
+type rafsInstanceInfo struct {
+	SnapshotID  string `json:"snapshot_id"`
+	SnapshotDir string `json:"snapshot_dir"`
+	Mountpoint  string `json:"mountpoint"`
 }
 
 func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
@@ -150,11 +159,23 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		info := make([]daemonInfo, 0, 10)
 
 		for _, d := range daemons {
-			i := daemonInfo{
-				ID:        d.ID(),
-				Pid:       d.Pid(),
-				Instances: d.Instances.List(),
+
+			instances := make(map[string]rafsInstanceInfo)
+			for _, i := range d.Instances.List() {
+				instances[i.SnapshotID] = rafsInstanceInfo{
+					SnapshotID:  i.SnapshotID,
+					SnapshotDir: i.SnapshotDir,
+					Mountpoint:  i.GetMountpoint()}
 			}
+
+			i := daemonInfo{
+				ID:             d.ID(),
+				Pid:            d.Pid(),
+				HostMountpoint: d.HostMountpoint(),
+				Reference:      int(d.GetRef()),
+				Instances:      instances,
+			}
+
 			info = append(info, i)
 		}
 
