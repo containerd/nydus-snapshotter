@@ -74,7 +74,8 @@ type Daemon struct {
 
 	stateGetterGroup singleflight.Group
 
-	ref   int32
+	ref int32
+	// Cache the nydusd daemon state to avoid frequently querying nydusd by API.
 	State types.DaemonState
 }
 
