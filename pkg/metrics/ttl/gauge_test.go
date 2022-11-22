@@ -37,7 +37,8 @@ func TestNewGaugeVecWithTTL(t *testing.T) {
 	go func() {
 		for m := range metricsCh {
 			var metrics dto.Metric
-			m.Write(&metrics)
+			err := m.Write(&metrics)
+			assert.Nil(t, err)
 			metricsSlice = append(metricsSlice, metrics)
 			wg.Done()
 		}
@@ -60,7 +61,8 @@ func TestNewGaugeVecWithTTL(t *testing.T) {
 	go func() {
 		for m := range metricsCh {
 			var metrics dto.Metric
-			m.Write(&metrics)
+			err := m.Write(&metrics)
+			assert.Nil(t, err)
 			mu.Lock()
 			metricsSlice = append(metricsSlice, metrics)
 			mu.Unlock()

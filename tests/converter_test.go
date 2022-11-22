@@ -25,6 +25,7 @@ import (
 
 	"github.com/containerd/containerd"
 	containerdconverter "github.com/containerd/containerd/images/converter"
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
@@ -50,7 +51,10 @@ func hugeString(mb int) string {
 	for i := 0; i < seq; i++ {
 		data := make([]byte, seqSize)
 		if i%2 == 0 {
-			rand.Read(data)
+			_, err := rand.Read(data)
+			if err != nil {
+				log.L.WithError(err)
+			}
 		}
 		buf.Write(data)
 	}
@@ -91,7 +95,8 @@ func writeFileToTar(t *testing.T, tw *tar.Writer, name string, data string) {
 	err = tw.WriteHeader(hdr)
 	require.NoError(t, err)
 
-	io.Copy(tw, bytes.NewReader([]byte(data)))
+	_, err = io.Copy(tw, bytes.NewReader([]byte(data)))
+	require.Nil(t, err)
 	require.NoError(t, err)
 }
 
@@ -274,7 +279,11 @@ func verify(t *testing.T, workDir string) {
 	require.NoError(t, err)
 	err = nydusd.Mount()
 	require.NoError(t, err)
-	defer nydusd.Umount()
+	defer func() {
+		if err := nydusd.Umount(); err != nil {
+			log.L.WithError(err).Errorf("umount")
+		}
+	}()
 
 	actualFileTree := map[string]string{}
 	err = filepath.WalkDir(mountDir, func(path string, entry fs.DirEntry, err error) error {

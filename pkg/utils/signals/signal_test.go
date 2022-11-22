@@ -29,7 +29,8 @@ func TestSetupSignalHandler(t *testing.T) {
 	}
 	go func1(signal)
 	go func2(signal)
-	syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	err := syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	require.Nil(t, err)
 	time.Sleep(1 * time.Second)
 	require.Equal(t, atomic.LoadInt32(&actual), expected)
 }

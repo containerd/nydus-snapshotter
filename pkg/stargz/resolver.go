@@ -182,7 +182,9 @@ func (r *Resolver) resolve(ref, digest string, keychain authn.Keychain) (*io.Sec
 			return 0, err
 		}
 		defer func() {
-			io.Copy(io.Discard, res.Body)
+			if _, err := io.Copy(io.Discard, res.Body); err != nil {
+				log.L.Errorf("failed to copy %s", err)
+			}
 			res.Body.Close()
 		}()
 		if res.StatusCode/100 != 2 {
@@ -208,7 +210,9 @@ func getSize(url string, tr http.RoundTripper) (int64, error) {
 		return 0, err
 	}
 	defer func() {
-		io.Copy(io.Discard, res.Body)
+		if _, err := io.Copy(io.Discard, res.Body); err != nil {
+			log.L.Errorf("failed to copy %s", err)
+		}
 		res.Body.Close()
 	}()
 	if res.StatusCode/100 != 2 {

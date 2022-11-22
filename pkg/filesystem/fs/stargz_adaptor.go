@@ -146,7 +146,9 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 		if err != nil {
 			return errors.Wrap(err, "rename merged stargz layers")
 		}
-		os.Chmod(mergedBootstrap, 0440)
+		if err := os.Chmod(mergedBootstrap, 0440); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -186,7 +188,10 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	if err != nil {
 		return errors.Wrap(err, "failed to save stargz index")
 	}
-	os.Chmod(stargzFile, 0440)
+	err = os.Chmod(stargzFile, 0440)
+	if err != nil {
+		return err
+	}
 
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
 	if fs.fsDriver == config.FsDriverFscache {
@@ -236,7 +241,10 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	if err != nil {
 		return errors.Wrap(err, "rename converted stargz layer")
 	}
-	os.Chmod(convertedBootstrap, 0440)
+
+	if err := os.Chmod(convertedBootstrap, 0440); err != nil {
+		return err
+	}
 
 	return nil
 }

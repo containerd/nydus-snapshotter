@@ -169,7 +169,10 @@ func (m *livenessMonitor) unsubscribe(id string) (err error) {
 
 	// No longer wait for event, delete it from interest list.
 	if err = rawConn.Control(func(fd uintptr) {
-		unix.EpollCtl(m.epollFd, unix.EPOLL_CTL_DEL, int(fd), &unix.EpollEvent{})
+		if err := unix.EpollCtl(m.epollFd, unix.EPOLL_CTL_DEL, int(fd), &unix.EpollEvent{}); err != nil {
+			log.L.Errorf("Fail to delete event fd %d for supervisor %s", int(fd), id)
+			return
+		}
 		delete(m.set, fd)
 	}); err != nil {
 		return errors.Wrapf(err, "remove target FD in the interested list, id=%s", id)

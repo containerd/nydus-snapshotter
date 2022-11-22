@@ -17,7 +17,8 @@ func TestNewFlags(t *testing.T) {
 	set := flag.NewFlagSet("test", 0)
 	flags := NewFlags()
 	for _, i := range flags.F {
-		i.Apply(set)
+		err := i.Apply(set)
+		assert.Nil(t, err)
 	}
 	err := set.Parse([]string{"--config-path", "/etc/testconfig", "--root", "/root"})
 	assert.Nil(t, err)

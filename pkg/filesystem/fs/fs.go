@@ -152,6 +152,10 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 	}
 
 	instance := daemon.RafsSet.Get(snapshotID)
+	if instance == nil {
+		return errors.Wrapf(errdefs.ErrNotFound, "no instance %s", snapshotID)
+	}
+
 	d := fs.Manager.GetByDaemonID(instance.DaemonID)
 	if d == nil {
 		return errors.Wrapf(errdefs.ErrNotFound, "snapshot id %s daemon id %s", snapshotID, instance.DaemonID)

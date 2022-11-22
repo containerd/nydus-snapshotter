@@ -46,7 +46,8 @@ func prepareNydusServer(t *testing.T) (string, func()) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		j, _ := json.Marshal(info)
-		w.Write(j)
+		_, err := w.Write(j)
+		assert.Nil(t, err)
 	}))
 	unixListener, err := net.Listen("unix", mockSocket)
 	require.Nil(t, err)

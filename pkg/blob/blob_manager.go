@@ -53,7 +53,7 @@ func (b *Manager) Run(ctx context.Context) error {
 		case id := <-b.eventChan:
 			err := b.cleanupBlob(id)
 			if err != nil {
-				log.G(ctx).Warnf("delete blob %s failed", id)
+				log.G(ctx).WithError(err).Warnf("delete blob %s failed", id)
 			} else {
 				log.G(ctx).Infof("delete blob %s success", id)
 			}
@@ -146,7 +146,11 @@ func (b *Manager) PrepareBlobLayer(snapshot storage.Snapshot, labels map[string]
 	if err != nil {
 		return errors.Wrap(err, "rename temp file as blob file")
 	}
-	os.Chmod(blobFile.Name(), 0440)
+
+	err = os.Chmod(blobPath, 0440)
+	if err != nil {
+		return errors.Wrapf(err, "chmod blob %s", blobPath)
+	}
 
 	return nil
 }

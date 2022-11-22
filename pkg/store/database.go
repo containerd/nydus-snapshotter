@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 
@@ -164,7 +165,9 @@ func (db *Database) initDatabase() error {
 	}
 
 	if notV1 {
-		db.tryTranslateRecords()
+		if err := db.tryTranslateRecords(); err != nil && !errors.Is(err, errdefs.ErrNotFound) {
+			return errors.Wrapf(err, "convert old database")
+		}
 	}
 
 	return nil
@@ -284,7 +287,12 @@ func (db *Database) NextInstanceSeq() (uint64, error) {
 	if err != nil {
 		return 0, errors.New("failed to start transaction")
 	}
-	defer tx.Rollback()
+
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil {
+			log.L.WithError(rerr).Errorf("Rollback error when getting next sequence")
+		}
+	}()
 
 	bk := getInstancesBucket(tx)
 
