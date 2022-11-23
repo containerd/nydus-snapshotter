@@ -289,12 +289,17 @@ func (db *Database) NextInstanceSeq() (uint64, error) {
 	}
 
 	defer func() {
-		if rerr := tx.Rollback(); rerr != nil {
-			log.L.WithError(rerr).Errorf("Rollback error when getting next sequence")
+		if err != nil {
+			if err := tx.Rollback(); err != nil {
+				log.L.WithError(err).Errorf("Rollback error when getting next sequence")
+			}
 		}
 	}()
 
 	bk := getInstancesBucket(tx)
+	if bk == nil {
+		return 0, errdefs.ErrNotFound
+	}
 
 	seq, err := bk.NextSequence()
 	if err != nil {

@@ -174,7 +174,13 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 		return errors.Wrapf(errdefs.ErrNotFound, "snapshot id %s daemon id %s", snapshotID, instance.DaemonID)
 	}
 
-	return d.WaitUntilState(types.DaemonStateRunning)
+	if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+		return err
+	}
+
+	log.L.Infof("Nydus remote snapshot %s is ready", snapshotID)
+
+	return nil
 }
 
 // Mount will be called when containerd snapshotter prepare remote snapshotter
