@@ -299,10 +299,6 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 }
 
 func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
-	if !fs.hasDaemon() {
-		return nil
-	}
-
 	instance := daemon.RafsSet.Get(snapshotID)
 	if instance == nil {
 		log.L.Debugf("Not a rafs instance. ID %s", snapshotID)

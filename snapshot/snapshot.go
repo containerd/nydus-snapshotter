@@ -225,7 +225,7 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 
 	for _, dir := range cleanup {
 		if err := o.cleanupSnapshotDirectory(ctx, dir); err != nil {
-			log.L.WithError(err).Warn("failed to remove directory %s", dir)
+			log.L.WithError(err).Warnf("failed to remove directory %s", dir)
 		}
 	}
 	return nil
@@ -321,7 +321,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	return o.mounts(ctx, &info, *snap)
 }
 
-func (o *snapshotter) prepareRemoteSnapshot(ctx context.Context, id string, labels map[string]string) error {
+func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
 	return o.fs.Mount(id, labels)
 }
 
@@ -382,7 +382,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 			}
 
 			logger.Debugf("Found nydus meta layer id %s", id)
-			if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
+			if err := o.prepareRemoteSnapshot(id, info.Labels); err != nil {
 				return nil, err
 			}
 
@@ -413,7 +413,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		return nil, err
 	}
 
-	log.L.Debugf("[View] snapshot with key %s parent %s", key, parent)
+	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	return o.mounts(ctx, base, s)
 }
@@ -438,7 +438,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Debugf("[Commit] snapshot with key %s snapshot id %s parent %s", key, id)
+	log.L.Debugf("[Commit] snapshot with key %s snapshot id %s", key, id)
 
 	var usage fs.Usage
 	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
