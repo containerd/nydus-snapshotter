@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
@@ -187,6 +188,7 @@ func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 				return errors.Errorf("daemon %s is not %s yet, current state %s",
 					d.ID(), expected, state)
 			}
+			collector.CollectDaemonEvent(d.ID(), string(expected))
 
 			return nil
 		},

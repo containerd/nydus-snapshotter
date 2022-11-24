@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 )
@@ -505,6 +506,8 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	if err := d.Wait(); err != nil {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
+
+	collector.CollectDaemonEvent(d.ID(), string(types.DaemonStateDestroyed))
 
 	return nil
 }

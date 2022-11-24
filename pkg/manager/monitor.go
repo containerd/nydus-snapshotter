@@ -16,7 +16,9 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
@@ -217,6 +219,7 @@ func (m *livenessMonitor) Run() {
 
 				if ev.Events&(unix.EPOLLHUP|unix.EPOLLERR) != 0 {
 					log.L.Warnf("Daemon %s died", target.id)
+					collector.CollectDaemonEvent(target.id, string(types.DaemonStateDied))
 					// Notify subscribers that death event happens
 					target.notifier <- deathEvent{daemonID: target.id, path: target.path}
 				}

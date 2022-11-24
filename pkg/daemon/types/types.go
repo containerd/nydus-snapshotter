@@ -24,10 +24,12 @@ type DaemonInfo struct {
 }
 
 const (
-	DaemonStateUnknown DaemonState = "UNKNOWN"
-	DaemonStateInit    DaemonState = "INIT"
-	DaemonStateReady   DaemonState = "READY"
-	DaemonStateRunning DaemonState = "RUNNING"
+	DaemonStateUnknown   DaemonState = "UNKNOWN"
+	DaemonStateInit      DaemonState = "INIT"
+	DaemonStateReady     DaemonState = "READY"
+	DaemonStateRunning   DaemonState = "RUNNING"
+	DaemonStateDied      DaemonState = "DIED"
+	DaemonStateDestroyed DaemonState = "DESTROYED"
 )
 
 func (info *DaemonInfo) DaemonState() DaemonState {
