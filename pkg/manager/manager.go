@@ -25,7 +25,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
 
 type DaemonRecoverPolicy int
@@ -195,7 +194,7 @@ func (s *DaemonStates) Size() int {
 // to avoid frequently operating DB
 type Manager struct {
 	store            Store
-	nydusdBinaryPath string
+	NydusdBinaryPath string
 	daemonMode       config.DaemonMode
 	// Where nydusd stores cache files for fscache driver
 	cacheDir string
@@ -205,8 +204,6 @@ type Manager struct {
 	// should never read a daemon from DB. Because the daemon states cache is
 	// supposed to refilled when nydus-snapshotter restarting.
 	daemonStates *DaemonStates
-
-	mounter mount.Interface
 
 	monitor LivenessMonitor
 	// TODO: Close me
@@ -343,8 +340,7 @@ func NewManager(opt Opt) (*Manager, error) {
 
 	mgr := &Manager{
 		store:            s,
-		mounter:          &mount.Mounter{},
-		nydusdBinaryPath: opt.NydusdBinaryPath,
+		NydusdBinaryPath: opt.NydusdBinaryPath,
 		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
 		daemonStates:     newDaemonStates(),
@@ -391,6 +387,31 @@ func (m *Manager) NewInstance(r *daemon.Rafs) error {
 	r.Seq = seq
 
 	return m.store.AddInstance(r)
+}
+
+func (m *Manager) Lock() {
+	m.mu.Lock()
+}
+
+func (m *Manager) Unlock() {
+	m.mu.Unlock()
+}
+
+func (m *Manager) SubscribeDaemonEvent(d *daemon.Daemon) error {
+	if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+		log.L.Errorf("Nydusd %s probably not started", d.ID())
+		return errors.Wrapf(err, "subscribe daemon %s", d.ID())
+	}
+	return nil
+}
+
+func (m *Manager) UnsubscribeDaemonEvent(d *daemon.Daemon) error {
+	// Starting a new nydusd will re-subscribe
+	if err := m.monitor.Unsubscribe(d.ID()); err != nil {
+		log.L.Warnf("fail to unsubscribe daemon %s, %v", d.ID(), err)
+		return errors.Wrapf(err, "unsubscribe daemon %s", d.ID())
+	}
+	return nil
 }
 
 func (m *Manager) RemoveInstance(snapshotID string) error {

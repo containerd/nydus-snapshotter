@@ -375,6 +375,19 @@ func (d *Daemon) Start() error {
 	return nil
 }
 
+func (d *Daemon) Exit() error {
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "start service")
+	}
+
+	if err := c.Exit(); err != nil {
+		return errors.Wrap(err, "request to exit service")
+	}
+
+	return nil
+}
+
 func (d *Daemon) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 	c, err := d.GetClient()
 	if err != nil {

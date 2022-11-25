@@ -38,6 +38,7 @@ const (
 	endpointSendFd = "/api/v1/daemon/fuse/sendfd"
 	// Command nydusd to begin file system service.
 	endpointStart = "/api/v1/daemon/start"
+	endpointExit  = "/api/v1/daemon/exit"
 
 	// --- V2 API begins
 	endpointBlobs = "/api/v2/blobs"
@@ -64,6 +65,7 @@ type NydusdClient interface {
 	TakeOver() error
 	SendFd() error
 	Start() error
+	Exit() error
 }
 
 // Nydusd API server http client used to command nydusd's action and
@@ -282,5 +284,10 @@ func (c *nydusdClient) SendFd() error {
 
 func (c *nydusdClient) Start() error {
 	url := c.url(endpointStart, query{})
+	return c.request(http.MethodPut, url, nil, nil)
+}
+
+func (c *nydusdClient) Exit() error {
+	url := c.url(endpointExit, query{})
 	return c.request(http.MethodPut, url, nil, nil)
 }
