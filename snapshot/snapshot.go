@@ -139,8 +139,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
 	}
 
-	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
-	// container rootfs doesn't need daemon
 	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
 
 	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
@@ -223,10 +221,11 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 		return err
 	}
 
-	log.G(ctx).Infof("cleanup: dirs=%v", cleanup)
+	log.L.Infof("[Cleanup] orphan directories %v", cleanup)
+
 	for _, dir := range cleanup {
 		if err := o.cleanupSnapshotDirectory(ctx, dir); err != nil {
-			log.G(ctx).WithError(err).WithField("path", dir).Warn("failed to remove directory")
+			log.L.WithError(err).Warnf("failed to remove directory %s", dir)
 		}
 	}
 	return nil
@@ -322,8 +321,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	return o.mounts(ctx, &info, *snap)
 }
 
-func (o *snapshotter) prepareRemoteSnapshot(ctx context.Context, id string, labels map[string]string) error {
-	log.G(ctx).Infof("prepare remote snapshot mountpoint %s", o.upperPath(id))
+func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
 	return o.fs.Mount(id, labels)
 }
 
@@ -340,7 +338,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	if target, ok := info.Labels[label.TargetSnapshotRef]; ok {
 		// check if image layer is nydus data layer
 		if isNydusDataLayer(info.Labels) {
-			logger.Infof("nydus data layer, skip download and unpack %s", key)
+			logger.Debugf("nydus data layer %s", key)
 
 			if o.blobMgr != nil {
 				err = o.blobMgr.PrepareBlobLayer(s, info.Labels)
@@ -373,7 +371,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		}
 	} else {
 		// Mount image for running container, which has a nydus/stargz image as parent.
-		logger.Infof("prepare for container layer %s", key)
+		logger.Infof("Prepares active snapshot %s, nydusd should start afterwards", key)
 
 		if id, info, err := o.findMetaLayer(ctx, key); err == nil {
 			// For stargz layer, we need to merge all bootstraps into one.
@@ -383,9 +381,8 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				}
 			}
 
-			logger.Infof("Found nydus meta layer id %s", id)
-
-			if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
+			logger.Debugf("Found nydus meta layer id %s", id)
+			if err := o.prepareRemoteSnapshot(id, info.Labels); err != nil {
 				return nil, err
 			}
 
@@ -411,11 +408,12 @@ func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, sn
 }
 
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	log.G(ctx).Infof("view snapshot with key %s", key)
 	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
 	if err != nil {
 		return nil, err
 	}
+
+	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	return o.mounts(ctx, base, s)
 }
@@ -428,8 +426,8 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 
 	defer func() {
 		if err != nil {
-			if rerr := t.Rollback(); rerr != nil {
-				log.L.WithError(rerr).Warn("failed to rollback transaction")
+			if err := t.Rollback(); err != nil {
+				log.L.WithError(err).Warn("failed to rollback transaction")
 			}
 		}
 	}()
@@ -440,7 +438,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Infof("commit snapshot with key %s snapshot id %s", key, id)
+	log.L.Debugf("[Commit] snapshot with key %s snapshot id %s", key, id)
 
 	var usage fs.Usage
 	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
@@ -473,19 +471,23 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 
 	defer func() {
 		if err != nil {
-			if rerr := t.Rollback(); rerr != nil {
-				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
+			if err := t.Rollback(); err != nil {
+				log.G(ctx).WithError(err).Warn("failed to rollback transaction")
 			}
 		}
 	}()
 
 	id, info, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
-		return errors.Wrap(err, "get snapshot")
+		return errors.Wrapf(err, "get snapshot %s", key)
 	}
 
 	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
-	log.L.Infof("remove snapshot with key %s snapshot id %s", key, id)
+	log.L.Debugf("[Remove] snapshot with key %s snapshot id %s", key, id)
+
+	if isNydusMetaLayer(info.Labels) {
+		log.L.Infof("[Remove] nydus meta snapshot with key %s snapshot id %s", key, id)
+	}
 
 	if info.Kind == snapshots.KindCommitted {
 		blobDigest := info.Labels[label.CRILayerDigest]
@@ -558,11 +560,14 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 
 func (o *snapshotter) Close() error {
 	if o.cleanupOnClose {
-		err := o.fs.Cleanup(context.Background())
+		err := o.fs.Teardown(context.Background())
 		if err != nil {
 			log.L.Errorf("failed to clean up remote snapshot, err %v", err)
 		}
 	}
+
+	o.fs.TryStopSharedDaemon()
+
 	return o.ms.Close()
 }
 
@@ -871,6 +876,7 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 			continue
 		}
 		// When it quits, there will be nothing inside
+		// TODO: try to clean up config/sockets/logs directories
 		cleanup = append(cleanup, o.snapshotDir(d))
 	}
 	return cleanup, nil
@@ -894,22 +900,16 @@ func (o *snapshotter) cleanupDirectories(ctx context.Context) ([]string, error) 
 }
 
 func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) error {
-	// On a remote snapshot, the layer is mounted on the "mnt" directory.
-	// We use Filesystem's Unmount API so that it can do necessary finalization
-	// before/after the unmount.
-
 	// For example: cleanupSnapshotDirectory /var/lib/containerd-nydus/snapshots/34" dir=/var/lib/containerd-nydus/snapshots/34
-	log.L.Infof("cleanupSnapshotDirectory %s", dir)
 
-	if err := o.fs.Umount(ctx, dir); err != nil && !os.IsNotExist(err) {
+	snapshotID := filepath.Base(dir)
+	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
 	}
 
 	if err := os.RemoveAll(dir); err != nil {
-		return errors.Wrapf(err, "failed to remove directory %q", dir)
+		return errors.Wrapf(err, "remove directory %q", dir)
 	}
-
-	log.L.Infof("Delete snapshot directory %s", dir)
 
 	return nil
 }

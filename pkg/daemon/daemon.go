@@ -103,6 +103,10 @@ func (d *Daemon) DecRef() int32 {
 	return atomic.AddInt32(&d.ref, -1)
 }
 
+func (d *Daemon) GetRef() int32 {
+	return atomic.LoadInt32(&d.ref)
+}
+
 func (d *Daemon) HostMountpoint() (mnt string) {
 	// Identify a shared nydusd for multiple rafs instances.
 	mnt = d.States.Mountpoint
@@ -134,6 +138,11 @@ func (d *Daemon) AddInstance(r *Rafs) {
 	d.Instances.Add(r)
 	d.IncRef()
 	r.DaemonID = d.ID()
+}
+
+func (d *Daemon) RemoveInstance(snapshotID string) {
+	d.Instances.Remove(snapshotID)
+	d.DecRef()
 }
 
 // Nydusd daemon current working state by requesting to nydusd:

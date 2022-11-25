@@ -163,8 +163,6 @@ func (s *DaemonStates) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daem
 
 	if daemon != nil && op != nil {
 		op(daemon)
-	} else if daemon == nil {
-		log.L.Warnf("daemon daemon_id=%s is not found", id)
 	}
 
 	return daemon
@@ -475,6 +473,8 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 // FIXME: should handle the inconsistent status caused by any step
 // in the function that returns an error.
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
+	log.L.Infof("Destroy nydusd daemon %s. Host mountpoint %s", d.ID(), d.HostMountpoint())
+
 	// Delete daemon from DB in the first place in case any of below steps fails
 	// ending up with daemon is residual in DB.
 	if err := m.DeleteDaemon(d); err != nil {
@@ -496,8 +496,6 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 			log.L.Warnf("Failed to delete supervisor for daemon %s, %s", d.ID(), err)
 		}
 	}
-
-	log.L.Infof("Destroy nydusd daemon %s. Host mountpoint %s", d.ID(), d.HostMountpoint())
 
 	// Graceful nydusd termination will umount itself.
 	if err := d.Terminate(); err != nil {
@@ -533,11 +531,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 			return errors.Wrapf(errdefs.ErrInvalidArgument,
 				"can't recover from the last restart, the specified fs-driver=%s mismatches with the last fs-driver=%s",
 				d.States.FsDriver, m.FsDriver)
-		}
-
-		if m.SupervisorSet != nil {
-			su := m.SupervisorSet.NewSupervisor(d.ID())
-			d.Supervisor = su
 		}
 
 		m.daemonStates.RecoverDaemonState(d)
