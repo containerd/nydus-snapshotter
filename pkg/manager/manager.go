@@ -290,6 +290,11 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	// Mount rafs instance by http API
 	instances := d.Instances.List()
 	for _, r := range instances {
+		// Rafs is already mounted during starting nydusd
+		if d.HostMountpoint() == r.GetMountpoint() {
+			break
+		}
+
 		if err := d.SharedMount(r); err != nil {
 			log.L.Warnf("Failed to mount rafs instance, %v", err)
 		}
