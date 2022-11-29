@@ -189,7 +189,7 @@ func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 			return errors.Errorf("daemon %s is not %s yet, current state %s",
 				d.ID(), expected, state)
 		}
-		collector.CollectDaemonEvent(d.ID(), string(expected))
+		collector.NewDaemonEventCollector(string(expected)).Collect()
 
 		return nil
 	},

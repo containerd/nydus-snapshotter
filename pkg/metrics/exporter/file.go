@@ -47,16 +47,6 @@ func WithOutputFile(metricsFile string) Opt {
 	}
 }
 
-func NewFileExporter(opts ...Opt) error {
-	for _, o := range opts {
-		if err := o(GlobalFileExporter); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (e *FileExporter) Export() error {
 	ms, err := registry.Registry.Gather()
 	if err != nil {

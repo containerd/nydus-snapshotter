@@ -19,6 +19,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
@@ -27,7 +28,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -146,14 +146,19 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
 
 	// Special registration for Prometheus metrics export
+	sc.RegisterMetricsHandler(endpointPromMetrics)
+}
+
+func (sc *Controller) RegisterMetricsHandler(endpoint string) {
 	handler := promhttp.HandlerFor(registry.Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.HTTPErrorOnError,
 	})
 
-	sc.router.Handle(endpointPromMetrics, http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
-		handler.ServeHTTP(rsp, req)
-		exporter.FileExport()
-	}))
+	sc.router.Handle(endpoint,
+		http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
+			handler.ServeHTTP(rsp, req)
+			exporter.ExportToFile()
+		}))
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
