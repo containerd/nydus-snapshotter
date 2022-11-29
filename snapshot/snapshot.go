@@ -98,6 +98,25 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "create daemons manager")
 	}
 
+	metricServer, err := metrics.NewServer(
+		ctx,
+		metrics.WithRootDir(cfg.RootDir),
+		metrics.WithMetricsFile(cfg.MetricsFile),
+		metrics.WithProcessManager(manager),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "create metrics server")
+	}
+
+	if cfg.EnableMetrics {
+		// Start to collect daemon metrics.
+		go func() {
+			if err := metricServer.CollectDaemonMetrics(ctx); err != nil {
+				log.L.Errorf("Failed to start export metrics, %s", err)
+			}
+		}()
+	}
+
 	if cfg.APISocket != "" {
 		systemController, err := system.NewSystemController(manager, cfg.APISocket)
 		if err != nil {
@@ -161,24 +180,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 				}
 			}()
 		}
-	}
-
-	if cfg.EnableMetrics {
-		metricServer, err := metrics.NewServer(
-			ctx,
-			metrics.WithRootDir(cfg.RootDir),
-			metrics.WithMetricsFile(cfg.MetricsFile),
-			metrics.WithProcessManager(manager),
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create metrics server")
-		}
-		// Start metrics http server.
-		go func() {
-			if err := metricServer.Serve(ctx); err != nil {
-				log.L.Errorf("Failed to start metrics server, %s", err)
-			}
-		}()
 	}
 
 	if err := os.MkdirAll(cfg.RootDir, 0700); err != nil {

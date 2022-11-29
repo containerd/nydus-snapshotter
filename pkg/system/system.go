@@ -26,6 +26,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -145,10 +146,14 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
 
 	// Special registration for Prometheus metrics export
-	handler := promhttp.HandlerFor(exporter.Registry, promhttp.HandlerOpts{
+	handler := promhttp.HandlerFor(registry.Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.HTTPErrorOnError,
 	})
-	sc.router.Handle(endpointPromMetrics, handler)
+
+	sc.router.Handle(endpointPromMetrics, http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
+		handler.ServeHTTP(rsp, req)
+		exporter.FileExport()
+	}))
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {

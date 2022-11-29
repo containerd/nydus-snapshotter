@@ -1,23 +1,21 @@
 /*
  * Copyright (c) 2021. Alibaba Cloud. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package exporter
+package data
 
 import (
-	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
-	"github.com/containerd/nydus-snapshotter/pkg/metrics/ttl"
+	mtypes "github.com/containerd/nydus-snapshotter/pkg/metrics/types"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/types/ttl"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
 	imageRefLabel = "image_ref"
-	defaultTTL    = 3 * time.Minute
 )
 
 var (
@@ -28,7 +26,7 @@ var (
 			Help: "Total number read of a nydus fs, in Byte.",
 		},
 		[]string{imageRefLabel},
-		defaultTTL,
+		ttl.DefaultTTL,
 	)
 
 	OpenFdCount = ttl.NewGaugeVecWithTTL(
@@ -37,7 +35,7 @@ var (
 			Help: "Number of current open files.",
 		},
 		[]string{imageRefLabel},
-		defaultTTL,
+		ttl.DefaultTTL,
 	)
 
 	OpenFdMaxCount = ttl.NewGaugeVecWithTTL(
@@ -46,7 +44,7 @@ var (
 			Help: "Number of max open files.",
 		},
 		[]string{imageRefLabel},
-		defaultTTL,
+		ttl.DefaultTTL,
 	)
 
 	LastFopTimestamp = ttl.NewGaugeVecWithTTL(
@@ -55,12 +53,12 @@ var (
 			Help: "Timestamp of last file operation.",
 		},
 		[]string{imageRefLabel},
-		defaultTTL,
+		ttl.DefaultTTL,
 	)
 )
 
 // Fs metric histograms
-var FsMetricHists = []*FsMetricHistogram{
+var MetricHists = []*mtypes.MetricHistogram{
 	{
 		Desc: prometheus.NewDesc(
 			"nydusd_block_count_read_hist",
@@ -81,7 +79,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			[]string{imageRefLabel},
 			prometheus.Labels{},
 		),
-		Buckets: MakeFopBuckets(),
+		Buckets: mtypes.MakeFopBuckets(),
 		GetCounters: func(m *types.FsMetrics) []uint64 {
 			return m.FopHits
 		},
@@ -94,7 +92,7 @@ var FsMetricHists = []*FsMetricHistogram{
 			[]string{imageRefLabel},
 			prometheus.Labels{},
 		),
-		Buckets: MakeFopBuckets(),
+		Buckets: mtypes.MakeFopBuckets(),
 		GetCounters: func(m *types.FsMetrics) []uint64 {
 			return m.FopErrors
 		},

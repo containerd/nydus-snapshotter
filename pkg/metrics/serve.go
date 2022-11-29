@@ -9,8 +9,6 @@ package metrics
 
 import (
 	"context"
-	"net"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -18,19 +16,16 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 )
 
 type ServerOpt func(*Server) error
 
-const sockFileName = "metrics.sock"
-
 type Server struct {
-	listener    net.Listener
 	rootDir     string
 	metricsFile string
 	pm          *manager.Manager
-	exp         *exporter.Exporter
 }
 
 func WithRootDir(rootDir string) ServerOpt {
@@ -70,34 +65,17 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 		}
 	}
 
-	exp, err := exporter.NewExporter(
+	err := exporter.NewFileExporter(
 		exporter.WithOutputFile(s.metricsFile),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new metric exporter")
 	}
-	s.exp = exp
-
-	sockPath := filepath.Join(s.rootDir, sockFileName)
-
-	if _, err := os.Stat(sockPath); err == nil {
-		err = os.Remove(sockPath)
-		if err != nil {
-			return nil, err
-		}
-	}
-	ln, err := NewListener(sockPath)
-	if err != nil {
-		return nil, err
-	}
-	s.listener = ln
-
-	log.G(ctx).Infof("Starting metrics server on %s", sockPath)
 
 	return &s, nil
 }
 
-func (s *Server) collectDaemonMetric(ctx context.Context) {
+func (s *Server) CollectDaemonMetrics(ctx context.Context) error {
 	// TODO(renzhen): make collect interval time configurable
 	timer := time.NewTicker(time.Duration(1) * time.Minute)
 
@@ -105,9 +83,9 @@ outer:
 	for {
 		select {
 		case <-timer.C:
+			// Collect metrics from daemons.
 			daemons := s.pm.ListDaemons()
 			for _, d := range daemons {
-
 				for _, i := range d.Instances.List() {
 					var sid string
 
@@ -123,7 +101,7 @@ outer:
 						continue
 					}
 
-					if err := s.exp.ExportFsMetrics(fsMetrics, i.ImageID); err != nil {
+					if err := collector.CollectFsMetrics(fsMetrics, i.ImageID); err != nil {
 						log.G(ctx).Errorf("failed to export fs metrics for %s: %v", i.ImageID, err)
 						continue
 					}
@@ -135,13 +113,6 @@ outer:
 			break outer
 		}
 	}
-}
-
-func (s *Server) Serve(ctx context.Context) error {
-	// Start to collect metrics from daemons periodically.
-	go func() {
-		s.collectDaemonMetric(ctx)
-	}()
 
 	return nil
 }
