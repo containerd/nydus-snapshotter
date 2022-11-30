@@ -75,13 +75,6 @@ func makeConfig(conf NydusdConfig) error {
 	tpl := template.Must(template.New("").Parse(configTpl))
 
 	var ret bytes.Buffer
-	if conf.BackendType == "" {
-		conf.BackendType = "localfs"
-		conf.BackendConfig = `{"dir": "/fake"}`
-		conf.EnablePrefetch = false
-	} else {
-		conf.EnablePrefetch = true
-	}
 	if err := tpl.Execute(&ret, conf); err != nil {
 		return errors.New("prepare config template for Nydusd")
 	}
