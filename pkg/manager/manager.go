@@ -257,7 +257,7 @@ func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
 	}
 
 	if err := d.WaitUntilState(types.DaemonStateInit); err != nil {
-		log.L.Errorf("daemon din't reach state %s", types.DaemonStateInit)
+		log.L.WithError(err).Errorf("daemon didn't reach state %s,", types.DaemonStateInit)
 		return
 	}
 
@@ -311,8 +311,9 @@ func (m *Manager) handleDaemonDeathEvent() {
 			log.L.Warnf("Daemon %s was not found", ev.daemonID)
 			return
 		}
-
+		d.Lock()
 		d.State = types.DaemonStateUnknown
+		d.Unlock()
 		if m.RecoverPolicy == RecoverPolicyRestart {
 			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
