@@ -66,7 +66,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		}
 
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
-			log.L.Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
+			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
 			return
 		}
 
