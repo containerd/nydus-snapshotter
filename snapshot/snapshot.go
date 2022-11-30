@@ -91,10 +91,30 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		CacheDir:         cfg.CacheDir,
 		RootDir:          cfg.RootDir,
 		RecoverPolicy:    rp,
+		FsDriver:         cfg.FsDriver,
 		DaemonConfig:     daemonConfig,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create daemons manager")
+	}
+
+	metricServer, err := metrics.NewServer(
+		ctx,
+		metrics.WithRootDir(cfg.RootDir),
+		metrics.WithMetricsFile(cfg.MetricsFile),
+		metrics.WithProcessManager(manager),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "create metrics server")
+	}
+
+	if cfg.EnableMetrics {
+		// Start to collect daemon metrics.
+		go func() {
+			if err := metricServer.CollectDaemonMetrics(ctx); err != nil {
+				log.L.Errorf("Failed to start export metrics, %s", err)
+			}
+		}()
 	}
 
 	if cfg.APISocket != "" {
@@ -102,7 +122,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
-		go systemController.Run()
+		go func() {
+			if err := systemController.Run(); err != nil {
+				log.L.WithError(err).Error("Failed to start system controller")
+			}
+		}()
 	}
 
 	opts := []fspkg.NewFSOpt{
@@ -134,8 +158,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
 	}
 
-	// Prefetch mode counts as no daemon, as daemon is only for prefetch,
-	// container rootfs doesn't need daemon
 	hasDaemon := cfg.DaemonMode != command.DaemonModeNone
 
 	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
@@ -158,24 +180,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 				}
 			}()
 		}
-	}
-
-	if cfg.EnableMetrics {
-		metricServer, err := metrics.NewServer(
-			ctx,
-			metrics.WithRootDir(cfg.RootDir),
-			metrics.WithMetricsFile(cfg.MetricsFile),
-			metrics.WithProcessManager(manager),
-		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create metrics server")
-		}
-		// Start metrics http server.
-		go func() {
-			if err := metricServer.Serve(ctx); err != nil {
-				log.L.Errorf("Failed to start metrics server, %s", err)
-			}
-		}()
 	}
 
 	if err := os.MkdirAll(cfg.RootDir, 0700); err != nil {
@@ -218,10 +222,11 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 		return err
 	}
 
-	log.G(ctx).Infof("cleanup: dirs=%v", cleanup)
+	log.L.Infof("[Cleanup] orphan directories %v", cleanup)
+
 	for _, dir := range cleanup {
 		if err := o.cleanupSnapshotDirectory(ctx, dir); err != nil {
-			log.G(ctx).WithError(err).WithField("path", dir).Warn("failed to remove directory")
+			log.L.WithError(err).Warnf("failed to remove directory %s", dir)
 		}
 	}
 	return nil
@@ -266,76 +271,99 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 	return usage, nil
 }
 
-func (o *snapshotter) getSnapShot(ctx context.Context, key string) (*storage.Snapshot, error) {
-	return snapshot.GetSnapshot(ctx, o.ms, key)
-}
-
 func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
-	log.G(ctx).Infof("mount snapshot with key %s", key)
-	s, err := o.getSnapShot(ctx, key)
+	var (
+		needRemoteMounts = false
+		metaSnapshotID   string
+	)
+
+	id, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get active mount")
+		return nil, errors.Wrapf(err, "get snapshot %s info", key)
 	}
 
-	if id, _, rErr := o.findMetaLayer(ctx, key); rErr == nil {
+	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
+
+	if isNydusMetaLayer(info.Labels) {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
-			log.G(ctx).Errorf("snapshot %s is not ready, err: %v", id, err)
-			return nil, err
+			return nil, errors.Wrapf(err, "snapshot %s is not ready, err: %v", id, err)
 		}
-		return o.remoteMounts(ctx, *s, id)
+		needRemoteMounts = true
+		metaSnapshotID = id
 	}
 
-	_, snap, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
+	if info.Kind == snapshots.KindActive {
+		pKey := info.Parent
+		pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey)
+		if err != nil {
+			return nil, errors.Wrapf(err, "get snapshot %s info", pKey)
+		}
+
+		if isNydusMetaLayer(info.Labels) {
+			err = o.fs.WaitUntilReady(pID)
+			if err != nil {
+				return nil, errors.Wrapf(err, "snapshot %s is not ready, err: %v", pID, err)
+			}
+			metaSnapshotID = pID
+			needRemoteMounts = true
+		}
+	}
+
+	snap, err := snapshot.GetSnapshot(ctx, o.ms, key)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to get info for snapshot %s", key))
+		return nil, errors.Wrapf(err, "get snapshot %s", key)
 	}
 
-	return o.mounts(ctx, &snap, *s)
+	if needRemoteMounts {
+		return o.remoteMounts(ctx, *snap, metaSnapshotID)
+	}
+
+	return o.mounts(ctx, &info, *snap)
 }
 
-func (o *snapshotter) prepareRemoteSnapshot(ctx context.Context, id string, labels map[string]string) error {
-	log.G(ctx).Infof("prepare remote snapshot mountpoint %s", o.upperPath(id))
+func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
 	return o.fs.Mount(id, labels)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	logCtx := log.G(ctx).WithField("key", key).WithField("parent", parent)
-	base, s, err := o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
+	logger := log.L.WithField("key", key).WithField("parent", parent)
+	info, s, err := o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
 	if err != nil {
 		return nil, err
 	}
-	logCtx.Debugf("prepare snapshot with labels %v", base.Labels)
+
+	logger.Debugf("prepare snapshot with labels %v", info.Labels)
 
 	// Handle nydus/stargz image data layers.
-	if target, ok := base.Labels[label.TargetSnapshotRef]; ok {
+	if target, ok := info.Labels[label.TargetSnapshotRef]; ok {
 		// check if image layer is nydus data layer
-		if isNydusDataLayer(base.Labels) {
-			logCtx.Infof("nydus data layer, skip download and unpack %s", key)
+		if isNydusDataLayer(info.Labels) {
+			logger.Debugf("nydus data layer %s", key)
 
 			if o.blobMgr != nil {
-				err = o.blobMgr.PrepareBlobLayer(s, base.Labels)
+				err = o.blobMgr.PrepareBlobLayer(s, info.Labels)
 				if err != nil {
-					logCtx.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
+					logger.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
 					return nil, err
 				}
 			}
 
-			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
+			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 			}
-		} else if !isNydusMetaLayer(base.Labels) {
+		} else if !isNydusMetaLayer(info.Labels) {
 			// Check if image layer is estargz layer
-			if ok, ref, layerDigest, blob := o.fs.IsStargzDataLayer(ctx, base.Labels); ok {
-				err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, base.Labels)
+			if ok, ref, layerDigest, blob := o.fs.IsStargzDataLayer(ctx, info.Labels); ok {
+				err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, info.Labels)
 				if err != nil {
-					logCtx.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
+					logger.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
 					// fallback to default OCIv1 handler
 				} else {
 					// Mark this snapshot as stargz layer
-					base.Labels[label.StargzLayer] = "true"
-					err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(base.Labels))...)
+					info.Labels[label.StargzLayer] = "true"
+					err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
 					if err == nil || errdefs.IsAlreadyExists(err) {
 						return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 					}
@@ -344,7 +372,8 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		}
 	} else {
 		// Mount image for running container, which has a nydus/stargz image as parent.
-		logCtx.Infof("prepare for container layer %s", key)
+		logger.Infof("Prepares active snapshot %s, nydusd should start afterwards", key)
+
 		if id, info, err := o.findMetaLayer(ctx, key); err == nil {
 			// For stargz layer, we need to merge all bootstraps into one.
 			if o.fs.StargzLayer(info.Labels) {
@@ -353,35 +382,39 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 				}
 			}
 
-			logCtx.Infof("found nydus meta layer id %s", id)
-
-			if err := o.prepareRemoteSnapshot(ctx, id, info.Labels); err != nil {
+			logger.Debugf("Found nydus meta layer id %s", id)
+			if err := o.prepareRemoteSnapshot(id, info.Labels); err != nil {
 				return nil, err
 			}
 
+			// FIXME: What's strange it that we are providing meta snapshot
+			// contents but not wait for it reaching RUNNING
 			return o.remoteMounts(ctx, s, id)
 		}
 	}
 
-	return o.mounts(ctx, base, s)
+	return o.mounts(ctx, info, s)
 }
 
 func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
-	return snapshot.FindSnapshot(ctx, o.ms, key, func(info snapshots.Info) bool {
-		_, ok := info.Labels[label.NydusMetaLayer]
+	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, i snapshots.Info) bool {
+		ok := isNydusMetaLayer(i.Labels)
+
 		if !ok && o.fs.StargzEnabled() {
-			_, ok = info.Labels[label.StargzLayer]
+			_, ok = i.Labels[label.StargzLayer]
 		}
+
 		return ok
 	})
 }
 
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	log.G(ctx).Infof("view snapshot with key %s", key)
 	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
 	if err != nil {
 		return nil, err
 	}
+
+	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	return o.mounts(ctx, base, s)
 }
@@ -394,30 +427,41 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 
 	defer func() {
 		if err != nil {
-			if rerr := t.Rollback(); rerr != nil {
-				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
+			if err := t.Rollback(); err != nil {
+				log.L.WithError(err).Warn("failed to rollback transaction")
 			}
 		}
 	}()
 
 	// grab the existing id
-	id, _, _, err := storage.GetInfo(ctx, key)
+	id, info, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
 		return err
 	}
 
-	log.G(ctx).Infof("commit snapshot with key %s snapshot id %s", key, id)
+	log.L.Debugf("[Commit] snapshot with key %s snapshot id %s", key, id)
 
-	usage, err := fs.DiskUsage(ctx, o.upperPath(id))
-	if err != nil {
-		return err
+	var usage fs.Usage
+	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
+	// Nydus disk usage calculation will be delayed until containerd queries.
+	if !isNydusMetaLayer(info.Labels) && !isNydusDataLayer(info.Labels) {
+		usage, err = fs.DiskUsage(ctx, o.upperPath(id))
+		if err != nil {
+			return err
+		}
 	}
 
 	if _, err = storage.CommitActive(ctx, key, name, snapshots.Usage(usage), opts...); err != nil {
-		return errors.Wrap(err, "failed to commit snapshot")
+		return errors.Wrapf(err, "commit active snapshot %s", key)
 	}
 
-	return t.Commit()
+	// Let rollback catch the commit error
+	err = t.Commit()
+	if err != nil {
+		return errors.Wrapf(err, "commit snapshot %s", key)
+	}
+
+	return err
 }
 
 func (o *snapshotter) Remove(ctx context.Context, key string) error {
@@ -428,19 +472,23 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 
 	defer func() {
 		if err != nil {
-			if rerr := t.Rollback(); rerr != nil {
-				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction")
+			if err := t.Rollback(); err != nil {
+				log.G(ctx).WithError(err).Warn("failed to rollback transaction")
 			}
 		}
 	}()
 
 	id, info, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
-		return errors.Wrap(err, "get snapshot")
+		return errors.Wrapf(err, "get snapshot %s", key)
 	}
 
 	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
-	log.L.Infof("remove snapshot with key %s snapshot id %s", key, id)
+	log.L.Debugf("[Remove] snapshot with key %s snapshot id %s", key, id)
+
+	if isNydusMetaLayer(info.Labels) {
+		log.L.Infof("[Remove] nydus meta snapshot with key %s snapshot id %s", key, id)
+	}
 
 	if info.Kind == snapshots.KindCommitted {
 		blobDigest := info.Labels[label.CRILayerDigest]
@@ -502,17 +550,25 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 	if err != nil {
 		return err
 	}
-	defer t.Rollback()
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err)
+		}
+	}()
+
 	return storage.WalkInfo(ctx, fn, fs...)
 }
 
 func (o *snapshotter) Close() error {
 	if o.cleanupOnClose {
-		err := o.fs.Cleanup(context.Background())
+		err := o.fs.Teardown(context.Background())
 		if err != nil {
 			log.L.Errorf("failed to clean up remote snapshot, err %v", err)
 		}
 	}
+
+	o.fs.TryStopSharedDaemon()
+
 	return o.ms.Close()
 }
 
@@ -635,6 +691,7 @@ type ExtraOption struct {
 	Version     string `json:"fs_version"`
 }
 
+// `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
 func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
 	if s.Kind == snapshots.KindActive {
@@ -820,6 +877,7 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 			continue
 		}
 		// When it quits, there will be nothing inside
+		// TODO: try to clean up config/sockets/logs directories
 		cleanup = append(cleanup, o.snapshotDir(d))
 	}
 	return cleanup, nil
@@ -832,27 +890,27 @@ func (o *snapshotter) cleanupDirectories(ctx context.Context) ([]string, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer t.Rollback()
+
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err)
+		}
+	}()
+
 	return o.getCleanupDirectories(ctx)
 }
 
 func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) error {
-	// On a remote snapshot, the layer is mounted on the "mnt" directory.
-	// We use Filesystem's Unmount API so that it can do necessary finalization
-	// before/after the unmount.
-
 	// For example: cleanupSnapshotDirectory /var/lib/containerd-nydus/snapshots/34" dir=/var/lib/containerd-nydus/snapshots/34
-	log.L.Infof("cleanupSnapshotDirectory %s", dir)
 
-	if err := o.fs.Umount(ctx, dir); err != nil && !os.IsNotExist(err) {
+	snapshotID := filepath.Base(dir)
+	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
 	}
 
 	if err := os.RemoveAll(dir); err != nil {
-		return errors.Wrapf(err, "failed to remove directory %q", dir)
+		return errors.Wrapf(err, "remove directory %q", dir)
 	}
-
-	log.L.Infof("Delete snapshot directory %s", dir)
 
 	return nil
 }

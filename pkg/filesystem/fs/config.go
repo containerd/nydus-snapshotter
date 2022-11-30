@@ -34,84 +34,84 @@ func WithMeta(root string) NewFSOpt {
 }
 
 func WithNydusImageBinaryPath(p string) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.nydusImageBinaryPath = p
+	return func(fs *Filesystem) error {
+		fs.nydusImageBinaryPath = p
 		return nil
 	}
 }
 
 func WithManager(pm *manager.Manager) NewFSOpt {
-	return func(d *Filesystem) error {
+	return func(fs *Filesystem) error {
 		if pm == nil {
 			return errors.New("process manager cannot be nil")
 		}
 
-		d.Manager = pm
+		fs.Manager = pm
 		return nil
 	}
 }
 
 func WithCacheManager(cm *cache.Manager) NewFSOpt {
-	return func(d *Filesystem) error {
+	return func(fs *Filesystem) error {
 		if cm == nil {
 			return errors.New("cache manager cannot be nil")
 		}
 
-		d.cacheMgr = cm
+		fs.cacheMgr = cm
 		return nil
 	}
 }
 
 func WithVerifier(verifier *signature.Verifier) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.verifier = verifier
+	return func(fs *Filesystem) error {
+		fs.verifier = verifier
 		return nil
 	}
 }
 
 func WithVPCRegistry(vpcRegistry bool) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.vpcRegistry = vpcRegistry
+	return func(fs *Filesystem) error {
+		fs.vpcRegistry = vpcRegistry
 		return nil
 	}
 }
 
 func WithDaemonMode(daemonMode command.DaemonMode) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.mode = daemonMode
+	return func(fs *Filesystem) error {
+		fs.mode = daemonMode
 		return nil
 	}
 }
 
 func WithFsDriver(fsDriver string) NewFSOpt {
-	return func(d *Filesystem) error {
+	return func(fs *Filesystem) error {
 		switch fsDriver {
 		case config.FsDriverFscache:
-			d.fsDriver = config.FsDriverFscache
+			fs.fsDriver = config.FsDriverFscache
 		default:
-			d.fsDriver = config.FsDriverFusedev
+			fs.fsDriver = config.FsDriverFusedev
 		}
 		return nil
 	}
 }
 
 func WithLogLevel(logLevel string) NewFSOpt {
-	return func(d *Filesystem) error {
+	return func(fs *Filesystem) error {
 		if logLevel == "" {
-			d.logLevel = config.DefaultLogLevel
+			fs.logLevel = config.DefaultLogLevel
 		} else {
-			d.logLevel = logLevel
+			fs.logLevel = logLevel
 		}
 		return nil
 	}
 }
 
 func WithLogDir(dir string) NewFSOpt {
-	return func(d *Filesystem) error {
+	return func(fs *Filesystem) error {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return errors.Errorf("failed to create logDir %s: %v", dir, err)
 		}
-		d.logDir = dir
+		fs.logDir = dir
 		return nil
 	}
 }
@@ -124,23 +124,23 @@ func WithLogToStdout(logToStdout bool) NewFSOpt {
 }
 
 func WithNydusdThreadNum(nydusdThreadNum int) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.nydusdThreadNum = nydusdThreadNum
+	return func(fs *Filesystem) error {
+		fs.nydusdThreadNum = nydusdThreadNum
 		return nil
 	}
 }
 
 func WithRootMountpoint(mountpoint string) NewFSOpt {
-	return func(d *Filesystem) error {
-		d.rootMountpoint = mountpoint
+	return func(fs *Filesystem) error {
+		fs.rootMountpoint = mountpoint
 		return nil
 	}
 }
 
 func WithEnableStargz(enable bool) NewFSOpt {
-	return func(d *Filesystem) error {
+	return func(fs *Filesystem) error {
 		if enable {
-			d.stargzResolver = stargz.NewResolver()
+			fs.stargzResolver = stargz.NewResolver()
 		}
 		return nil
 	}

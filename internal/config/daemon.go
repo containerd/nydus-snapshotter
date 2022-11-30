@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 )
@@ -24,7 +25,7 @@ const (
 	backendTypeRegistry StorageBackendType = "registry"
 )
 
-type DaemonConfig interface {
+type DaemonConfigInterface interface {
 	// Provide stuffs relevant to accessing registry apart from auth
 	Supplement(host, repo, snapshotID string, params map[string]string)
 	// Provide auth
@@ -35,15 +36,15 @@ type DaemonConfig interface {
 }
 
 // Daemon configurations factory
-func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
+func NewDaemonConfig(fsDriver, path string) (DaemonConfigInterface, error) {
 	switch fsDriver {
-	case FsDriverFscache:
+	case command.FsDriverFscache:
 		cfg, err := LoadFscacheConfig(path)
 		if err != nil {
 			return nil, err
 		}
 		return cfg, nil
-	case FsDriverFusedev:
+	case command.FsDriverFusedev:
 		cfg, err := LoadFuseConfig(path)
 		if err != nil {
 			return nil, err
@@ -62,6 +63,7 @@ type MirrorConfig struct {
 	FailureLimit        uint8             `json:"failure_limit,omitempty"`
 	PingURL             string            `json:"ping_url,omitempty"`
 }
+
 type BackendConfig struct {
 	// Localfs backend configs
 	BlobFile     string `json:"blob_file,omitempty"`
@@ -126,7 +128,7 @@ func DumpConfigFile(c interface{}, path string) error {
 		return errors.Wrapf(err, "marshal config")
 	}
 
-	return os.WriteFile(path, b, 0644)
+	return os.WriteFile(path, b, 0600)
 }
 
 func DumpConfigString(c interface{}) (string, error) {
@@ -135,7 +137,7 @@ func DumpConfigString(c interface{}) (string, error) {
 }
 
 // Achieve a daemon configuration from template or snapshotter's configuration
-func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
+func SupplementDaemonConfig(c DaemonConfigInterface, imageID, snapshotID string,
 	vpcRegistry bool, labels map[string]string, params map[string]string) error {
 
 	image, err := registry.ParseImage(imageID)

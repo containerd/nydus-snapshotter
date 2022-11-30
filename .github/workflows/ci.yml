@@ -115,7 +115,7 @@ jobs:
       - name: Run unit tests.
         run: make cover
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./coverage.txt

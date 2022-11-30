@@ -50,6 +50,7 @@ func BenchmarkBuildCommand(b *testing.B) {
 		WithUpgrade()}
 
 	for n := 0; n < b.N; n++ {
-		BuildCommand(c)
+		_, err := BuildCommand(c)
+		assert.Nil(b, err)
 	}
 }

@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package exporter
+package registry
 
 import (
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/data"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -16,13 +17,14 @@ var (
 
 func init() {
 	Registry.MustRegister(
-		ReadCount,
-		OpenFdCount,
-		OpenFdMaxCount,
-		LastFopTimestamp,
+		data.ReadCount,
+		data.OpenFdCount,
+		data.OpenFdMaxCount,
+		data.LastFopTimestamp,
+		data.NydusdEvent,
 	)
 
-	for _, m := range FsMetricHists {
+	for _, m := range data.MetricHists {
 		Registry.MustRegister(m)
 	}
 }

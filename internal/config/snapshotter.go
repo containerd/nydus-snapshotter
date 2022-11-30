@@ -7,18 +7,16 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
-	exec "golang.org/x/sys/execabs"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
-	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/logging"
 )
 
 var SnapshotsDir string
@@ -30,12 +28,12 @@ type SnapshotterConfig struct {
 func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	tree, err := toml.LoadFile(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "load snapshotter configuration file %q", path)
+		return nil, fmt.Errorf("load snapshotter configuration file: %w", err)
 	}
 
 	var config SnapshotterConfig
 	if err = tree.Unmarshal(config); err != nil {
-		return nil, errors.Wrapf(err, "unmarshal snapshotter configuration file %q", path)
+		return nil, fmt.Errorf("unmarshal snapshotter configuration file %w", err)
 	}
 
 	return &config, nil
@@ -63,7 +61,7 @@ func SetStartupParameter(args *command.Args, cfg *Config) error {
 		cfg.DaemonMode = command.DaemonModeShared
 	}
 
-	if args.FsDriver == FsDriverFscache && args.DaemonMode != command.DaemonModeShared {
+	if args.FsDriver == command.FsDriverFscache && args.DaemonMode != command.DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
@@ -75,10 +73,10 @@ func SetStartupParameter(args *command.Args, cfg *Config) error {
 	// Snapshots does not have to bind to any runtime daemon.
 	SnapshotsDir = path.Join(cfg.RootDir, "snapshots")
 
-	if args.RootDir == defaultRootDir {
-		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
+	if args.RootDir == command.DefaultRootDir {
+		if entries, err := os.ReadDir(command.DefaultOldRootDir); err == nil {
 			if len(entries) != 0 {
-				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
+				log.L.Warnf("Default root directory is changed to %s", command.DefaultRootDir)
 			}
 		}
 	}
@@ -93,7 +91,7 @@ func SetStartupParameter(args *command.Args, cfg *Config) error {
 	cfg.LogToStdout = args.LogToStdout
 	cfg.LogDir = args.LogDir
 	if len(cfg.LogDir) == 0 {
-		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
+		cfg.LogDir = filepath.Join(cfg.RootDir, command.DefaultLogDirName)
 	}
 
 	cfg.RotateLogMaxSize = defaultRotateLogMaxSize
@@ -101,12 +99,7 @@ func SetStartupParameter(args *command.Args, cfg *Config) error {
 	cfg.RotateLogMaxAge = defaultRotateLogMaxAge
 	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
 	cfg.RotateLogCompress = defaultRotateLogCompress
-
-	d, err := time.ParseDuration(args.GCPeriod)
-	if err != nil {
-		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
-	}
-	cfg.GCPeriod = d
+	cfg.GCPeriod = args.GCPeriod
 
 	cfg.Address = args.Address
 	cfg.APISocket = args.APISocket
@@ -127,58 +120,4 @@ func SetStartupParameter(args *command.Args, cfg *Config) error {
 	cfg.RecoverPolicy = args.RecoverPolicy
 
 	return cfg.SetupNydusBinaryPaths()
-}
-
-func (c *Config) FillUpWithDefaults() error {
-	if c.LogLevel == "" {
-		c.LogLevel = DefaultLogLevel
-	}
-	if c.DaemonCfgPath == "" {
-		c.DaemonCfgPath = defaultNydusDaemonConfigPath
-	}
-
-	if c.DaemonMode == "" {
-		c.DaemonMode = command.DefaultDaemonMode
-	}
-
-	if c.GCPeriod == 0 {
-		c.GCPeriod = defaultGCPeriod
-	}
-
-	if len(c.CacheDir) == 0 {
-		c.CacheDir = filepath.Join(c.RootDir, "cache")
-	}
-
-	if len(c.LogDir) == 0 {
-		c.LogDir = filepath.Join(c.RootDir, logging.DefaultLogDirName)
-	}
-
-	return c.SetupNydusBinaryPaths()
-}
-
-func (c *Config) SetupNydusBinaryPaths() error {
-	// when using DaemonMode = none, nydusd and nydus-image binaries are not required
-	if c.DaemonMode == command.DaemonModeNone {
-		return nil
-	}
-
-	// resolve nydusd path
-	if c.NydusdBinaryPath == "" {
-		path, err := exec.LookPath(nydusdBinaryName)
-		if err != nil {
-			return err
-		}
-		c.NydusdBinaryPath = path
-	}
-
-	// resolve nydus-image path
-	if c.NydusImageBinaryPath == "" {
-		path, err := exec.LookPath(nydusImageBinaryName)
-		if err != nil {
-			return err
-		}
-		c.NydusImageBinaryPath = path
-	}
-
-	return nil
 }

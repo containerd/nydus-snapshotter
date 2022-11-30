@@ -17,13 +17,16 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/internal/config"
+	"github.com/containerd/nydus-snapshotter/internal/containerd-nydus-grpc/command"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -62,14 +65,19 @@ type Daemon struct {
 	// It is possible to be empty after the daemon object is created.
 	Instances rafsSet
 
-	Once *sync.Once
 	// client will be rebuilt on Reconnect, skip marshal/unmarshal
 	client NydusdClient
+	// Protect nydusd http client
+	cmu sync.Mutex
 	// Nil means this daemon object has no supervisor
 	Supervisor *supervisor.Supervisor
-	Config     config.DaemonConfig
+	Config     config.DaemonConfigInterface
+
+	stateGetterGroup singleflight.Group
 
 	ref int32
+	// Cache the nydusd daemon state to avoid frequently querying nydusd by API.
+	State types.DaemonState
 }
 
 func (d *Daemon) Lock() {
@@ -94,6 +102,10 @@ func (d *Daemon) IncRef() {
 
 func (d *Daemon) DecRef() int32 {
 	return atomic.AddInt32(&d.ref, -1)
+}
+
+func (d *Daemon) GetRef() int32 {
+	return atomic.LoadInt32(&d.ref)
 }
 
 func (d *Daemon) HostMountpoint() (mnt string) {
@@ -129,25 +141,30 @@ func (d *Daemon) AddInstance(r *Rafs) {
 	r.DaemonID = d.ID()
 }
 
+func (d *Daemon) RemoveInstance(snapshotID string) {
+	d.Instances.Remove(snapshotID)
+	d.DecRef()
+}
+
 // Nydusd daemon current working state by requesting to nydusd:
 // 1. INIT
 // 2. READY: All needed resources are ready.
 // 3. RUNNING
-func (d *Daemon) State() (types.DaemonState, error) {
-	if err := d.ensureClient("getting daemon state"); err != nil {
-		return types.DaemonStateUnknown, err
+func (d *Daemon) GetState() (types.DaemonState, error) {
+	c, err := d.GetClient()
+	if err != nil {
+		return types.DaemonStateUnknown, errors.Wrapf(err, "get daemon state")
 	}
-
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	defer d.Unlock()
-
-	info, err := d.client.GetDaemonInfo()
+	info, err := c.GetDaemonInfo()
 	if err != nil {
 		return types.DaemonStateUnknown, err
 	}
 
-	return info.DaemonState(), nil
+	st := info.DaemonState()
+
+	d.State = st
+
+	return st, nil
 }
 
 // Waits for some time until daemon reaches the expected state.
@@ -156,31 +173,46 @@ func (d *Daemon) State() (types.DaemonState, error) {
 //  2. READY
 //  3. RUNNING
 func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
-	return retry.Do(func() error {
-		state, err := d.State()
-		if err != nil {
-			return errors.Wrapf(err, "wait until daemon is %s", expected)
-		}
+	stateGetter := func() (v any, err error) {
+		err = retry.Do(func() error {
+			if expected == d.State {
+				return nil
+			}
 
-		if state != expected {
-			return errors.Errorf("daemon %s is not %s yet, current state %s",
-				d.ID(), expected, state)
-		}
+			state, err := d.GetState()
+			if err != nil {
+				return errors.Wrapf(err, "wait until daemon is %s", expected)
+			}
 
-		return nil
-	},
-		retry.Attempts(20), // totally wait for 2 seconds, should be enough
-		retry.LastErrorOnly(true),
-		retry.Delay(100*time.Millisecond),
-	)
+			if state != expected {
+				return errors.Errorf("daemon %s is not %s yet, current state %s",
+					d.ID(), expected, state)
+			}
+			collector.CollectDaemonEvent(d.ID(), string(expected))
+
+			return nil
+		},
+			retry.Attempts(20), // totally wait for 2 seconds, should be enough
+			retry.LastErrorOnly(true),
+			retry.Delay(100*time.Millisecond),
+		)
+
+		return
+	}
+
+	_, err, shared := d.stateGetterGroup.Do(d.ID(), stateGetter)
+	log.L.Debugf("Get daemon %s with shared result: %v ", d.ID(), shared)
+
+	return err
 }
 
 func (d *Daemon) SharedMount(rafs *Rafs) error {
-	if err := d.ensureClient("share mount"); err != nil {
-		return err
+	client, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "mount instance %s", rafs.SnapshotID)
 	}
 
-	if d.States.FsDriver == config.FsDriverFscache {
+	if d.States.FsDriver == command.FsDriverFscache {
 		if err := d.sharedErofsMount(rafs); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
@@ -203,13 +235,9 @@ func (d *Daemon) SharedMount(rafs *Rafs) error {
 		return errors.Wrap(err, "dump instance configuration")
 	}
 
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	if err := d.client.Mount(rafs.RelaMountpoint(), bootstrap, cfg); err != nil {
-		d.Unlock()
+	if err := client.Mount(rafs.RelaMountpoint(), bootstrap, cfg); err != nil {
 		return errors.Wrapf(err, "mount rafs instance")
 	}
-	d.Unlock()
 
 	su := d.Supervisor
 	if su != nil {
@@ -231,37 +259,31 @@ func (d *Daemon) SharedMount(rafs *Rafs) error {
 }
 
 func (d *Daemon) SharedUmount(rafs *Rafs) error {
-	if err := d.ensureClient("share umount"); err != nil {
-		return err
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "umount instance %s", rafs.SnapshotID)
 	}
 
-	if d.States.FsDriver == config.FsDriverFscache {
+	if d.States.FsDriver == command.FsDriverFscache {
 		if err := d.sharedErofsUmount(rafs); err != nil {
 			return errors.Wrapf(err, "failed to erofs mount")
 		}
 		return nil
 	}
 
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	defer d.Unlock()
-
-	return d.client.Umount(rafs.RelaMountpoint())
+	return c.Umount(rafs.RelaMountpoint())
 }
 
 func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
-	if err := d.ensureClient("erofs mount"); err != nil {
-		return err
+	client, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "bind blob %s", d.ID())
 	}
 
 	// TODO: Why fs cache needing this work dir?
 	if err := os.MkdirAll(rafs.FscacheWorkDir(), 0755); err != nil {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", rafs.FscacheWorkDir())
 	}
-
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	defer d.Unlock()
 
 	c, err := config.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
 	if err != nil {
@@ -274,7 +296,7 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 		return err
 	}
 
-	if err := d.client.BindBlob(cfgStr); err != nil {
+	if err := client.BindBlob(cfgStr); err != nil {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
@@ -307,17 +329,13 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 }
 
 func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
-	if err := d.ensureClient("erofs umount"); err != nil {
-		return err
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "unbind blob %s", d.ID())
 	}
-
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	defer d.Unlock()
-
 	domainID := rafs.Annotations[AnnoFsCacheDomainID]
 
-	if err := d.client.UnbindBlob(domainID); err != nil {
+	if err := c.UnbindBlob(domainID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
@@ -330,14 +348,12 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 }
 
 func (d *Daemon) SendStates() error {
-	if err := d.ensureClient("send states"); err != nil {
-		return err
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "send states %s", d.ID())
 	}
 
-	d.Lock()
-	defer d.Unlock()
-
-	if err := d.client.SendFd(); err != nil {
+	if err := c.SendFd(); err != nil {
 		return errors.Wrap(err, "request to send states")
 	}
 
@@ -345,14 +361,12 @@ func (d *Daemon) SendStates() error {
 }
 
 func (d *Daemon) TakeOver() error {
-	if err := d.ensureClient("takeover"); err != nil {
-		return err
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "takeover daemon %s", d.ID())
 	}
 
-	d.Lock()
-	defer d.Unlock()
-
-	if err := d.client.TakeOver(); err != nil {
+	if err := c.TakeOver(); err != nil {
 		return errors.Wrap(err, "request to take over")
 	}
 
@@ -360,79 +374,81 @@ func (d *Daemon) TakeOver() error {
 }
 
 func (d *Daemon) Start() error {
-	if err := d.ensureClient("start service"); err != nil {
-		return err
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "start service")
 	}
 
-	d.Lock()
-	defer d.Unlock()
-
-	if err := d.client.Start(); err != nil {
+	if err := c.Start(); err != nil {
 		return errors.Wrap(err, "request to start service")
 	}
 
 	return nil
 }
 
-func (d *Daemon) GetFsMetrics(sid string) (*types.FsMetrics, error) {
-	if err := d.ensureClient("get metrics"); err != nil {
-		return nil, err
-	}
-
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	defer d.Unlock()
-
-	return d.client.GetFsMetrics(sid)
-}
-
-func (d *Daemon) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {
-	if err := d.ensureClient("get cache metrics"); err != nil {
-		return nil, err
-	}
-
-	// Protect daemon client when it's being reset.
-	d.Lock()
-	defer d.Unlock()
-
-	return d.client.GetCacheMetrics(sid)
-}
-
-func (d *Daemon) initClient() error {
-	client, err := NewNydusClient(d.GetAPISock())
+func (d *Daemon) Exit() error {
+	c, err := d.GetClient()
 	if err != nil {
-		return errors.Wrap(err, "failed to create new nydus client")
+		return errors.Wrapf(err, "start service")
 	}
 
-	d.client = client
+	if err := c.Exit(); err != nil {
+		return errors.Wrap(err, "request to exit service")
+	}
+
 	return nil
 }
 
-func (d *Daemon) ResetClient() {
-	d.Lock()
-	d.client = nil
-	d.Once = &sync.Once{}
-	d.Unlock()
-}
-
-func (d *Daemon) ensureClient(situation string) (err error) {
-	d.Lock()
-	defer d.Unlock()
-
-	d.Once.Do(func() {
-		if d.client == nil {
-			if ierr := d.initClient(); ierr != nil {
-				err = errors.Wrapf(ierr, "failed to %s", situation)
-				d.Once = &sync.Once{}
-			}
-		}
-	})
-
-	if err == nil && d.client == nil {
-		return errors.Errorf("failed to %s, client not initialized", situation)
+func (d *Daemon) GetFsMetrics(sid string) (*types.FsMetrics, error) {
+	c, err := d.GetClient()
+	if err != nil {
+		return nil, errors.Wrapf(err, "get fs metrics")
 	}
 
-	return
+	return c.GetFsMetrics(sid)
+}
+
+func (d *Daemon) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {
+	c, err := d.GetClient()
+	if err != nil {
+		return nil, errors.Wrapf(err, "get cache metrics")
+	}
+	return c.GetCacheMetrics(sid)
+}
+
+func (d *Daemon) GetClient() (NydusdClient, error) {
+	d.cmu.Lock()
+	defer d.cmu.Unlock()
+
+	if err := d.ensureClientUnlocked(); err != nil {
+		return nil, err
+	}
+
+	return d.client, nil
+}
+
+func (d *Daemon) ResetClient() {
+	d.cmu.Lock()
+	d.client = nil
+	d.cmu.Unlock()
+}
+
+// The client should be locked outside
+func (d *Daemon) ensureClientUnlocked() error {
+	if d.client == nil {
+		sock := d.GetAPISock()
+		// The socket file may be residual from a dead nydusd
+		err := WaitUntilSocketExisted(sock)
+		if err != nil {
+			return errors.Wrapf(errdefs.ErrNotFound, "daemon socket %s", sock)
+		}
+		client, err := NewNydusClient(sock)
+		if err != nil {
+			return errors.Wrapf(err, "create daemon %s client", d.ID())
+		}
+		d.client = client
+	}
+	return nil
 }
 
 func (d *Daemon) Terminate() error {
@@ -470,15 +486,17 @@ func (d *Daemon) Wait() error {
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
 		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
 			log.L.Errorf("failed to process wait, %v", err)
-
 		} else {
-			mount.WaitUntilUnmounted(d.HostMountpoint())
+			if err := mount.WaitUntilUnmounted(d.HostMountpoint()); err != nil {
+				log.L.WithError(err).Errorf("umount %s", d.HostMountpoint())
+			}
 		}
 	}
 
 	return nil
 }
 
+// When daemon dies, clean up its vestige before start a new one.
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
 	if d.States.FsDriver == config.FsDriverFscache {
@@ -501,8 +519,9 @@ func (d *Daemon) ClearVestige() {
 		log.L.Warnf("Can't delete residual unix socket %s, %v", d.GetAPISock(), err)
 	}
 
-	// TODO: Make me more clear and simple!
-	// Let't transport builder wait for nydusd startup again until it sees the created socket file.
+	// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
+	// But the socket file may be residual and will be cleared before starting a new nydusd.
+	// So clear the client by assigning nil
 	d.ResetClient()
 }
 
@@ -510,7 +529,6 @@ func (d *Daemon) ClearVestige() {
 func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{}
 	d.States.ID = newID()
-	d.Once = &sync.Once{}
 	d.Instances = rafsSet{instances: make(map[string]*Rafs)}
 
 	for _, o := range opt {

@@ -32,7 +32,7 @@ func main() {
 		Action: func(c *cli.Context) error {
 			if flags.Args.PrintVersion {
 				fmt.Println("Version:    ", version.Version)
-				fmt.Println("Reversion:  ", version.Reversion)
+				fmt.Println("Revision:   ", version.Revision)
 				fmt.Println("Go version: ", version.GoVersion)
 				fmt.Println("Build time: ", version.BuildTimestamp)
 				return nil
@@ -67,7 +67,9 @@ func main() {
 				return fmt.Errorf("failed to set up logger: %w", err)
 			}
 
-			log.L.Infof("Start nydus-snapshotter. PID %d Version %s", os.Getpid(), version.Version)
+			log.L.Infof("Start nydus-snapshotter. PID %d Version %s FsDriver %s DaemonMode %s",
+				os.Getpid(), version.Version, cfg.FsDriver, cfg.DaemonMode)
+
 			return snapshotter.Start(ctx, cfg)
 		},
 	}

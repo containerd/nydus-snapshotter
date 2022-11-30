@@ -23,9 +23,9 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 )
 
 type DaemonRecoverPolicy int
@@ -164,8 +164,6 @@ func (s *DaemonStates) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daem
 
 	if daemon != nil && op != nil {
 		op(daemon)
-	} else if daemon == nil {
-		log.L.Warnf("daemon daemon_id=%s is not found", id)
 	}
 
 	return daemon
@@ -195,7 +193,7 @@ func (s *DaemonStates) Size() int {
 // to avoid frequently operating DB
 type Manager struct {
 	store            Store
-	nydusdBinaryPath string
+	NydusdBinaryPath string
 	daemonMode       command.DaemonMode
 	// Where nydusd stores cache files for fscache driver
 	cacheDir string
@@ -206,8 +204,6 @@ type Manager struct {
 	// supposed to refilled when nydus-snapshotter restarting.
 	daemonStates *DaemonStates
 
-	mounter mount.Interface
-
 	monitor LivenessMonitor
 	// TODO: Close me
 	LivenessNotifier chan deathEvent
@@ -215,7 +211,10 @@ type Manager struct {
 	SupervisorSet    *supervisor.SupervisorsSet
 
 	// A basic configuration template loaded from the file
-	DaemonConfig config.DaemonConfig
+	DaemonConfig config.DaemonConfigInterface
+
+	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
+	FsDriver string
 
 	// Protects updating states cache and DB
 	mu sync.Mutex
@@ -229,7 +228,9 @@ type Opt struct {
 	RecoverPolicy    DaemonRecoverPolicy
 	// Nydus-snapshotter work directory
 	RootDir      string
-	DaemonConfig config.DaemonConfig
+	DaemonConfig config.DaemonConfigInterface
+	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
+	FsDriver string
 }
 
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
@@ -290,6 +291,11 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	// Mount rafs instance by http API
 	instances := d.Instances.List()
 	for _, r := range instances {
+		// Rafs is already mounted during starting nydusd
+		if d.HostMountpoint() == r.GetMountpoint() {
+			break
+		}
+
 		if err := d.SharedMount(r); err != nil {
 			log.L.Warnf("Failed to mount rafs instance, %v", err)
 		}
@@ -300,20 +306,18 @@ func (m *Manager) handleDaemonDeathEvent() {
 	for ev := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
 
+		d := m.GetByDaemonID(ev.daemonID)
+		if d == nil {
+			log.L.Warnf("Daemon %s was not found", ev.daemonID)
+			return
+		}
+
+		d.State = types.DaemonStateUnknown
 		if m.RecoverPolicy == RecoverPolicyRestart {
-			d := m.GetByDaemonID(ev.daemonID)
-			if d == nil {
-				log.L.Warnf("Daemon %s was not found", ev.daemonID)
-				return
-			}
+			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
 		} else if m.RecoverPolicy == RecoverPolicyFailover {
-			log.L.Warnf("Do failover for daemon %s", ev.daemonID)
-			d := m.GetByDaemonID(ev.daemonID)
-			if d == nil {
-				log.L.Warnf("Daemon %s was not found", ev.daemonID)
-				return
-			}
+			log.L.Infof("Do failover for daemon %s", ev.daemonID)
 			go m.doDaemonFailover(d)
 		}
 	}
@@ -340,8 +344,7 @@ func NewManager(opt Opt) (*Manager, error) {
 
 	mgr := &Manager{
 		store:            s,
-		mounter:          &mount.Mounter{},
-		nydusdBinaryPath: opt.NydusdBinaryPath,
+		NydusdBinaryPath: opt.NydusdBinaryPath,
 		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
 		daemonStates:     newDaemonStates(),
@@ -350,6 +353,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		RecoverPolicy:    opt.RecoverPolicy,
 		SupervisorSet:    supervisorSet,
 		DaemonConfig:     opt.DaemonConfig,
+		FsDriver:         opt.FsDriver,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
@@ -387,6 +391,31 @@ func (m *Manager) NewInstance(r *daemon.Rafs) error {
 	r.Seq = seq
 
 	return m.store.AddInstance(r)
+}
+
+func (m *Manager) Lock() {
+	m.mu.Lock()
+}
+
+func (m *Manager) Unlock() {
+	m.mu.Unlock()
+}
+
+func (m *Manager) SubscribeDaemonEvent(d *daemon.Daemon) error {
+	if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+		log.L.Errorf("Nydusd %s probably not started", d.ID())
+		return errors.Wrapf(err, "subscribe daemon %s", d.ID())
+	}
+	return nil
+}
+
+func (m *Manager) UnsubscribeDaemonEvent(d *daemon.Daemon) error {
+	// Starting a new nydusd will re-subscribe
+	if err := m.monitor.Unsubscribe(d.ID()); err != nil {
+		log.L.Warnf("fail to unsubscribe daemon %s, %v", d.ID(), err)
+		return errors.Wrapf(err, "unsubscribe daemon %s", d.ID())
+	}
+	return nil
 }
 
 func (m *Manager) RemoveInstance(snapshotID string) error {
@@ -450,6 +479,8 @@ func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 // FIXME: should handle the inconsistent status caused by any step
 // in the function that returns an error.
 func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
+	log.L.Infof("Destroy nydusd daemon %s. Host mountpoint %s", d.ID(), d.HostMountpoint())
+
 	// Delete daemon from DB in the first place in case any of below steps fails
 	// ending up with daemon is residual in DB.
 	if err := m.DeleteDaemon(d); err != nil {
@@ -472,8 +503,6 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		}
 	}
 
-	log.L.Infof("Destroy nydusd daemon %s. Host mountpoint %s", d.ID(), d.HostMountpoint())
-
 	// Graceful nydusd termination will umount itself.
 	if err := d.Terminate(); err != nil {
 		log.L.Warnf("Fails to terminate daemon, %v", err)
@@ -482,6 +511,8 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	if err := d.Wait(); err != nil {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
+
+	collector.CollectDaemonEvent(d.ID(), string(types.DaemonStateDestroyed))
 
 	return nil
 }
@@ -503,9 +534,11 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		var d, _ = daemon.NewDaemon(opt...)
 		d.States = *s
 
-		if m.SupervisorSet != nil {
-			su := m.SupervisorSet.NewSupervisor(d.ID())
-			d.Supervisor = su
+		// It can't change snapshotter's fs driver to a different one from a daemon that ever created in the past.
+		if d.States.FsDriver != m.FsDriver {
+			return errors.Wrapf(errdefs.ErrInvalidArgument,
+				"can't recover from the last restart, the specified fs-driver=%s mismatches with the last fs-driver=%s",
+				d.States.FsDriver, m.FsDriver)
 		}
 
 		m.daemonStates.RecoverDaemonState(d)
@@ -518,9 +551,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 			d.Supervisor = su
 		}
 
-		d.ResetClient()
-
-		if d.States.FsDriver == config.FsDriverFusedev {
+		if d.States.FsDriver == command.FsDriverFusedev {
 			cfg, err := config.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
 			if err != nil {
 				log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
@@ -530,14 +561,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 			d.Config = cfg
 		}
 
-		defer func() {
-			// `CheckStatus->ensureClient` only checks if socket file is existed when building http client.
-			// But the socket file may be residual and will be cleared before starting a new nydusd.
-			// So clear the client by assigning nil
-			d.ResetClient()
-		}()
-
-		state, err := d.State()
+		state, err := d.GetState()
 		if err != nil {
 			log.L.Warnf("Daemon %s died somehow. Clean up its vestige!, %s", d.ID(), err)
 			recoveringDaemons[d.ID()] = d
@@ -551,7 +575,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		}
 
 		// FIXME: Should put the a daemon back file system shared damon field.
-
 		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID())
 		liveDaemons[d.ID()] = d
 

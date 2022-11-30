@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +31,8 @@ func Test_daemon(t *testing.T) {
 	require.Nil(t, err)
 	err = db.SaveDaemon(ctx, &d2)
 	require.Nil(t, err)
-	db.SaveDaemon(ctx, &d3)
+	err = db.SaveDaemon(ctx, &d3)
+	assert.Nil(t, err)
 	require.Nil(t, err)
 	// duplicate daemon id should fail
 	err = db.SaveDaemon(ctx, &d1)
@@ -79,7 +81,8 @@ func TestLegacyRecordsMultipleDaemonModes(t *testing.T) {
 	_, err := io.Copy(dst, src)
 	require.Nil(t, err)
 	dst.Close()
-	NewDatabase("testdata")
+	_, err = NewDatabase("testdata")
+	assert.Nil(t, err)
 
 }
 
@@ -97,5 +100,6 @@ func TestLegacyRecordsSharedDaemonModes(t *testing.T) {
 	_, err := io.Copy(dst, src)
 	require.Nil(t, err)
 	dst.Close()
-	NewDatabase("testdata")
+	_, err = NewDatabase("testdata")
+	assert.Nil(t, err)
 }

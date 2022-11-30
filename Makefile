@@ -26,7 +26,7 @@ else
 FS_DRIVER = fusedev
 endif
 
-LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Reversion=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
+LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
 
 .PHONY: build
 build:
@@ -71,7 +71,7 @@ cover:
 
 smoke:
 	$(SUDO) NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ${GO_EXECUTABLE_PATH} test -race -v ./tests
-	$(SUDO) NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ${GO_EXECUTABLE_PATH} test -race -v ./tests -args -fs-version=6
+	$(SUDO) NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ${GO_EXECUTABLE_PATH} test -race -v ./tests
 
 .PHONY: integration
 integration:

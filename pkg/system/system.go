@@ -8,18 +8,25 @@ package system
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -69,7 +76,6 @@ func newErrorMessage(message string) errorMessage {
 }
 
 func (m *errorMessage) encode() string {
-	// This serialization can't fail
 	msg, err := json.Marshal(&m)
 	if err != nil {
 		log.L.Errorf("Failed to encode error message, %s", err)
@@ -96,12 +102,19 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 
 type daemonInfo struct {
 	ID             string `json:"id"`
-	SnapshotID     string `json:"snapshot_id"`
 	Pid            int    `json:"pid"`
-	ImageID        string `json:"image_id"`
 	APISock        string `json:"api_socket"`
 	SupervisorPath string
-	SnapshotDir    string
+	Reference      int    `json:"reference"`
+	HostMountpoint string `json:"mountpoint"`
+
+	Instances map[string]rafsInstanceInfo `json:"instances"`
+}
+
+type rafsInstanceInfo struct {
+	SnapshotID  string `json:"snapshot_id"`
+	SnapshotDir string `json:"snapshot_dir"`
+	Mountpoint  string `json:"mountpoint"`
 }
 
 func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
@@ -129,14 +142,18 @@ func NewSystemController(manager *manager.Manager, sock string) (*Controller, er
 
 func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
-	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPost)
+	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPut)
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
 
 	// Special registration for Prometheus metrics export
-	handler := promhttp.HandlerFor(exporter.Registry, promhttp.HandlerOpts{
+	handler := promhttp.HandlerFor(registry.Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.HTTPErrorOnError,
 	})
-	sc.router.Handle(endpointPromMetrics, handler)
+
+	sc.router.Handle(endpointPromMetrics, http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
+		handler.ServeHTTP(rsp, req)
+		exporter.FileExport()
+	}))
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
@@ -148,8 +165,21 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 
 		for _, d := range daemons {
 
-			i := daemonInfo{ID: d.ID(),
-				Pid: d.Pid()}
+			instances := make(map[string]rafsInstanceInfo)
+			for _, i := range d.Instances.List() {
+				instances[i.SnapshotID] = rafsInstanceInfo{
+					SnapshotID:  i.SnapshotID,
+					SnapshotDir: i.SnapshotDir,
+					Mountpoint:  i.GetMountpoint()}
+			}
+
+			i := daemonInfo{
+				ID:             d.ID(),
+				Pid:            d.Pid(),
+				HostMountpoint: d.HostMountpoint(),
+				Reference:      int(d.GetRef()),
+				Instances:      instances,
+			}
 
 			info = append(info, i)
 		}
@@ -166,7 +196,7 @@ func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// POST /api/v1/nydusd/upgrade
+// PUT /api/v1/nydusd/upgrade
 // body: {"nydusd_path": "/path/to/new/nydusd", "version": "v2.2.1", "policy": "rolling"}
 // Possible policy: rolling, immediate
 // Live upgrade procedure:
@@ -186,31 +216,48 @@ func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Req
 // 6. Delete the old nydusd executive
 func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		sc.manager.Lock()
+		defer sc.manager.Unlock()
+
 		daemons := sc.manager.ListDaemons()
 
 		var c upgradeRequest
+		var err error
+		var statusCode int
 
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		defer func() {
+			if err != nil {
+				m := newErrorMessage(err.Error())
+				http.Error(w, m.encode(), statusCode)
+			}
+		}()
+
+		err = json.NewDecoder(r.Body).Decode(&c)
+		if err != nil {
 			log.L.Errorf("request %v, decode error %s", r, err)
-			m := newErrorMessage(err.Error())
-			http.Error(w, m.encode(), http.StatusBadRequest)
+			statusCode = http.StatusBadRequest
 			return
 		}
 
 		// TODO: Keep the nydusd executive path in Daemon state and persis it since nydusd
 		// can run on both versions.
 		// Create a dedicated directory storing nydusd of various versions?
-
-		// TODO: Let struct `Daemon` have a method to start a process rather than forking
-		// process in daemons manager
 		// TODO: daemon client has a method to query daemon version and information.
 		for _, d := range daemons {
-			if err := upgradeNydusDaemon(d, c); err != nil {
+			err = sc.upgradeNydusDaemon(d, c)
+			if err != nil {
 				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
-				m := newErrorMessage(err.Error())
-				http.Error(w, m.encode(), http.StatusInternalServerError)
+				statusCode = http.StatusInternalServerError
 				return
 			}
+		}
+
+		err = os.Rename(c.NydusdPath, sc.manager.NydusdBinaryPath)
+		if err != nil {
+			log.L.Errorf("Rename nydusd binary from %s to  %s failed, %v",
+				c.NydusdPath, sc.manager.NydusdBinaryPath, err)
+			statusCode = http.StatusInternalServerError
+			return
 		}
 	}
 }
@@ -230,11 +277,94 @@ func (sc *Controller) Run() error {
 	return nil
 }
 
-// TODO: Implement me!
-// New API socket path
-// Supervisor path does not need to be changed
-// Provide minimal parameters since most of it can be recovered by nydusd states
-func upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
+// Provide minimal parameters since most of it can be recovered by nydusd states.
+// Create a new daemon in Manger to take over the service.
+func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
-	return errdefs.ErrNotImplemented
+
+	manager := sc.manager
+
+	var new daemon.Daemon
+	new.States = d.States
+	new.CloneInstances(d)
+
+	s := path.Base(d.GetAPISock())
+	next, err := buildNextAPISocket(s)
+	if err != nil {
+		return err
+	}
+
+	upgradingSocket := path.Join(path.Dir(d.GetAPISock()), next)
+	new.States.APISocket = upgradingSocket
+
+	cmd, err := manager.BuildDaemonCommand(&new, c.NydusdPath, true)
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return errors.Wrap(err, "start process")
+	}
+
+	if err := new.WaitUntilState(types.DaemonStateInit); err != nil {
+		return errors.Wrap(err, "wait until init state")
+	}
+
+	if err := new.TakeOver(); err != nil {
+		return errors.Wrap(err, "take over resources")
+	}
+
+	if err := new.WaitUntilState(types.DaemonStateReady); err != nil {
+		return errors.Wrap(err, "wait unit ready state")
+	}
+
+	if err := manager.UnsubscribeDaemonEvent(d); err != nil {
+		return errors.Wrap(err, "unsubscribe daemon event")
+	}
+
+	// Let the older daemon exit without umount
+	if err := d.Exit(); err != nil {
+		return errors.Wrap(err, "old daemon exits")
+	}
+
+	if err := new.Start(); err != nil {
+		return errors.Wrap(err, "start file system service")
+	}
+
+	if err := manager.SubscribeDaemonEvent(&new); err != nil {
+		return &json.InvalidUnmarshalError{}
+	}
+
+	log.L.Infof("Started service of upgraded daemon on socket %s", new.GetAPISock())
+
+	if err := manager.UpdateDaemon(&new); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Name next api socket path based on currently api socket path listened on.
+// The principle is to add a suffix number to api[0-9]+.sock
+func buildNextAPISocket(cur string) (string, error) {
+	n := strings.Split(cur, ".")
+	if len(n) != 2 {
+		return "", errdefs.ErrInvalidArgument
+	}
+	r := regexp.MustCompile(`[0-9]+`)
+	m := r.Find([]byte(n[0]))
+	var num int
+	if m == nil {
+		num = 1
+	} else {
+		var err error
+		num, err = strconv.Atoi(string(m))
+		if err != nil {
+			return "", err
+		}
+		num++
+	}
+
+	nextSocket := fmt.Sprintf("api%d.sock", num)
+	return nextSocket, nil
 }

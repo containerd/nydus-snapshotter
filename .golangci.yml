@@ -43,7 +43,7 @@ linters:
     # - goerr113
     - exportloopref
     # - gosec
-    # - govet
+    - govet
     - gocritic
     # - prealloc
     - tenv

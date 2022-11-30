@@ -16,6 +16,7 @@ import (
 
 var (
 	defaultCleanUpPeriod = 10 * time.Minute
+	DefaultTTL           = 3 * time.Minute
 )
 
 type LabelWithValue struct {

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package exporter
+package fs
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func MakeFopBuckets() []uint64 {
 
 type GetCountersFn func(*types.FsMetrics) []uint64
 
-type FsMetricHistogram struct {
+type MetricHistogram struct {
 	Desc        *prometheus.Desc
 	Buckets     []uint64
 	GetCounters GetCountersFn
@@ -59,7 +59,7 @@ type FsMetricHistogram struct {
 	constHist prometheus.Metric
 }
 
-func (h *FsMetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string) (prometheus.Metric, error) {
+func (h *MetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string) (prometheus.Metric, error) {
 	var count, sum uint64
 	counters := h.GetCounters(m)
 	hmap := make(map[float64]uint64)
@@ -82,18 +82,18 @@ func (h *FsMetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string
 	), nil
 }
 
-func (h *FsMetricHistogram) Save(m prometheus.Metric) {
+func (h *MetricHistogram) Save(m prometheus.Metric) {
 	h.constHist = m
 }
 
 // Implement prometheus.Collector interface
-func (h *FsMetricHistogram) Describe(ch chan<- *prometheus.Desc) {
+func (h *MetricHistogram) Describe(ch chan<- *prometheus.Desc) {
 	if h.Desc != nil {
 		ch <- h.Desc
 	}
 }
 
-func (h *FsMetricHistogram) Collect(ch chan<- prometheus.Metric) {
+func (h *MetricHistogram) Collect(ch chan<- prometheus.Metric) {
 	if h.constHist != nil {
 		ch <- h.constHist
 	}

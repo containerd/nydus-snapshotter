@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021. Alibaba Cloud. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,21 +14,27 @@ import (
 	"os"
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-
-	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 )
 
-type Opt func(*Exporter) error
+type Opt func(*FileExporter) error
 
-type Exporter struct {
+type FileExporter struct {
 	outputFile string
 }
 
+var GlobalFileExporter *FileExporter
+
+func init() {
+	var exp FileExporter
+	GlobalFileExporter = &exp
+}
+
 func WithOutputFile(metricsFile string) Opt {
-	return func(e *Exporter) error {
+	return func(e *FileExporter) error {
 		if metricsFile == "" {
 			return errors.New("metrics file path is empty")
 		}
@@ -40,39 +47,20 @@ func WithOutputFile(metricsFile string) Opt {
 	}
 }
 
-func NewExporter(opts ...Opt) (*Exporter, error) {
-	var exp Exporter
-
+func NewFileExporter(opts ...Opt) error {
 	for _, o := range opts {
-		if err := o(&exp); err != nil {
-			return nil, err
+		if err := o(GlobalFileExporter); err != nil {
+			return err
 		}
 	}
 
-	return &exp, nil
+	return nil
 }
 
-func (e *Exporter) ExportFsMetrics(m *types.FsMetrics, imageRef string) error {
-	ReadCount.WithLabelValues(imageRef).Set(float64(m.DataRead))
-	OpenFdCount.WithLabelValues(imageRef).Set(float64(m.NrOpens))
-	OpenFdMaxCount.WithLabelValues(imageRef).Set(float64(m.NrMaxOpens))
-	LastFopTimestamp.WithLabelValues(imageRef).Set(float64(m.LastFopTp))
-
-	for _, h := range FsMetricHists {
-		o, err := h.ToConstHistogram(m, imageRef)
-		if err != nil {
-			return errors.Wrapf(err, "failed to new const histogram for %s", h.Desc.String())
-		}
-		h.Save(o)
-	}
-
-	return e.output()
-}
-
-func (e *Exporter) output() error {
-	ms, err := Registry.Gather()
+func (e *FileExporter) Export() error {
+	ms, err := registry.Registry.Gather()
 	if err != nil {
-		return errors.Wrap(err, "failed to gather all prometheus collectors")
+		return errors.Wrap(err, "failed to gather all prometheus exporters")
 	}
 	for _, m := range ms {
 		if err := e.exportText(m); err != nil {
@@ -83,7 +71,7 @@ func (e *Exporter) output() error {
 	return nil
 }
 
-func (e *Exporter) exportText(m *dto.MetricFamily) error {
+func (e *FileExporter) exportText(m *dto.MetricFamily) error {
 	var b bytes.Buffer
 
 	enc := expfmt.NewEncoder(&b, expfmt.FmtText)
@@ -102,7 +90,7 @@ func (e *Exporter) exportText(m *dto.MetricFamily) error {
 	return e.writeToFile(string(json))
 }
 
-func (e *Exporter) writeToFile(data string) error {
+func (e *FileExporter) writeToFile(data string) error {
 	f, err := os.OpenFile(e.outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return errors.Wrapf(err, "failed to open metrics file on %s", e.outputFile)

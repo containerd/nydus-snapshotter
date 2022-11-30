@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	DefaultLogDirName  = "logs"
 	defaultLogFileName = "nydus-snapshotter.log"
 )
 

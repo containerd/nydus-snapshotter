@@ -6,18 +6,42 @@
 
 package command
 
-import "github.com/sirupsen/logrus"
+import (
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
 
 const (
 	DefaultDaemonMode DaemonMode = DaemonModeMultiple
-	FsDriverFusedev   string     = "fusedev"
+)
+
+const (
+	DefaultGCPeriod = 24 * time.Hour
+)
+
+const (
+	DefaultLogLevel   = logrus.InfoLevel
+	DefaultLogDirName = "logs"
+)
+
+const (
+	FsDriverFusedev = "fusedev"
+	FsDriverFscache = "fscache"
+)
+
+const (
+	DefaultRootDir    = "/var/lib/containerd-nydus"
+	DefaultOldRootDir = "/var/lib/containerd-nydus-grpc"
+)
+
+const (
+	DefaultConfigPath       = "/etc/nydus-snapshotter/config.toml"
+	DefaultDaemonConfigPath = "/etc/nydus/config.json"
 )
 
 const (
 	defaultAddress   = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultLogLevel  = logrus.InfoLevel
-	defaultRootDir   = "/var/lib/containerd-nydus"
 	defaultAPISocket = "/var/lib/containerd-nydus/api.sock"
-	defaultGCPeriod  = "24h"
 	defaultPublicKey = "/signing/nydus-image-signing-public.key"
 )

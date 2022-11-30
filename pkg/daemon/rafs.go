@@ -196,6 +196,19 @@ func (d *Daemon) UmountAllInstances() error {
 	return nil
 }
 
+func (d *Daemon) CloneInstances(src *Daemon) error {
+	src.Instances.Lock()
+	defer src.Instances.Unlock()
+
+	instances := src.Instances.ListUnlocked()
+
+	d.Lock()
+	defer d.Unlock()
+	d.Instances.instances = instances
+
+	return nil
+}
+
 func (d *Daemon) UmountInstance(r *Rafs) error {
 	if r.Mountpoint != d.States.Mountpoint {
 		if err := d.SharedUmount(r); err != nil {

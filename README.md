@@ -13,6 +13,7 @@ For more details about how to build Nydus container image, please refer to [nydu
 ## Architecture Based on FUSE
 
 ![fuse arch](./docs/diagram/nydus_fuse_arch.svg)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_shield)
 
 ## Architecture Based on Fscache/Erofs
 
@@ -167,3 +168,7 @@ Nydus aims to form a **vendor-neutral opensource** image distribution solution t
 Questions, bug reports, technical discussion, feature requests and contribution are always welcomed!
 
 Join our Slack [workspace](https://join.slack.com/t/nydusimageservice/shared_invite/zt-pz4qvl4y-WIh4itPNILGhPS8JqdFm_w)
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_large)

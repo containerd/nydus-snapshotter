@@ -87,7 +87,8 @@ func TestLivenessMonitor(t *testing.T) {
 	event := <-notifier
 	assert.Equal(t, event.daemonID, "daemon_1")
 
-	monitor.Unsubscribe("daemon_2")
+	err := monitor.Unsubscribe("daemon_2")
+	assert.Nil(t, err)
 	cancel2()
 
 	// Should not block here.

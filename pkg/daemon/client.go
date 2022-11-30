@@ -38,6 +38,7 @@ const (
 	endpointSendFd = "/api/v1/daemon/fuse/sendfd"
 	// Command nydusd to begin file system service.
 	endpointStart = "/api/v1/daemon/start"
+	endpointExit  = "/api/v1/daemon/exit"
 
 	// --- V2 API begins
 	endpointBlobs = "/api/v2/blobs"
@@ -64,6 +65,7 @@ type NydusdClient interface {
 	TakeOver() error
 	SendFd() error
 	Start() error
+	Exit() error
 }
 
 // Nydusd API server http client used to command nydusd's action and
@@ -175,12 +177,7 @@ func WaitUntilSocketExisted(sock string) error {
 }
 
 func NewNydusClient(sock string) (NydusdClient, error) {
-	err := WaitUntilSocketExisted(sock)
-	if err != nil {
-		return nil, err
-	}
 	transport := buildTransport(sock)
-
 	return &nydusdClient{
 		httpClient: &http.Client{
 			Timeout:   defaultHTTPClientTimeout,
@@ -222,9 +219,11 @@ func (c *nydusdClient) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 
 	url := c.url(endpointMetrics, query)
 	var m types.FsMetrics
-	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		return decode(resp, &m)
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return &m, nil
 }
@@ -237,9 +236,11 @@ func (c *nydusdClient) GetCacheMetrics(sid string) (*types.CacheMetrics, error) 
 
 	url := c.url(endpointCacheMetrics, query)
 	var m types.CacheMetrics
-	c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		return decode(resp, &m)
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return &m, nil
 }
@@ -283,5 +284,10 @@ func (c *nydusdClient) SendFd() error {
 
 func (c *nydusdClient) Start() error {
 	url := c.url(endpointStart, query{})
+	return c.request(http.MethodPut, url, nil, nil)
+}
+
+func (c *nydusdClient) Exit() error {
+	url := c.url(endpointExit, query{})
 	return c.request(http.MethodPut, url, nil, nil)
 }

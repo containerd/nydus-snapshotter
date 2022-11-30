@@ -128,11 +128,15 @@ func (db *Database) tryTranslateRecords() error {
 		}
 
 		if newDaemon != nil {
-			db.SaveDaemon(context.TODO(), newDaemon)
+			if err := db.SaveDaemon(context.TODO(), newDaemon); err != nil {
+				return err
+			}
 		}
 
 		if instance != nil {
-			db.AddInstance(context.TODO(), instance)
+			if err := db.AddInstance(context.TODO(), instance); err != nil {
+				return err
+			}
 		}
 	}
 

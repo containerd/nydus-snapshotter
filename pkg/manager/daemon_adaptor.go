@@ -16,12 +16,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 )
 
 // Fork the nydusd daemon with the process PID decided
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
-	cmd, err := m.buildDaemonCommand(d)
+	cmd, err := m.BuildDaemonCommand(d, "", false)
 	if err != nil {
 		return errors.Wrapf(err, "create command for daemon %s", d.ID())
 	}
@@ -87,7 +88,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 // Build a daemon command which will be started to fork a new nydusd process later
 // according to previously setup daemon object.
-func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
+func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool) (*exec.Cmd, error) {
 	var cmdOpts []command.Opt
 
 	nydusdThreadNum := d.NydusdThreadNum()
@@ -105,7 +106,9 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		cmdOpts = append(cmdOpts, command.WithMode("fuse"))
 
 		if d.Supervisor != nil {
-			cmdOpts = append(cmdOpts, command.WithSupervisor(d.Supervisor.Sock()), command.WithID(d.ID()))
+			cmdOpts = append(cmdOpts,
+				command.WithSupervisor(d.Supervisor.Sock()),
+				command.WithID(d.ID()))
 		}
 
 		if nydusdThreadNum != 0 {
@@ -115,6 +118,9 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		switch {
 		case !m.IsSharedDaemon():
 			rafs := d.Instances.Head()
+			if rafs == nil {
+				return nil, errors.Wrapf(errdefs.ErrNotFound, "daemon %s no rafs instance associated", d.ID())
+			}
 			bootstrap, err := rafs.BootstrapFile()
 			if err != nil {
 				return nil, errors.Wrapf(err, "locate bootstrap %s", bootstrap)
@@ -127,15 +133,18 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 
 		case m.IsSharedDaemon():
 			cmdOpts = append(cmdOpts, command.WithMountpoint(d.HostMountpoint()))
-
 		default:
 			return nil, errors.Errorf("invalid daemon mode %s ", m.daemonMode)
 		}
 	}
 
 	cmdOpts = append(cmdOpts,
-		command.WithAPISock(d.GetAPISock()),
-		command.WithLogLevel(d.States.LogLevel))
+		command.WithLogLevel(d.States.LogLevel),
+		command.WithAPISock(d.GetAPISock()))
+
+	if upgrade {
+		cmdOpts = append(cmdOpts, command.WithUpgrade())
+	}
 
 	if !d.States.LogToStdout {
 		cmdOpts = append(cmdOpts, command.WithLogFile(d.LogFile()))
@@ -146,9 +155,16 @@ func (m *Manager) buildDaemonCommand(d *daemon.Daemon) (*exec.Cmd, error) {
 		return nil, err
 	}
 
-	log.L.Infof("Start nydusd daemon: %s %s", m.nydusdBinaryPath, strings.Join(args, " "))
+	var nydusdPath string
+	if bin == "" {
+		nydusdPath = m.NydusdBinaryPath
+	} else {
+		nydusdPath = bin
+	}
 
-	cmd := exec.Command(m.nydusdBinaryPath, args...)
+	log.L.Infof("nydusd command: %s %s", nydusdPath, strings.Join(args, " "))
+
+	cmd := exec.Command(nydusdPath, args...)
 
 	// nydusd standard output and standard error rather than its logs are
 	// always redirected to snapshotter's respectively

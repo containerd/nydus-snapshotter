@@ -7,6 +7,8 @@
 package command
 
 import (
+	"time"
+
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/slices"
 	"github.com/urfave/cli/v2"
@@ -14,34 +16,35 @@ import (
 
 // Define a policy how to fork nydusd daemon and attach file system instances to serve.
 type Args struct {
-	Address                  string     `toml:"address"`
-	LogLevel                 string     `toml:"log_level"`
-	LogDir                   string     `toml:"log_dir"`
-	ConfigPath               string     `toml:"config_path"`
-	RootDir                  string     `toml:"root_dir"`
-	CacheDir                 string     `toml:"cache_dir"`
-	GCPeriod                 string     `toml:"gc_period"`
-	ValidateSignature        bool       `toml:"validate_signature"`
-	PublicKeyFile            string     `toml:"public_key_file"`
-	ConvertVpcRegistry       bool       `toml:"convert_vpc_registry"`
-	NydusdBinaryPath         string     `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath     string     `toml:"nydus_image_binary_path"`
-	SharedDaemon             bool       `toml:"-"`
-	DaemonMode               DaemonMode `toml:"daemon_mode"`
-	FsDriver                 string     `toml:"fs_driver"`
-	SyncRemove               bool       `toml:"sync_remove"`
-	EnableMetrics            bool       `toml:"enable_metrics"`
-	MetricsFile              string     `toml:"metrics_file"`
-	EnableStargz             bool       `toml:"enable_stargz"`
-	DisableCacheManager      bool       `toml:"disable_cache_manager"`
-	LogToStdout              bool       `toml:"log_to_stdout"`
-	EnableNydusOverlayFS     bool       `toml:"enable_nydus_overlay_fs"`
-	NydusdThreadNum          int        `toml:"nydusd_thread_num"`
-	CleanupOnClose           bool       `toml:"cleanup_on_close"`
-	KubeconfigPath           string     `toml:"kubeconfig_path"`
-	EnableKubeconfigKeychain bool       `toml:"enable_kubeconfig_keychain"`
-	RecoverPolicy            string     `toml:"recover_policy"`
-	PrintVersion             bool       `toml:"-"`
+	Address                  string
+	LogLevel                 string
+	LogDir                   string
+	ConfigPath               string
+	DaemonConfigPath         string
+	RootDir                  string
+	CacheDir                 string
+	GCPeriod                 time.Duration
+	ValidateSignature        bool
+	PublicKeyFile            string
+	ConvertVpcRegistry       bool
+	NydusdBinaryPath         string
+	NydusImageBinaryPath     string
+	SharedDaemon             bool
+	DaemonMode               DaemonMode
+	FsDriver                 string
+	SyncRemove               bool
+	EnableMetrics            bool
+	MetricsFile              string
+	EnableStargz             bool
+	DisableCacheManager      bool
+	LogToStdout              bool
+	EnableNydusOverlayFS     bool
+	NydusdThreadNum          int
+	CleanupOnClose           bool
+	KubeconfigPath           string
+	EnableKubeconfigKeychain bool
+	RecoverPolicy            string
+	PrintVersion             bool
 	APISocket                string
 }
 
@@ -51,8 +54,10 @@ type DaemonMode string
 const (
 	// One nydusd, one rafs instance.
 	DaemonModeMultiple DaemonMode = "multiple"
+
 	// One nydusd serves multiple rafs instances.
 	DaemonModeShared DaemonMode = "shared"
+
 	// No nydusd daemon is needed to be started. Snapshotter does not start any nydusd
 	// and only interacts with containerd with mount slice to pass necessary configuration
 	// to container runtime.
@@ -123,10 +128,17 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.CleanupOnClose,
 		},
 		&cli.StringFlag{
-			Name:        "config-path",
-			Aliases:     []string{"c", "config"},
-			Usage:       "path to the configuration `FILE`",
+			Name:        "config",
+			Value:       DefaultConfigPath,
+			Usage:       "load nydus-snapshotter configuration from the specified file, default is /etc/nydus-snapshotter/config.toml",
 			Destination: &args.ConfigPath,
+		},
+		&cli.StringFlag{
+			Name:        "daemon-config",
+			Value:       DefaultDaemonConfigPath,
+			Aliases:     []string{"config-path"},
+			Usage:       "load daemon configuration from the specified file, default is /etc/nydus/config.json",
+			Destination: &args.DaemonConfigPath,
 		},
 		&cli.BoolFlag{
 			Name:        "convert-vpc-registry",
@@ -167,9 +179,9 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "backend `DRIVER` to serve the filesystem, one of \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
 		},
-		&cli.StringFlag{
+		&cli.DurationFlag{
 			Name:        "gc-period",
-			Value:       defaultGCPeriod,
+			Value:       DefaultGCPeriod,
 			Usage:       "blob cache garbage collection `INTERVAL`, duration string(for example, 1m, 2h)",
 			Destination: &args.GCPeriod,
 		},
@@ -182,7 +194,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "log-level",
-			Value:       defaultLogLevel.String(),
+			Value:       DefaultLogLevel.String(),
 			Aliases:     []string{"l"},
 			Usage:       "set the logging `LEVEL` [trace, debug, info, warn, error, fatal, panic]",
 			Destination: &args.LogLevel,
@@ -224,7 +236,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "root",
-			Value:       defaultRootDir,
+			Value:       DefaultRootDir,
 			Aliases:     []string{"R"},
 			Usage:       "set `DIRECTORY` to store snapshotter working state",
 			Destination: &args.RootDir,

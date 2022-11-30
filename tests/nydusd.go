@@ -75,18 +75,11 @@ func makeConfig(conf NydusdConfig) error {
 	tpl := template.Must(template.New("").Parse(configTpl))
 
 	var ret bytes.Buffer
-	if conf.BackendType == "" {
-		conf.BackendType = "localfs"
-		conf.BackendConfig = `{"dir": "/fake"}`
-		conf.EnablePrefetch = false
-	} else {
-		conf.EnablePrefetch = true
-	}
 	if err := tpl.Execute(&ret, conf); err != nil {
 		return errors.New("prepare config template for Nydusd")
 	}
 
-	if err := os.WriteFile(conf.ConfigPath, ret.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(conf.ConfigPath, ret.Bytes(), 0600); err != nil {
 		return errors.New("write config file for Nydusd")
 	}
 
@@ -159,7 +152,8 @@ func NewNydusd(conf NydusdConfig) (*Nydusd, error) {
 }
 
 func (nydusd *Nydusd) Mount() error {
-	nydusd.Umount()
+	// Ignore the error since the nydusd may not ever start
+	_ = nydusd.Umount()
 
 	args := []string{
 		"--config",
