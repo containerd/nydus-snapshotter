@@ -19,7 +19,6 @@ func TestLoadConfig(t *testing.T) {
     "backend": {
       "type": "registry",
       "config": {
-        "scheme": "https",
         "skip_verify": true,
         "host": "acr-nydus-registry-vpc.cn-hangzhou.cr.aliyuncs.com",
         "repo": "test/myserver",
