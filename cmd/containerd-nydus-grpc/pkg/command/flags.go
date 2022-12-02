@@ -7,6 +7,7 @@
 package command
 
 import (
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -51,6 +52,8 @@ type Args struct {
 	RecoverPolicy            string `toml:"recover_policy"`
 	PrintVersion             bool   `toml:"-"`
 	EnableSystemController   bool
+	EnableCRIKeychain        bool   `toml:"enable_cri_keychain"`
+	ImageServiceAddress      string `toml:"image_service_address"`
 }
 
 type Flags struct {
@@ -230,6 +233,18 @@ func buildFlags(args *Args) []cli.Flag {
 			Value:       false,
 			Usage:       "synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with provided `--kubeconfig-path` (default `$KUBECONFIG` or `~/.kube/config`)",
 			Destination: &args.EnableKubeconfigKeychain,
+		},
+		&cli.BoolFlag{
+			Name:        "enable-cri-keychain",
+			Value:       false,
+			Usage:       "enable a CRI image proxy and retrieve image secret when proxying image request",
+			Destination: &args.EnableCRIKeychain,
+		},
+		&cli.StringFlag{
+			Name:        "image-service-address",
+			Value:       auth.DefaultImageServiceAddress,
+			Usage:       "the target image service when using image proxy",
+			Destination: &args.ImageServiceAddress,
 		},
 	}
 }

@@ -112,6 +112,8 @@ type Config struct {
 	RotateLogCompress        bool          `toml:"log_rotate_compress"`
 	EnableSystemController   bool          `toml:"enable_system_controller"`
 	RecoverPolicy            string        `toml:"recover_policy"`
+	EnableCRIKeychain        bool          `toml:"enable_cri_keychain"`
+	ImageServiceAddress      string        `toml:"image_service_address"`
 }
 
 type SnapshotterConfig struct {
@@ -221,6 +223,8 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	cfg.KubeconfigPath = startupFlag.KubeconfigPath
 	cfg.EnableKubeconfigKeychain = startupFlag.EnableKubeconfigKeychain
 	cfg.RecoverPolicy = startupFlag.RecoverPolicy
+	cfg.EnableCRIKeychain = startupFlag.EnableCRIKeychain
+	cfg.ImageServiceAddress = startupFlag.ImageServiceAddress
 
 	return cfg.SetupNydusBinaryPaths()
 }
