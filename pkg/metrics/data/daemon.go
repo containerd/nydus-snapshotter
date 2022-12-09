@@ -9,17 +9,15 @@ package data
 import "github.com/prometheus/client_golang/prometheus"
 
 var (
-	daemonIDLabel = "daemon_id"
-	timeLabel     = "time"
-	eventLabel    = "event"
+	nydusdEventLabel = "nydusd_event"
 )
 
 var (
-	NydusdEvent = prometheus.NewCounterVec(
+	NydusdEventCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "nydusd_lifetime_events",
+			Name: "nydusd_lifetime_event_counts",
 			Help: "The lifetime events of nydus daemon.",
 		},
-		[]string{daemonIDLabel, timeLabel, eventLabel},
+		[]string{nydusdEventLabel},
 	)
 )

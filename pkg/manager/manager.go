@@ -365,6 +365,10 @@ func NewManager(opt Opt) (*Manager, error) {
 	return mgr, nil
 }
 
+func (m *Manager) CacheDir() string {
+	return m.cacheDir
+}
+
 // Put a instantiated daemon into states manager. The damon state is
 // put to both states cache and DB. If the daemon with the same
 // daemon ID is already stored, return error ErrAlreadyExists
@@ -513,7 +517,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
 
-	collector.CollectDaemonEvent(d.ID(), string(types.DaemonStateDestroyed))
+	collector.NewDaemonEventCollector(string(types.DaemonStateDestroyed)).Collect()
 
 	return nil
 }

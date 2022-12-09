@@ -21,7 +21,16 @@ func init() {
 		data.OpenFdCount,
 		data.OpenFdMaxCount,
 		data.LastFopTimestamp,
-		data.NydusdEvent,
+		data.NydusdEventCount,
+		data.SnapshotEventElapsedHists,
+		data.CacheUsage,
+		data.CPUUsage,
+		data.MemoryUsage,
+		data.CPUSystem,
+		data.CPUUser,
+		data.Fds,
+		data.RunTime,
+		data.Thread,
 	)
 
 	for _, m := range data.MetricHists {
