@@ -103,6 +103,7 @@ retract (
 	v0.11.2
 	v0.11.1
 	v0.11.0
+	v0.3.0 // retagged: cd604c1b597558ea045a79c4f80a8c780909801b -> 85653575c7dafb6b06548478ee1dc61ac5905d00
 )
 
 replace (
