@@ -8,22 +8,31 @@ package metrics
 
 import (
 	"fmt"
-	"net"
+	"net/http"
+
+	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// DefaultBindAddress sets the default bind address for the metrics
-// listener.
-var DefaultBindAddress = ":8080"
+// Endpoint for prometheus metrics
+var endpointPromMetrics = "/v1/metrics"
 
 // NewListener creates a new TCP listener bound to the given address.
-func NewListener(addr string) (net.Listener, error) {
+func NewHTTPListener(addr string) error {
 	if addr == "" {
-		// If the metrics bind address is empty, default to ":8080"
-		addr = DefaultBindAddress
+		return fmt.Errorf("the address for metrics HTTP server is invalid")
 	}
-	ln, err := net.Listen("unix", addr)
-	if err != nil {
-		return nil, fmt.Errorf("error listening on %s: %v", addr, err)
+
+	http.Handle(endpointPromMetrics, promhttp.HandlerFor(registry.Registry, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.HTTPErrorOnError,
+	}))
+
+	log.L.Infof("Start metrics HTTP server on %s", addr)
+
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		return fmt.Errorf("error serve on %s: %v", addr, err)
 	}
-	return ln, nil
+
+	return nil
 }

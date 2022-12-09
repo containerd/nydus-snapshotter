@@ -95,7 +95,7 @@ type Config struct {
 	DaemonMode               DaemonMode    `toml:"daemon_mode"`
 	FsDriver                 string        `toml:"fs_driver"`
 	SyncRemove               bool          `toml:"sync_remove"`
-	EnableMetrics            bool          `toml:"enable_metrics"`
+	MetricsAddress           string        `toml:"metrics_address"`
 	MetricsFile              string        `toml:"metrics_file"`
 	EnableStargz             bool          `toml:"enable_stargz"`
 	LogLevel                 string        `toml:"-"`
@@ -239,7 +239,7 @@ func ProcessParameters(args *command.Args, cfg *Config) error {
 	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
 	cfg.FsDriver = args.FsDriver
 
-	cfg.EnableMetrics = args.EnableMetrics
+	cfg.MetricsAddress = args.MetricsAddress
 	cfg.MetricsFile = args.MetricsFile
 
 	cfg.NydusdBinaryPath = args.NydusdBinaryPath

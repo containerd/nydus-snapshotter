@@ -110,11 +110,18 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	}
 
 	// Start to collect metrics.
-	go func() {
-		if err := metricServer.StartCollectMetrics(ctx, cfg.EnableMetrics); err != nil {
-			log.L.WithError(err).Errorf("Failed to start collecting metrics")
-		}
-	}()
+	if cfg.MetricsAddress != "" {
+		go func() {
+			if err := metrics.NewHTTPListener(cfg.MetricsAddress); err != nil {
+				log.L.WithError(err).Error("Failed to start metrics HTTP server")
+			}
+		}()
+		go func() {
+			if err := metricServer.StartCollectMetrics(ctx); err != nil {
+				log.L.WithError(err).Errorf("Failed to start collecting metrics")
+			}
+		}()
+	}
 
 	if cfg.EnableSystemController {
 		systemController, err := system.NewSystemController(manager, path.Join(cfg.RootDir, "system.sock"))
