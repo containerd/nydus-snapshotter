@@ -12,9 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 )
 
+// Please refer to https://man7.org/linux/man-pages/man5/proc.5.html for the metrics meanings
 type Stat struct {
 	Utime  float64
 	Stime  float64
@@ -32,27 +34,52 @@ var (
 	PageSize = GetPageSize()
 )
 
-func GetCurrentStat(pid int) (*Stat, error) {
+func CalculateCPUUtilization(begin *Stat, now *Stat) (float64, error) {
+	if begin == nil || now == nil {
+		return 0.0, errdefs.ErrInvalidArgument
+	}
+
+	cpuSys := (now.Stime - begin.Stime) / ClkTck
+	cpuUsr := (now.Utime - begin.Utime) / ClkTck
+	total := cpuSys + cpuUsr
+
+	seconds := now.Uptime - begin.Uptime
+
+	cpuPercent := (total / seconds) * 100
+
+	return cpuPercent, nil
+}
+
+func GetProcessMemoryRSS(pid int) (float64, error) {
+	stat, err := GetProcessStat(pid)
+	if err != nil {
+		return 0.0, errors.Wrapf(err, "get process stat")
+	}
+
+	return stat.Rss, nil
+}
+
+func GetProcessStat(pid int) (*Stat, error) {
 	uptimeBytes, err := os.ReadFile(path.Join("/proc", "uptime"))
 	if err != nil {
-		return nil, errors.Wrapf(err, "get uptime failed")
+		return nil, errors.Wrapf(err, "get uptime")
 	}
 	uptime := ParseFloat64(strings.Split(string(uptimeBytes), " ")[0])
 
 	statBytes, err := os.ReadFile(path.Join("/proc", strconv.Itoa(pid), "stat"))
 	if err != nil {
-		return nil, errors.Wrapf(err, "get stat failed")
+		return nil, errors.Wrapf(err, "get process %d stat", pid)
 	}
 	splitAfterStat := strings.SplitAfter(string(statBytes), ")")
 
 	if len(splitAfterStat) == 0 || len(splitAfterStat) == 1 {
-		return nil, errors.Errorf("can not find process, PID: %v", strconv.Itoa(pid))
+		return nil, errors.Errorf("Can not find process, PID: %d", pid)
 	}
 	infos := strings.Split(splitAfterStat[1], " ")
 
 	files, err := os.ReadDir(path.Join("/proc", strconv.Itoa(pid), "fdinfo"))
 	if err != nil {
-		return nil, errors.Wrapf(err, "read fdinfo failed")
+		return nil, errors.Wrapf(err, "read fdinfo")
 	}
 
 	return &Stat{
