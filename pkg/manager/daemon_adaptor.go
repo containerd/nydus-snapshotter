@@ -10,14 +10,18 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/log"
+
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/pkg/errors"
+	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
 // Fork the nydusd daemon with the process PID decided
@@ -35,6 +39,25 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	defer d.Unlock()
 
 	d.States.ProcessID = cmd.Process.Pid
+
+	processState, err := metrics.GetProcessStat(cmd.Process.Pid)
+	if err == nil {
+		// TODO: The measuring duration should be capable of configuring when nydus-snapshotter's own config file is GA.
+		timer := time.NewTimer(6 * time.Second)
+
+		go func() {
+			<-timer.C
+			currentProcessState, err := metrics.GetProcessStat(cmd.Process.Pid)
+			if err != nil {
+				log.L.WithError(err).Warnf("Failed to get daemon %s process state.", d.ID())
+				return
+			}
+			d.StartupCPUUtilization, err = metrics.CalculateCPUUtilization(processState, currentProcessState)
+			if err != nil {
+				log.L.WithError(err).Warnf("Calculate CPU utilization error")
+			}
+		}()
+	}
 
 	// Update both states cache and DB
 	// TODO: Is it right to commit daemon before nydusd successfully started?

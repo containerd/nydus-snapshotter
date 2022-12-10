@@ -35,6 +35,7 @@ func FormatFloat64(f float64, point int) float64 {
 	return value
 }
 
+// FIXME: return error
 func ParseFloat64(val string) float64 {
 	floatVal, _ := strconv.ParseFloat(val, 64)
 	return floatVal
@@ -43,7 +44,7 @@ func ParseFloat64(val string) float64 {
 func GetClkTck() float64 {
 	getconfPath, err := exec.LookPath("getconf")
 	if err != nil {
-		log.L.Warnf("can not find getconf in PATH: %v", err)
+		log.L.Warnf("can not find getconf in the system PATH, error %v", err)
 		return defaultClkTck
 	}
 	out, err := exec.Command(getconfPath, "CLK_TCK").Output()
