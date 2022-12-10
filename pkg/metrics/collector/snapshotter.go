@@ -28,7 +28,7 @@ type SnapshotMethod string
 const (
 	SnapshotMethodUnknown SnapshotMethod = "UNKNOWN"
 	SnapshotMethodPrepare SnapshotMethod = "PREPARE"
-	SnapshotMethodMount   SnapshotMethod = "MOUNT"
+	SnapshotMethodMount   SnapshotMethod = "MOUNTS"
 	SnapshotMethodCleanup SnapshotMethod = "CLEANUP"
 	SnapshotMethodRemove  SnapshotMethod = "REMOVE"
 )
