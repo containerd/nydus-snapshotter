@@ -43,7 +43,7 @@ func (s *SnapshotterMetricsCollector) CollectCacheUsage() {
 }
 
 func (s *SnapshotterMetricsCollector) CollectResourceUsage() {
-	currentStat, err := tool.GetCurrentStat(s.pid)
+	currentStat, err := tool.GetProcessStat(s.pid)
 	if err != nil {
 		log.L.Warnf("Can not get current process stat.")
 		return

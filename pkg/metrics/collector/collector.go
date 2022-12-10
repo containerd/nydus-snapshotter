@@ -31,7 +31,7 @@ func NewFsMetricsCollector(m *types.FsMetrics, imageRef string) *FsMetricsCollec
 }
 
 func NewSnapshotterMetricsCollector(ctx context.Context, cacheDir string, pid int) (*SnapshotterMetricsCollector, error) {
-	currentStat, err := tool.GetCurrentStat(pid)
+	currentStat, err := tool.GetProcessStat(pid)
 	if err != nil {
 		return nil, errors.Wrapf(err, "can not get current stat")
 	}
