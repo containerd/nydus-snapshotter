@@ -110,6 +110,7 @@ type daemonInfo struct {
 	HostMountpoint        string  `json:"mountpoint"`
 	StartupCPUUtilization float64 `json:"startup_cpu_utilization"`
 	MemoryRSS             float64 `json:"memory_rss_kb"`
+	ReadData              float32 `json:"read_data_kb"`
 
 	Instances map[string]rafsInstanceInfo `json:"instances"`
 }
@@ -185,6 +186,12 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 				log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
 			}
 
+			var readData float32
+			fsMetrics, err := d.GetFsMetrics("")
+			if err != nil {
+				log.L.Warnf("Failed to get file system metrics")
+			} else {
+				readData = float32(fsMetrics.DataRead) / 1024
 			}
 
 			i := daemonInfo{
@@ -195,6 +202,7 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 				Instances:             instances,
 				StartupCPUUtilization: d.StartupCPUUtilization,
 				MemoryRSS:             memRSS,
+				ReadData:              readData,
 			}
 
 			info = append(info, i)
