@@ -116,8 +116,8 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		}
 	}()
 
-	if cfg.APISocket != "" {
-		systemController, err := system.NewSystemController(manager, cfg.APISocket)
+	if cfg.EnableSystemController {
+		systemController, err := system.NewSystemController(manager, path.Join(cfg.RootDir, "system.sock"))
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
