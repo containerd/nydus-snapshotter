@@ -4,8 +4,8 @@ metadata:
   name: test-pod
 spec:
   containers:
-    - name: nginx
-      image: REGISTRY_IP:5000/busybox:nydus-v5-latest
+    - name: busybox
+      image: REGISTRY_IP:5000/busybox:nydus-v6-latest
       imagePullPolicy: Always
       command: ["sh", "-c"]
       args:

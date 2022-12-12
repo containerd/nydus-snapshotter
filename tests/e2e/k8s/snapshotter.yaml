@@ -57,19 +57,6 @@ spec:
     name: nydus-snapshotter
     image: local-dev:e2e
     imagePullPolicy: IfNotPresent
-    # lifecycle:
-    #   postStart:
-    #     exec:
-    #       command:
-    #       - /bin/sh
-    #       - -c
-    #       - |
-    #         cat << EOF >> /etc/containerd/config.toml
-    #         [proxy_plugins]
-    #           [proxy_plugins.nydus]
-    #             type = "snapshot"
-    #             address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-    #         EOF
     args:
       - containerd-nydus-grpc
       - --nydusd-path /usr/local/bin/nydusd
@@ -77,7 +64,6 @@ spec:
       - --root /var/lib/containerd-nydus
       - --address /run/containerd-nydus/containerd-nydus-grpc.sock
       - --log-level debug
-      - --enable-nydus-overlayfs=false
       - --daemon-mode shared
       - --log-to-stdout
       - --enable-kubeconfig-keychain
@@ -133,7 +119,7 @@ data:
         "backend": {
           "type": "registry",
           "config": {
-            "scheme": "http",
+            "scheme": "",
             "skip_verify": true,
             "timeout": 10,
             "connect_timeout": 10,
