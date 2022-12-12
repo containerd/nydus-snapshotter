@@ -28,6 +28,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
+	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
 const (
@@ -101,12 +102,14 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 }
 
 type daemonInfo struct {
-	ID             string `json:"id"`
-	Pid            int    `json:"pid"`
-	APISock        string `json:"api_socket"`
-	SupervisorPath string
-	Reference      int    `json:"reference"`
-	HostMountpoint string `json:"mountpoint"`
+	ID                    string `json:"id"`
+	Pid                   int    `json:"pid"`
+	APISock               string `json:"api_socket"`
+	SupervisorPath        string
+	Reference             int     `json:"reference"`
+	HostMountpoint        string  `json:"mountpoint"`
+	StartupCPUUtilization float64 `json:"startup_cpu_utilization"`
+	MemoryRSS             float64 `json:"memory_rss_kb"`
 
 	Instances map[string]rafsInstanceInfo `json:"instances"`
 }
@@ -169,7 +172,6 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		info := make([]daemonInfo, 0, 10)
 
 		for _, d := range daemons {
-
 			instances := make(map[string]rafsInstanceInfo)
 			for _, i := range d.Instances.List() {
 				instances[i.SnapshotID] = rafsInstanceInfo{
@@ -178,12 +180,21 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 					Mountpoint:  i.GetMountpoint()}
 			}
 
+			memRSS, err := metrics.GetProcessMemoryRSS(d.Pid())
+			if err != nil {
+				log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
+			}
+
+			}
+
 			i := daemonInfo{
-				ID:             d.ID(),
-				Pid:            d.Pid(),
-				HostMountpoint: d.HostMountpoint(),
-				Reference:      int(d.GetRef()),
-				Instances:      instances,
+				ID:                    d.ID(),
+				Pid:                   d.Pid(),
+				HostMountpoint:        d.HostMountpoint(),
+				Reference:             int(d.GetRef()),
+				Instances:             instances,
+				StartupCPUUtilization: d.StartupCPUUtilization,
+				MemoryRSS:             memRSS,
 			}
 
 			info = append(info, i)
