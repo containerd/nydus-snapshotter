@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+spec:
+  selector:
+    app.kubernetes.io/name: registry
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth
+data:
+  htpasswd: |
+    testuser:$2y$05$6QROw506tFENJv8WdPFXculwkjbZjPaPl3udtYVhVQ5SpPmdvIT8S
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: registry
+  labels:
+    app.kubernetes.io/name: registry
+spec:
+  containers:
+  - name: registry
+    image: registry:2
+    imagePullPolicy: Always
+    ports:
+    - containerPort: 5000
+    env:
+    - name: REGISTRY_AUTH
+      value: "htpasswd"
+    - name: REGISTRY_AUTH_HTPASSWD_REALM
+      value: "Registry Realm"
+    - name: REGISTRY_AUTH_HTPASSWD_PATH
+      value: "/auth/htpasswd"
+    volumeMounts:
+    - name: auth
+      mountPath: "/auth"
+  volumes:
+  - name: auth
+    configMap:
+      name: auth
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+  - name: test
+    image: busybox
+    imagePullPolicy: Always
+    command: ["sh", "-c"]
+    args:
+      - tail -f /dev/null

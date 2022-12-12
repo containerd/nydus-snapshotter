@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nydus-system
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nydus-snapshotter-sa
+  namespace: nydus-system
+
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nydus-snapshotter-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nydus-snapshotter-role-binding
+roleRef:
+  kind: ClusterRole
+  name: nydus-snapshotter-role
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: nydus-snapshotter-sa
+  namespace: nydus-system
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nydus-snapshotter
+  namespace: nydus-system
+spec:
+  containers:
+  - env:
+    - name: ENABLE_NYDUS_OVERLAY
+      value: "false"
+    name: nydus-snapshotter
+    image: local-dev:e2e
+    imagePullPolicy: IfNotPresent
+    # lifecycle:
+    #   postStart:
+    #     exec:
+    #       command:
+    #       - /bin/sh
+    #       - -c
+    #       - |
+    #         cat << EOF >> /etc/containerd/config.toml
+    #         [proxy_plugins]
+    #           [proxy_plugins.nydus]
+    #             type = "snapshot"
+    #             address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+    #         EOF
+    args:
+      - containerd-nydus-grpc
+      - --nydusd-path /usr/local/bin/nydusd
+      - --config-path /etc/nydus/config.json
+      - --root /var/lib/containerd-nydus
+      - --address /run/containerd-nydus/containerd-nydus-grpc.sock
+      - --log-level debug
+      - --enable-nydus-overlayfs=false
+      - --daemon-mode shared
+      - --log-to-stdout
+      - --enable-kubeconfig-keychain
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - mountPath: /etc/nydus/
+      name: config
+    - mountPath: /var/lib/containerd-nydus
+      mountPropagation: Bidirectional
+      name: nydus-lib
+    - mountPath: /run/containerd-nydus
+      mountPropagation: Bidirectional
+      name: nydus-run
+    - mountPath: /dev/fuse
+      name: fuse
+    - mountPath: /etc/containerd/config.toml
+      name: containerd-conf
+  hostNetwork: true
+  hostPID: true
+  serviceAccountName: nydus-snapshotter-sa
+  volumes:
+  - configMap:
+      defaultMode: 420
+      name: nydus-snapshotter
+    name: config
+  - hostPath:
+      path: /run/containerd-nydus
+      type: DirectoryOrCreate
+    name: nydus-run
+  - hostPath:
+      path: /var/lib/containerd-nydus
+      type: DirectoryOrCreate
+    name: nydus-lib
+  - hostPath:
+      path: /dev/fuse
+    name: fuse
+  - hostPath:
+      path: /etc/containerd/config.toml
+      type: ""
+    name: containerd-conf
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nydus-snapshotter
+  namespace: nydus-system
+data:
+  config.json: |-
+    {
+      "device": {
+        "backend": {
+          "type": "registry",
+          "config": {
+            "scheme": "http",
+            "skip_verify": true,
+            "timeout": 10,
+            "connect_timeout": 10,
+            "retry_limit": 2
+          }
+        },
+        "cache": {
+          "type": "blobcache",
+          "config": {
+            "work_dir": "/var/lib/nydus/cache/"
+          }
+        }
+      },
+      "mode": "direct",
+      "digest_validate": false,
+      "iostats_files": false,
+      "enable_xattr": true,
+      "fs_prefetch": {
+        "enable": true,
+        "threads_count": 10,
+        "merging_size": 131072,
+        "bandwidth_rate": 1048576
+      }
+    }

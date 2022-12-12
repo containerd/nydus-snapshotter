@@ -1,0 +1,21 @@
+name: nydus-snapshotter
+image: local-dev
+tag: e2e
+pullPolicy: IfNotPresent
+hostNetwork: true
+resources:
+  requests:
+    cpu: "0"
+    memory: "0"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+dragonfly:
+  enable: false
+
+containerRuntime:
+  initContainerImage: ghcr.io/liubin/toml-cli:v0.0.7
+  containerd:
+    enable: true
+    configFile: "/etc/containerd/config.toml"
