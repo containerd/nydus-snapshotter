@@ -1,13 +1,11 @@
-name: E2E Test With Kubernetes
+name: E2E Test With Kubernetes Template
 
 on:
-  push:
-    branches:
-      - "main"
-    tags:
-      - v[0-9]+.[0-9]+.[0-9]+
-  pull_request:
-    branches: [main]
+  workflow_call:
+    inputs:
+      auth-type:
+        required: true
+        type: string
 
 env:
   DOCKER_USER: testuser
@@ -29,7 +27,7 @@ jobs:
       - name: Setup Kind
         uses: engineerd/setup-kind@v0.5.0
         with:
-          version: v0.12.0
+          version: v0.16.0
           config: tests/e2e/k8s/kind.yaml
       - name: Build nydus snapshotter dev image
         run: |
@@ -73,7 +71,7 @@ jobs:
           docker login --username=${{ env.DOCKER_USER }} --password=${{ env.DOCKER_PASSWORD }} $registry_ip:5000
       - name: Setup nydus snapshotter
         run: |
-          kubectl create -f tests/e2e/k8s/snapshotter.yaml
+          kubectl create -f tests/e2e/k8s/snapshotter-${{ inputs.auth-type }}.yaml
           export ns=nydus-system
           p=`kubectl -n $ns get pods --no-headers -o custom-columns=NAME:metadata.name`
           echo "snapshotter pod name ${p}"
@@ -91,10 +89,8 @@ jobs:
 
           [plugins."io.containerd.grpc.v1.cri".registry.mirrors."${registry_ip}:5000"]
               endpoint = ["http://${registry_ip}:5000"]
-          [plugins."io.containerd.grpc.v1.cri".registry.configs."${registry_ip}:5000".auth]
-            username = "${{ env.DOCKER_USER }}"
-            password = "${{ env.DOCKER_PASSWORD }}"
           EOF
+
           docker cp containerd.config.toml.bak kind-control-plane:/etc/containerd/config.toml.bak
           docker exec kind-control-plane sh -c "cat /etc/containerd/config.toml.bak > /etc/containerd/config.toml"
           docker exec kind-control-plane systemctl restart containerd
@@ -120,8 +116,13 @@ jobs:
 
           sed -e "s|REGISTRY_IP|${registry_ip}|" tests/e2e/k8s/test-pod.yaml.tpl > tests/e2e/k8s/test-pod.yaml
 
+          if [[ "${{ inputs.auth-type }}" == "cri" ]]; then
+            docker exec kind-control-plane sh -c 'echo " --image-service-endpoint=unix:///run/containerd-nydus/containerd-nydus-grpc.sock" >> /etc/default/kubelet'
+            docker exec kind-control-plane sh -c 'systemctl daemon-reload && systemctl restart kubelet'
+          fi
+
           kubectl apply -f tests/e2e/k8s/test-pod.yaml
-          kubectl wait po test-pod --for=condition=ready --timeout=1m
+          kubectl wait po test-pod -n nydus-system --for=condition=ready --timeout=1m
           kubectl delete -f tests/e2e/k8s/test-pod.yaml
       - name: Dump logs
         if: failure()
@@ -142,6 +143,7 @@ jobs:
 
           docker exec kind-control-plane journalctl --no-pager -u containerd >> $log_dir/containerd.log
           docker exec kind-control-plane journalctl --no-pager -u kubelet >> $log_dir/kubelet.log
+          docker exec kind-control-plane ps -ef >> $log_dir/psef.log
 
           kubectl get pod test-pod -o yaml >> $log_dir/test-pod.log || echo "test-pod may be deleted or not created"
 
