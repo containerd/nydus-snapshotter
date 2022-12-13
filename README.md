@@ -80,7 +80,7 @@ Or you can start nydus-snapshotter manually.
 # The default nydus-snapshotter work directory is located at `/var/lib/containerd-nydus`
 
 $ ./containerd-nydus-grpc \
-    --config-path /etc/nydusd-config.json \
+    --config-path /etc/nydus/nydusd-config.json \
     --address /run/containerd-nydus/containerd-nydus-grpc.sock \
     --nydusd-path /usr/local/bin/nydusd \
     --nydusimg-path /usr/local/bin/nydus-image \

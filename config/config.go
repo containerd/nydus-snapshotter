@@ -59,7 +59,7 @@ const (
 	DefaultLogLevel string = "info"
 	defaultGCPeriod        = 24 * time.Hour
 
-	defaultNydusDaemonConfigPath string = "/etc/nydus/config.json"
+	defaultNydusDaemonConfigPath string = "/etc/nydus/nydusd-config.json"
 	nydusdBinaryName             string = "nydusd"
 	nydusImageBinaryName         string = "nydus-image"
 
