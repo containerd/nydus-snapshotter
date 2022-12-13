@@ -1,0 +1,12 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  ipFamily: dual
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.23.4
+    extraMounts:
+      - hostPath: ./tests/e2e/k8s/containerd.config.toml
+        containerPath: /etc/containerd/config.toml
+      - hostPath: /dev/fuse
+        containerPath: /dev/fuse

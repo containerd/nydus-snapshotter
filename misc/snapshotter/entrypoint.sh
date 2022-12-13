@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/sh
 
 NYDUS_LIB="${NYDUS_LIB:-/var/lib/containerd-nydus}"
 NYDUS_RUN="${NYDUS_RUN:-/run/containerd-nydus}"
@@ -17,8 +17,8 @@ if [ "$#" -eq 0 ]; then
 		--root ${NYDUS_LIB} \
 		--address ${NYDUS_RUN}/containerd-nydus-grpc.sock \
 		--log-level ${LEVEL} \
-		--enable-metrics ${ENABLE_METRICS} \
-		--enable-nydus-overlayfs ${ENABLE_NYDUS_OVERLAY} \
+		--enable-metrics=${ENABLE_METRICS} \
+		--enable-nydus-overlayfs=${ENABLE_NYDUS_OVERLAY} \
 		--daemon-mode ${NYDUSD_DAEMON_MODE} \
 		--enable-stargz \
 		--log-to-stdout
