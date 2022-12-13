@@ -32,7 +32,9 @@ func Start(ctx context.Context, cfg config.Config) error {
 	}
 
 	if cfg.EnableKubeconfigKeychain {
-		auth.InitKubeSecretListener(ctx, cfg.KubeconfigPath)
+		if err := auth.InitKubeSecretListener(ctx, cfg.KubeconfigPath); err != nil {
+			return err
+		}
 	}
 
 	return Serve(ctx, rs, opt, stopSignal)
