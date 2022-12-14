@@ -28,7 +28,7 @@ type SnapshotMethod string
 const (
 	SnapshotMethodUnknown SnapshotMethod = "UNKNOWN"
 	SnapshotMethodPrepare SnapshotMethod = "PREPARE"
-	SnapshotMethodMount   SnapshotMethod = "MOUNT"
+	SnapshotMethodMount   SnapshotMethod = "MOUNTS"
 	SnapshotMethodCleanup SnapshotMethod = "CLEANUP"
 	SnapshotMethodRemove  SnapshotMethod = "REMOVE"
 )
@@ -36,32 +36,35 @@ const (
 func (s *SnapshotterMetricsCollector) CollectCacheUsage() {
 	du, err := fs.DiskUsage(s.ctx, s.cacheDir)
 	if err != nil {
-		log.L.Warnf("get disk usage failed: %v", err)
+		log.L.Warnf("Get disk usage failed: %v", err)
 	} else {
 		data.CacheUsage.Set(float64(du.Size) / 1024)
 	}
 }
 
 func (s *SnapshotterMetricsCollector) CollectResourceUsage() {
-	currentStat, err := tool.GetCurrentStat(s.pid)
+	currentStat, err := tool.GetProcessStat(s.pid)
 	if err != nil {
-		log.L.Warnf("can not get current stat")
+		log.L.Warnf("Can not get current process stat.")
 		return
 	}
+
 	if s.lastStat == nil {
-		log.L.Warnf("can not get resource usage information: lastStat is nil")
+		log.L.Debug("Can not get resource usage information: lastStat is nil")
 		s.lastStat = currentStat
 		return
 	}
 
 	cpuSys := (currentStat.Stime - s.lastStat.Stime) / tool.ClkTck
 	cpuUsr := (currentStat.Utime - s.lastStat.Utime) / tool.ClkTck
-	total := cpuSys + cpuUsr
 
-	seconds := currentStat.Uptime - s.lastStat.Uptime
+	cpuPercent, err := tool.CalculateCPUUtilization(s.lastStat, currentStat)
+	if err != nil {
+		log.L.WithError(err).Warnf("Failed to calculate CPU utilization")
+	}
 
 	s.lastStat = currentStat
-	cpuPercent := (total / seconds) * 100
+
 	memory := currentStat.Rss * tool.PageSize
 	runTime := currentStat.Uptime - currentStat.Start/tool.ClkTck
 

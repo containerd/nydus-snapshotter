@@ -11,14 +11,14 @@ import (
 )
 
 var (
-	defaultDurationBuckets = []float64{.1, .15, .2, .3, .5, 1, 1.5, 2, 3, 5, 10, 25, 60}
-	snapshotEventLabel     = "snapshot_event"
+	defaultDurationBuckets = []float64{.5, 1, 5, 10, 50, 100, 150, 200, 250, 300, 350, 400, 600, 1000}
+	snapshotEventLabel     = "snapshot_operation"
 )
 
 var (
 	SnapshotEventElapsedHists = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "snapshotter_snapshot_event_elapsed_milliseconds",
+			Name:    "snapshotter_snapshot_operation_elapsed_milliseconds",
 			Help:    "The elapsed time for snapshot events.",
 			Buckets: defaultDurationBuckets,
 		},
@@ -70,7 +70,7 @@ var (
 	RunTime = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "snapshotter_run_time_seconds",
-			Help: "Run time of snapshotter from starting.",
+			Help: "Running time of snapshotter from starting.",
 		},
 	)
 

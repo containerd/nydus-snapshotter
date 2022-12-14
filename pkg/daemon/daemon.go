@@ -15,7 +15,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/containerd/log"
+
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
@@ -25,7 +28,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -71,6 +73,10 @@ type Daemon struct {
 	// Nil means this daemon object has no supervisor
 	Supervisor *supervisor.Supervisor
 	Config     daemonconfig.DaemonConfig
+
+	// How much CPU nydusd is utilizing when starts since full prefetch might
+	// consume many CPU cycles
+	StartupCPUUtilization float64
 
 	ref int32
 	// Cache the nydusd daemon state to avoid frequently querying nydusd by API.
