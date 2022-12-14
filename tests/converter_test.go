@@ -9,6 +9,7 @@ package tests
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -248,6 +250,42 @@ func packLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fs
 	return tarBlobFilePath, blobDigest
 }
 
+func packLayerRef(t *testing.T, gzipSource io.ReadCloser, workDir string) (string, digest.Digest, digest.Digest) {
+	var blobMetaData bytes.Buffer
+	blobMetaWriter := io.Writer(&blobMetaData)
+
+	pr, pw := io.Pipe()
+	gzipBlobDigester := digest.Canonical.Digester()
+	hw := io.MultiWriter(pw, gzipBlobDigester.Hash())
+	go func() {
+		defer pw.Close()
+		_, err := io.Copy(hw, gzipSource)
+		require.NoError(t, err)
+	}()
+
+	twc, err := converter.Pack(context.TODO(), blobMetaWriter, converter.PackOption{
+		OCIRef: true,
+	})
+	require.NoError(t, err)
+
+	_, err = io.Copy(twc, pr)
+	require.NoError(t, err)
+	err = twc.Close()
+	require.NoError(t, err)
+
+	blobMetaDigester := digest.Canonical.Digester()
+	_, err = blobMetaDigester.Hash().Write(blobMetaData.Bytes())
+	require.NoError(t, err)
+	blobMetaDigest := blobMetaDigester.Digest()
+
+	tarBlobMetaFilePath := filepath.Join(workDir, blobMetaDigest.Hex())
+	writeToFile(t, bytes.NewReader(blobMetaData.Bytes()), tarBlobMetaFilePath)
+
+	gzipBlobDigest := gzipBlobDigester.Digest()
+
+	return tarBlobMetaFilePath, blobMetaDigest, gzipBlobDigest
+}
+
 func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt) (string, digest.Digest) {
 	var data bytes.Buffer
 	writer := io.Writer(&data)
@@ -274,7 +312,7 @@ func verify(t *testing.T, workDir string, expectedFileTree map[string]string) {
 		nydusdPath = "nydusd"
 	}
 	config := NydusdConfig{
-		EnablePrefetch: true,
+		EnablePrefetch: false,
 		NydusdPath:     nydusdPath,
 		BootstrapPath:  filepath.Join(workDir, "bootstrap"),
 		ConfigPath:     filepath.Join(workDir, "nydusd-config.fusedev.json"),
@@ -369,6 +407,27 @@ func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, str
 
 // sudo go test -v -count=1 -run TestPack ./tests
 func TestPack(t *testing.T) {
+	t.Log("Test nydusd(new) + nydus-image(new)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
+	testPack(t, "5")
+	testPack(t, "6")
+
+	t.Log("Test nydusd(old) + nydus-image(old)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
+	testPack(t, "5")
+	testPack(t, "6")
+
+	t.Log("Test nydusd(new) + nydus-image(old)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
+	testPack(t, "5")
+	testPack(t, "6")
+
+	t.Log("Test nydusd(old) + nydus-image(new)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 	testPack(t, "5")
 	testPack(t, "6")
 }
@@ -437,6 +496,86 @@ func testPack(t *testing.T, fsVersion string) {
 	ensureFile(t, filepath.Join(cacheDir, chunkDictBlobHash)+".chunk_map")
 	ensureNoFile(t, filepath.Join(cacheDir, lowerNydusBlobDigest.Hex())+".chunk_map")
 	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".chunk_map")
+}
+
+// sudo go test -v -count=1 -run TestPackRef ./tests
+func TestPackRef(t *testing.T) {
+	if os.Getenv("TEST_PACK_REF") == "" {
+		t.Skip("skip TestPackRef test until new nydus-image/nydusd release")
+	}
+
+	t.Log("Test nydusd(new) + nydus-image(new)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
+
+	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+
+	blobDir := filepath.Join(workDir, "blobs")
+	err = os.MkdirAll(blobDir, 0755)
+	require.NoError(t, err)
+
+	cacheDir := filepath.Join(workDir, "cache")
+	err = os.MkdirAll(cacheDir, 0755)
+	require.NoError(t, err)
+
+	mountDir := filepath.Join(workDir, "mnt")
+	err = os.MkdirAll(mountDir, 0755)
+	require.NoError(t, err)
+
+	lowerOCITarReader, expectedLowerFileTree := buildOCILowerTar(t, 500)
+	defer lowerOCITarReader.Close()
+
+	var gzipData bytes.Buffer
+	gzipWriter := gzip.NewWriter(&gzipData)
+	_, err = io.Copy(gzipWriter, lowerOCITarReader)
+	require.NoError(t, err)
+	gzipWriter.Close()
+	dupGzipData := gzipData
+
+	gzipReader := io.NopCloser(&gzipData)
+	lowerNydusBlobPath, lowerNydusBlobDigest, lowerGzipBlobDigest := packLayerRef(t, gzipReader, blobDir)
+
+	writeToFile(t, &dupGzipData, path.Join(blobDir, lowerGzipBlobDigest.Hex()))
+
+	lowerNydusBlobRa, err := local.OpenReader(lowerNydusBlobPath)
+	require.NoError(t, err)
+	defer lowerNydusBlobRa.Close()
+
+	// Check uncompressed bootstrap digest in TOC
+	bootstrapDigester := digest.Canonical.Digester()
+	bootstrapTOC, err := converter.UnpackEntry(lowerNydusBlobRa, converter.EntryBootstrap, bootstrapDigester.Hash())
+	require.NoError(t, err)
+	require.Equal(t, bootstrapTOC.GetUncompressedDigest(), bootstrapDigester.Digest().Hex())
+
+	// Check uncompressed blob meta digest in TOC
+	blobMetaDigester := digest.Canonical.Digester()
+	blobMetaTOC, err := converter.UnpackEntry(lowerNydusBlobRa, converter.EntryBlobMeta, blobMetaDigester.Hash())
+	require.NoError(t, err)
+	require.Equal(t, blobMetaTOC.GetUncompressedDigest(), blobMetaDigester.Digest().Hex())
+
+	layers := []converter.Layer{
+		{
+			Digest:         lowerNydusBlobDigest,
+			OriginalDigest: &lowerGzipBlobDigest,
+			ReaderAt:       lowerNydusBlobRa,
+		},
+	}
+
+	bootstrapPath := filepath.Join(workDir, "bootstrap")
+	file, err := os.Create(bootstrapPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	blobDigests, err := converter.Merge(context.TODO(), layers, file, converter.MergeOption{
+		OCIRef: true,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []digest.Digest{lowerGzipBlobDigest}, blobDigests)
+
+	verify(t, workDir, expectedLowerFileTree)
 }
 
 // sudo go test -v -count=1 -run TestUnpack ./tests
