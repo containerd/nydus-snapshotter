@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package fs
+package filesystem
 
 import (
 	"context"
@@ -27,6 +27,10 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
+
+func (fs *Filesystem) UpperPath(id string) string {
+	return filepath.Join(config.NydusConfig.RootDir, "snapshots", id, "fs")
+}
 
 func (fs *Filesystem) StargzEnabled() bool {
 	return fs.stargzResolver != nil
@@ -194,7 +198,7 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	}
 
 	blobMetaPath := filepath.Join(fs.cacheMgr.CacheDir(), fmt.Sprintf("%s.blob.meta", blobID))
-	if fs.fsDriver == config.FsDriverFscache {
+	if config.GetFsDriver() == config.FsDriverFscache {
 		// For fscache, the cache directory is managed linux fscache driver, so the blob.meta file
 		// can't be stored there.
 		if err := os.MkdirAll(upperPath, 0750); err != nil {
