@@ -29,6 +29,8 @@ func Start(ctx context.Context, cfg config.Config) error {
 	stopSignal := signals.SetupSignalHandler()
 	opt := ServeOptions{
 		ListeningSocketPath: cfg.Address,
+		EnableCRIKeychain:   cfg.EnableCRIKeychain,
+		ImageServiceAddress: cfg.ImageServiceAddress,
 	}
 
 	if cfg.EnableKubeconfigKeychain {

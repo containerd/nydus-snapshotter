@@ -34,6 +34,8 @@ cleanup_on_close = false
 kubeconfig_path = "$HOME/.kube/config"
 enable_kubeconfig_keychain = true
 recover_policy = "restart"
+enable_cri_keychain = false
+image_service_address = ""
 ```
 
 ```json
@@ -67,3 +69,60 @@ recover_policy = "restart"
   }
 }
 ```
+
+
+## Authentication
+As [contianerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports 3 main ways to access registries with custom configurations. You can use config file or command line flags to enable them.
+
+The snapshotter will try to get image pull keychain in the following order if such way is enabled:
+
+1. cri request
+2. docker config (default enabled)
+3. k8s docker config secret
+
+### dockerconfig-based authentication
+
+By default, the snapshotter tries to get creds from `$DOCKER_CONFIG` or `~/.docker/config.json`.
+Following example enables nydus-snapshotter to access to private registries using `docker login` command. 
+
+```console
+# docker login
+(Enter username and password)
+# crictl pull --creds USERNAME[:PASSWORD] docker.io/<your-repository>/ubuntu:22.04
+(Here the creds is only used by containerd)
+```
+
+### CRI-based authentication
+
+Following configuration enables nydus-snapshotter to pull private images via CRI requests.
+
+```toml
+enable_cri_keychain = true
+image_service_address = "/run/containerd/containerd.sock"
+```
+
+The equivalent command line flags are `--enable-image-proxy-keychain --image-service-address "/run/containerd/containerd.sock"`
+
+The snapshotter works as a proxy of CRI Image Service and exposes CRI Image Service API on the snapshotter's unix socket (i.e. `/run/containerd/containerd-nydus-grpc.sock`). The snapshotter acquires registry creds by scanning requests.
+The `image_service_address` is the original image service socket. It can be omitted and the default value will be the containerd's default socket path `/run/containerd/containerd.sock`.
+
+
+You **must** specify `--image-service-endpoint=unix:///run/containerd/containerd-nydus-grpc.sock` option to kubelet when using Kubernetes. Or specify `image-endpoint: "unix:////run/containerd/containerd-nydus-grpc.sock"` in `crictl.yaml` when using crictl.
+
+### kubeconfig-based authentication
+
+This is another way to enable lazy pulling of private images on Kubernetes.
+
+Following configuration enables nydus-snapshotter to access to private registries using kubernetes secrets (type = `kubernetes.io/dockerconfigjson`) in the cluster using kubeconfig files.
+
+```toml
+enable_kubeconfig_keychain = true
+kubeconfig_path = "$HOME/.kube/config"
+```
+The equivalent command line flags are `--enable-kubeconfig-keychain --kubeconfig-path "$HOME/.kube/config"`
+
+If no `kubeconfig_path` is specified, snapshotter searches kubeconfig files from `$KUBECONFIG` or `~/.kube/config`.
+
+Please note that kubeconfig-based authentication requires additional privilege (i.e. kubeconfig to list/watch secrets) to the node.
+And this doesn't work if kubelet retrieve creds from somewhere not API server (e.g. [credential provider](https://kubernetes.io/docs/tasks/kubelet-credential-provider/kubelet-credential-provider/)).
+

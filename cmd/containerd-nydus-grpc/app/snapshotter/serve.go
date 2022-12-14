@@ -19,10 +19,14 @@ import (
 	"github.com/containerd/containerd/snapshots"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
+
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 )
 
 type ServeOptions struct {
 	ListeningSocketPath string
+	EnableCRIKeychain   bool
+	ImageServiceAddress string
 }
 
 func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, stop <-chan struct{}) error {
@@ -39,6 +43,11 @@ func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, 
 	if err != nil {
 		return errors.Wrapf(err, "listen socket %q", options.ListeningSocketPath)
 	}
+
+	if options.EnableCRIKeychain {
+		auth.AddImageProxy(ctx, rpc, options.ImageServiceAddress)
+	}
+
 	go func() {
 		<-stop
 

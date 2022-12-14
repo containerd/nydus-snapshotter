@@ -160,7 +160,7 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
-		keyChain := auth.GetRegistryKeyChain(registryHost, labels)
+		keyChain := auth.GetRegistryKeyChain(registryHost, imageID, labels)
 		c.Supplement(registryHost, image.Repo, snapshotID, params)
 		c.FillAuth(keyChain)
 
