@@ -9,8 +9,12 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"os"
 	"path"
+	"path/filepath"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
@@ -56,7 +60,34 @@ func (db *Database) WalkCompatDaemons(ctx context.Context, handler func(cd *Comp
 	})
 }
 
+// Snapshotter v0.3.0 and lower store nydusd and rafs instance configurations in the different folders.
+func RedirectInstanceConfig(new, old string) error {
+	oldConfig, err := os.Open(old)
+	if err != nil {
+		return err
+	}
+	defer oldConfig.Close()
+
+	err = os.MkdirAll(filepath.Dir(new), 0700)
+	if err != nil {
+		return err
+	}
+	newConfig, err := os.Create(new)
+	if err != nil {
+		return err
+	}
+	defer newConfig.Close()
+
+	_, err = io.Copy(newConfig, oldConfig)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (db *Database) tryTranslateRecords() error {
+	log.L.Info("Trying to translate bucket records...")
 	daemons := make([]*CompatDaemon, 0)
 
 	err := db.WalkCompatDaemons(context.TODO(), func(cd *CompatDaemon) error {
@@ -69,30 +100,54 @@ func (db *Database) tryTranslateRecords() error {
 	}
 
 	var sharedMode = false
+	var configDir string
 
 	// Scan all the daemons if it is started as shared mode last time
 	for _, d := range daemons {
 		if d.ID == SharedNydusDaemonID {
 			sharedMode = true
+		} else if configDir == "" {
+			configDir = d.ConfigDir
 		}
 	}
 
 	for _, d := range daemons {
 		var mp string
 		var newDaemon *daemon.Daemon
-		if sharedMode && d.ID == SharedNydusDaemonID {
-			newDaemon = &daemon.Daemon{
-				States: daemon.States{
-					ID:         d.ID,
-					ProcessID:  d.Pid,
-					APISocket:  path.Join(d.SnapshotDir, "api.sock"),
-					FsDriver:   d.FsDriver,
-					Mountpoint: *d.RootMountPoint,
-					LogDir:     d.LogDir,
-					LogLevel:   d.LogLevel,
-					// Shared daemon does not need config file when start
-					ConfigDir: "",
-				}}
+		if sharedMode {
+			if d.ID == SharedNydusDaemonID {
+
+				oldConfig := path.Join(configDir, "config.json")
+				newConfig := filepath.Join(filepath.Dir(configDir), SharedNydusDaemonID, "config.json")
+
+				newDaemon = &daemon.Daemon{
+					States: daemon.States{
+						ID:         d.ID,
+						ProcessID:  d.Pid,
+						APISocket:  path.Join(d.SnapshotDir, "api.sock"),
+						FsDriver:   d.FsDriver,
+						Mountpoint: *d.RootMountPoint,
+						LogDir:     d.LogDir,
+						LogLevel:   d.LogLevel,
+						// Shared daemon does not need config file when start
+						ConfigDir: filepath.Dir(newConfig),
+					}}
+
+				if err := RedirectInstanceConfig(newConfig, oldConfig); err != nil {
+					log.L.WithError(err).Warnf("Redirect configuration from %s to %s", oldConfig, newConfig)
+				}
+
+			} else {
+				// Redirect rafs instance configuration files. We have to do it here to
+				// prevent scattering compatibility code anywhere.
+				oldConfig := path.Join(d.ConfigDir, "config.json")
+				newConfig := path.Join(filepath.Dir(d.ConfigDir), SharedNydusDaemonID,
+					d.SnapshotID, "config.json")
+				log.L.Infof("Redirect configuration to %s", newConfig)
+				if err := RedirectInstanceConfig(newConfig, oldConfig); err != nil {
+					log.L.WithError(err).Warnf("Redirect configuration from %s to %s", oldConfig, newConfig)
+				}
+			}
 		} else if !sharedMode {
 			mp = *d.CustomMountPoint
 			newDaemon = &daemon.Daemon{
