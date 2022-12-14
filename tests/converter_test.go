@@ -23,17 +23,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/containerd/containerd"
 	containerdconverter "github.com/containerd/containerd/images/converter"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
+	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
 )
 
@@ -607,17 +614,124 @@ func testUnpack(t *testing.T, fsVersion string) {
 	require.Equal(t, ociTarDigest, newTarDigest)
 }
 
-// sudo go test -v -count=1 -run TestImageConvert ./tests
-func TestImageConvert(t *testing.T) {
-	testImageConvert(t, "5")
-	testImageConvert(t, "6")
+type ConvertTestOption struct {
+	t                    *testing.T
+	fsVersion            string
+	backend              converter.Backend
+	disableCheck         bool
+	beforeConversionHook func() error
+	afterConversionHook  func() error
 }
 
-func testImageConvert(t *testing.T, fsVersion string) {
+// sudo go test -v -count=1 -run TestImageConvert ./tests
+func TestImageConvert(t *testing.T) {
+	for _, fsVersion := range []string{"5", "6"} {
+		testImageConvertNoBackend(t, fsVersion)
+		testImageConvertS3Backend(t, fsVersion)
+	}
+}
+
+func testImageConvertNoBackend(t *testing.T, fsVersion string) {
+	testImageConvertBasic(&ConvertTestOption{
+		t:         t,
+		fsVersion: fsVersion,
+	})
+}
+
+func testImageConvertS3Backend(t *testing.T, fsVersion string) {
+	testOpt := &ConvertTestOption{
+		t:         t,
+		fsVersion: fsVersion,
+	}
+	rawConfig := []byte(`{
+		"endpoint": "localhost:9000",
+		"scheme": "http",
+		"bucket_name": "nydus",
+		"region": "us-east-1",
+		"object_prefix": "path/to/my-registry/",
+		"access_key_id": "minio",
+		"access_key_secret": "minio123"
+	}`)
+	backend, err := backend.NewBackend("s3", rawConfig)
+	if err != nil {
+		t.Fatalf("failed to create s3 backend: %v", err)
+	}
+	testOpt.backend = backend
+
+	minioContainerName := fmt.Sprintf("minio-%d", time.Now().UnixNano())
+	testOpt.beforeConversionHook = func() error {
+		// setup minio server
+		if err := exec.Command("docker", "run", "-d", "-p", "9000:9000", "--name", minioContainerName, "-e", "MINIO_ACCESS_KEY=minio", "-e", "MINIO_SECRET_KEY=minio123", "minio/minio", "server", "/data").Run(); err != nil {
+			t.Fatalf("failed to start minio server: %v", err)
+			return err
+		}
+		time.Sleep(5 * time.Second)
+		// create nydus bucket
+		s3AWSConfig, err := awscfg.LoadDefaultConfig(context.TODO())
+		if err != nil {
+			t.Errorf("failed to load aws config")
+		}
+		client := s3.NewFromConfig(s3AWSConfig, func(o *s3.Options) {
+			o.EndpointResolver = s3.EndpointResolverFromURL("http://localhost:9000")
+			o.Region = "us-east-1"
+			o.UsePathStyle = true
+			o.Credentials = credentials.NewStaticCredentialsProvider("minio", "minio123", "")
+			o.UsePathStyle = true
+		})
+		_, err = client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String("nydus")})
+		if err != nil {
+			return err
+		}
+		logrus.Info("create s3 bucket successfully")
+		return nil
+	}
+
+	testOpt.afterConversionHook = func() error {
+		if err := exec.Command("docker", "rm", "-f", minioContainerName).Run(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// TODO by now, the last release of nydusify doesn't support s3 backend
+	// so skip the check
+	testOpt.disableCheck = true
+
+	testImageConvertBasic(testOpt)
+}
+
+func testImageConvertBasic(testOpt *ConvertTestOption) {
 	const (
 		srcImageRef    = "docker.io/library/nginx:latest"
 		targetImageRef = "localhost:5000/nydus/nginx:nydus-latest"
 	)
+	t := testOpt.t
+	// setup docker registry
+	if err := exec.Command("docker", "run", "-d", "-p", "5000:5000", "--restart=always", "--name", "registry", "registry:2").Run(); err != nil {
+		t.Fatalf("failed to start docker registry: %v", err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("docker", "stop", "registry").Run(); err != nil {
+			t.Fatalf("failed to stop docker registry: %v", err)
+		}
+		if err := exec.Command("docker", "rm", "registry").Run(); err != nil {
+			t.Fatalf("failed to remove docker registry: %v", err)
+		}
+	}()
+
+	if testOpt.beforeConversionHook != nil {
+		if err := testOpt.beforeConversionHook(); err != nil {
+			t.Fatalf("failed to run before conversion hook: %v", err)
+			return
+		}
+		defer func() {
+			if err := testOpt.afterConversionHook(); err != nil {
+				t.Fatalf("failed to run after conversion hook: %v", err)
+			}
+		}()
+	}
+
 	if err := exec.Command("ctr", "images", "pull", srcImageRef).Run(); err != nil {
 		t.Fatalf("failed to pull image %s: %v", srcImageRef, err)
 		return
@@ -627,12 +741,13 @@ func testImageConvert(t *testing.T, fsVersion string) {
 			t.Fatalf("failed to remove image %s: %v", srcImageRef, err)
 		}
 	}()
-	workDir, err := os.MkdirTemp("", "nydus-containerd-converter-test-")
+	workDir, err := os.MkdirTemp("", fmt.Sprintf("nydus-containerd-converter-test-%d", time.Now().UnixNano()))
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
 	nydusOpts := &converter.PackOption{
 		WorkDir:   workDir,
-		FsVersion: fsVersion,
+		FsVersion: testOpt.fsVersion,
+		Backend:   testOpt.backend,
 	}
 	convertFunc := converter.LayerConvertFunc(*nydusOpts)
 	convertHooks := containerdconverter.ConvertHooks{
@@ -641,6 +756,7 @@ func testImageConvert(t *testing.T, fsVersion string) {
 			BuilderPath:      nydusOpts.BuilderPath,
 			FsVersion:        nydusOpts.FsVersion,
 			ChunkDictPath:    nydusOpts.ChunkDictPath,
+			Backend:          testOpt.backend,
 			PrefetchPatterns: nydusOpts.PrefetchPatterns,
 		}),
 	}
@@ -673,6 +789,9 @@ func testImageConvert(t *testing.T, fsVersion string) {
 		return
 	}
 	// check whether the converted image is valid
+	if testOpt.disableCheck {
+		return
+	}
 	if output, err := exec.Command("nydusify", "check", "--source", srcImageRef, "--target", targetImageRef, "--target-insecure").CombinedOutput(); err != nil {
 		t.Fatalf("failed to check image %s: %v, \noutput:\n%s", targetImageRef, err, output)
 		return

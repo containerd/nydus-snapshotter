@@ -23,8 +23,6 @@ import (
 
 const (
 	splitPartsCount = 4
-	// Blob size bigger than 100MB, apply multiparts upload.
-	multipartsUploadThreshold = 100 * 1024 * 1024
 )
 
 type OSSBackend struct {
@@ -109,7 +107,7 @@ func (b *OSSBackend) push(ra content.ReaderAt, blobDigest digest.Digest) error {
 	blobSize := ra.Size()
 	var needMultiparts = false
 	// Blob size bigger than 100MB, apply multiparts upload.
-	if blobSize >= multipartsUploadThreshold {
+	if blobSize >= MultipartsUploadThreshold {
 		needMultiparts = true
 	}
 
