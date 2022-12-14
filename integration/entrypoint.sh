@@ -144,7 +144,7 @@ function reboot_containerd {
     fi
 
     if [[ "${fs_driver}" == fusedev ]]; then
-        nydusd_config=/etc/nydus/config.json
+        nydusd_config=/etc/nydus/nydusd-config.json
     else
         nydusd_config="$FSCACHE_NYDUSD_CONFIG"
     fi
@@ -245,7 +245,7 @@ function start_single_container_on_stargz {
     sleep 0.5
 
     containerd-nydus-grpc --enable-stargz --daemon-mode multiple --fs-driver fusedev \
-        --recover-policy none --log-to-stdout --config-path /etc/nydus/config.json &
+        --recover-policy none --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
 
     nerdctl --snapshotter nydus run -d --net none "${STARGZ_IMAGE}"
     detect_go_race
@@ -340,7 +340,7 @@ function kill_snapshotter_and_nydusd_recover {
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/config.json &
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
 
     echo "start new containers"
@@ -397,7 +397,7 @@ function only_restart_snapshotter {
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/config.json &
+    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
 
     if [[ "${daemon_mode}" == "shared" ]]; then
