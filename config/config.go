@@ -28,6 +28,8 @@ type DaemonMode string
 
 var SnapshotsDir string
 
+var NydusConfig *Config
+
 const (
 	// One nydusd, one rafs instance
 	DaemonModeMultiple DaemonMode = "multiple"
@@ -116,6 +118,27 @@ type Config struct {
 	ImageServiceAddress      string        `toml:"image_service_address"`
 }
 
+// Defines snapshots states directories.
+func (c *Config) SnapshotRoot() string {
+	return filepath.Join(c.RootDir, "snapshots")
+}
+
+func (c *Config) SocketRoot() string {
+	return filepath.Join(c.RootDir, "socket")
+}
+
+func (c *Config) ConfigRoot() string {
+	return filepath.Join(c.RootDir, "config")
+}
+
+func GetDaemonMode() DaemonMode {
+	return NydusConfig.DaemonMode
+}
+
+func GetFsDriver() string {
+	return NydusConfig.FsDriver
+}
+
 type SnapshotterConfig struct {
 	StartupFlag command.Args `toml:"snapshotter"`
 }
@@ -136,37 +159,37 @@ func LoadSnapshotterConfig(snapshotterConfigPath string) (*SnapshotterConfig, er
 	return &config, nil
 }
 
-func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
-	if startupFlag == nil {
+func ProcessParameters(args *command.Args, cfg *Config) error {
+	if args == nil {
 		return errors.New("no startup parameter provided")
 	}
 
-	if startupFlag.ValidateSignature {
-		if startupFlag.PublicKeyFile == "" {
+	if args.ValidateSignature {
+		if args.PublicKeyFile == "" {
 			return errors.New("need to specify publicKey file for signature validation")
-		} else if _, err := os.Stat(startupFlag.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "failed to find publicKey file %q", startupFlag.PublicKeyFile)
+		} else if _, err := os.Stat(args.PublicKeyFile); err != nil {
+			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
 		}
 	}
-	cfg.PublicKeyFile = startupFlag.PublicKeyFile
-	cfg.ValidateSignature = startupFlag.ValidateSignature
-	cfg.DaemonCfgPath = startupFlag.ConfigPath
-	daemonMode, err := parseDaemonMode(startupFlag.DaemonMode)
+	cfg.PublicKeyFile = args.PublicKeyFile
+	cfg.ValidateSignature = args.ValidateSignature
+	cfg.DaemonCfgPath = args.ConfigPath
+	daemonMode, err := parseDaemonMode(args.DaemonMode)
 	if err != nil {
 		return err
 	}
 
 	// Give --shared-daemon higher priority
 	cfg.DaemonMode = daemonMode
-	if startupFlag.SharedDaemon {
+	if args.SharedDaemon {
 		cfg.DaemonMode = DaemonModeShared
 	}
 
-	if startupFlag.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
+	if args.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
-	cfg.RootDir = startupFlag.RootDir
+	cfg.RootDir = args.RootDir
 	if len(cfg.RootDir) == 0 {
 		return errors.New("empty root directory")
 	}
@@ -174,7 +197,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	// Snapshots does not have to bind to any runtime daemon.
 	SnapshotsDir = path.Join(cfg.RootDir, "snapshots")
 
-	if startupFlag.RootDir == defaultRootDir {
+	if args.RootDir == defaultRootDir {
 		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
 			if len(entries) != 0 {
 				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
@@ -182,15 +205,15 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 		}
 	}
 
-	cfg.CacheDir = startupFlag.CacheDir
+	cfg.CacheDir = args.CacheDir
 	if len(cfg.CacheDir) == 0 {
 		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
 	}
 
-	cfg.LogLevel = startupFlag.LogLevel
+	cfg.LogLevel = args.LogLevel
 	// Always let options from CLI override those from configuration file.
-	cfg.LogToStdout = startupFlag.LogToStdout
-	cfg.LogDir = startupFlag.LogDir
+	cfg.LogToStdout = args.LogToStdout
+	cfg.LogDir = args.LogDir
 	if len(cfg.LogDir) == 0 {
 		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
 	}
@@ -200,31 +223,39 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
 	cfg.RotateLogCompress = defaultRotateLogCompress
 
-	d, err := time.ParseDuration(startupFlag.GCPeriod)
+	d, err := time.ParseDuration(args.GCPeriod)
 	if err != nil {
-		return errors.Wrapf(err, "parse gc period %v failed", startupFlag.GCPeriod)
+		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
 	}
 	cfg.GCPeriod = d
 
-	cfg.Address = startupFlag.Address
-	cfg.EnableSystemController = startupFlag.EnableSystemController
-	cfg.CleanupOnClose = startupFlag.CleanupOnClose
-	cfg.ConvertVpcRegistry = startupFlag.ConvertVpcRegistry
-	cfg.DisableCacheManager = startupFlag.DisableCacheManager
-	cfg.EnableMetrics = startupFlag.EnableMetrics
-	cfg.EnableStargz = startupFlag.EnableStargz
-	cfg.EnableNydusOverlayFS = startupFlag.EnableNydusOverlayFS
-	cfg.FsDriver = startupFlag.FsDriver
-	cfg.MetricsFile = startupFlag.MetricsFile
-	cfg.NydusdBinaryPath = startupFlag.NydusdBinaryPath
-	cfg.NydusImageBinaryPath = startupFlag.NydusImageBinaryPath
-	cfg.NydusdThreadNum = startupFlag.NydusdThreadNum
-	cfg.SyncRemove = startupFlag.SyncRemove
-	cfg.KubeconfigPath = startupFlag.KubeconfigPath
-	cfg.EnableKubeconfigKeychain = startupFlag.EnableKubeconfigKeychain
-	cfg.RecoverPolicy = startupFlag.RecoverPolicy
-	cfg.EnableCRIKeychain = startupFlag.EnableCRIKeychain
-	cfg.ImageServiceAddress = startupFlag.ImageServiceAddress
+	cfg.Address = args.Address
+	cfg.EnableSystemController = args.EnableSystemController
+	cfg.CleanupOnClose = args.CleanupOnClose
+	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
+	cfg.DisableCacheManager = args.DisableCacheManager
+
+	cfg.EnableStargz = args.EnableStargz
+	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	cfg.FsDriver = args.FsDriver
+
+	cfg.EnableMetrics = args.EnableMetrics
+	cfg.MetricsFile = args.MetricsFile
+
+	cfg.NydusdBinaryPath = args.NydusdBinaryPath
+	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
+	cfg.NydusdThreadNum = args.NydusdThreadNum
+
+	cfg.SyncRemove = args.SyncRemove
+
+	cfg.KubeconfigPath = args.KubeconfigPath
+	cfg.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
+	cfg.EnableCRIKeychain = args.EnableCRIKeychain
+	cfg.ImageServiceAddress = args.ImageServiceAddress
+
+	cfg.RecoverPolicy = args.RecoverPolicy
+
+	NydusConfig = cfg
 
 	return cfg.SetupNydusBinaryPaths()
 }

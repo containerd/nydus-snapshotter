@@ -8,18 +8,19 @@
 // Abstraction layer of underlying file systems. The file system could be mounted by one
 // or more nydusd daemons. fs package hides the details
 
-package fs
+package filesystem
 
 import (
 	"context"
 	"os"
 	"path"
 
-	"github.com/containerd/containerd/log"
-	"github.com/containerd/containerd/snapshots"
 	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+
+	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/snapshots"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
@@ -27,7 +28,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem/meta"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -45,35 +45,26 @@ const (
 )
 
 type Filesystem struct {
-	meta.FileSystemMeta
 	// Managing all daemons serving filesystem.
 	Manager              *manager.Manager
 	cacheMgr             *cache.Manager
 	sharedDaemon         *daemon.Daemon
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier
-	fsDriver             string
 	nydusImageBinaryPath string
-	nydusdThreadNum      int
-	logLevel             string
-	logDir               string
-	logToStdout          bool
-	vpcRegistry          bool
-	mode                 config.DaemonMode
 	rootMountpoint       string
 }
 
 func (fs *Filesystem) tryRetainSharedDaemon(d *daemon.Daemon) {
 	// FsDriver can be changed between two startups.
-	if d.HostMountpoint() == fs.rootMountpoint || fs.fsDriver == config.FsDriverFscache {
+	if d.HostMountpoint() == fs.rootMountpoint || config.GetFsDriver() == config.FsDriverFscache {
 		fs.sharedDaemon = d
 		d.IncRef()
 	}
 }
 
 // NewFileSystem initialize Filesystem instance
-// TODO(chge): `Filesystem` abstraction is not suggestive. A snapshotter
-// can mount many Rafs/Erofs file systems
+// It does mount image layers by starting nydusd doing FUSE mount or not.
 func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	var fs Filesystem
 	for _, o := range opt {
@@ -91,7 +82,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 
 	// Try to bring up the shared daemon early.
 	// With found recovering daemons, it must be the case that snapshotter is being restarted.
-	if fs.mode == config.DaemonModeShared && len(liveDaemons) == 0 && len(recoveringDaemons) == 0 {
+	if config.GetDaemonMode() == config.DaemonModeShared && len(liveDaemons) == 0 && len(recoveringDaemons) == 0 {
 		// Situations that shared daemon is not found:
 		//   1. The first time this nydus-snapshotter runs
 		//   2. Daemon record is wrongly deleted from DB. Above reconnecting already gathers
@@ -141,7 +132,7 @@ func (fs *Filesystem) getSharedDaemon() *daemon.Daemon {
 func (fs *Filesystem) decideDaemonMountpoint(rafs *daemon.Rafs) (string, error) {
 	var m string
 	if fs.Manager.IsSharedDaemon() {
-		if fs.fsDriver == config.FsDriverFscache {
+		if config.GetFsDriver() == config.FsDriverFscache {
 			return "", nil
 		}
 		m = fs.rootMountpoint
@@ -160,7 +151,7 @@ func (fs *Filesystem) decideDaemonMountpoint(rafs *daemon.Rafs) (string, error) 
 // and the status of nydusd daemon must be ready
 func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 	// If NoneDaemon mode, there's no need to wait for daemon ready
-	if !fs.hasDaemon() {
+	if !fs.DaemonBacked() {
 		return nil
 	}
 
@@ -188,7 +179,7 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 // It must set up all necessary resources during Mount procedure and revoke any step if necessary.
 func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err error) {
 	// If NoneDaemon mode, we don't mount nydus on host
-	if !fs.hasDaemon() {
+	if !fs.DaemonBacked() {
 		return nil
 	}
 
@@ -368,7 +359,7 @@ func (fs *Filesystem) Teardown(ctx context.Context) error {
 }
 
 func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
-	if !fs.hasDaemon() {
+	if !fs.DaemonBacked() {
 		// For NoneDaemon mode, return a dummy mountpoint which is very likely not
 		// existed on host. NoneDaemon mode does not start nydusd, so NO fuse mount is
 		// ever performed. Only mount option carries meaningful info to containerd and
@@ -388,8 +379,8 @@ func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 // daemon mountpoint to rafs mountpoint
 // calculate rafs mountpoint for snapshots mount slice.
 func (fs *Filesystem) mount(d *daemon.Daemon, r *daemon.Rafs) error {
-	if fs.mode == config.DaemonModeShared {
-		if fs.fsDriver == config.FsDriverFusedev {
+	if config.GetDaemonMode() == config.DaemonModeShared {
+		if config.GetFsDriver() == config.FsDriverFusedev {
 			r.SetMountpoint(path.Join(d.HostMountpoint(), r.SnapshotID))
 		} else {
 			r.SetMountpoint(path.Join(r.GetSnapshotDir(), "mnt"))
@@ -467,13 +458,13 @@ func (fs *Filesystem) TryStopSharedDaemon() {
 func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daemon, err error) {
 	opts := []daemon.NewDaemonOpt{
 		daemon.WithRef(ref),
-		daemon.WithSocketDir(fs.SocketRoot()),
-		daemon.WithConfigDir(fs.ConfigRoot()),
-		daemon.WithLogDir(fs.logDir),
-		daemon.WithLogLevel(fs.logLevel),
-		daemon.WithLogToStdout(fs.logToStdout),
-		daemon.WithNydusdThreadNum(fs.nydusdThreadNum),
-		daemon.WithFsDriver(fs.fsDriver)}
+		daemon.WithSocketDir(config.NydusConfig.SocketRoot()),
+		daemon.WithConfigDir(config.NydusConfig.ConfigRoot()),
+		daemon.WithLogDir(config.NydusConfig.LogDir),
+		daemon.WithLogLevel(config.NydusConfig.LogLevel),
+		daemon.WithLogToStdout(config.NydusConfig.LogToStdout),
+		daemon.WithNydusdThreadNum(config.NydusConfig.NydusdThreadNum),
+		daemon.WithFsDriver(config.GetFsDriver())}
 
 	if mountpoint != "" {
 		opts = append(opts, daemon.WithMountpoint(mountpoint))
@@ -501,6 +492,6 @@ func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daem
 	return d, nil
 }
 
-func (fs *Filesystem) hasDaemon() bool {
-	return fs.mode != config.DaemonModeNone
+func (fs *Filesystem) DaemonBacked() bool {
+	return config.NydusConfig.DaemonMode != config.DaemonModeNone
 }

@@ -42,7 +42,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
 
-	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
@@ -53,9 +53,9 @@ var _ snapshots.Snapshotter = &snapshotter{}
 type snapshotter struct {
 	root       string
 	nydusdPath string
-	// Storing snapshots' state, parentage ant other metadata
+	// Storing snapshots' state, parentage and other metadata
 	ms                   *storage.MetaStore
-	fs                   *fspkg.Filesystem
+	fs                   *filesystem.Filesystem
 	blobMgr              *blob.Manager
 	manager              *manager.Manager
 	hasDaemon            bool
@@ -112,7 +112,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	// Start to collect metrics.
 	go func() {
 		if err := metricServer.StartCollectMetrics(ctx, cfg.EnableMetrics); err != nil {
-			log.L.Errorf("Failed to start collect metrics, %s", err)
+			log.L.WithError(err).Errorf("Failed to start collecting metrics")
 		}
 	}()
 
@@ -128,20 +128,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		}()
 	}
 
-	opts := []fspkg.NewFSOpt{
-		fspkg.WithManager(manager),
-		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
-		fspkg.WithMeta(cfg.RootDir),
-		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
-		fspkg.WithVerifier(verifier),
-		fspkg.WithDaemonMode(cfg.DaemonMode),
-		fspkg.WithFsDriver(cfg.FsDriver),
-		fspkg.WithLogLevel(cfg.LogLevel),
-		fspkg.WithLogDir(cfg.LogDir),
-		fspkg.WithLogToStdout(cfg.LogToStdout),
-		fspkg.WithRootMountpoint(path.Join(cfg.RootDir, "mnt")),
-		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
-		fspkg.WithEnableStargz(cfg.EnableStargz),
+	opts := []filesystem.NewFSOpt{
+		filesystem.WithManager(manager),
+		filesystem.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
+		filesystem.WithVerifier(verifier),
+		filesystem.WithRootMountpoint(path.Join(cfg.RootDir, "mnt")),
+		filesystem.WithEnableStargz(cfg.EnableStargz),
 	}
 
 	if !cfg.DisableCacheManager {
@@ -154,12 +146,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		if err != nil {
 			return nil, errors.Wrap(err, "create cache manager")
 		}
-		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
+		opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 	}
 
 	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
 
-	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
+	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
 	}

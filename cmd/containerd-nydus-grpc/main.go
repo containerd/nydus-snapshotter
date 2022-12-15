@@ -43,11 +43,11 @@ func main() {
 			var cfg config.Config
 
 			if snapshotterCfg, err := config.LoadSnapshotterConfig(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
-				if err = config.SetStartupParameter(&snapshotterCfg.StartupFlag, &cfg); err != nil {
+				if err = config.ProcessParameters(&snapshotterCfg.StartupFlag, &cfg); err != nil {
 					return errors.Wrap(err, "parse parameters")
 				}
 			} else {
-				if err := config.SetStartupParameter(flags.Args, &cfg); err != nil {
+				if err := config.ProcessParameters(flags.Args, &cfg); err != nil {
 					return errors.Wrap(err, "parse parameters")
 				}
 			}
