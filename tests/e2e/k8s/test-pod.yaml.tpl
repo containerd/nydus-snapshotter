@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: test-pod
+  namespace: nydus-system
 spec:
   containers:
     - name: busybox
@@ -10,3 +11,5 @@ spec:
       command: ["sh", "-c"]
       args:
         - tail -f /dev/null
+  imagePullSecrets:
+    - name: regcred
