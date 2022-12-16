@@ -312,6 +312,7 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 
 	cfg := c.(*daemonconfig.FscacheDaemonConfig)
 	rafs.AddAnnotation(AnnoFsCacheDomainID, cfg.DomainID)
+	rafs.AddAnnotation(AnnoFsCacheID, fscacheID)
 
 	if err := erofs.Mount(bootstrapPath, cfg.DomainID, fscacheID, mountPoint); err != nil {
 		if !errdefs.IsErofsMounted(err) {
@@ -333,8 +334,9 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 		return errors.Wrapf(err, "unbind blob %s", d.ID())
 	}
 	domainID := rafs.Annotations[AnnoFsCacheDomainID]
+	fscaheID := rafs.Annotations[AnnoFsCacheID]
 
-	if err := c.UnbindBlob(domainID); err != nil {
+	if err := c.UnbindBlob(domainID, fscaheID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
