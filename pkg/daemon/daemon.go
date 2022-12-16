@@ -345,6 +345,12 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 		return errors.Wrapf(err, "umount erofs %s mountpoint, %s", err, mountpoint)
 	}
 
+	// delete fscache bootstrap cache file
+	// erofs generate fscache cache file for bootstrap with fscachID
+	if err := c.UnbindBlob("", fscaheID); err != nil {
+		log.L.Warnf("delete bootstrap %s err %s", fscaheID, err)
+	}
+
 	return nil
 }
 
