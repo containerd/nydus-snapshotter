@@ -2,9 +2,7 @@
     "type": "bootstrap",
     "config": {
         "backend_type": "registry",
-        "backend_config": {
-            "scheme": "https"
-        },
+        "backend_config": {},
         "cache_type": "fscache",
         "prefetch_config": {
             "enable": true,

@@ -19,13 +19,14 @@ const CacheDir string = "cachedir"
 
 // Used when nydusd works as a FUSE daemon or vhost-user-fs backend
 type FuseDaemonConfig struct {
-	Device         *DeviceConfig `json:"device"`
-	Mode           string        `json:"mode"`
-	DigestValidate bool          `json:"digest_validate"`
-	IOStatsFiles   bool          `json:"iostats_files,omitempty"`
-	EnableXattr    bool          `json:"enable_xattr,omitempty"`
-
-	FSPrefetch `json:"fs_prefetch,omitempty"`
+	Device          *DeviceConfig `json:"device"`
+	Mode            string        `json:"mode"`
+	DigestValidate  bool          `json:"digest_validate"`
+	IOStatsFiles    bool          `json:"iostats_files,omitempty"`
+	EnableXattr     bool          `json:"enable_xattr,omitempty"`
+	AccessPattern   bool          `json:"access_pattern,omitempty"`
+	LatestReadFiles bool          `json:"latest_read_files,omitempty"`
+	FSPrefetch      `json:"fs_prefetch,omitempty"`
 }
 
 // Control how to perform prefetch from file system layer

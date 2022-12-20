@@ -30,46 +30,47 @@ type KubeSecretListener struct {
 	informer      cache.SharedIndexInformer
 }
 
-func InitKubeSecretListener(ctx context.Context, kubeconfigPath string) {
+func InitKubeSecretListener(ctx context.Context, kubeconfigPath string) error {
 	configMu.Lock()
 	defer configMu.Unlock()
 	if kubeSecretListener != nil {
-		return
+		return nil
 	}
 	kubeSecretListener = &KubeSecretListener{
 		dockerConfigs: make(map[string]*configfile.ConfigFile),
 	}
-	go func() {
-		if kubeconfigPath != "" {
-			_, err := os.Stat(kubeconfigPath)
-			if err != nil && !os.IsNotExist(err) {
-				logrus.WithError(err).Warningf("kubeconfig does not exist, kubeconfigPath %s", kubeconfigPath)
-				return
-			} else if err != nil {
-				logrus.WithError(err).Warningf("failed to detect kubeconfig existence, kubeconfigPath %s", kubeconfigPath)
-				return
-			}
+
+	if kubeconfigPath != "" {
+		_, err := os.Stat(kubeconfigPath)
+		if err != nil && !os.IsNotExist(err) {
+			logrus.WithError(err).Warningf("kubeconfig does not exist, kubeconfigPath %s", kubeconfigPath)
+			return err
+		} else if err != nil {
+			logrus.WithError(err).Warningf("failed to detect kubeconfig existence, kubeconfigPath %s", kubeconfigPath)
+			return err
 		}
-		loadingRule := clientcmd.NewDefaultClientConfigLoadingRules()
-		loadingRule.ExplicitPath = kubeconfigPath
-		clientConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			loadingRule,
-			&clientcmd.ConfigOverrides{},
-		).ClientConfig()
-		if err != nil {
-			logrus.WithError(err).Warningf("failed to load kubeconfig")
-			return
-		}
-		clientset, err := kubernetes.NewForConfig(clientConfig)
-		if err != nil {
-			logrus.WithError(err).Warningf("failed to create kubernetes client")
-			return
-		}
-		if err := kubeSecretListener.SyncKubeSecrets(ctx, clientset); err != nil {
-			logrus.WithError(err).Warningf("failed to sync secrets")
-			return
-		}
-	}()
+	}
+	loadingRule := clientcmd.NewDefaultClientConfigLoadingRules()
+	loadingRule.ExplicitPath = kubeconfigPath
+	clientConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		loadingRule,
+		&clientcmd.ConfigOverrides{},
+	).ClientConfig()
+	if err != nil {
+		logrus.WithError(err).Warningf("failed to load kubeconfig")
+		return err
+	}
+	clientset, err := kubernetes.NewForConfig(clientConfig)
+	if err != nil {
+		logrus.WithError(err).Warningf("failed to create kubernetes client")
+		return err
+	}
+	if err := kubeSecretListener.SyncKubeSecrets(ctx, clientset); err != nil {
+		logrus.WithError(err).Warningf("failed to sync secrets")
+		return err
+	}
+
+	return nil
 }
 
 func (kubelistener *KubeSecretListener) addDockerConfig(key string, obj interface{}) error {

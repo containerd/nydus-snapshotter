@@ -80,15 +80,22 @@ func FromLabels(labels map[string]string) *PassKeyChain {
 	}
 }
 
-// GetRegistryKeyChain get image pull kaychain from (ordered):
+// GetRegistryKeyChain get image pull keychain from (ordered):
 // 1. username and secrets labels
-// 2. docker config
-// 3. k8s docker config secret
-func GetRegistryKeyChain(host string, labels map[string]string) *PassKeyChain {
+// 2. cri request
+// 3. docker config
+// 4. k8s docker config secret
+func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyChain {
 	kc := FromLabels(labels)
 	if kc != nil {
 		return kc
 	}
+
+	kc = FromCRI(host, ref)
+	if kc != nil {
+		return kc
+	}
+
 	kc = FromDockerConfig(host)
 	if kc != nil {
 		return kc
@@ -103,7 +110,7 @@ func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, erro
 	}
 
 	host := docker.Domain(named)
-	keychain := GetRegistryKeyChain(host, labels)
+	keychain := GetRegistryKeyChain(host, ref, labels)
 
 	return keychain, nil
 }

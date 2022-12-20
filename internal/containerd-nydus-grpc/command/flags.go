@@ -9,6 +9,7 @@ package command
 import (
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/slices"
 	"github.com/urfave/cli/v2"
@@ -262,11 +263,11 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to validate integrity of image bootstrap",
 			Destination: &args.ValidateSignature,
 		},
-		&cli.StringFlag{
-			Name:        "api-socket",
-			Value:       defaultAPISocket,
+		&cli.BoolFlag{
+			Name:        "enable-system-controller",
 			Usage:       "(experimental) unix domain socket path to serve HTTP-based system management",
-			Destination: &args.APISocket,
+			Destination: &args.EnableSystemController,
+			Value:       true,
 		},
 		&cli.StringFlag{
 			Name:        "kubeconfig-path",
@@ -279,6 +280,18 @@ func buildFlags(args *Args) []cli.Flag {
 			Value:       false,
 			Usage:       "synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with provided `--kubeconfig-path` (default `$KUBECONFIG` or `~/.kube/config`)",
 			Destination: &args.EnableKubeconfigKeychain,
+		},
+		&cli.BoolFlag{
+			Name:        "enable-cri-keychain",
+			Value:       false,
+			Usage:       "enable a CRI image proxy and retrieve image secret when proxying image request",
+			Destination: &args.EnableCRIKeychain,
+		},
+		&cli.StringFlag{
+			Name:        "image-service-address",
+			Value:       auth.DefaultImageServiceAddress,
+			Usage:       "the target image service when using image proxy",
+			Destination: &args.ImageServiceAddress,
 		},
 	}
 }

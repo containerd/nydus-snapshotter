@@ -53,9 +53,6 @@ jobs:
             ${{ runner.os }}-go
       - name: Set up containerd
         uses: crazy-max/ghaction-setup-containerd@v2
-      - name: Set up docker registry
-        run: |
-          docker run -d -p 5000:5000 --restart=always --name registry registry:2
       - name: Build
         run: |
           # Download nydus components

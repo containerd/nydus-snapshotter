@@ -2,18 +2,19 @@
 
 <p><img src="https://github.com/dragonflyoss/image-service/blob/master/misc/logo.svg" width="170"></p>
 
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_shield)
+
 Nydus-snapshotter is a **non-core** sub-project of containerd.
 
 Nydus snapshotter is an external plugin of containerd for [Nydus image service](https://nydus.dev) which implements a chunk-based content-addressable filesystem on top of a called `RAFS (Registry Acceleration File System)` format that improves the current OCI image specification, in terms of container launching speed, image space, and network bandwidth efficiency, as well as data integrity with several runtime backends: FUSE, virtiofs and in-kernel [EROFS](https://www.kernel.org/doc/html/latest/filesystems/erofs.html).
 
-Nydus supports lazy pulling feature since pulling image is one of the time-consuming steps in the container lifecycle. Lazy pulling here means a container can run even the image is partially available and necessary chunks of the image are fetched on-demand. Apart from that, Nydus also supports [(e)Stargz](https://github.com/containerd/stargz-snapshotter) lazy pulling directly **WITHOUT** any explicit conversion.
+Nydus supports lazy pulling feature since pulling image is one of the time-consuming steps in the container lifecycle. Lazy pulling here means a container can run even the image is partially available and necessary chunks of the image are fetched on-demand. Apart from that, Nydus also supports [(e)Stargz](https://github.com/containerd/stargz-snapshotter) and OCI (by using zran) lazy pulling directly **WITHOUT** any explicit conversion.
 
 For more details about how to build Nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool and [acceld](https://github.com/goharbor/acceleration-service).
 
 ## Architecture Based on FUSE
 
 ![fuse arch](./docs/diagram/nydus_fuse_arch.svg)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_shield)
 
 ## Architecture Based on Fscache/Erofs
 
@@ -79,7 +80,7 @@ Or you can start nydus-snapshotter manually.
 # The default nydus-snapshotter work directory is located at `/var/lib/containerd-nydus`
 
 $ ./containerd-nydus-grpc \
-    --config-path /etc/nydusd-config.json \
+    --config-path /etc/nydus/nydusd-config.json \
     --address /run/containerd-nydus/containerd-nydus-grpc.sock \
     --nydusd-path /usr/local/bin/nydusd \
     --nydusimg-path /usr/local/bin/nydus-image \
@@ -169,6 +170,6 @@ Questions, bug reports, technical discussion, feature requests and contribution 
 
 Join our Slack [workspace](https://join.slack.com/t/nydusimageservice/shared_invite/zt-pz4qvl4y-WIh4itPNILGhPS8JqdFm_w)
 
-
 ## License
+
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_large)

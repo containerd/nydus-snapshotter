@@ -3,7 +3,6 @@
     "backend": {
       "type": "registry",
       "config": {
-        "scheme": "https",
         "auth": "",
         "timeout": 5,
         "connect_timeout": 5,

@@ -9,6 +9,7 @@ package metrics
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -26,6 +27,8 @@ type Server struct {
 	rootDir     string
 	metricsFile string
 	pm          *manager.Manager
+	fsCollector *collector.FsMetricsCollector
+	snCollector *collector.SnapshotterMetricsCollector
 }
 
 func WithRootDir(rootDir string) ServerOpt {
@@ -65,17 +68,50 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 		}
 	}
 
-	err := exporter.NewFileExporter(
-		exporter.WithOutputFile(s.metricsFile),
-	)
+	s.fsCollector = collector.NewFsMetricsCollector(nil, "")
+	snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, s.pm.CacheDir(), os.Getpid())
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to new metric exporter")
+		return nil, errors.Wrap(err, "new snapshotter metrics collector failed")
+	}
+	s.snCollector = snCollector
+
+	if err := exporter.NewFileExporter(
+		exporter.WithOutputFile(s.metricsFile),
+	); err != nil {
+		return nil, errors.Wrap(err, "new metric exporter failed")
 	}
 
 	return &s, nil
 }
 
-func (s *Server) CollectDaemonMetrics(ctx context.Context) error {
+func (s *Server) CollectFsMetrics(ctx context.Context) {
+	// Collect FS metrics from daemons.
+	daemons := s.pm.ListDaemons()
+	for _, d := range daemons {
+		for _, i := range d.Instances.List() {
+			var sid string
+
+			if i.GetMountpoint() == d.HostMountpoint() {
+				sid = ""
+			} else {
+				sid = i.SnapshotID
+			}
+
+			fsMetrics, err := d.GetFsMetrics(sid)
+			if err != nil {
+				log.G(ctx).Errorf("failed to get fs metric: %v", err)
+				continue
+			}
+			s.fsCollector.Metrics = fsMetrics
+			s.fsCollector.ImageRef = i.ImageID
+
+			s.fsCollector.Collect()
+		}
+
+	}
+}
+
+func (s *Server) StartCollectMetrics(ctx context.Context, enableMetrics bool) error {
 	// TODO(renzhen): make collect interval time configurable
 	timer := time.NewTicker(time.Duration(1) * time.Minute)
 
@@ -83,31 +119,12 @@ outer:
 	for {
 		select {
 		case <-timer.C:
-			// Collect metrics from daemons.
-			daemons := s.pm.ListDaemons()
-			for _, d := range daemons {
-				for _, i := range d.Instances.List() {
-					var sid string
-
-					if i.GetMountpoint() == d.HostMountpoint() {
-						sid = ""
-					} else {
-						sid = i.SnapshotID
-					}
-
-					fsMetrics, err := d.GetFsMetrics(sid)
-					if err != nil {
-						log.G(ctx).Errorf("failed to get fs metric: %v", err)
-						continue
-					}
-
-					if err := collector.CollectFsMetrics(fsMetrics, i.ImageID); err != nil {
-						log.G(ctx).Errorf("failed to export fs metrics for %s: %v", i.ImageID, err)
-						continue
-					}
-				}
-
+			if enableMetrics {
+				s.CollectFsMetrics(ctx)
 			}
+
+			// Collect snapshotter metrics.
+			s.snCollector.Collect()
 		case <-ctx.Done():
 			log.G(ctx).Infof("cancel daemon metrics collecting")
 			break outer

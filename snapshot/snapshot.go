@@ -36,12 +36,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 
 	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
 
-	fspkg "github.com/containerd/nydus-snapshotter/pkg/filesystem/fs"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
@@ -52,9 +53,9 @@ var _ snapshots.Snapshotter = &snapshotter{}
 type snapshotter struct {
 	root       string
 	nydusdPath string
-	// Storing snapshots' state, parentage ant other metadata
+	// Storing snapshots' state, parentage and other metadata
 	ms                   *storage.MetaStore
-	fs                   *fspkg.Filesystem
+	fs                   *filesystem.Filesystem
 	blobMgr              *blob.Manager
 	manager              *manager.Manager
 	hasDaemon            bool
@@ -108,17 +109,15 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, errors.Wrap(err, "create metrics server")
 	}
 
-	if cfg.EnableMetrics {
-		// Start to collect daemon metrics.
-		go func() {
-			if err := metricServer.CollectDaemonMetrics(ctx); err != nil {
-				log.L.Errorf("Failed to start export metrics, %s", err)
-			}
-		}()
-	}
+	// Start to collect metrics.
+	go func() {
+		if err := metricServer.StartCollectMetrics(ctx, cfg.EnableMetrics); err != nil {
+			log.L.WithError(err).Errorf("Failed to start collecting metrics")
+		}
+	}()
 
-	if cfg.APISocket != "" {
-		systemController, err := system.NewSystemController(manager, cfg.APISocket)
+	if cfg.EnableSystemController {
+		systemController, err := system.NewSystemController(manager, path.Join(cfg.RootDir, "system.sock"))
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
@@ -129,20 +128,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		}()
 	}
 
-	opts := []fspkg.NewFSOpt{
-		fspkg.WithManager(manager),
-		fspkg.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
-		fspkg.WithMeta(cfg.RootDir),
-		fspkg.WithVPCRegistry(cfg.ConvertVpcRegistry),
-		fspkg.WithVerifier(verifier),
-		fspkg.WithDaemonMode(cfg.DaemonMode),
-		fspkg.WithFsDriver(cfg.FsDriver),
-		fspkg.WithLogLevel(cfg.LogLevel),
-		fspkg.WithLogDir(cfg.LogDir),
-		fspkg.WithLogToStdout(cfg.LogToStdout),
-		fspkg.WithRootMountpoint(path.Join(cfg.RootDir, "mnt")),
-		fspkg.WithNydusdThreadNum(cfg.NydusdThreadNum),
-		fspkg.WithEnableStargz(cfg.EnableStargz),
+	opts := []filesystem.NewFSOpt{
+		filesystem.WithManager(manager),
+		filesystem.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
+		filesystem.WithVerifier(verifier),
+		filesystem.WithRootMountpoint(path.Join(cfg.RootDir, "mnt")),
+		filesystem.WithEnableStargz(cfg.EnableStargz),
 	}
 
 	if !cfg.DisableCacheManager {
@@ -155,12 +146,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		if err != nil {
 			return nil, errors.Wrap(err, "create cache manager")
 		}
-		opts = append(opts, fspkg.WithCacheManager(cacheMgr))
+		opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 	}
 
 	hasDaemon := cfg.DaemonMode != command.DaemonModeNone
 
-	nydusFs, err := fspkg.NewFileSystem(ctx, opts...)
+	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
 	}
@@ -217,6 +208,10 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 }
 
 func (o *snapshotter) Cleanup(ctx context.Context) error {
+	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodCleanup); timer != nil {
+		defer timer.ObserveDuration()
+	}
+
 	cleanup, err := o.cleanupDirectories(ctx)
 	if err != nil {
 		return err
@@ -272,6 +267,9 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 }
 
 func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
+	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodMount); timer != nil {
+		defer timer.ObserveDuration()
+	}
 	var (
 		needRemoteMounts = false
 		metaSnapshotID   string
@@ -281,7 +279,6 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	if err != nil {
 		return nil, errors.Wrapf(err, "get snapshot %s info", key)
 	}
-
 	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
 
 	if isNydusMetaLayer(info.Labels) {
@@ -327,6 +324,9 @@ func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
+	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare); timer != nil {
+		defer timer.ObserveDuration()
+	}
 	logger := log.L.WithField("key", key).WithField("parent", parent)
 	info, s, err := o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
 	if err != nil {
@@ -465,6 +465,9 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 }
 
 func (o *snapshotter) Remove(ctx context.Context, key string) error {
+	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodRemove); timer != nil {
+		defer timer.ObserveDuration()
+	}
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return err

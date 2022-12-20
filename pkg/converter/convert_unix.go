@@ -11,8 +11,10 @@ package converter
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +29,7 @@ import (
 	"github.com/containerd/containerd/images/converter"
 	"github.com/containerd/containerd/labels"
 	"github.com/containerd/fifo"
+	"github.com/klauspost/compress/zstd"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -35,10 +38,14 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
 )
 
-const bootstrapNameInTar = "image.boot"
-const blobNameInTar = "image.blob"
+const EntryBlob = "image.blob"
+const EntryBootstrap = "image.boot"
+const EntryBlobMeta = "blob.meta"
+const EntryBlobMetaHeader = "blob.meta.header"
+const EntryTOC = "rafs.blob.toc"
 
 const envNydusBuilder = "NYDUS_BUILDER"
 const envNydusWorkDir = "NYDUS_WORKDIR"
@@ -120,7 +127,7 @@ func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt) error {
 	}
 	defer boot.Close()
 
-	if err = unpackFileFromNydusBlob(ra, bootstrapNameInTar, boot); err != nil {
+	if _, err = UnpackEntry(ra, EntryBootstrap, boot); err != nil {
 		return errors.Wrap(err, "unpack bootstrap from nydus")
 	}
 
@@ -130,19 +137,14 @@ func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt) error {
 	}
 	defer blob.Close()
 
-	if err = unpackFileFromNydusBlob(ra, blobNameInTar, blob); err != nil {
+	if _, err = UnpackEntry(ra, EntryBlob, blob); err != nil {
 		return errors.Wrap(err, "unpack blob from nydus")
 	}
 
 	return nil
 }
 
-// Unpack the file from nydus formatted tar stream.
-// The nydus formatted tar stream is a tar-like structure that arranges the
-// data as follows:
-//
-// `data | tar_header | data | tar_header`
-func unpackFileFromNydusBlob(ra content.ReaderAt, targetName string, target io.Writer) error {
+func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.Reader, io.Reader) error) error {
 	const headerSize = 512
 
 	if headerSize > ra.Size() {
@@ -169,7 +171,7 @@ func unpackFileFromNydusBlob(ra content.ReaderAt, targetName string, target io.W
 		}
 
 		if cur < hdr.Size {
-			return errors.Wrapf(err, "invalid nydus tar data, name %s, size %d", hdr.Name, hdr.Size)
+			return fmt.Errorf("invalid nydus tar data, name %s, size %d", hdr.Name, hdr.Size)
 		}
 
 		if hdr.Name == targetName {
@@ -178,10 +180,11 @@ func unpackFileFromNydusBlob(ra content.ReaderAt, targetName string, target io.W
 			if err != nil {
 				return errors.Wrap(err, "seek target data offset")
 			}
+			headerReader := io.NewSectionReader(reader, cur+hdr.Size, headerSize)
+			dataReader := io.NewSectionReader(reader, cur-hdr.Size, hdr.Size)
 
-			// Copy tar data to provided target writer.
-			if _, err := io.CopyN(target, reader, hdr.Size); err != nil {
-				return errors.Wrap(err, "copy target data to reader")
+			if err := handle(dataReader, headerReader); err != nil {
+				return errors.Wrap(err, "handle target data")
 			}
 
 			return nil
@@ -193,13 +196,102 @@ func unpackFileFromNydusBlob(ra content.ReaderAt, targetName string, target io.W
 		}
 	}
 
-	return fmt.Errorf("can't find target %s in nydus tar", targetName)
+	return errors.Wrapf(ErrNotFound, "can't find target %s by seeking tar", targetName)
+}
+
+func seekFileByTOC(ra content.ReaderAt, targetName string, handle func(io.Reader, io.Reader) error) (*TOCEntry, error) {
+	entrySize := 128
+	var tocEntry *TOCEntry
+
+	err := seekFileByTarHeader(ra, EntryTOC, func(tocEntryDataReader io.Reader, tarHeaderReader io.Reader) error {
+		entryData, err := io.ReadAll(tocEntryDataReader)
+		if err != nil {
+			return errors.Wrap(err, "read toc entries")
+		}
+		if len(entryData)%entrySize != 0 {
+			return fmt.Errorf("invalid entries length %d", len(entryData))
+		}
+
+		count := len(entryData) / entrySize
+		for i := 0; i < count; i++ {
+			var entry TOCEntry
+			r := bytes.NewReader(entryData[i*entrySize : i*entrySize+entrySize])
+			if err := binary.Read(r, binary.LittleEndian, &entry); err != nil {
+				return errors.Wrap(err, "read toc entries")
+			}
+			if entry.GetName() == targetName {
+				compressor, err := entry.GetCompressor()
+				if err != nil {
+					return errors.Wrap(err, "get compressor of entry")
+				}
+				compressedOffset := int64(entry.GetCompressedOffset())
+				compressedSize := int64(entry.GetCompressedSize())
+				sr := io.NewSectionReader(ra, compressedOffset, compressedSize)
+
+				var rd io.Reader
+				switch compressor {
+				case CompressorZstd:
+					decoder, err := zstd.NewReader(sr)
+					if err != nil {
+						return errors.Wrap(err, "seek to target data offset")
+					}
+					defer decoder.Close()
+					rd = decoder
+				case CompressorNone:
+					rd = sr
+				default:
+					return fmt.Errorf("unsupported compressor %x", compressor)
+				}
+
+				if err := handle(rd, nil); err != nil {
+					return errors.Wrap(err, "handle target entry data")
+				}
+
+				tocEntry = &entry
+
+				return nil
+			}
+		}
+
+		return errors.Wrapf(ErrNotFound, "can't find target %s by seeking TOC", targetName)
+	})
+
+	return tocEntry, err
+}
+
+// Unpack the file from nydus formatted tar stream.
+// The nydus formatted tar stream is a tar-like structure that arranges the
+// data as follows:
+//
+// `data | tar_header | ... | data | tar_header | [toc_entry | ... | toc_entry | tar_header]`
+func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOCEntry, error) {
+	handle := func(dataReader io.Reader, tarHeaderReader io.Reader) error {
+		// Copy data to provided target writer.
+		if _, err := io.Copy(target, dataReader); err != nil {
+			return errors.Wrap(err, "copy target data to reader")
+		}
+
+		return nil
+	}
+
+	// Try seek target data by TOC.
+	entry, err := seekFileByTOC(ra, targetName, handle)
+	if err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, errors.Wrap(err, "seek file by TOC")
+		}
+	} else {
+		return entry, nil
+	}
+
+	// Seek target data by tar header, ensure compatible with old rafs blob format.
+	return nil, seekFileByTarHeader(ra, targetName, handle)
 }
 
 // Pack converts an OCI tar stream to nydus formatted stream with a tar-like
 // structure that arranges the data as follows:
 //
-// `data | tar_header | data | tar_header`
+// `data | tar_header | data | tar_header | [toc_entry | ... | toc_entry | tar_header]`
 //
 // The caller should write OCI tar stream into the returned `io.WriteCloser`,
 // then the Pack method will write the nydus formatted stream to `dest`
@@ -208,6 +300,13 @@ func unpackFileFromNydusBlob(ra content.ReaderAt, targetName string, target io.W
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
 // the conversion workflow is finished.
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
+	if opt.OCIRef {
+		if opt.FsVersion == "" || opt.FsVersion == "6" {
+			return packRef(ctx, dest, opt)
+		}
+		return nil, fmt.Errorf("oci ref can only be supported by fs version 6")
+	}
+
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure work directory")
@@ -236,9 +335,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	}()
 
 	wc := newWriteCloser(pw, func() error {
-		defer func() {
-			os.RemoveAll(workDir)
-		}()
+		defer os.RemoveAll(workDir)
 
 		// Because PipeWriter#Close is called does not mean that the PipeReader
 		// has finished reading all the data, and unpack may not be complete yet,
@@ -282,6 +379,91 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
+func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
+	workDir, err := ensureWorkDir(opt.WorkDir)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure work directory")
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(workDir)
+		}
+	}()
+
+	blobMetaPath := filepath.Join(workDir, "blob.meta")
+	blobMetaFifo, err := fifo.OpenFifo(ctx, blobMetaPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+	if err != nil {
+		return nil, errors.Wrapf(err, "create fifo file")
+	}
+
+	sourcePath := filepath.Join(workDir, "blob.targz")
+	sourceFifo, err := fifo.OpenFifo(ctx, sourcePath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0644)
+	if err != nil {
+		defer blobMetaFifo.Close()
+		return nil, errors.Wrapf(err, "create fifo file")
+	}
+
+	pr, pw := io.Pipe()
+
+	eg := errgroup.Group{}
+
+	eg.Go(func() error {
+		defer sourceFifo.Close()
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(sourceFifo, pr, *buffer); err != nil {
+			return errors.Wrapf(err, "copy targz to fifo")
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		defer blobMetaFifo.Close()
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(dest, blobMetaFifo, *buffer); err != nil {
+			return errors.Wrapf(err, "copy blob meta fifo to nydus blob")
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		err := tool.Pack(tool.PackOption{
+			BuilderPath: getBuilder(opt.BuilderPath),
+
+			OCIRef:     opt.OCIRef,
+			BlobPath:   blobMetaPath,
+			SourcePath: sourcePath,
+			Timeout:    opt.Timeout,
+		})
+		return errors.Wrapf(err, "call builder")
+	})
+
+	wc := newWriteCloser(pw, func() error {
+		defer os.RemoveAll(workDir)
+		if err := eg.Wait(); err != nil {
+			return errors.Wrapf(err, "convert nydus ref")
+		}
+		return nil
+	})
+
+	return wc, nil
+}
+
+func calcBlobTOCDigest(ra content.ReaderAt) (*digest.Digest, error) {
+	digester := digest.Canonical.Digester()
+	if err := seekFileByTarHeader(ra, EntryTOC, func(tocData io.Reader, tarHeader io.Reader) error {
+		if _, err := io.Copy(digester.Hash(), io.MultiReader(tocData, tarHeader)); err != nil {
+			return errors.Wrap(err, "calc toc data and header digest")
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	tocDigest := digester.Digest()
+	return &tocDigest, nil
+}
+
 // Merge multiple nydus bootstraps (from each layer of image) to a final
 // bootstrap. And due to the possibility of enabling the `ChunkDictPath`
 // option causes the data deduplication, it will return the actual blob
@@ -295,13 +477,28 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 
 	getBootstrapPath := func(layerIdx int) string {
 		digestHex := layers[layerIdx].Digest.Hex()
+		if originalDigest := layers[layerIdx].OriginalDigest; originalDigest != nil {
+			return filepath.Join(workDir, originalDigest.Hex())
+		}
 		return filepath.Join(workDir, digestHex)
 	}
 
 	eg, _ := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
+	rafsBlobDigests := []string{}
+	rafsBlobSizes := []int64{}
+	rafsBlobTOCDigests := []string{}
 	for idx := range layers {
 		sourceBootstrapPaths = append(sourceBootstrapPaths, getBootstrapPath(idx))
+		if layers[idx].OriginalDigest != nil {
+			rafsBlobDigests = append(rafsBlobDigests, layers[idx].Digest.Hex())
+			rafsBlobSizes = append(rafsBlobSizes, layers[idx].ReaderAt.Size())
+			rafsBlobTOCDigest, err := calcBlobTOCDigest(layers[idx].ReaderAt)
+			if err != nil {
+				return nil, errors.Wrapf(err, "calc blob toc digest for layer %s", layers[idx].Digest)
+			}
+			rafsBlobTOCDigests = append(rafsBlobTOCDigests, rafsBlobTOCDigest.Hex())
+		}
 		eg.Go(func(idx int) func() error {
 			return func() error {
 				// Use the hex hash string of whole tar blob as the bootstrap name.
@@ -311,7 +508,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 				}
 				defer bootstrap.Close()
 
-				if err := unpackFileFromNydusBlob(layers[idx].ReaderAt, bootstrapNameInTar, bootstrap); err != nil {
+				if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBootstrap, bootstrap); err != nil {
 					return errors.Wrap(err, "unpack nydus tar")
 				}
 
@@ -330,11 +527,15 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		BuilderPath: getBuilder(opt.BuilderPath),
 
 		SourceBootstrapPaths: sourceBootstrapPaths,
-		TargetBootstrapPath:  targetBootstrapPath,
-		ChunkDictPath:        opt.ChunkDictPath,
-		PrefetchPatterns:     opt.PrefetchPatterns,
-		OutputJSONPath:       filepath.Join(workDir, "merge-output.json"),
-		Timeout:              opt.Timeout,
+		RafsBlobDigests:      rafsBlobDigests,
+		RafsBlobSizes:        rafsBlobSizes,
+		RafsBlobTOCDigests:   rafsBlobTOCDigests,
+
+		TargetBootstrapPath: targetBootstrapPath,
+		ChunkDictPath:       opt.ChunkDictPath,
+		PrefetchPatterns:    opt.PrefetchPatterns,
+		OutputJSONPath:      filepath.Join(workDir, "merge-output.json"),
+		Timeout:             opt.Timeout,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "merge bootstrap")
@@ -343,7 +544,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	var rc io.ReadCloser
 
 	if opt.WithTar {
-		rc, err = packToTar(targetBootstrapPath, fmt.Sprintf("image/%s", bootstrapNameInTar), false)
+		rc, err = packToTar(targetBootstrapPath, fmt.Sprintf("image/%s", EntryBootstrap), false)
 		if err != nil {
 			return nil, errors.Wrap(err, "pack bootstrap to tar")
 		}
@@ -372,7 +573,7 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 	}
 	defer os.RemoveAll(workDir)
 
-	bootPath, blobPath := filepath.Join(workDir, bootstrapNameInTar), filepath.Join(workDir, blobNameInTar)
+	bootPath, blobPath := filepath.Join(workDir, EntryBootstrap), filepath.Join(workDir, EntryBlob)
 	if err = unpackNydusBlob(bootPath, blobPath, ra); err != nil {
 		return errors.Wrap(err, "unpack nydus tar")
 	}
@@ -455,9 +656,14 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 		}
 		defer dst.Close()
 
-		tr, err := compression.DecompressStream(rdr)
-		if err != nil {
-			return nil, errors.Wrap(err, "decompress blob stream")
+		var tr io.ReadCloser
+		if opt.OCIRef {
+			tr = io.NopCloser(rdr)
+		} else {
+			tr, err = compression.DecompressStream(rdr)
+			if err != nil {
+				return nil, errors.Wrap(err, "decompress blob stream")
+			}
 		}
 
 		digester := digest.SHA256.Digester()
@@ -516,6 +722,10 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 				LayerAnnotationUncompressed: blobDigest.String(),
 				LayerAnnotationNydusBlob:    "true",
 			},
+		}
+
+		if opt.OCIRef {
+			newDesc.Annotations[label.NydusRefLayer] = desc.Digest.String()
 		}
 
 		if opt.Backend != nil {
@@ -605,6 +815,7 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 		WorkDir:       opt.WorkDir,
 		ChunkDictPath: opt.ChunkDictPath,
 		FsVersion:     opt.FsVersion,
+		OCIRef:        opt.OCIRef,
 		WithTar:       true,
 	})
 	if err != nil {
@@ -671,21 +882,33 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	layers := []Layer{}
 
 	var chainID digest.Digest
+	nydusBlobDigests := []digest.Digest{}
 	for _, nydusBlobDesc := range descs {
 		ra, err := cs.ReaderAt(ctx, nydusBlobDesc)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "get reader for blob %q", nydusBlobDesc.Digest)
 		}
 		defer ra.Close()
+		var originalDigest *digest.Digest
+		if opt.OCIRef {
+			digestStr := nydusBlobDesc.Annotations[label.NydusRefLayer]
+			_originalDigest, err := digest.Parse(digestStr)
+			if err != nil {
+				return nil, nil, errors.Wrapf(err, "invalid label %s=%s", label.NydusRefLayer, digestStr)
+			}
+			originalDigest = &_originalDigest
+		}
 		layers = append(layers, Layer{
-			Digest:   nydusBlobDesc.Digest,
-			ReaderAt: ra,
+			Digest:         nydusBlobDesc.Digest,
+			OriginalDigest: originalDigest,
+			ReaderAt:       ra,
 		})
 		if chainID == "" {
 			chainID = identity.ChainID([]digest.Digest{nydusBlobDesc.Digest})
 		} else {
 			chainID = identity.ChainID([]digest.Digest{chainID, nydusBlobDesc.Digest})
 		}
+		nydusBlobDigests = append(nydusBlobDigests, nydusBlobDesc.Digest)
 	}
 
 	// Merge all nydus bootstraps into a final nydus bootstrap.
@@ -736,10 +959,17 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		return nil, nil, errors.Wrap(err, "get info from content store")
 	}
 
-	blobDigests := <-originalBlobDigestChan
+	originalBlobDigests := <-originalBlobDigestChan
 	blobDescs := []ocispec.Descriptor{}
 
-	for _, blobDigest := range blobDigests {
+	var blobDigests []digest.Digest
+	if opt.OCIRef {
+		blobDigests = nydusBlobDigests
+	} else {
+		blobDigests = originalBlobDigests
+	}
+
+	for idx, blobDigest := range blobDigests {
 		blobInfo, err := cs.Info(ctx, blobDigest)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "get info from content store")
@@ -752,6 +982,9 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 				LayerAnnotationUncompressed: blobDigest.String(),
 				LayerAnnotationNydusBlob:    "true",
 			},
+		}
+		if opt.OCIRef {
+			blobDesc.Annotations[label.NydusRefLayer] = layers[idx].OriginalDigest.String()
 		}
 		blobDescs = append(blobDescs, blobDesc)
 	}

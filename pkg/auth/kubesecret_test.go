@@ -13,14 +13,14 @@ import (
 const (
 	testDockerConfigJSONFmt = `
 {
-        "auths": {
-                "%s": {
-                        "username": "%s",
-						"password": "%s",
-						"email": "%s",
-						"auth": "%s"
-                }
-        }
+	"auths": {
+		"%s": {
+			"username": "%s",
+			"password": "%s",
+			"email": "%s",
+			"auth": "%s"
+		}
+	}
 }
 `
 	dockerConfigKey = "testKey"

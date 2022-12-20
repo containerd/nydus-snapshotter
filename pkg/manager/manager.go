@@ -257,7 +257,7 @@ func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
 	}
 
 	if err := d.WaitUntilState(types.DaemonStateInit); err != nil {
-		log.L.Errorf("daemon din't reach state %s", types.DaemonStateInit)
+		log.L.WithError(err).Errorf("daemon didn't reach state %s,", types.DaemonStateInit)
 		return
 	}
 
@@ -311,8 +311,9 @@ func (m *Manager) handleDaemonDeathEvent() {
 			log.L.Warnf("Daemon %s was not found", ev.daemonID)
 			return
 		}
-
+		d.Lock()
 		d.State = types.DaemonStateUnknown
+		d.Unlock()
 		if m.RecoverPolicy == RecoverPolicyRestart {
 			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
@@ -362,6 +363,10 @@ func NewManager(opt Opt) (*Manager, error) {
 	go mgr.handleDaemonDeathEvent()
 
 	return mgr, nil
+}
+
+func (m *Manager) CacheDir() string {
+	return m.cacheDir
 }
 
 // Put a instantiated daemon into states manager. The damon state is
@@ -512,7 +517,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
 
-	collector.CollectDaemonEvent(d.ID(), string(types.DaemonStateDestroyed))
+	collector.NewDaemonEventCollector(string(types.DaemonStateDestroyed)).Collect()
 
 	return nil
 }

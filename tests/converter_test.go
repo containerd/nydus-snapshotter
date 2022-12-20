@@ -9,6 +9,7 @@ package tests
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -18,20 +19,28 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/containerd/containerd"
 	containerdconverter "github.com/containerd/containerd/images/converter"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
+	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
 )
 
@@ -248,6 +257,42 @@ func packLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fs
 	return tarBlobFilePath, blobDigest
 }
 
+func packLayerRef(t *testing.T, gzipSource io.ReadCloser, workDir string) (string, digest.Digest, digest.Digest) {
+	var blobMetaData bytes.Buffer
+	blobMetaWriter := io.Writer(&blobMetaData)
+
+	pr, pw := io.Pipe()
+	gzipBlobDigester := digest.Canonical.Digester()
+	hw := io.MultiWriter(pw, gzipBlobDigester.Hash())
+	go func() {
+		defer pw.Close()
+		_, err := io.Copy(hw, gzipSource)
+		require.NoError(t, err)
+	}()
+
+	twc, err := converter.Pack(context.TODO(), blobMetaWriter, converter.PackOption{
+		OCIRef: true,
+	})
+	require.NoError(t, err)
+
+	_, err = io.Copy(twc, pr)
+	require.NoError(t, err)
+	err = twc.Close()
+	require.NoError(t, err)
+
+	blobMetaDigester := digest.Canonical.Digester()
+	_, err = blobMetaDigester.Hash().Write(blobMetaData.Bytes())
+	require.NoError(t, err)
+	blobMetaDigest := blobMetaDigester.Digest()
+
+	tarBlobMetaFilePath := filepath.Join(workDir, blobMetaDigest.Hex())
+	writeToFile(t, bytes.NewReader(blobMetaData.Bytes()), tarBlobMetaFilePath)
+
+	gzipBlobDigest := gzipBlobDigester.Digest()
+
+	return tarBlobMetaFilePath, blobMetaDigest, gzipBlobDigest
+}
+
 func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt) (string, digest.Digest) {
 	var data bytes.Buffer
 	writer := io.Writer(&data)
@@ -274,7 +319,7 @@ func verify(t *testing.T, workDir string, expectedFileTree map[string]string) {
 		nydusdPath = "nydusd"
 	}
 	config := NydusdConfig{
-		EnablePrefetch: true,
+		EnablePrefetch: false,
 		NydusdPath:     nydusdPath,
 		BootstrapPath:  filepath.Join(workDir, "bootstrap"),
 		ConfigPath:     filepath.Join(workDir, "nydusd-config.fusedev.json"),
@@ -369,6 +414,27 @@ func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, str
 
 // sudo go test -v -count=1 -run TestPack ./tests
 func TestPack(t *testing.T) {
+	t.Log("Test nydusd(new) + nydus-image(new)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
+	testPack(t, "5")
+	testPack(t, "6")
+
+	t.Log("Test nydusd(old) + nydus-image(old)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
+	testPack(t, "5")
+	testPack(t, "6")
+
+	t.Log("Test nydusd(new) + nydus-image(old)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
+	testPack(t, "5")
+	testPack(t, "6")
+
+	t.Log("Test nydusd(old) + nydus-image(new)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 	testPack(t, "5")
 	testPack(t, "6")
 }
@@ -439,6 +505,86 @@ func testPack(t *testing.T, fsVersion string) {
 	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".chunk_map")
 }
 
+// sudo go test -v -count=1 -run TestPackRef ./tests
+func TestPackRef(t *testing.T) {
+	if os.Getenv("TEST_PACK_REF") == "" {
+		t.Skip("skip TestPackRef test until new nydus-image/nydusd release")
+	}
+
+	t.Log("Test nydusd(new) + nydus-image(new)")
+	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
+	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
+
+	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+
+	blobDir := filepath.Join(workDir, "blobs")
+	err = os.MkdirAll(blobDir, 0755)
+	require.NoError(t, err)
+
+	cacheDir := filepath.Join(workDir, "cache")
+	err = os.MkdirAll(cacheDir, 0755)
+	require.NoError(t, err)
+
+	mountDir := filepath.Join(workDir, "mnt")
+	err = os.MkdirAll(mountDir, 0755)
+	require.NoError(t, err)
+
+	lowerOCITarReader, expectedLowerFileTree := buildOCILowerTar(t, 500)
+	defer lowerOCITarReader.Close()
+
+	var gzipData bytes.Buffer
+	gzipWriter := gzip.NewWriter(&gzipData)
+	_, err = io.Copy(gzipWriter, lowerOCITarReader)
+	require.NoError(t, err)
+	gzipWriter.Close()
+	dupGzipData := gzipData
+
+	gzipReader := io.NopCloser(&gzipData)
+	lowerNydusBlobPath, lowerNydusBlobDigest, lowerGzipBlobDigest := packLayerRef(t, gzipReader, blobDir)
+
+	writeToFile(t, &dupGzipData, path.Join(blobDir, lowerGzipBlobDigest.Hex()))
+
+	lowerNydusBlobRa, err := local.OpenReader(lowerNydusBlobPath)
+	require.NoError(t, err)
+	defer lowerNydusBlobRa.Close()
+
+	// Check uncompressed bootstrap digest in TOC
+	bootstrapDigester := digest.Canonical.Digester()
+	bootstrapTOC, err := converter.UnpackEntry(lowerNydusBlobRa, converter.EntryBootstrap, bootstrapDigester.Hash())
+	require.NoError(t, err)
+	require.Equal(t, bootstrapTOC.GetUncompressedDigest(), bootstrapDigester.Digest().Hex())
+
+	// Check uncompressed blob meta digest in TOC
+	blobMetaDigester := digest.Canonical.Digester()
+	blobMetaTOC, err := converter.UnpackEntry(lowerNydusBlobRa, converter.EntryBlobMeta, blobMetaDigester.Hash())
+	require.NoError(t, err)
+	require.Equal(t, blobMetaTOC.GetUncompressedDigest(), blobMetaDigester.Digest().Hex())
+
+	layers := []converter.Layer{
+		{
+			Digest:         lowerNydusBlobDigest,
+			OriginalDigest: &lowerGzipBlobDigest,
+			ReaderAt:       lowerNydusBlobRa,
+		},
+	}
+
+	bootstrapPath := filepath.Join(workDir, "bootstrap")
+	file, err := os.Create(bootstrapPath)
+	require.NoError(t, err)
+	defer file.Close()
+
+	blobDigests, err := converter.Merge(context.TODO(), layers, file, converter.MergeOption{
+		OCIRef: true,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []digest.Digest{lowerGzipBlobDigest}, blobDigests)
+
+	verify(t, workDir, expectedLowerFileTree)
+}
+
 // sudo go test -v -count=1 -run TestUnpack ./tests
 func TestUnpack(t *testing.T) {
 	testUnpack(t, "5")
@@ -468,17 +614,124 @@ func testUnpack(t *testing.T, fsVersion string) {
 	require.Equal(t, ociTarDigest, newTarDigest)
 }
 
-// sudo go test -v -count=1 -run TestImageConvert ./tests
-func TestImageConvert(t *testing.T) {
-	testImageConvert(t, "5")
-	testImageConvert(t, "6")
+type ConvertTestOption struct {
+	t                    *testing.T
+	fsVersion            string
+	backend              converter.Backend
+	disableCheck         bool
+	beforeConversionHook func() error
+	afterConversionHook  func() error
 }
 
-func testImageConvert(t *testing.T, fsVersion string) {
+// sudo go test -v -count=1 -run TestImageConvert ./tests
+func TestImageConvert(t *testing.T) {
+	for _, fsVersion := range []string{"5", "6"} {
+		testImageConvertNoBackend(t, fsVersion)
+		testImageConvertS3Backend(t, fsVersion)
+	}
+}
+
+func testImageConvertNoBackend(t *testing.T, fsVersion string) {
+	testImageConvertBasic(&ConvertTestOption{
+		t:         t,
+		fsVersion: fsVersion,
+	})
+}
+
+func testImageConvertS3Backend(t *testing.T, fsVersion string) {
+	testOpt := &ConvertTestOption{
+		t:         t,
+		fsVersion: fsVersion,
+	}
+	rawConfig := []byte(`{
+		"endpoint": "localhost:9000",
+		"scheme": "http",
+		"bucket_name": "nydus",
+		"region": "us-east-1",
+		"object_prefix": "path/to/my-registry/",
+		"access_key_id": "minio",
+		"access_key_secret": "minio123"
+	}`)
+	backend, err := backend.NewBackend("s3", rawConfig)
+	if err != nil {
+		t.Fatalf("failed to create s3 backend: %v", err)
+	}
+	testOpt.backend = backend
+
+	minioContainerName := fmt.Sprintf("minio-%d", time.Now().UnixNano())
+	testOpt.beforeConversionHook = func() error {
+		// setup minio server
+		if err := exec.Command("docker", "run", "-d", "-p", "9000:9000", "--name", minioContainerName, "-e", "MINIO_ACCESS_KEY=minio", "-e", "MINIO_SECRET_KEY=minio123", "minio/minio", "server", "/data").Run(); err != nil {
+			t.Fatalf("failed to start minio server: %v", err)
+			return err
+		}
+		time.Sleep(5 * time.Second)
+		// create nydus bucket
+		s3AWSConfig, err := awscfg.LoadDefaultConfig(context.TODO())
+		if err != nil {
+			t.Errorf("failed to load aws config")
+		}
+		client := s3.NewFromConfig(s3AWSConfig, func(o *s3.Options) {
+			o.EndpointResolver = s3.EndpointResolverFromURL("http://localhost:9000")
+			o.Region = "us-east-1"
+			o.UsePathStyle = true
+			o.Credentials = credentials.NewStaticCredentialsProvider("minio", "minio123", "")
+			o.UsePathStyle = true
+		})
+		_, err = client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String("nydus")})
+		if err != nil {
+			return err
+		}
+		logrus.Info("create s3 bucket successfully")
+		return nil
+	}
+
+	testOpt.afterConversionHook = func() error {
+		if err := exec.Command("docker", "rm", "-f", minioContainerName).Run(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// TODO by now, the last release of nydusify doesn't support s3 backend
+	// so skip the check
+	testOpt.disableCheck = true
+
+	testImageConvertBasic(testOpt)
+}
+
+func testImageConvertBasic(testOpt *ConvertTestOption) {
 	const (
 		srcImageRef    = "docker.io/library/nginx:latest"
 		targetImageRef = "localhost:5000/nydus/nginx:nydus-latest"
 	)
+	t := testOpt.t
+	// setup docker registry
+	if err := exec.Command("docker", "run", "-d", "-p", "5000:5000", "--restart=always", "--name", "registry", "registry:2").Run(); err != nil {
+		t.Fatalf("failed to start docker registry: %v", err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("docker", "stop", "registry").Run(); err != nil {
+			t.Fatalf("failed to stop docker registry: %v", err)
+		}
+		if err := exec.Command("docker", "rm", "registry").Run(); err != nil {
+			t.Fatalf("failed to remove docker registry: %v", err)
+		}
+	}()
+
+	if testOpt.beforeConversionHook != nil {
+		if err := testOpt.beforeConversionHook(); err != nil {
+			t.Fatalf("failed to run before conversion hook: %v", err)
+			return
+		}
+		defer func() {
+			if err := testOpt.afterConversionHook(); err != nil {
+				t.Fatalf("failed to run after conversion hook: %v", err)
+			}
+		}()
+	}
+
 	if err := exec.Command("ctr", "images", "pull", srcImageRef).Run(); err != nil {
 		t.Fatalf("failed to pull image %s: %v", srcImageRef, err)
 		return
@@ -488,12 +741,13 @@ func testImageConvert(t *testing.T, fsVersion string) {
 			t.Fatalf("failed to remove image %s: %v", srcImageRef, err)
 		}
 	}()
-	workDir, err := os.MkdirTemp("", "nydus-containerd-converter-test-")
+	workDir, err := os.MkdirTemp("", fmt.Sprintf("nydus-containerd-converter-test-%d", time.Now().UnixNano()))
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
 	nydusOpts := &converter.PackOption{
 		WorkDir:   workDir,
-		FsVersion: fsVersion,
+		FsVersion: testOpt.fsVersion,
+		Backend:   testOpt.backend,
 	}
 	convertFunc := converter.LayerConvertFunc(*nydusOpts)
 	convertHooks := containerdconverter.ConvertHooks{
@@ -502,6 +756,7 @@ func testImageConvert(t *testing.T, fsVersion string) {
 			BuilderPath:      nydusOpts.BuilderPath,
 			FsVersion:        nydusOpts.FsVersion,
 			ChunkDictPath:    nydusOpts.ChunkDictPath,
+			Backend:          testOpt.backend,
 			PrefetchPatterns: nydusOpts.PrefetchPatterns,
 		}),
 	}
@@ -534,6 +789,9 @@ func testImageConvert(t *testing.T, fsVersion string) {
 		return
 	}
 	// check whether the converted image is valid
+	if testOpt.disableCheck {
+		return
+	}
 	if output, err := exec.Command("nydusify", "check", "--source", srcImageRef, "--target", targetImageRef, "--target-insecure").CombinedOutput(); err != nil {
 		t.Fatalf("failed to check image %s: %v, \noutput:\n%s", targetImageRef, err, output)
 		return

@@ -19,6 +19,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
@@ -27,7 +28,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
 const (
@@ -101,12 +102,15 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 }
 
 type daemonInfo struct {
-	ID             string `json:"id"`
-	Pid            int    `json:"pid"`
-	APISock        string `json:"api_socket"`
-	SupervisorPath string
-	Reference      int    `json:"reference"`
-	HostMountpoint string `json:"mountpoint"`
+	ID                    string `json:"id"`
+	Pid                   int    `json:"pid"`
+	APISock               string `json:"api_socket"`
+	SupervisorPath        string
+	Reference             int     `json:"reference"`
+	HostMountpoint        string  `json:"mountpoint"`
+	StartupCPUUtilization float64 `json:"startup_cpu_utilization"`
+	MemoryRSS             float64 `json:"memory_rss_kb"`
+	ReadData              float32 `json:"read_data_kb"`
 
 	Instances map[string]rafsInstanceInfo `json:"instances"`
 }
@@ -146,14 +150,19 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
 
 	// Special registration for Prometheus metrics export
+	sc.RegisterMetricsHandler(endpointPromMetrics)
+}
+
+func (sc *Controller) RegisterMetricsHandler(endpoint string) {
 	handler := promhttp.HandlerFor(registry.Registry, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.HTTPErrorOnError,
 	})
 
-	sc.router.Handle(endpointPromMetrics, http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
-		handler.ServeHTTP(rsp, req)
-		exporter.FileExport()
-	}))
+	sc.router.Handle(endpoint,
+		http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
+			handler.ServeHTTP(rsp, req)
+			exporter.ExportToFile()
+		}))
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +173,6 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 		info := make([]daemonInfo, 0, 10)
 
 		for _, d := range daemons {
-
 			instances := make(map[string]rafsInstanceInfo)
 			for _, i := range d.Instances.List() {
 				instances[i.SnapshotID] = rafsInstanceInfo{
@@ -173,12 +181,28 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 					Mountpoint:  i.GetMountpoint()}
 			}
 
+			memRSS, err := metrics.GetProcessMemoryRSS(d.Pid())
+			if err != nil {
+				log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
+			}
+
+			var readData float32
+			fsMetrics, err := d.GetFsMetrics("")
+			if err != nil {
+				log.L.Warnf("Failed to get file system metrics")
+			} else {
+				readData = float32(fsMetrics.DataRead) / 1024
+			}
+
 			i := daemonInfo{
-				ID:             d.ID(),
-				Pid:            d.Pid(),
-				HostMountpoint: d.HostMountpoint(),
-				Reference:      int(d.GetRef()),
-				Instances:      instances,
+				ID:                    d.ID(),
+				Pid:                   d.Pid(),
+				HostMountpoint:        d.HostMountpoint(),
+				Reference:             int(d.GetRef()),
+				Instances:             instances,
+				StartupCPUUtilization: d.StartupCPUUtilization,
+				MemoryRSS:             memRSS,
+				ReadData:              readData,
 			}
 
 			info = append(info, i)

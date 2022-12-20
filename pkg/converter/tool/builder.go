@@ -33,6 +33,7 @@ type PackOption struct {
 	ChunkDictPath    string
 	PrefetchPatterns string
 	Compressor       string
+	OCIRef           bool
 	Timeout          *time.Duration
 }
 
@@ -40,11 +41,15 @@ type MergeOption struct {
 	BuilderPath string
 
 	SourceBootstrapPaths []string
-	TargetBootstrapPath  string
-	ChunkDictPath        string
-	PrefetchPatterns     string
-	OutputJSONPath       string
-	Timeout              *time.Duration
+	RafsBlobDigests      []string
+	RafsBlobTOCDigests   []string
+	RafsBlobSizes        []int64
+
+	TargetBootstrapPath string
+	ChunkDictPath       string
+	PrefetchPatterns    string
+	OutputJSONPath      string
+	Timeout             *time.Duration
 }
 
 type UnpackOption struct {
@@ -60,6 +65,10 @@ type outputJSON struct {
 }
 
 func Pack(option PackOption) error {
+	if option.OCIRef {
+		return packRef(option)
+	}
+
 	if option.FsVersion == "" {
 		option.FsVersion = "5"
 	}
@@ -117,6 +126,46 @@ func Pack(option PackOption) error {
 	return nil
 }
 
+func packRef(option PackOption) error {
+	args := []string{
+		"create",
+		"--log-level",
+		"warn",
+		"--type",
+		"targz-ref",
+		"--blob-inline-meta",
+		"--features",
+		"blob-toc",
+		"--blob",
+		option.BlobPath,
+	}
+	args = append(args, option.SourcePath)
+
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if option.Timeout != nil {
+		ctx, cancel = context.WithTimeout(ctx, *option.Timeout)
+		defer cancel()
+	}
+
+	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
+
+	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
+	cmd.Stdout = logger.Writer()
+	cmd.Stderr = logger.Writer()
+
+	if err := cmd.Run(); err != nil {
+		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
+		} else {
+			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
+		}
+		return err
+	}
+
+	return nil
+}
+
 func Merge(option MergeOption) ([]digest.Digest, error) {
 	args := []string{
 		"merge",
@@ -136,6 +185,19 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 		option.PrefetchPatterns = "/"
 	}
 	args = append(args, option.SourceBootstrapPaths...)
+	if len(option.RafsBlobDigests) > 0 {
+		args = append(args, "--blob-digests", strings.Join(option.RafsBlobDigests, ","))
+	}
+	if len(option.RafsBlobTOCDigests) > 0 {
+		args = append(args, "--blob-toc-digests", strings.Join(option.RafsBlobTOCDigests, ","))
+	}
+	if len(option.RafsBlobSizes) > 0 {
+		sizes := []string{}
+		for _, size := range option.RafsBlobSizes {
+			sizes = append(sizes, fmt.Sprintf("%d", size))
+		}
+		args = append(args, "--blob-sizes", strings.Join(sizes, ","))
+	}
 
 	ctx := context.Background()
 	var cancel context.CancelFunc

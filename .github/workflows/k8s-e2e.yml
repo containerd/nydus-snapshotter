@@ -1,0 +1,157 @@
+name: E2E Test With Kubernetes Template
+
+on:
+  workflow_call:
+    inputs:
+      auth-type:
+        required: true
+        type: string
+
+env:
+  DOCKER_USER: testuser
+  DOCKER_PASSWORD: testpassword
+
+jobs:
+  e2e_tests_k8s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.18.6"
+      - name: Setup Kind
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          version: v0.16.0
+          config: tests/e2e/k8s/kind.yaml
+      - name: Build nydus snapshotter dev image
+        run: |
+          make
+          cp bin/containerd-nydus-grpc ./
+          cp misc/snapshotter/* ./
+          ls -tl ./
+          docker build -t local-dev:e2e .
+
+          ## load local test image into kind node
+          kind load docker-image local-dev:e2e
+      - name: Setup registry
+        run: |
+          mkdir auth
+          docker run \
+            --entrypoint htpasswd \
+            httpd:2 -Bbn ${{ env.DOCKER_USER }} ${{ env.DOCKER_PASSWORD }} > auth/htpasswd
+
+          docker run -d \
+            -p 5000:5000 \
+            --restart=always \
+            --name registry \
+            -v "$(pwd)"/auth:/auth \
+            -e "REGISTRY_AUTH=htpasswd" \
+            -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" \
+            -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+            registry:2
+      - name: Login to GitHub Container Registry
+        run: |
+          registry_ip=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+          ## sudo cat can't modify daemon.json
+          sudo chmod a+w /etc/docker/daemon.json
+          cat << EOF > /etc/docker/daemon.json
+          {
+            "exec-opts": ["native.cgroupdriver=cgroupfs"],
+            "cgroup-parent": "/actions_job",
+            "insecure-registries" : [ "${registry_ip}:5000" ]
+          }
+          EOF
+          sudo systemctl restart docker
+          docker login --username=${{ env.DOCKER_USER }} --password=${{ env.DOCKER_PASSWORD }} $registry_ip:5000
+      - name: Setup nydus snapshotter
+        run: |
+          kubectl create -f tests/e2e/k8s/snapshotter-${{ inputs.auth-type }}.yaml
+          export ns=nydus-system
+          p=`kubectl -n $ns get pods --no-headers -o custom-columns=NAME:metadata.name`
+          echo "snapshotter pod name ${p}"
+          kubectl -n $ns wait po $p --for=condition=ready --timeout=2m
+
+          # change snapshotter to nydus after nydus snapshotter started
+          registry_ip=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+          docker cp kind-control-plane:/etc/containerd/config.toml containerd.config.toml.bak
+          sed -i -e 's|snapshotter = "overlayfs"|snapshotter = "nydus"|' containerd.config.toml.bak
+          cat << EOF >> containerd.config.toml.bak
+          [proxy_plugins]
+            [proxy_plugins.nydus]
+              type = "snapshot"
+              address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+
+          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."${registry_ip}:5000"]
+              endpoint = ["http://${registry_ip}:5000"]
+          EOF
+
+          docker cp containerd.config.toml.bak kind-control-plane:/etc/containerd/config.toml.bak
+          docker exec kind-control-plane sh -c "cat /etc/containerd/config.toml.bak > /etc/containerd/config.toml"
+          docker exec kind-control-plane systemctl restart containerd
+      - name: Install Nydus binaries and convert nydus image
+        run: |
+          NYDUS_VERSION=$(curl --silent "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
+          wget -q https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VERSION/nydus-static-$NYDUS_VERSION-linux-amd64.tgz
+          tar xzf nydus-static-$NYDUS_VERSION-linux-amd64.tgz
+          sudo cp nydus-static/nydusify nydus-static/nydus-image /usr/local/bin/
+
+          registry_ip=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+
+          sudo DOCKER_CONFIG=$HOME/.docker nydusify convert \
+                 --source busybox:latest \
+                 --target ${registry_ip}:5000/busybox:nydus-v6-latest \
+                 --fs-version 6
+      - name: Run E2E test
+        run: |
+          registry_ip=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+          kubectl create --namespace nydus-system secret generic regcred \
+              --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+              --type=kubernetes.io/dockerconfigjson
+
+          sed -e "s|REGISTRY_IP|${registry_ip}|" tests/e2e/k8s/test-pod.yaml.tpl > tests/e2e/k8s/test-pod.yaml
+
+          if [[ "${{ inputs.auth-type }}" == "cri" ]]; then
+            docker exec kind-control-plane sh -c 'echo " --image-service-endpoint=unix:///run/containerd-nydus/containerd-nydus-grpc.sock" >> /etc/default/kubelet'
+            docker exec kind-control-plane sh -c 'systemctl daemon-reload && systemctl restart kubelet'
+          fi
+
+          kubectl apply -f tests/e2e/k8s/test-pod.yaml
+          kubectl wait po test-pod -n nydus-system --for=condition=ready --timeout=1m
+          kubectl delete -f tests/e2e/k8s/test-pod.yaml
+      - name: Dump logs
+        if: failure()
+        continue-on-error: true
+        run: |
+          log_dir="/tmp/nydus-log"
+          mkdir -p $log_dir
+          export ns=nydus-system
+          for p in `kubectl -n $ns get pods --no-headers -o custom-columns=NAME:metadata.name`; do
+           kubectl -n $ns get pod $p -o yaml >> $log_dir/nydus-pods.conf
+           kubectl -n $ns describe pod $p  >> $log_dir/nydus-pods.conf
+           kubectl -n $ns logs $p -c nydus-snapshotter >> $log_dir/nydus-snapshotter.log || echo "failed to get snapshotter log"
+          done
+          kubectl -n $ns get secrets -o yaml >> $log_dir/nydus-secrets.log
+
+          docker exec kind-control-plane cat /etc/containerd/config.toml >> $log_dir/containerd-config.toml
+          docker exec kind-control-plane containerd config dump >> $log_dir/containerd-config-dump.toml
+
+          docker exec kind-control-plane journalctl --no-pager -u containerd >> $log_dir/containerd.log
+          docker exec kind-control-plane journalctl --no-pager -u kubelet >> $log_dir/kubelet.log
+          docker exec kind-control-plane ps -ef >> $log_dir/psef.log
+
+          kubectl get pod test-pod -o yaml >> $log_dir/test-pod.log || echo "test-pod may be deleted or not created"
+
+          cat ~/.docker/config.json > $log_dir/docker.config.json || echo "~/.docker/config.json  not found"
+      - name: Upload Logs
+        uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: k8s-e2e-tests-logs
+          path: |
+            /tmp/nydus-log
