@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/containerd/archive"
 	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/images/converter"
 	"github.com/containerd/containerd/labels"
@@ -37,7 +38,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
-	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 )
 
