@@ -15,13 +15,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 var logger = logrus.WithField("module", "builder")
+
+func isSignalKilled(err error) bool {
+	return strings.Contains(err.Error(), "signal: killed")
+}
 
 type PackOption struct {
 	BuilderPath string
@@ -115,7 +118,7 @@ func Pack(option PackOption) error {
 	cmd.Stdin = strings.NewReader(option.PrefetchPatterns)
 
 	if err := cmd.Run(); err != nil {
-		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+		if isSignalKilled(err) && option.Timeout != nil {
 			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
 		} else {
 			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
@@ -155,7 +158,7 @@ func packRef(option PackOption) error {
 	cmd.Stderr = logger.Writer()
 
 	if err := cmd.Run(); err != nil {
-		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+		if isSignalKilled(err) && option.Timeout != nil {
 			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
 		} else {
 			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
@@ -213,7 +216,7 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 	cmd.Stdin = strings.NewReader(option.PrefetchPatterns)
 
 	if err := cmd.Run(); err != nil {
-		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+		if isSignalKilled(err) && option.Timeout != nil {
 			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
 		} else {
 			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
@@ -267,7 +270,7 @@ func Unpack(option UnpackOption) error {
 	cmd.Stderr = logger.Writer()
 
 	if err := cmd.Run(); err != nil {
-		if errdefs.IsSignalKilled(err) && option.Timeout != nil {
+		if isSignalKilled(err) && option.Timeout != nil {
 			logrus.WithError(err).Errorf("fail to run %v %+v, possibly due to timeout %v", option.BuilderPath, args, *option.Timeout)
 		} else {
 			logrus.WithError(err).Errorf("fail to run %v %+v", option.BuilderPath, args)
