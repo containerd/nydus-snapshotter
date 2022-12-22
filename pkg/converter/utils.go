@@ -171,6 +171,9 @@ func readJSON(ctx context.Context, cs content.Store, x interface{}, desc ocispec
 		return nil, err
 	}
 	labels := info.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
 	b, err := content.ReadBlob(ctx, cs, desc)
 	if err != nil {
 		return nil, err
