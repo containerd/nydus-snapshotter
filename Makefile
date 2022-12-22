@@ -31,9 +31,11 @@ LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=
 .PHONY: build
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/oerdctl ./cmd/oerdctl
 
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/oerdctl ./cmd/oerdctl
 
 # Majorly for cross build for converter package since it is imported by other projects
 converter:
@@ -47,6 +49,7 @@ clear:
 .PHONY: install
 install:
 	sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
+	sudo install -D -m 755 bin/oerdctl /usr/local/bin/oerdctl
 	sudo install -D -m 755 misc/snapshotter/nydusd-config.fusedev.json /etc/nydus/nydusd-config.fusedev.json
 	sudo install -D -m 755 misc/snapshotter/nydusd-config.fscache.json /etc/nydus/nydusd-config.fscache.json
 	sudo ln -f -s /etc/nydus/nydusd-config.${FS_DRIVER}.json /etc/nydus/nydusd-config.json

@@ -64,4 +64,4 @@ WORKDIR /nydus-snapshotter
 ENV PATH="${PATH}:/usr/local/bin/"
 ENV GO111MODULE=on
 
-ENTRYPOINT [ "/bin/bash",  "-c",  "make install && /entrypoint.sh"]
+ENTRYPOINT [ "/bin/bash",  "-c",  "make && make install && /entrypoint.sh"]
