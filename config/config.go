@@ -110,7 +110,7 @@ type Config struct {
 	RotateLogMaxAge          int           `toml:"log_rotate_max_age"`
 	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
 	RotateLogCompress        bool          `toml:"log_rotate_compress"`
-	APISocket                string        `toml:"api_socket"`
+	EnableSystemController   bool          `toml:"enable_system_controller"`
 	RecoverPolicy            string        `toml:"recover_policy"`
 }
 
@@ -205,7 +205,7 @@ func SetStartupParameter(startupFlag *command.Args, cfg *Config) error {
 	cfg.GCPeriod = d
 
 	cfg.Address = startupFlag.Address
-	cfg.APISocket = startupFlag.APISocket
+	cfg.EnableSystemController = startupFlag.EnableSystemController
 	cfg.CleanupOnClose = startupFlag.CleanupOnClose
 	cfg.ConvertVpcRegistry = startupFlag.ConvertVpcRegistry
 	cfg.DisableCacheManager = startupFlag.DisableCacheManager
