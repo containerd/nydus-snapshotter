@@ -24,6 +24,7 @@ import (
 
 const (
 	AnnoFsCacheDomainID string = "fscache.domainid"
+	AnnoFsCacheID       string = "fscache.id"
 )
 
 type NewRafsOpt func(r *Rafs) error

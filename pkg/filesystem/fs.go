@@ -340,6 +340,17 @@ func (fs *Filesystem) RemoveCache(blobDigest string) error {
 		return errors.Wrapf(err, "invalid blob digest from label %s", label.CRILayerDigest)
 	}
 	blobID := digest.Hex()
+	if config.GetFsDriver() == config.FsDriverFscache {
+		c, err := fs.getSharedDaemon().GetClient()
+		if err != nil {
+			return err
+		}
+		// delete fscache blob cache file
+		if err := c.UnbindBlob("", blobID); err != nil {
+			return err
+		}
+		return nil
+	}
 	return fs.cacheMgr.RemoveBlobCache(blobID)
 }
 

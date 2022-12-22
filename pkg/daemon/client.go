@@ -57,7 +57,7 @@ type NydusdClient interface {
 	Umount(mountpoint string) error
 
 	BindBlob(daemonConfig string) error
-	UnbindBlob(daemonConfig string) error
+	UnbindBlob(domainID, blobID string) error
 
 	GetFsMetrics(sid string) (*types.FsMetrics, error)
 	GetCacheMetrics(sid string) (*types.CacheMetrics, error)
@@ -264,9 +264,22 @@ func (c *nydusdClient) BindBlob(daemonConfig string) error {
 	return c.request(http.MethodPut, url, bytes.NewBuffer([]byte(daemonConfig)), nil)
 }
 
-func (c *nydusdClient) UnbindBlob(domainID string) error {
+// Delete /api/v2/blobs implements different functions according to different parameters
+//  1. domainID , delete all blob entries in the domain.
+//  2. domainID + blobID, delete the blob entry, if the blob is bootstrap
+//     also delete blob entries belong to it.
+//  3. blobID, try to find and cull blob cache files by blobID in all domains.
+func (c *nydusdClient) UnbindBlob(domainID, blobID string) error {
 	query := query{}
-	query.Add("domain_id", domainID)
+	if domainID != "" {
+		query.Add("domain_id", domainID)
+		if domainID != blobID {
+			query.Add("blob_id", blobID)
+		}
+	} else {
+		query.Add("blob_id", blobID)
+	}
+
 	url := c.url(endpointBlobs, query)
 
 	return c.request(http.MethodDelete, url, nil, nil)

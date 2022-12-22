@@ -193,11 +193,17 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		return nil, err
 	}
 
+	syncRemove := cfg.SyncRemove
+	if cfg.FsDriver == config.FsDriverFscache {
+		log.L.Infof("for fscache mode enable syncRemove")
+		syncRemove = true
+	}
+
 	return &snapshotter{
 		root:                 cfg.RootDir,
 		nydusdPath:           cfg.NydusdBinaryPath,
 		ms:                   ms,
-		syncRemove:           cfg.SyncRemove,
+		syncRemove:           syncRemove,
 		fs:                   nydusFs,
 		manager:              manager,
 		hasDaemon:            hasDaemon,
