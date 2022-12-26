@@ -358,6 +358,8 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 				SourcePath:       sourceDir,
 				ChunkDictPath:    opt.ChunkDictPath,
 				PrefetchPatterns: opt.PrefetchPatterns,
+				AlignedChunk:     opt.AlignedChunk,
+				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
 				Timeout:          opt.Timeout,
 			})

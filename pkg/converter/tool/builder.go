@@ -37,6 +37,8 @@ type PackOption struct {
 	PrefetchPatterns string
 	Compressor       string
 	OCIRef           bool
+	AlignedChunk     bool
+	ChunkSize        string
 	Timeout          *time.Duration
 }
 
@@ -100,6 +102,12 @@ func Pack(option PackOption) error {
 	}
 	if option.Compressor != "" {
 		args = append(args, "--compressor", option.Compressor)
+	}
+	if option.AlignedChunk {
+		args = append(args, "--aligned-chunk")
+	}
+	if option.ChunkSize != "" {
+		args = append(args, "--chunk-size", option.ChunkSize)
 	}
 	args = append(args, option.SourcePath)
 
