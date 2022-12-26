@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -23,28 +22,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	// We always use multipart upload for OSS, and limit the
-	// multipart chunk size to 500MB.
-	multipartChunkSize = 500 * 1024 * 1024
-)
-
-type multipartStatus struct {
-	imur          *oss.InitiateMultipartUploadResult
-	parts         []oss.UploadPart
-	blobObjectKey string
-}
-
 type OSSBackend struct {
 	// OSS storage does not support directory. Therefore add a prefix to each object
 	// to make it a path-like object.
 	objectPrefix string
 	bucket       *oss.Bucket
-	ms           []multipartStatus
-	msMutex      sync.Mutex
+	forcePush    bool
 }
 
-func newOSSBackend(rawConfig []byte) (*OSSBackend, error) {
+func newOSSBackend(rawConfig []byte, forcePush bool) (*OSSBackend, error) {
 	var configMap map[string]string
 	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
 		return nil, errors.Wrap(err, "Parse OSS storage backend configuration")
@@ -75,6 +61,7 @@ func newOSSBackend(rawConfig []byte) (*OSSBackend, error) {
 	return &OSSBackend{
 		objectPrefix: objectPrefix,
 		bucket:       bucket,
+		forcePush:    forcePush,
 	}, nil
 }
 
@@ -121,7 +108,7 @@ func (b *OSSBackend) push(ctx context.Context, cs content.Store, desc ocispec.De
 
 	if exist, err := b.bucket.IsObjectExist(blobObjectKey); err != nil {
 		return errors.Wrap(err, "check object existence")
-	} else if exist {
+	} else if exist && !b.forcePush {
 		return nil
 	}
 

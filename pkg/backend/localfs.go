@@ -22,10 +22,11 @@ import (
 )
 
 type LocalFSBackend struct {
-	dir string
+	dir       string
+	forcePush bool
 }
 
-func newLocalFSBackend(rawConfig []byte) (*LocalFSBackend, error) {
+func newLocalFSBackend(rawConfig []byte, forcePush bool) (*LocalFSBackend, error) {
 	var configMap map[string]string
 	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
 		return nil, errors.Wrap(err, "parse LocalFS storage backend configuration")
@@ -37,7 +38,8 @@ func newLocalFSBackend(rawConfig []byte) (*LocalFSBackend, error) {
 	}
 
 	return &LocalFSBackend{
-		dir: dir,
+		dir:       dir,
+		forcePush: forcePush,
 	}, nil
 }
 
@@ -46,6 +48,10 @@ func (b *LocalFSBackend) dstPath(blobID string) string {
 }
 
 func (b *LocalFSBackend) Push(ctx context.Context, cs content.Store, desc ocispec.Descriptor) error {
+	if _, err := b.Check(desc.Digest); err == nil && !b.forcePush {
+		return nil
+	}
+
 	if err := os.MkdirAll(b.dir, 0755); err != nil {
 		return errors.Wrap(err, "create directory in localfs backend")
 	}

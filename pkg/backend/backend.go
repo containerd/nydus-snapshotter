@@ -43,14 +43,14 @@ type Backend interface {
 // registry as per OCI distribution specification. But nydus can also make OSS or
 // other storage services as backend storage. Pass config as byte slice here because
 // we haven't find a way to represent all backend config at the same time.
-func NewBackend(_type string, config []byte) (Backend, error) {
+func NewBackend(_type string, config []byte, forcePush bool) (Backend, error) {
 	switch _type {
 	case BackendTypeOSS:
-		return newOSSBackend(config)
+		return newOSSBackend(config, forcePush)
 	case BackendTypeS3:
-		return newS3Backend(config)
+		return newS3Backend(config, forcePush)
 	case BackendTypeLocalFS:
-		return newLocalFSBackend(config)
+		return newLocalFSBackend(config, forcePush)
 	default:
 		return nil, fmt.Errorf("unsupported backend type %s", _type)
 	}

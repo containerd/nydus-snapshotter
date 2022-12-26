@@ -652,7 +652,7 @@ func testImageConvertS3Backend(t *testing.T, fsVersion string) {
 		"access_key_id": "minio",
 		"access_key_secret": "minio123"
 	}`)
-	backend, err := backend.NewBackend("s3", rawConfig)
+	backend, err := backend.NewBackend("s3", rawConfig, true)
 	if err != nil {
 		t.Fatalf("failed to create s3 backend: %v", err)
 	}
