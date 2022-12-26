@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
@@ -44,12 +45,18 @@ func (b *LocalFSBackend) dstPath(blobID string) string {
 	return path.Join(b.dir, blobID)
 }
 
-func (b *LocalFSBackend) Push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
+func (b *LocalFSBackend) Push(ctx context.Context, cs content.Store, desc ocispec.Descriptor) error {
 	if err := os.MkdirAll(b.dir, 0755); err != nil {
 		return errors.Wrap(err, "create directory in localfs backend")
 	}
 
-	blobID := blobDigest.Hex()
+	ra, err := cs.ReaderAt(ctx, desc)
+	if err != nil {
+		return errors.Wrap(err, "get reader from content store")
+	}
+	defer ra.Close()
+
+	blobID := desc.Digest.Hex()
 	dstPath := b.dstPath(blobID)
 
 	dstFile, err := os.Create(dstPath)

@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
@@ -112,8 +113,8 @@ func (b *S3Backend) existObject(ctx context.Context, objectKey string) (bool, er
 	return true, nil
 }
 
-func (b *S3Backend) Push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
-	blobID := blobDigest.Hex()
+func (b *S3Backend) Push(ctx context.Context, cs content.Store, desc ocispec.Descriptor) error {
+	blobID := desc.Digest.Hex()
 	blobObjectKey := b.objectPrefix + blobID
 
 	if exist, err := b.existObject(ctx, blobObjectKey); err != nil {
@@ -122,6 +123,11 @@ func (b *S3Backend) Push(ctx context.Context, ra content.ReaderAt, blobDigest di
 		return nil
 	}
 
+	ra, err := cs.ReaderAt(ctx, desc)
+	if err != nil {
+		return errors.Wrap(err, "get reader from content store")
+	}
+	defer ra.Close()
 	reader := content.NewReader(ra)
 
 	client, err := b.client()
@@ -130,7 +136,7 @@ func (b *S3Backend) Push(ctx context.Context, ra content.ReaderAt, blobDigest di
 	}
 
 	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
-		u.PartSize = MultipartsUploadThreshold
+		u.PartSize = MultipartChunkSize
 	})
 	if _, err := uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:            aws.String(b.bucketName),
@@ -153,7 +159,6 @@ func (b *S3Backend) Check(blobDigest digest.Digest) (string, error) {
 		return blobID, nil
 	}
 	return "", errdefs.ErrNotFound
-
 }
 
 func (b *S3Backend) Type() string {

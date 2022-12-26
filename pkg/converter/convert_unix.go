@@ -729,13 +729,7 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 		}
 
 		if opt.Backend != nil {
-			blobRa, err := cs.ReaderAt(ctx, newDesc)
-			if err != nil {
-				return nil, errors.Wrap(err, "get nydus blob reader")
-			}
-			defer blobRa.Close()
-
-			if err := opt.Backend.Push(ctx, blobRa, blobDigest); err != nil {
+			if err := opt.Backend.Push(ctx, cs, newDesc); err != nil {
 				return nil, errors.Wrap(err, "push to storage backend")
 			}
 		}
