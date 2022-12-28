@@ -17,14 +17,16 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
 type LocalFSBackend struct {
-	dir string
+	dir       string
+	forcePush bool
 }
 
-func newLocalFSBackend(rawConfig []byte) (*LocalFSBackend, error) {
+func newLocalFSBackend(rawConfig []byte, forcePush bool) (*LocalFSBackend, error) {
 	var configMap map[string]string
 	if err := json.Unmarshal(rawConfig, &configMap); err != nil {
 		return nil, errors.Wrap(err, "parse LocalFS storage backend configuration")
@@ -36,7 +38,8 @@ func newLocalFSBackend(rawConfig []byte) (*LocalFSBackend, error) {
 	}
 
 	return &LocalFSBackend{
-		dir: dir,
+		dir:       dir,
+		forcePush: forcePush,
 	}, nil
 }
 
@@ -44,12 +47,22 @@ func (b *LocalFSBackend) dstPath(blobID string) string {
 	return path.Join(b.dir, blobID)
 }
 
-func (b *LocalFSBackend) Push(ctx context.Context, ra content.ReaderAt, blobDigest digest.Digest) error {
+func (b *LocalFSBackend) Push(ctx context.Context, cs content.Store, desc ocispec.Descriptor) error {
+	if _, err := b.Check(desc.Digest); err == nil && !b.forcePush {
+		return nil
+	}
+
 	if err := os.MkdirAll(b.dir, 0755); err != nil {
 		return errors.Wrap(err, "create directory in localfs backend")
 	}
 
-	blobID := blobDigest.Hex()
+	ra, err := cs.ReaderAt(ctx, desc)
+	if err != nil {
+		return errors.Wrap(err, "get reader from content store")
+	}
+	defer ra.Close()
+
+	blobID := desc.Digest.Hex()
 	dstPath := b.dstPath(blobID)
 
 	dstFile, err := os.Create(dstPath)

@@ -48,7 +48,7 @@ func Test_newS3Backend(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := newS3Backend(tt.args.rawConfig)
+			got, err := newS3Backend(tt.args.rawConfig, false)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("newS3Backend() error = %v, wantErr %v", err, tt.wantErr)
 				return
