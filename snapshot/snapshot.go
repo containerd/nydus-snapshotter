@@ -735,7 +735,18 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	// TODO: How to dump configuration if no daemon is ever created?
 	daemon := o.fs.Manager.GetByDaemonID(instance.DaemonID)
 
-	configContent, err := daemon.Config.DumpString()
+	var c daemonconfig.DaemonConfig
+	if o.fs.Manager.IsSharedDaemon() {
+		c, err = daemonconfig.NewDaemonConfig(daemon.States.FsDriver, daemon.ConfigFile(instance.SnapshotID))
+		if err != nil {
+			return nil, errors.Wrapf(err, "Failed to load instance configuration %s",
+				daemon.ConfigFile(instance.SnapshotID))
+		}
+	} else {
+		c = daemon.Config
+	}
+
+	configContent, err := c.DumpString()
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
 	}
