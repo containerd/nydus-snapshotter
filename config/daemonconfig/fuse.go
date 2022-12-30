@@ -28,6 +28,8 @@ type FuseDaemonConfig struct {
 	AccessPattern   bool          `json:"access_pattern,omitempty"`
 	LatestReadFiles bool          `json:"latest_read_files,omitempty"`
 	FSPrefetch      `json:"fs_prefetch,omitempty"`
+	// (experimental) The nydus daemon could cache more data to increase hit ratio when enabled the warmup feature.
+	Warmup uint64 `json:"warmup,omitempty"`
 }
 
 // Control how to perform prefetch from file system layer
