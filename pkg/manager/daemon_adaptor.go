@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/command"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
@@ -84,12 +85,20 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			return
 		}
 
-		if d.Supervisor == nil {
-			return
-		}
-
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
+			return
+		}
+		daemonInfo, err := d.GetDaemonInfo()
+		if err != nil {
+			log.L.WithError(err).Errorf("failed to get daemon %s information", d.ID())
+		}
+		d.Lock()
+		d.Version = daemonInfo.DaemonVersion()
+		d.Unlock()
+		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
+
+		if d.Supervisor == nil {
 			return
 		}
 

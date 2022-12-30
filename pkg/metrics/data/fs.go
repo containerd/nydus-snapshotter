@@ -42,7 +42,7 @@ var (
 var MetricHists = []*mtypes.MetricHistogram{
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_cumulative_read_block_bytes_hist",
+			"nydusd_cumulative_read_block_bytes",
 			"Cumulative read size histogram for different block size, in bytes.",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
@@ -55,7 +55,7 @@ var MetricHists = []*mtypes.MetricHistogram{
 
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_file_operation_hit_hist",
+			"nydusd_file_operation_hits",
 			"Successful various file operations histogram",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
@@ -68,7 +68,7 @@ var MetricHists = []*mtypes.MetricHistogram{
 
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_file_operation_error_hist",
+			"nydusd_file_operation_errors",
 			"Failed file operations histogram",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
@@ -81,7 +81,7 @@ var MetricHists = []*mtypes.MetricHistogram{
 
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_read_latency_microseconds_hist",
+			"nydusd_read_latency_microseconds",
 			"Read latency histogram, in microseconds",
 			[]string{imageRefLabel},
 			prometheus.Labels{},

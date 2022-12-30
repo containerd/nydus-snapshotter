@@ -311,6 +311,7 @@ func (m *Manager) handleDaemonDeathEvent() {
 			log.L.Warnf("Daemon %s was not found", ev.daemonID)
 			return
 		}
+		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
 		d.Lock()
 		d.State = types.DaemonStateUnknown
 		d.Unlock()
@@ -518,6 +519,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	}
 
 	collector.NewDaemonEventCollector(string(types.DaemonStateDestroyed)).Collect()
+	collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
 
 	return nil
 }

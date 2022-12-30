@@ -20,6 +20,7 @@ func init() {
 		data.TotalRead,
 		data.OpenFdCount,
 		data.NydusdEventCount,
+		data.NydusdCount,
 		data.SnapshotEventElapsedHists,
 		data.CacheUsage,
 		data.CPUUsage,

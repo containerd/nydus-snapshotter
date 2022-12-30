@@ -36,6 +36,10 @@ func (info *DaemonInfo) DaemonState() DaemonState {
 	return info.State
 }
 
+func (info *DaemonInfo) DaemonVersion() BuildTimeInfo {
+	return info.Version
+}
+
 type ErrorMessage struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
