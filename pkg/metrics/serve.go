@@ -111,7 +111,7 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 	}
 }
 
-func (s *Server) StartCollectMetrics(ctx context.Context, enableMetrics bool) error {
+func (s *Server) StartCollectMetrics(ctx context.Context) error {
 	// TODO(renzhen): make collect interval time configurable
 	timer := time.NewTicker(time.Duration(1) * time.Minute)
 
@@ -119,10 +119,8 @@ outer:
 	for {
 		select {
 		case <-timer.C:
-			if enableMetrics {
-				s.CollectFsMetrics(ctx)
-			}
-
+			// Collect FS metrics.
+			s.CollectFsMetrics(ctx)
 			// Collect snapshotter metrics.
 			s.snCollector.Collect()
 		case <-ctx.Done():

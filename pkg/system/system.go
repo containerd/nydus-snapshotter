@@ -19,15 +19,12 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
-	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
-	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
@@ -39,9 +36,6 @@ const (
 	// it's very helpful to check daemon's record in database.
 	endpointDaemonRecords  string = "/api/v1/daemons/records"
 	endpointDaemonsUpgrade string = "/api/v1/daemons/upgrade"
-
-	// Export prometheus metrics
-	endpointPromMetrics string = "/metrics"
 )
 
 const defaultErrorCode string = "Unknown"
@@ -148,21 +142,6 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
 	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPut)
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
-
-	// Special registration for Prometheus metrics export
-	sc.RegisterMetricsHandler(endpointPromMetrics)
-}
-
-func (sc *Controller) RegisterMetricsHandler(endpoint string) {
-	handler := promhttp.HandlerFor(registry.Registry, promhttp.HandlerOpts{
-		ErrorHandling: promhttp.HTTPErrorOnError,
-	})
-
-	sc.router.Handle(endpoint,
-		http.HandlerFunc(func(rsp http.ResponseWriter, req *http.Request) {
-			handler.ServeHTTP(rsp, req)
-			exporter.ExportToFile()
-		}))
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {

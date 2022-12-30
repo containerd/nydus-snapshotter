@@ -39,7 +39,7 @@ type Args struct {
 	DaemonMode               string `toml:"daemon_mode"`
 	FsDriver                 string `toml:"fs_driver"`
 	SyncRemove               bool   `toml:"sync_remove"`
-	EnableMetrics            bool   `toml:"enable_metrics"`
+	MetricsAddress           string `toml:"metrics_address"`
 	MetricsFile              string `toml:"metrics_file"`
 	EnableStargz             bool   `toml:"enable_stargz"`
 	DisableCacheManager      bool   `toml:"disable_cache_manager"`
@@ -111,10 +111,11 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to disable blob cache manager",
 			Destination: &args.DisableCacheManager,
 		},
-		&cli.BoolFlag{
-			Name:        "enable-metrics",
-			Usage:       "whether to collect metrics",
-			Destination: &args.EnableMetrics,
+		&cli.StringFlag{
+			Name:        "metrics-address",
+			Value:       "",
+			Usage:       "Enable metrics server by setting to an `ADDRESS` such as \"localhost:8080\", \":8080\"",
+			Destination: &args.MetricsAddress,
 		},
 		&cli.BoolFlag{
 			Name:        "enable-nydus-overlayfs",
