@@ -111,9 +111,11 @@ You **must** specify `--image-service-endpoint=unix:///run/containerd/containerd
 
 ### kubeconfig-based authentication
 
-This is another way to enable lazy pulling of private images on Kubernetes.
+This is another way to enable lazy pulling of private images on Kubernetes, Nydus snapshotter will start a goroutine to listen on secrets (type = `kubernetes.io/dockerconfigjson`) for private registries.
 
-Following configuration enables nydus-snapshotter to access to private registries using kubernetes secrets (type = `kubernetes.io/dockerconfigjson`) in the cluster using kubeconfig files.
+#### use kubeconfig file
+
+Following configuration enables nydus-snapshotter to access to private registries using kubernetes secrets in the cluster using kubeconfig files.
 
 ```toml
 enable_kubeconfig_keychain = true
@@ -126,3 +128,68 @@ If no `kubeconfig_path` is specified, snapshotter searches kubeconfig files from
 Please note that kubeconfig-based authentication requires additional privilege (i.e. kubeconfig to list/watch secrets) to the node.
 And this doesn't work if kubelet retrieve creds from somewhere not API server (e.g. [credential provider](https://kubernetes.io/docs/tasks/kubelet-credential-provider/kubelet-credential-provider/)).
 
+#### use ServiceAccount
+
+If your Nydus snapshotter runs in a Kubernetes cluster and you don't want to use kubeconfig, you can also choose to use ServiceAccount to configure the corresponding permissions for Nydus snapshotter.
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nydus-snapshotter-sa
+  namespace: nydus-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nydus-snapshotter-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nydus-snapshotter-role-binding
+roleRef:
+  kind: ClusterRole
+  name: nydus-snapshotter-role
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: nydus-snapshotter-sa
+  namespace: nydus-system
+```
+
+Then you can set the desired ServiceAccount with the required permissions fro your Nydus snapshotter Pod:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nydus-snapshotter
+  namespace: nydus-system
+spec:
+  containers:
+    name: nydus-snapshotter
+  serviceAccountName: nydus-snapshotter-sa
+  ...
+```
+
+#### create secrets
+
+If you have logined into a private registry, you can create a secret from the config file:
+
+```bash
+$ kubectl create --namespace nydus-system secret generic regcred \
+    --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+    --type=kubernetes.io/dockerconfigjson
+```
+
+The Nydus snapshotter will get the new secret and parse the authorization. If your new Pod uses a private registry, then this authentication information will be used to pull the image from the private registry.
