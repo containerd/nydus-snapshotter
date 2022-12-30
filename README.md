@@ -30,6 +30,8 @@ make
 
 ## Integrate Nydus-snapshotter into Containerd
 
+The following document will describe how to manually configure containerd + Nydus snapshotter. If you want to run Nydus snapshotter in Kubernetes cluster, you can try to use helm or run nydus snapshotter as a container. You can refer to [this documentation](./docs/run_nydus_in_kubernetes.md).
+
 Containerd provides a general mechanism to exploit different types of snapshotters. Please ensure your containerd's version is 1.4.0 or above.
 Add Nydus as a proxy plugin into containerd's configuration file which may be located at `/etc/containerd/config.toml`.
 
