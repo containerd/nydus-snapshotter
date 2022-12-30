@@ -17,10 +17,8 @@ var (
 
 func init() {
 	Registry.MustRegister(
-		data.ReadCount,
+		data.TotalRead,
 		data.OpenFdCount,
-		data.OpenFdMaxCount,
-		data.LastFopTimestamp,
 		data.NydusdEventCount,
 		data.SnapshotEventElapsedHists,
 		data.CacheUsage,

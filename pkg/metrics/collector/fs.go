@@ -22,10 +22,8 @@ func (f *FsMetricsCollector) Collect() {
 		log.L.Warnf("can not collect FS metrics: Metrics is nil")
 		return
 	}
-	data.ReadCount.WithLabelValues(f.ImageRef).Set(float64(f.Metrics.DataRead))
+	data.TotalRead.WithLabelValues(f.ImageRef).Set(float64(f.Metrics.DataRead))
 	data.OpenFdCount.WithLabelValues(f.ImageRef).Set(float64(f.Metrics.NrOpens))
-	data.OpenFdMaxCount.WithLabelValues(f.ImageRef).Set(float64(f.Metrics.NrMaxOpens))
-	data.LastFopTimestamp.WithLabelValues(f.ImageRef).Set(float64(f.Metrics.LastFopTp))
 
 	for _, h := range data.MetricHists {
 		o, err := h.ToConstHistogram(f.Metrics, f.ImageRef)

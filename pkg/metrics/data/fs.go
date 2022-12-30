@@ -19,11 +19,10 @@ var (
 )
 
 var (
-	// Counters
-	ReadCount = ttl.NewGaugeVecWithTTL(
+	TotalRead = ttl.NewGaugeVecWithTTL(
 		prometheus.GaugeOpts{
-			Name: "nydusd_read_count",
-			Help: "Total number read of a nydus fs, in Byte.",
+			Name: "nydusd_total_read_bytes",
+			Help: "Total bytes read against the nydus filesystem",
 		},
 		[]string{imageRefLabel},
 		ttl.DefaultTTL,
@@ -31,26 +30,8 @@ var (
 
 	OpenFdCount = ttl.NewGaugeVecWithTTL(
 		prometheus.GaugeOpts{
-			Name: "nydusd_open_fd_count",
-			Help: "Number of current open files.",
-		},
-		[]string{imageRefLabel},
-		ttl.DefaultTTL,
-	)
-
-	OpenFdMaxCount = ttl.NewGaugeVecWithTTL(
-		prometheus.GaugeOpts{
-			Name: "nydusd_open_fd_max_count",
-			Help: "Number of max open files.",
-		},
-		[]string{imageRefLabel},
-		ttl.DefaultTTL,
-	)
-
-	LastFopTimestamp = ttl.NewGaugeVecWithTTL(
-		prometheus.GaugeOpts{
-			Name: "nydusd_last_fop_timestamp",
-			Help: "Timestamp of last file operation.",
+			Name: "nydusd_total_open_fd_counts",
+			Help: "Total number of files that are currently open.",
 		},
 		[]string{imageRefLabel},
 		ttl.DefaultTTL,
@@ -61,8 +42,8 @@ var (
 var MetricHists = []*mtypes.MetricHistogram{
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_block_count_read_hist",
-			"Read size histogram, in 1KB, 4KB, 16KB, 64KB, 128KB, 512K, 1024K.",
+			"nydusd_cumulative_read_block_bytes_hist",
+			"Cumulative read size histogram for different block size, in bytes.",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
 		),
@@ -74,8 +55,8 @@ var MetricHists = []*mtypes.MetricHistogram{
 
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_fop_hit_hist",
-			"File operations histogram",
+			"nydusd_file_operation_hit_hist",
+			"Successful various file operations histogram",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
 		),
@@ -87,8 +68,8 @@ var MetricHists = []*mtypes.MetricHistogram{
 
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_fop_errors_hist",
-			"File operations' error histogram",
+			"nydusd_file_operation_error_hist",
+			"Failed file operations histogram",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
 		),
@@ -100,7 +81,7 @@ var MetricHists = []*mtypes.MetricHistogram{
 
 	{
 		Desc: prometheus.NewDesc(
-			"nydusd_read_latency_hist",
+			"nydusd_read_latency_microseconds_hist",
 			"Read latency histogram, in microseconds",
 			[]string{imageRefLabel},
 			prometheus.Labels{},
