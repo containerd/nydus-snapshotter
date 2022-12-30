@@ -143,7 +143,7 @@ Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./d
 
 ### Setup with nydus-snapshotter image
 
-We can also use the `nydus-snapshotter` container image when we want to put Nydus stuffs inside a container. See the [nydus-snapshotter exmple](./misc/example/README.md) for how to setup and use it.
+We can also use the `nydus-snapshotter` container image when we want to put Nydus stuffs inside a container. See the [nydus-snapshotter example](./misc/example/README.md) for how to setup and use it.
 
 ## Integrate with Dragonfly to Distribute Images in P2P
 
