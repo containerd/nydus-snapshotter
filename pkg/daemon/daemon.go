@@ -338,7 +338,7 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 	fscacheID := rafs.Annotations[AnnoFsCacheID]
 
 	if err := c.UnbindBlob(domainID, fscacheID); err != nil {
-		return errors.Wrapf(err, "request to unbind fscache blob")
+		return errors.Wrapf(err, "request to unbind fscache blob, domain %s, fscache %s", domainID, fscacheID)
 	}
 
 	mountpoint := rafs.GetMountpoint()
