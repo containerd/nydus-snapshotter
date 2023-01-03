@@ -335,9 +335,9 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 		return errors.Wrapf(err, "unbind blob %s", d.ID())
 	}
 	domainID := rafs.Annotations[AnnoFsCacheDomainID]
-	fscaheID := rafs.Annotations[AnnoFsCacheID]
+	fscacheID := rafs.Annotations[AnnoFsCacheID]
 
-	if err := c.UnbindBlob(domainID, fscaheID); err != nil {
+	if err := c.UnbindBlob(domainID, fscacheID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob")
 	}
 
@@ -347,9 +347,9 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 	}
 
 	// delete fscache bootstrap cache file
-	// erofs generate fscache cache file for bootstrap with fscachID
-	if err := c.UnbindBlob("", fscaheID); err != nil {
-		log.L.Warnf("delete bootstrap %s err %s", fscaheID, err)
+	// erofs generate fscache cache file for bootstrap with fscacheID
+	if err := c.UnbindBlob("", fscacheID); err != nil {
+		log.L.Warnf("delete bootstrap %s err %s", fscacheID, err)
 	}
 
 	return nil
