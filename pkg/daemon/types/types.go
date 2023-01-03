@@ -36,6 +36,10 @@ func (info *DaemonInfo) DaemonState() DaemonState {
 	return info.State
 }
 
+func (info *DaemonInfo) DaemonVersion() BuildTimeInfo {
+	return info.Version
+}
+
 type ErrorMessage struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -67,16 +71,21 @@ type FsMetrics struct {
 	FopCumulativeLatencyTotal []uint64 `json:"fop_cumulative_latency_total"`
 	ReadLatencyDist           []uint64 `json:"read_latency_dist"`
 	NrOpens                   uint64   `json:"nr_opens"`
-	NrMaxOpens                uint64   `json:"nr_max_opens"`
-	LastFopTp                 uint64   `json:"last_fop_tp"`
 }
 
 type CacheMetrics struct {
-	ID              string   `json:"id"`
-	UnderlyingFiles []string `json:"underlying_files"`
-	StorePath       string   `json:"store_path"`
-	PartialHits     uint64   `json:"partial_hits"`
-	WholeHits       uint64   `json:"whole_hits"`
-	Total           uint64   `json:"total"`
-	EntriesCount    uint32   `json:"entries_count"`
+	ID                           string   `json:"id"`
+	UnderlyingFiles              []string `json:"underlying_files"`
+	StorePath                    string   `json:"store_path"`
+	PartialHits                  uint64   `json:"partial_hits"`
+	WholeHits                    uint64   `json:"whole_hits"`
+	Total                        uint64   `json:"total"`
+	EntriesCount                 uint64   `json:"entries_count"`
+	PrefetchDataAmount           uint64   `json:"prefetch_data_amount"`
+	PrefetchRequestsCount        uint64   `json:"prefetch_requests_count"`
+	PrefetchWorkers              uint     `json:"prefetch_workers"`
+	PrefetchCumulativeTimeMillis uint64   `json:"prefetch_cumulative_time_millis"`
+	PrefetchBeginTimeSecs        uint64   `json:"prefetch_begin_time_secs"`
+	PrefetchEndTimeSecs          uint64   `json:"prefetch_end_time_secs"`
+	BufferedBackendSize          uint64   `json:"buffered_backend_size"`
 }

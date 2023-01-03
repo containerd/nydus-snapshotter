@@ -77,6 +77,7 @@ type Daemon struct {
 	// How much CPU nydusd is utilizing when starts since full prefetch might
 	// consume many CPU cycles
 	StartupCPUUtilization float64
+	Version               types.BuildTimeInfo
 
 	ref int32
 	// Cache the nydusd daemon state to avoid frequently querying nydusd by API.
@@ -413,6 +414,15 @@ func (d *Daemon) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 	}
 
 	return c.GetFsMetrics(sid)
+}
+
+func (d *Daemon) GetDaemonInfo() (*types.DaemonInfo, error) {
+	c, err := d.GetClient()
+	if err != nil {
+		return nil, errors.Wrapf(err, "get daemon information")
+	}
+
+	return c.GetDaemonInfo()
 }
 
 func (d *Daemon) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {

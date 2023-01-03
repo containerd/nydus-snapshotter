@@ -30,6 +30,10 @@ func NewFsMetricsCollector(m *types.FsMetrics, imageRef string) *FsMetricsCollec
 	return &FsMetricsCollector{m, imageRef}
 }
 
+func NewDaemonInfoCollector(version *types.BuildTimeInfo, value float64) *DaemonInfoCollector {
+	return &DaemonInfoCollector{version, value}
+}
+
 func NewSnapshotterMetricsCollector(ctx context.Context, cacheDir string, pid int) (*SnapshotterMetricsCollector, error) {
 	currentStat, err := tool.GetProcessStat(pid)
 	if err != nil {
