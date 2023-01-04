@@ -27,7 +27,7 @@ type Server struct {
 	rootDir     string
 	metricsFile string
 	pm          *manager.Manager
-	fsCollector *collector.FsMetricsCollector
+	fsCollector *collector.FsMetricsVecCollector
 	snCollector *collector.SnapshotterMetricsCollector
 }
 
@@ -68,7 +68,7 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 		}
 	}
 
-	s.fsCollector = collector.NewFsMetricsCollector(nil, "")
+	s.fsCollector = collector.NewFsMetricsVecCollector()
 	snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, s.pm.CacheDir(), os.Getpid())
 	if err != nil {
 		return nil, errors.Wrap(err, "new snapshotter metrics collector failed")
@@ -87,6 +87,7 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 func (s *Server) CollectFsMetrics(ctx context.Context) {
 	// Collect FS metrics from daemons.
 	daemons := s.pm.ListDaemons()
+	var fsMetricsVec []collector.FsMetricsCollector
 	for _, d := range daemons {
 		for _, i := range d.Instances.List() {
 			var sid string
@@ -102,13 +103,15 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 				log.G(ctx).Errorf("failed to get fs metric: %v", err)
 				continue
 			}
-			s.fsCollector.Metrics = fsMetrics
-			s.fsCollector.ImageRef = i.ImageID
 
-			s.fsCollector.Collect()
+			fsMetricsVec = append(fsMetricsVec, collector.FsMetricsCollector{
+				Metrics:  fsMetrics,
+				ImageRef: i.ImageID,
+			})
 		}
-
 	}
+	s.fsCollector.MetricsVec = fsMetricsVec
+	s.fsCollector.Collect()
 }
 
 func (s *Server) StartCollectMetrics(ctx context.Context) error {

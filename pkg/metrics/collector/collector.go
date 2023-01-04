@@ -30,6 +30,10 @@ func NewFsMetricsCollector(m *types.FsMetrics, imageRef string) *FsMetricsCollec
 	return &FsMetricsCollector{m, imageRef}
 }
 
+func NewFsMetricsVecCollector() *FsMetricsVecCollector {
+	return &FsMetricsVecCollector{}
+}
+
 func NewDaemonInfoCollector(version *types.BuildTimeInfo, value float64) *DaemonInfoCollector {
 	return &DaemonInfoCollector{version, value}
 }
