@@ -19,7 +19,7 @@ var (
 )
 
 var (
-	TotalRead = ttl.NewGaugeVecWithTTL(
+	FsTotalRead = ttl.NewGaugeVecWithTTL(
 		prometheus.GaugeOpts{
 			Name: "nydusd_total_read_bytes",
 			Help: "Total bytes read against the nydus filesystem",
@@ -28,10 +28,18 @@ var (
 		ttl.DefaultTTL,
 	)
 
-	OpenFdCount = ttl.NewGaugeVecWithTTL(
+	FsReadHit = ttl.NewGaugeVecWithTTL(
 		prometheus.GaugeOpts{
-			Name: "nydusd_total_open_fd_counts",
-			Help: "Total number of files that are currently open.",
+			Name: "nydusd_read_hits",
+			Help: "Total number of successful read operations.",
+		},
+		[]string{imageRefLabel},
+		ttl.DefaultTTL,
+	)
+	FsReadError = ttl.NewGaugeVecWithTTL(
+		prometheus.GaugeOpts{
+			Name: "nydusd_read_errors",
+			Help: "Total number of failed read operations.",
 		},
 		[]string{imageRefLabel},
 		ttl.DefaultTTL,
@@ -52,33 +60,6 @@ var MetricHists = []*mtypes.MetricHistogram{
 			return m.BlockCountRead
 		},
 	},
-
-	{
-		Desc: prometheus.NewDesc(
-			"nydusd_file_operation_hits",
-			"Successful various file operations histogram",
-			[]string{imageRefLabel},
-			prometheus.Labels{},
-		),
-		Buckets: mtypes.MakeFopBuckets(),
-		GetCounters: func(m *types.FsMetrics) []uint64 {
-			return m.FopHits
-		},
-	},
-
-	{
-		Desc: prometheus.NewDesc(
-			"nydusd_file_operation_errors",
-			"Failed file operations histogram",
-			[]string{imageRefLabel},
-			prometheus.Labels{},
-		),
-		Buckets: mtypes.MakeFopBuckets(),
-		GetCounters: func(m *types.FsMetrics) []uint64 {
-			return m.FopErrors
-		},
-	},
-
 	{
 		Desc: prometheus.NewDesc(
 			"nydusd_read_latency_microseconds",

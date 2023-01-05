@@ -56,7 +56,7 @@ type MetricHistogram struct {
 	GetCounters GetCountersFn
 
 	// Save the last generated histogram metric
-	constHist prometheus.Metric
+	constHists []prometheus.Metric
 }
 
 func (h *MetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string) (prometheus.Metric, error) {
@@ -71,7 +71,7 @@ func (h *MetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string) 
 	for i, c := range counters {
 		count += c
 		sum += h.Buckets[i] * c
-		hmap[float64(h.Buckets[i])] = c
+		hmap[float64(h.Buckets[i])] = count
 	}
 
 	return prometheus.MustNewConstHistogram(
@@ -82,8 +82,12 @@ func (h *MetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string) 
 	), nil
 }
 
+func (h *MetricHistogram) Clear() {
+	h.constHists = nil
+}
+
 func (h *MetricHistogram) Save(m prometheus.Metric) {
-	h.constHist = m
+	h.constHists = append(h.constHists, m)
 }
 
 // Implement prometheus.Collector interface
@@ -94,7 +98,9 @@ func (h *MetricHistogram) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (h *MetricHistogram) Collect(ch chan<- prometheus.Metric) {
-	if h.constHist != nil {
-		ch <- h.constHist
+	if h.constHists != nil {
+		for _, hist := range h.constHists {
+			ch <- hist
+		}
 	}
 }
