@@ -545,7 +545,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		if d.States.FsDriver != m.FsDriver {
 			return errors.Wrapf(errdefs.ErrInvalidArgument,
 				"can't recover from the last restart, the specified fs-driver=%s mismatches with the last fs-driver=%s",
-				d.States.FsDriver, m.FsDriver)
+				m.FsDriver, d.States.FsDriver)
 		}
 
 		m.daemonStates.RecoverDaemonState(d)

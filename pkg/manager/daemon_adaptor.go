@@ -137,12 +137,6 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 	} else {
 		cmdOpts = append(cmdOpts, command.WithMode("fuse"))
 
-		if d.Supervisor != nil {
-			cmdOpts = append(cmdOpts,
-				command.WithSupervisor(d.Supervisor.Sock()),
-				command.WithID(d.ID()))
-		}
-
 		if nydusdThreadNum != 0 {
 			cmdOpts = append(cmdOpts, command.WithThreadNum(nydusdThreadNum))
 		}
@@ -168,6 +162,12 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		default:
 			return nil, errors.Errorf("invalid daemon mode %s ", m.daemonMode)
 		}
+	}
+
+	if d.Supervisor != nil {
+		cmdOpts = append(cmdOpts,
+			command.WithSupervisor(d.Supervisor.Sock()),
+			command.WithID(d.ID()))
 	}
 
 	cmdOpts = append(cmdOpts,
