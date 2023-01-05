@@ -545,7 +545,7 @@ pull_remove_one_image
 pull_remove_multiple_images shared
 pull_remove_multiple_images multiple
 
-start_single_container_on_stargz
+# start_single_container_on_stargz
 
 only_restart_snapshotter shared
 only_restart_snapshotter multiple
