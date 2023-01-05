@@ -9,12 +9,23 @@ NYDUS_NYDUSD ?= /usr/bin/nydusd
 GOOS ?= linux
 GOARCH ?= $(shell go env GOARCH)
 KERNEL_VER = $(shell uname -r)
+E2E_DOWNLOADS_MIRROR=
 #GOPROXY ?= https://goproxy.io
+
 
 # Used to populate variables in version package.
 BUILD_TIMESTAMP=$(shell date '+%Y-%m-%dT%H:%M:%S')
 VERSION=$(shell git describe --match 'v[0-9]*' --dirty='.m' --always --tags)
 REVISION=$(shell git rev-parse HEAD)$(shell if ! git diff --no-ext-diff --quiet --exit-code; then echo .m; fi)
+
+# Relpace test target images for e2e tests.
+ifdef E2E_TEST_TARGET_IMAGES_FILE
+ENV_TARGET_IMAGES_FILE = --env-file ${E2E_TEST_TARGET_IMAGES_FILE}
+endif
+
+ifdef E2E_DOWNLOADS_MIRROR
+BUILD_ARG_E2E_DOWNLOADS_MIRROR = --build-arg ${E2E_DOWNLOADS_MIRROR}
+endif
 
 ifdef GOPROXY
 PROXY := GOPROXY="${GOPROXY}"
@@ -78,7 +89,9 @@ smoke:
 .PHONY: integration
 integration:
 	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "${PKG}/version.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
-	$(SUDO) DOCKER_BUILDKIT=1 docker build -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
+	$(SUDO) DOCKER_BUILDKIT=1 docker build ${BUILD_ARG_E2E_DOWNLOADS_MIRROR} -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
 	$(SUDO) docker run --name nydus-snapshotter_e2e --rm --privileged -v /root/.docker:/root/.docker -v `go env GOMODCACHE`:/go/pkg/mod \
 	-v `go env GOCACHE`:/root/.cache/go-build -v `pwd`:/nydus-snapshotter \
-	-v /usr/src/linux-headers-${KERNEL_VER}:/usr/src/linux-headers-${KERNEL_VER} nydus-snapshotter-e2e:0.1
+	-v /usr/src/linux-headers-${KERNEL_VER}:/usr/src/linux-headers-${KERNEL_VER} \
+	${ENV_TARGET_IMAGES_FILE}  \
+	nydus-snapshotter-e2e:0.1
