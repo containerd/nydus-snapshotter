@@ -108,8 +108,8 @@ type Rafs struct {
 	ImageID     string
 	DaemonID    string
 	SnapshotDir string
-	// A host kernel EROFS mountpoint
-	// Absolute path to each rafs instance root directory.
+	// 1. A host kernel EROFS mountpoint
+	// 2. Absolute path to each rafs instance root directory.
 	Mountpoint  string
 	Annotations map[string]string
 }
@@ -151,8 +151,11 @@ func (r *Rafs) RelaMountpoint() string {
 	return filepath.Join("/", r.SnapshotID)
 }
 
-// Mountpoint of per-image nydusd/rafs. It is a kernel mountpoint for each
-// nydus meta layer. Each meta layer is associated with a nydusd.
+// Reflects the path where the a rafs instance root stays. The
+// root path could be a host kernel mountpoint when the instance
+// is attached by API `POST /api/v1/mount?mountpoint=/` or nydusd mounts an instance directly when starting.
+// Generally, we use this method to get the path as overlayfs lowerdir.
+// The path includes container image rootfs.
 func (r *Rafs) GetMountpoint() string {
 	return r.Mountpoint
 }
