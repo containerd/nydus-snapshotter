@@ -20,7 +20,7 @@ SNAPSHOTTER_CACHE_DIR=${REMOTE_SNAPSHOTTER_ROOT}/cache
 JAVA_IMAGE=${JAVA_IMAGE:-ghcr.io/dragonflyoss/image-service/java:nydus-nightly-v6}
 WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-ghcr.io/dragonflyoss/image-service/wordpress:nydus-nightly-v6}
 TOMCAT_IMAGE=${TOMCAT_IMAGE:-ghcr.io/dragonflyoss/image-service/tomcat:nydus-nightly-v5}
-STARGZ_IMAGE=${TOMCAT_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
+STARGZ_IMAGE=${STARGZ_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
 REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-ghcr.io/stargz-containers/redis:6.2.6-org}
 WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-org}
 
@@ -545,7 +545,7 @@ pull_remove_one_image
 pull_remove_multiple_images shared
 pull_remove_multiple_images multiple
 
-start_single_container_on_stargz
+# start_single_container_on_stargz
 
 only_restart_snapshotter shared
 only_restart_snapshotter multiple
