@@ -18,10 +18,10 @@ import (
 	"github.com/containerd/nydus-snapshotter/snapshot"
 )
 
-func Start(ctx context.Context, cfg config.Config) error {
+func Start(ctx context.Context, cfg *config.SnapshotterConfig) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	rs, err := snapshot.NewSnapshotter(ctx, &cfg)
+	rs, err := snapshot.NewSnapshotter(ctx, cfg)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize snapshotter")
 	}
@@ -29,12 +29,12 @@ func Start(ctx context.Context, cfg config.Config) error {
 	stopSignal := signals.SetupSignalHandler()
 	opt := ServeOptions{
 		ListeningSocketPath: cfg.Address,
-		EnableCRIKeychain:   cfg.EnableCRIKeychain,
-		ImageServiceAddress: cfg.ImageServiceAddress,
+		EnableCRIKeychain:   cfg.RemoteConfig.AuthConfig.EnableCRIKeychain,
+		ImageServiceAddress: cfg.RemoteConfig.AuthConfig.ImageServiceAddress,
 	}
 
-	if cfg.EnableKubeconfigKeychain {
-		if err := auth.InitKubeSecretListener(ctx, cfg.KubeconfigPath); err != nil {
+	if cfg.RemoteConfig.AuthConfig.EnableKubeconfigKeychain {
+		if err := auth.InitKubeSecretListener(ctx, cfg.RemoteConfig.AuthConfig.KubeconfigPath); err != nil {
 			return err
 		}
 	}

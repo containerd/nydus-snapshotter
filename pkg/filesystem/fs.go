@@ -469,12 +469,12 @@ func (fs *Filesystem) TryStopSharedDaemon() {
 func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daemon, err error) {
 	opts := []daemon.NewDaemonOpt{
 		daemon.WithRef(ref),
-		daemon.WithSocketDir(config.NydusConfig.SocketRoot()),
-		daemon.WithConfigDir(config.NydusConfig.ConfigRoot()),
-		daemon.WithLogDir(config.NydusConfig.LogDir),
-		daemon.WithLogLevel(config.NydusConfig.LogLevel),
-		daemon.WithLogToStdout(config.NydusConfig.LogToStdout),
-		daemon.WithNydusdThreadNum(config.NydusConfig.NydusdThreadNum),
+		daemon.WithSocketDir(config.GetSocketRoot()),
+		daemon.WithConfigDir(config.GetConfigRoot()),
+		daemon.WithLogDir(config.GetLogDir()),
+		daemon.WithLogLevel(config.GetLogLevel()),
+		daemon.WithLogToStdout(config.GetLogToStdout()),
+		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(config.GetFsDriver())}
 
 	if mountpoint != "" {
@@ -504,5 +504,5 @@ func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daem
 }
 
 func (fs *Filesystem) DaemonBacked() bool {
-	return config.NydusConfig.DaemonMode != config.DaemonModeNone
+	return config.GetDaemonMode() != config.DaemonModeNone
 }

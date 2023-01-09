@@ -23,36 +23,37 @@ const (
 )
 
 type Args struct {
-	Address                  string `toml:"address"`
-	LogLevel                 string `toml:"log_level"`
-	LogDir                   string `toml:"log_dir"`
-	ConfigPath               string `toml:"config_path"`
-	RootDir                  string `toml:"root_dir"`
-	CacheDir                 string `toml:"cache_dir"`
-	GCPeriod                 string `toml:"gc_period"`
-	ValidateSignature        bool   `toml:"validate_signature"`
-	PublicKeyFile            string `toml:"public_key_file"`
-	ConvertVpcRegistry       bool   `toml:"convert_vpc_registry"`
-	NydusdBinaryPath         string `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath     string `toml:"nydus_image_binary_path"`
-	SharedDaemon             bool   `toml:"-"`
-	DaemonMode               string `toml:"daemon_mode"`
-	FsDriver                 string `toml:"fs_driver"`
-	SyncRemove               bool   `toml:"sync_remove"`
-	MetricsAddress           string `toml:"metrics_address"`
-	EnableStargz             bool   `toml:"enable_stargz"`
-	DisableCacheManager      bool   `toml:"disable_cache_manager"`
-	LogToStdout              bool   `toml:"log_to_stdout"`
-	EnableNydusOverlayFS     bool   `toml:"enable_nydus_overlay_fs"`
-	NydusdThreadNum          int    `toml:"nydusd_thread_num"`
-	CleanupOnClose           bool   `toml:"cleanup_on_close"`
-	KubeconfigPath           string `toml:"kubeconfig_path"`
-	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
-	RecoverPolicy            string `toml:"recover_policy"`
-	PrintVersion             bool   `toml:"-"`
+	Address                  string
+	LogLevel                 string
+	LogDir                   string
+	ConfigPath               string
+	SnapshotterConfigPath    string
+	RootDir                  string
+	CacheDir                 string
+	GCPeriod                 string
+	ValidateSignature        bool
+	PublicKeyFile            string
+	ConvertVpcRegistry       bool
+	NydusdPath               string
+	NydusImagePath           string
+	SharedDaemon             bool
+	DaemonMode               string
+	FsDriver                 string
+	SyncRemove               bool
+	MetricsAddress           string
+	EnableStargz             bool
+	DisableCacheManager      bool
+	LogToStdout              bool
+	EnableNydusOverlayFS     bool
+	NydusdThreadsNumber      int
+	CleanupOnClose           bool
+	KubeconfigPath           string
+	EnableKubeconfigKeychain bool
+	RecoverPolicy            string
+	PrintVersion             bool
 	EnableSystemController   bool
-	EnableCRIKeychain        bool   `toml:"enable_cri_keychain"`
-	ImageServiceAddress      string `toml:"image_service_address"`
+	EnableCRIKeychain        bool
+	ImageServiceAddress      string
 }
 
 type Flags struct {
@@ -89,9 +90,14 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "config-path",
-			Aliases:     []string{"c", "config"},
-			Usage:       "path to the configuration `FILE`",
+			Aliases:     []string{"nydusd-config"},
+			Usage:       "path to the nydusd configuration",
 			Destination: &args.ConfigPath,
+		},
+		&cli.StringFlag{
+			Name:        "config",
+			Usage:       "path to the nydus-snapshotter configuration",
+			Destination: &args.SnapshotterConfigPath,
 		},
 		&cli.BoolFlag{
 			Name:        "convert-vpc-registry",
@@ -163,19 +169,19 @@ func buildFlags(args *Args) []cli.Flag {
 			Value:       "",
 			Aliases:     []string{"nydusimg-path"},
 			Usage:       "set `PATH` to the nydus-image binary, default to lookup nydus-image in $PATH",
-			Destination: &args.NydusImageBinaryPath,
+			Destination: &args.NydusImagePath,
 		},
 		&cli.StringFlag{
 			Name:        "nydusd",
 			Value:       "",
 			Aliases:     []string{"nydusd-path"},
 			Usage:       "set `PATH` to the nydusd binary, default to lookup nydusd in $PATH",
-			Destination: &args.NydusdBinaryPath,
+			Destination: &args.NydusdPath,
 		},
 		&cli.IntFlag{
 			Name:        "nydusd-thread-num",
 			Usage:       "set worker thread number for nydusd, default to the number of CPUs",
-			Destination: &args.NydusdThreadNum,
+			Destination: &args.NydusdThreadsNumber,
 		},
 		&cli.StringFlag{
 			Name:        "publickey-file",

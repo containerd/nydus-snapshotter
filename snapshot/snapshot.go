@@ -64,35 +64,35 @@ type snapshotter struct {
 	cleanupOnClose       bool
 }
 
-func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshotter, error) {
-	verifier, err := signature.NewVerifier(cfg.PublicKeyFile, cfg.ValidateSignature)
+func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
+	verifier, err := signature.NewVerifier(cfg.ImageConfig.PublicKeyFile, cfg.ImageConfig.ValidateSignature)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize verifier")
+		return nil, errors.Wrap(err, "initialize image verifier")
 	}
 
-	daemonConfig, err := daemonconfig.NewDaemonConfig(cfg.FsDriver, cfg.DaemonCfgPath)
+	daemonConfig, err := daemonconfig.NewDaemonConfig(config.GetFsDriver(), cfg.DaemonConfig.NydusdConfigPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "load daemon configuration")
 	}
 
-	db, err := store.NewDatabase(cfg.RootDir)
+	db, err := store.NewDatabase(cfg.Root)
 	if err != nil {
 		return nil, errors.Wrap(err, "create database")
 	}
 
-	rp, err := manager.ParseRecoverPolicy(cfg.RecoverPolicy)
+	rp, err := manager.ParseRecoverPolicy(cfg.DaemonConfig.RecoverPolicy)
 	if err != nil {
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
 
 	manager, err := manager.NewManager(manager.Opt{
-		NydusdBinaryPath: cfg.NydusdBinaryPath,
+		NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
 		Database:         db,
-		DaemonMode:       cfg.DaemonMode,
-		CacheDir:         cfg.CacheDir,
-		RootDir:          cfg.RootDir,
+		DaemonMode:       config.GetDaemonMode(),
+		CacheDir:         cfg.CacheManagerConfig.CacheDir,
+		RootDir:          cfg.Root,
 		RecoverPolicy:    rp,
-		FsDriver:         cfg.FsDriver,
+		FsDriver:         config.GetFsDriver(),
 		DaemonConfig:     daemonConfig,
 	})
 	if err != nil {
@@ -101,7 +101,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	metricServer, err := metrics.NewServer(
 		ctx,
-		metrics.WithRootDir(cfg.RootDir),
+		metrics.WithRootDir(cfg.Root),
 		metrics.WithProcessManager(manager),
 	)
 	if err != nil {
@@ -123,7 +123,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 	}
 
 	if cfg.EnableSystemController {
-		systemController, err := system.NewSystemController(manager, path.Join(cfg.RootDir, "system.sock"))
+		systemController, err := system.NewSystemController(manager, path.Join(cfg.Root, "system.sock"))
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
@@ -136,18 +136,19 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 
 	opts := []filesystem.NewFSOpt{
 		filesystem.WithManager(manager),
-		filesystem.WithNydusImageBinaryPath(cfg.NydusImageBinaryPath),
+		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
 		filesystem.WithVerifier(verifier),
-		filesystem.WithRootMountpoint(path.Join(cfg.RootDir, "mnt")),
+		filesystem.WithRootMountpoint(path.Join(cfg.Root, "mnt")),
 		filesystem.WithEnableStargz(cfg.EnableStargz),
 	}
 
-	if !cfg.DisableCacheManager {
+	cacheConfig := &cfg.CacheManagerConfig
+	if !cacheConfig.Disable {
 		cacheMgr, err := cache.NewManager(cache.Opt{
 			Database: db,
-			Period:   cfg.GCPeriod,
-			CacheDir: cfg.CacheDir,
-			FsDriver: cfg.FsDriver,
+			Period:   config.GetCacheGCPeriod(),
+			CacheDir: cacheConfig.CacheDir,
+			FsDriver: config.GetFsDriver(),
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "create cache manager")
@@ -155,7 +156,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 	}
 
-	hasDaemon := cfg.DaemonMode != config.DaemonModeNone
+	hasDaemon := config.GetDaemonMode() != config.DaemonModeNone
 
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
@@ -179,41 +180,41 @@ func NewSnapshotter(ctx context.Context, cfg *config.Config) (snapshots.Snapshot
 		}
 	}
 
-	if err := os.MkdirAll(cfg.RootDir, 0700); err != nil {
+	if err := os.MkdirAll(cfg.Root, 0700); err != nil {
 		return nil, err
 	}
 
-	supportsDType, err := getSupportsDType(cfg.RootDir)
+	supportsDType, err := getSupportsDType(cfg.Root)
 	if err != nil {
 		return nil, err
 	}
 	if !supportsDType {
-		return nil, fmt.Errorf("%s does not support d_type. If the backing filesystem is xfs, please reformat with ftype=1 to enable d_type support", cfg.RootDir)
+		return nil, fmt.Errorf("%s does not support d_type. If the backing filesystem is xfs, please reformat with ftype=1 to enable d_type support", cfg.Root)
 	}
 
-	ms, err := storage.NewMetaStore(filepath.Join(cfg.RootDir, "metadata.db"))
+	ms, err := storage.NewMetaStore(filepath.Join(cfg.Root, "metadata.db"))
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Mkdir(filepath.Join(cfg.RootDir, "snapshots"), 0700); err != nil && !os.IsExist(err) {
+	if err := os.Mkdir(filepath.Join(cfg.Root, "snapshots"), 0700); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
-	syncRemove := cfg.SyncRemove
-	if cfg.FsDriver == config.FsDriverFscache {
+	syncRemove := cfg.SnapshotsConfig.SyncRemove
+	if config.GetFsDriver() == config.FsDriverFscache {
 		log.L.Infof("for fscache mode enable syncRemove")
 		syncRemove = true
 	}
 
 	return &snapshotter{
-		root:                 cfg.RootDir,
-		nydusdPath:           cfg.NydusdBinaryPath,
+		root:                 cfg.Root,
+		nydusdPath:           cfg.DaemonConfig.NydusdPath,
 		ms:                   ms,
 		syncRemove:           syncRemove,
 		fs:                   nydusFs,
 		manager:              manager,
 		hasDaemon:            hasDaemon,
-		enableNydusOverlayFS: cfg.EnableNydusOverlayFS,
+		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
 		blobMgr:              blobMgr,
 	}, nil
