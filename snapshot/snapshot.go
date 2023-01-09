@@ -168,9 +168,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	// blobs from registry alone with no help of nydusd or containerd.
 	var blobMgr *blob.Manager
 	if fuseConfig, ok := daemonConfig.(*daemonconfig.FuseDaemonConfig); ok {
-		if fuseConfig.Device.Backend.BackendType == "localfs" &&
-			len(fuseConfig.Device.Backend.Config.Dir) != 0 {
-			blobMgr = blob.NewBlobManager(fuseConfig.Device.Backend.Config.Dir, resolve.NewResolver())
+		d := fuseConfig.Device.Backend.Config.Dir
+		if fuseConfig.Device.Backend.BackendType == "localfs" && len(d) != 0 {
+			if err := os.MkdirAll(d, 0700); err != nil {
+				return nil, errors.Wrap(err, "create blob manager's directory")
+			}
+			blobMgr = blob.NewBlobManager(d, resolve.NewResolver())
 			go func() {
 				err := blobMgr.Run(ctx)
 				if err != nil {
