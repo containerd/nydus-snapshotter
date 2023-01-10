@@ -44,6 +44,12 @@ var (
 		[]string{imageRefLabel},
 		ttl.DefaultTTL,
 	)
+	TotalHungIO = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "nydusd_hung_io_counts",
+			Help: "Total number of hung IOs.",
+		},
+	)
 )
 
 // Fs metric histograms

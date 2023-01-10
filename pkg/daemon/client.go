@@ -31,7 +31,8 @@ const (
 	endpointMount      = "/api/v1/mount"
 	endpointMetrics    = "/api/v1/metrics"
 	// Fetch metrics relevant to caches usage.
-	endpointCacheMetrics = "/api/v1/metrics/blobcache"
+	endpointCacheMetrics    = "/api/v1/metrics/blobcache"
+	endpointInflightMetrics = "/api/v1/metrics/inflight"
 	// Command nydusd to retrieve its runtime states, which is used during failover
 	endpointTakeOver = "/api/v1/daemon/fuse/takeover"
 	// Command nydusd to send out its runtime states, which prepares failover.
@@ -60,6 +61,7 @@ type NydusdClient interface {
 	UnbindBlob(domainID, blobID string) error
 
 	GetFsMetrics(sid string) (*types.FsMetrics, error)
+	GetInflightMetrics() (*types.InflightMetrics, error)
 	GetCacheMetrics(sid string) (*types.CacheMetrics, error)
 
 	TakeOver() error
@@ -221,6 +223,21 @@ func (c *nydusdClient) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 	var m types.FsMetrics
 	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
 		return decode(resp, &m)
+	}); err != nil {
+		return nil, err
+	}
+
+	return &m, nil
+}
+
+func (c *nydusdClient) GetInflightMetrics() (*types.InflightMetrics, error) {
+	url := c.url(endpointInflightMetrics, query{})
+	var m types.InflightMetrics
+	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusNoContent {
+			return decode(resp, &m.Values)
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}

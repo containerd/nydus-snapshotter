@@ -8,6 +8,7 @@ package collector
 
 import (
 	"context"
+	"time"
 
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/data"
 
@@ -32,6 +33,12 @@ func NewFsMetricsCollector(m *types.FsMetrics, imageRef string) *FsMetricsCollec
 
 func NewFsMetricsVecCollector() *FsMetricsVecCollector {
 	return &FsMetricsVecCollector{}
+}
+
+func NewInflightMetricsVecCollector(hungIOInterval time.Duration) *InflightMetricsVecCollector {
+	return &InflightMetricsVecCollector{
+		HungIOInterval: hungIOInterval,
+	}
 }
 
 func NewDaemonInfoCollector(version *types.BuildTimeInfo, value float64) *DaemonInfoCollector {

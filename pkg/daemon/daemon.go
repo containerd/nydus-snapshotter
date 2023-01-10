@@ -419,6 +419,15 @@ func (d *Daemon) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 	return c.GetFsMetrics(sid)
 }
 
+func (d *Daemon) GetInflightMetrics() (*types.InflightMetrics, error) {
+	c, err := d.GetClient()
+	if err != nil {
+		return nil, errors.Wrapf(err, "get inflight metrics")
+	}
+
+	return c.GetInflightMetrics()
+}
+
 func (d *Daemon) GetDaemonInfo() (*types.DaemonInfo, error) {
 	c, err := d.GetClient()
 	if err != nil {
