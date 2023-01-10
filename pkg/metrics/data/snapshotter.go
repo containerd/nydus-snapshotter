@@ -34,8 +34,8 @@ var (
 
 	CPUUsage = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "snapshotter_cpu_usage_percent",
-			Help: "Cpu usage percent of snapshotter.",
+			Name: "snapshotter_cpu_usage_percentage",
+			Help: "CPU usage percentage of snapshotter.",
 		},
 	)
 
