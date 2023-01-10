@@ -147,7 +147,6 @@ func (sc *Controller) registerRouter() {
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		daemons := sc.manager.ListDaemons()
-		log.L.Infof("list daemons %v", daemons)
 
 		info := make([]daemonInfo, 0, 10)
 
