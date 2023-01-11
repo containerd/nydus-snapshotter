@@ -40,7 +40,6 @@ type Args struct {
 	FsDriver                 string `toml:"fs_driver"`
 	SyncRemove               bool   `toml:"sync_remove"`
 	MetricsAddress           string `toml:"metrics_address"`
-	MetricsFile              string `toml:"metrics_file"`
 	EnableStargz             bool   `toml:"enable_stargz"`
 	DisableCacheManager      bool   `toml:"disable_cache_manager"`
 	LogToStdout              bool   `toml:"log_to_stdout"`
@@ -158,11 +157,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "log-to-stdout",
 			Usage:       "log messages to standard out rather than files.",
 			Destination: &args.LogToStdout,
-		},
-		&cli.StringFlag{
-			Name:        "metrics-file",
-			Usage:       "path to the metrics output `FILE`",
-			Destination: &args.MetricsFile,
 		},
 		&cli.StringFlag{
 			Name:        "nydus-image",
