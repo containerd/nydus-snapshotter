@@ -2,7 +2,10 @@ FROM alpine:3.17.0 AS sourcer
 
 RUN apk add --no-cache curl
 RUN apk add --no-cache --upgrade grep
-RUN export NYDUS_VERSION=$(curl --silent "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")') && \
+RUN unset NYDUS_VERSION && RETRY_COUNT=0 && \
+    while [ -z $NYDUS_VERSION ] && [ $RETRY_COUNT != 600 ]; do \
+    export NYDUS_VERSION=$(curl --silent "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")'); RETRY_COUNT=$(($RETRY_COUNT+1)); sleep 1; done && \
+    echo nydus version: $NYDUS_VERSION after $RETRY_COUNT times && if [ -z $NYDUS_VERSION ]; then echo Invalid NYDUS_VERSION && exit -1; fi && \
     wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VERSION/nydus-static-$NYDUS_VERSION-linux-amd64.tgz && \
     echo $NYDUS_VERSION > /.nydus_version && \
     tar xzf nydus-static-$NYDUS_VERSION-linux-amd64.tgz && \
