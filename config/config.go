@@ -96,7 +96,6 @@ type Config struct {
 	FsDriver                 string        `toml:"fs_driver"`
 	SyncRemove               bool          `toml:"sync_remove"`
 	MetricsAddress           string        `toml:"metrics_address"`
-	MetricsFile              string        `toml:"metrics_file"`
 	EnableStargz             bool          `toml:"enable_stargz"`
 	LogLevel                 string        `toml:"-"`
 	LogDir                   string        `toml:"log_dir"`
@@ -240,7 +239,6 @@ func ProcessParameters(args *command.Args, cfg *Config) error {
 	cfg.FsDriver = args.FsDriver
 
 	cfg.MetricsAddress = args.MetricsAddress
-	cfg.MetricsFile = args.MetricsFile
 
 	cfg.NydusdBinaryPath = args.NydusdBinaryPath
 	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath

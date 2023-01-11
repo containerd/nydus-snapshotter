@@ -10,7 +10,6 @@ package metrics
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/pkg/errors"
@@ -18,14 +17,12 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
-	"github.com/containerd/nydus-snapshotter/pkg/metrics/exporter"
 )
 
 type ServerOpt func(*Server) error
 
 type Server struct {
 	rootDir     string
-	metricsFile string
 	pm          *manager.Manager
 	fsCollector *collector.FsMetricsVecCollector
 	snCollector *collector.SnapshotterMetricsCollector
@@ -34,21 +31,6 @@ type Server struct {
 func WithRootDir(rootDir string) ServerOpt {
 	return func(s *Server) error {
 		s.rootDir = rootDir
-		return nil
-	}
-}
-
-func WithMetricsFile(metricsFile string) ServerOpt {
-	return func(s *Server) error {
-		if s.rootDir == "" {
-			return errors.New("root dir is required")
-		}
-
-		if metricsFile == "" {
-			metricsFile = filepath.Join(s.rootDir, "metrics.log")
-		}
-
-		s.metricsFile = metricsFile
 		return nil
 	}
 }
@@ -74,12 +56,6 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 		return nil, errors.Wrap(err, "new snapshotter metrics collector failed")
 	}
 	s.snCollector = snCollector
-
-	if err := exporter.NewFileExporter(
-		exporter.WithOutputFile(s.metricsFile),
-	); err != nil {
-		return nil, errors.Wrap(err, "new metric exporter failed")
-	}
 
 	return &s, nil
 }
