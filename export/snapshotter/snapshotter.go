@@ -13,18 +13,19 @@ func init() {
 	plugin.Register(&plugin.Registration{
 		Type:   plugin.SnapshotPlugin,
 		ID:     "nydus",
-		Config: &config.Config{},
+		Config: &config.SnapshotterConfig{},
 		InitFn: func(ic *plugin.InitContext) (interface{}, error) {
 			ic.Meta.Platforms = append(ic.Meta.Platforms, platforms.DefaultSpec())
 
-			cfg, ok := ic.Config.(*config.Config)
+			cfg, ok := ic.Config.(*config.SnapshotterConfig)
 			if !ok {
 				return nil, errors.New("invalid nydus snapshotter configuration")
 			}
 
-			if cfg.RootDir == "" {
-				cfg.RootDir = ic.Root
+			if cfg.Root == "" {
+				cfg.Root = ic.Root
 			}
+
 			if err := cfg.FillUpWithDefaults(); err != nil {
 				return nil, errors.New("failed to fill up nydus configuration with defaults")
 			}

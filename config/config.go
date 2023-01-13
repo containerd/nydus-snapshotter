@@ -9,26 +9,16 @@ package config
 
 import (
 	"os"
-	"path"
-	"path/filepath"
-	"time"
 
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
-	exec "golang.org/x/sys/execabs"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 )
 
 // Define a policy how to fork nydusd daemon and attach file system instances to serve.
 type DaemonMode string
-
-var SnapshotsDir string
-
-var NydusConfig *Config
 
 const (
 	// One nydusd, one rafs instance
@@ -56,109 +46,107 @@ func parseDaemonMode(m string) (DaemonMode, error) {
 }
 
 const (
-	DefaultDaemonMode DaemonMode = DaemonModeMultiple
-
-	DefaultLogLevel string = "info"
-	defaultGCPeriod        = 24 * time.Hour
-
-	defaultNydusDaemonConfigPath string = "/etc/nydus/nydusd-config.json"
-	nydusdBinaryName             string = "nydusd"
-	nydusImageBinaryName         string = "nydus-image"
-
-	defaultRootDir    = "/var/lib/containerd-nydus"
-	oldDefaultRootDir = "/var/lib/containerd-nydus-grpc"
-
-	// Log rotation
-	defaultRotateLogMaxSize    = 200 // 200 megabytes
-	defaultRotateLogMaxBackups = 10
-	defaultRotateLogMaxAge     = 0 // days
-	defaultRotateLogLocalTime  = true
-	defaultRotateLogCompress   = true
-)
-
-const (
 	FsDriverFusedev string = "fusedev"
 	FsDriverFscache string = "fscache"
 )
 
-type Config struct {
-	Address                  string        `toml:"-"`
-	ConvertVpcRegistry       bool          `toml:"-"`
-	DaemonCfgPath            string        `toml:"daemon_cfg_path"`
-	PublicKeyFile            string        `toml:"-"`
-	RootDir                  string        `toml:"-"`
-	CacheDir                 string        `toml:"cache_dir"`
-	GCPeriod                 time.Duration `toml:"gc_period"`
-	ValidateSignature        bool          `toml:"validate_signature"`
-	NydusdBinaryPath         string        `toml:"nydusd_binary_path"`
-	NydusImageBinaryPath     string        `toml:"nydus_image_binary"`
-	DaemonMode               DaemonMode    `toml:"daemon_mode"`
-	FsDriver                 string        `toml:"fs_driver"`
-	SyncRemove               bool          `toml:"sync_remove"`
-	MetricsAddress           string        `toml:"metrics_address"`
-	EnableStargz             bool          `toml:"enable_stargz"`
-	LogLevel                 string        `toml:"-"`
-	LogDir                   string        `toml:"log_dir"`
-	LogToStdout              bool          `toml:"log_to_stdout"`
-	DisableCacheManager      bool          `toml:"disable_cache_manager"`
-	EnableNydusOverlayFS     bool          `toml:"enable_nydus_overlayfs"`
-	NydusdThreadNum          int           `toml:"nydusd_thread_num"`
-	CleanupOnClose           bool          `toml:"cleanup_on_close"`
-	KubeconfigPath           string        `toml:"kubeconfig_path"`
-	EnableKubeconfigKeychain bool          `toml:"enable_kubeconfig_keychain"`
-	RotateLogMaxSize         int           `toml:"log_rotate_max_size"`
-	RotateLogMaxBackups      int           `toml:"log_rotate_max_backups"`
-	RotateLogMaxAge          int           `toml:"log_rotate_max_age"`
-	RotateLogLocalTime       bool          `toml:"log_rotate_local_time"`
-	RotateLogCompress        bool          `toml:"log_rotate_compress"`
-	EnableSystemController   bool          `toml:"enable_system_controller"`
-	RecoverPolicy            string        `toml:"recover_policy"`
-	EnableCRIKeychain        bool          `toml:"enable_cri_keychain"`
-	ImageServiceAddress      string        `toml:"image_service_address"`
+// Configure how to start and recover nydusd daemons
+type DaemonConfig struct {
+	NydusdPath       string `toml:"nydusd_path"`
+	NydusImagePath   string `toml:"nydusimage_path"`
+	NydusdConfigPath string `toml:"nydusd_config"`
+	RecoverPolicy    string `toml:"recover_policy"`
+	FsDriver         string `toml:"fs_driver"`
+	ThreadsNumber    int    `toml:"threads_number"`
 }
 
-// Defines snapshots states directories.
-func (c *Config) SnapshotRoot() string {
-	return filepath.Join(c.RootDir, "snapshots")
+type LoggingConfig struct {
+	LogToStdout         bool   `toml:"log_to_stdout"`
+	LogLevel            string `toml:"level"`
+	LogDir              string `toml:"dir"`
+	RotateLogMaxSize    int    `toml:"log_rotation_max_size"`
+	RotateLogMaxBackups int    `toml:"log_rotation_max_backups"`
+	RotateLogMaxAge     int    `toml:"log_rotation_max_age"`
+	RotateLogLocalTime  bool   `toml:"log_rotation_local_time"`
+	RotateLogCompress   bool   `toml:"log_rotation_compress"`
 }
 
-func (c *Config) SocketRoot() string {
-	return filepath.Join(c.RootDir, "socket")
+// Nydus image layers additional process
+type ImageConfig struct {
+	PublicKeyFile     string `toml:"public_key_file"`
+	ValidateSignature bool   `toml:"validate_signature"`
 }
 
-func (c *Config) ConfigRoot() string {
-	return filepath.Join(c.RootDir, "config")
+// Configure containerd snapshots interfaces and how to process the snapshots
+// requests from containerd
+type SnapshotConfig struct {
+	EnableNydusOverlayFS bool `toml:"enable_nydus_overlayfs"`
+	SyncRemove           bool `toml:"sync_remove"`
 }
 
-func GetDaemonMode() DaemonMode {
-	return NydusConfig.DaemonMode
+// Configure cache manager that manages the cache files lifecycle
+type CacheManagerConfig struct {
+	Disable bool `toml:"disable"`
+	// Trigger GC gc_period after the specified period.
+	// Example format: 24h, 120min
+	GCPeriod string `toml:"gc_period"`
+	CacheDir string `toml:"cache_dir"`
 }
 
-func GetFsDriver() string {
-	return NydusConfig.FsDriver
+// Configure how nydus-snapshotter receive auth information
+type AuthConfig struct {
+	// based on kubeconfig or ServiceAccount
+	EnableKubeconfigKeychain bool   `toml:"enable_kubeconfig_keychain"`
+	KubeconfigPath           string `toml:"kubeconfig_path"`
+	// CRI proxy mode
+	EnableCRIKeychain   bool   `toml:"enable_cri_keychain"`
+	ImageServiceAddress string `toml:"image_service_address"`
+}
+
+// Configure remote storage like container registry
+type RemoteConfig struct {
+	AuthConfig         AuthConfig `toml:"auth"`
+	ConvertVpcRegistry bool       `toml:"convert_vpc_registry"`
 }
 
 type SnapshotterConfig struct {
-	StartupFlag command.Args `toml:"snapshotter"`
+	// Configuration format version
+	Version int `toml:"version"`
+	// Snapshotter's root work directory
+	Root                   string `toml:"root"`
+	Address                string `toml:"address"`
+	EnableSystemController bool   `toml:"enable_system_controller"`
+	MetricsAddress         string `toml:"metrics_address"`
+	DaemonMode             string `toml:"daemon_mode"`
+	EnableStargz           bool   `toml:"enable_stargz"`
+	// Clean up all the resources when snapshotter is closed
+	CleanupOnClose bool `toml:"cleanup_on_close"`
+
+	DaemonConfig       DaemonConfig       `toml:"daemon"`
+	SnapshotsConfig    SnapshotConfig     `toml:"snapshot"`
+	RemoteConfig       RemoteConfig       `toml:"remote"`
+	ImageConfig        ImageConfig        `toml:"image"`
+	CacheManagerConfig CacheManagerConfig `toml:"cache_manager"`
+	LoggingConfig      LoggingConfig      `toml:"log"`
 }
 
-func LoadSnapshotterConfig(snapshotterConfigPath string) (*SnapshotterConfig, error) {
+func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	var config SnapshotterConfig
 	// get nydus-snapshotter configuration from specified path of toml file
-	if snapshotterConfigPath == "" {
+	if path == "" {
 		return nil, errors.New("snapshotter configuration path cannot be empty")
 	}
-	tree, err := toml.LoadFile(snapshotterConfigPath)
+	tree, err := toml.LoadFile(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "load snapshotter configuration file %q", snapshotterConfigPath)
+		return nil, errors.Wrapf(err, "load snapshotter configuration file %q", path)
 	}
-	if err = tree.Unmarshal(config); err != nil {
-		return nil, errors.Wrapf(err, "unmarshal snapshotter configuration file %q", snapshotterConfigPath)
+	if err = tree.Unmarshal(&config); err != nil {
+		return nil, errors.Wrapf(err, "unmarshal snapshotter configuration file %q", path)
 	}
 	return &config, nil
 }
 
-func ProcessParameters(args *command.Args, cfg *Config) error {
+func ValidateParameters(args *command.Args) error {
 	if args == nil {
 		return errors.New("no startup parameter provided")
 	}
@@ -170,144 +158,87 @@ func ProcessParameters(args *command.Args, cfg *Config) error {
 			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
 		}
 	}
-	cfg.PublicKeyFile = args.PublicKeyFile
-	cfg.ValidateSignature = args.ValidateSignature
-	cfg.DaemonCfgPath = args.ConfigPath
+
 	daemonMode, err := parseDaemonMode(args.DaemonMode)
 	if err != nil {
 		return err
-	}
-
-	// Give --shared-daemon higher priority
-	cfg.DaemonMode = daemonMode
-	if args.SharedDaemon {
-		cfg.DaemonMode = DaemonModeShared
 	}
 
 	if args.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
-	cfg.RootDir = args.RootDir
-	if len(cfg.RootDir) == 0 {
+	if len(args.RootDir) == 0 {
 		return errors.New("empty root directory")
 	}
 
-	// Snapshots does not have to bind to any runtime daemon.
-	SnapshotsDir = path.Join(cfg.RootDir, "snapshots")
+	return nil
+}
 
-	if args.RootDir == defaultRootDir {
-		if entries, err := os.ReadDir(oldDefaultRootDir); err == nil {
-			if len(entries) != 0 {
-				log.L.Warnf("Default root directory is changed to %s", defaultRootDir)
-			}
-		}
-	}
+// Parse command line arguments and fill the nydus-snapshotter configuration
+// Always let options from CLI override those from configuration file.
+func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 
-	cfg.CacheDir = args.CacheDir
-	if len(cfg.CacheDir) == 0 {
-		cfg.CacheDir = filepath.Join(cfg.RootDir, "cache")
-	}
-
-	cfg.LogLevel = args.LogLevel
-	// Always let options from CLI override those from configuration file.
-	cfg.LogToStdout = args.LogToStdout
-	cfg.LogDir = args.LogDir
-	if len(cfg.LogDir) == 0 {
-		cfg.LogDir = filepath.Join(cfg.RootDir, logging.DefaultLogDirName)
-	}
-	cfg.RotateLogMaxSize = defaultRotateLogMaxSize
-	cfg.RotateLogMaxBackups = defaultRotateLogMaxBackups
-	cfg.RotateLogMaxAge = defaultRotateLogMaxAge
-	cfg.RotateLogLocalTime = defaultRotateLogLocalTime
-	cfg.RotateLogCompress = defaultRotateLogCompress
-
-	d, err := time.ParseDuration(args.GCPeriod)
-	if err != nil {
-		return errors.Wrapf(err, "parse gc period %v failed", args.GCPeriod)
-	}
-	cfg.GCPeriod = d
-
+	// --- essential configuration
 	cfg.Address = args.Address
 	cfg.EnableSystemController = args.EnableSystemController
 	cfg.CleanupOnClose = args.CleanupOnClose
-	cfg.ConvertVpcRegistry = args.ConvertVpcRegistry
-	cfg.DisableCacheManager = args.DisableCacheManager
-
 	cfg.EnableStargz = args.EnableStargz
-	cfg.EnableNydusOverlayFS = args.EnableNydusOverlayFS
-	cfg.FsDriver = args.FsDriver
-
 	cfg.MetricsAddress = args.MetricsAddress
+	cfg.Root = args.RootDir
 
-	cfg.NydusdBinaryPath = args.NydusdBinaryPath
-	cfg.NydusImageBinaryPath = args.NydusImageBinaryPath
-	cfg.NydusdThreadNum = args.NydusdThreadNum
-
-	cfg.SyncRemove = args.SyncRemove
-
-	cfg.KubeconfigPath = args.KubeconfigPath
-	cfg.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
-	cfg.EnableCRIKeychain = args.EnableCRIKeychain
-	cfg.ImageServiceAddress = args.ImageServiceAddress
-
-	cfg.RecoverPolicy = args.RecoverPolicy
-
-	NydusConfig = cfg
-
-	return cfg.SetupNydusBinaryPaths()
-}
-
-func (c *Config) FillUpWithDefaults() error {
-	if c.LogLevel == "" {
-		c.LogLevel = DefaultLogLevel
-	}
-	if c.DaemonCfgPath == "" {
-		c.DaemonCfgPath = defaultNydusDaemonConfigPath
+	// Give --shared-daemon higher priority
+	cfg.DaemonMode = args.DaemonMode
+	if args.SharedDaemon {
+		cfg.DaemonMode = string(DaemonModeShared)
 	}
 
-	if c.DaemonMode == "" {
-		c.DaemonMode = DefaultDaemonMode
-	}
+	// --- image processor configuration
+	imageConfig := &cfg.ImageConfig
+	imageConfig.PublicKeyFile = args.PublicKeyFile
+	imageConfig.ValidateSignature = args.ValidateSignature
 
-	if c.GCPeriod == 0 {
-		c.GCPeriod = defaultGCPeriod
+	// --- daemon configuration
+	daemonConfig := &cfg.DaemonConfig
+	daemonConfig.NydusdConfigPath = args.ConfigPath
+	if args.NydusdPath != "" {
+		daemonConfig.NydusdPath = args.NydusdPath
 	}
-
-	if len(c.CacheDir) == 0 {
-		c.CacheDir = filepath.Join(c.RootDir, "cache")
+	if args.NydusImagePath != "" {
+		daemonConfig.NydusImagePath = args.NydusImagePath
 	}
+	daemonConfig.ThreadsNumber = args.NydusdThreadsNumber
+	daemonConfig.RecoverPolicy = args.RecoverPolicy
+	daemonConfig.FsDriver = args.FsDriver
 
-	if len(c.LogDir) == 0 {
-		c.LogDir = filepath.Join(c.RootDir, logging.DefaultLogDirName)
+	// --- cache manager configuration
+	cacheMangerConfig := &cfg.CacheManagerConfig
+	if args.CacheDir != "" {
+		cacheMangerConfig.CacheDir = args.CacheDir
 	}
+	cacheMangerConfig.GCPeriod = args.GCPeriod
+	cacheMangerConfig.Disable = args.DisableCacheManager
 
-	return c.SetupNydusBinaryPaths()
-}
+	// --- logging configuration
+	logConfig := &cfg.LoggingConfig
+	logConfig.LogLevel = args.LogLevel
+	logConfig.LogToStdout = args.LogToStdout
+	logConfig.LogDir = args.LogDir
 
-func (c *Config) SetupNydusBinaryPaths() error {
-	// when using DaemonMode = none, nydusd and nydus-image binaries are not required
-	if c.DaemonMode == DaemonModeNone {
-		return nil
-	}
+	// --- remote storage configuration
+	remoteConfig := &cfg.RemoteConfig
+	remoteConfig.ConvertVpcRegistry = args.ConvertVpcRegistry
+	AuthConfig := &cfg.RemoteConfig.AuthConfig
 
-	// resolve nydusd path
-	if c.NydusdBinaryPath == "" {
-		path, err := exec.LookPath(nydusdBinaryName)
-		if err != nil {
-			return err
-		}
-		c.NydusdBinaryPath = path
-	}
+	AuthConfig.KubeconfigPath = args.KubeconfigPath
+	AuthConfig.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
+	AuthConfig.EnableCRIKeychain = args.EnableCRIKeychain
+	AuthConfig.ImageServiceAddress = args.ImageServiceAddress
 
-	// resolve nydus-image path
-	if c.NydusImageBinaryPath == "" {
-		path, err := exec.LookPath(nydusImageBinaryName)
-		if err != nil {
-			return err
-		}
-		c.NydusImageBinaryPath = path
-	}
+	// --- snapshot configuration
+	snapshotConfig := &cfg.SnapshotsConfig
+	snapshotConfig.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	snapshotConfig.SyncRemove = args.SyncRemove
 
 	return nil
 }

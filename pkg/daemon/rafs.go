@@ -115,7 +115,7 @@ type Rafs struct {
 }
 
 func NewRafs(snapshotID, imageID string) (*Rafs, error) {
-	snapshotDir := path.Join(config.SnapshotsDir, snapshotID)
+	snapshotDir := path.Join(config.GetSnapshotsRootDir(), snapshotID)
 	rafs := &Rafs{SnapshotID: snapshotID,
 		ImageID:     imageID,
 		SnapshotDir: snapshotDir,

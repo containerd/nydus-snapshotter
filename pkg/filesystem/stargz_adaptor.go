@@ -29,7 +29,7 @@ import (
 )
 
 func (fs *Filesystem) UpperPath(id string) string {
-	return filepath.Join(config.NydusConfig.RootDir, "snapshots", id, "fs")
+	return filepath.Join(config.GetSnapshotsRootDir(), id, "fs")
 }
 
 func (fs *Filesystem) StargzEnabled() bool {

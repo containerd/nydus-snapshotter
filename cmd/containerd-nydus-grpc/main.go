@@ -40,34 +40,49 @@ func main() {
 				return nil
 			}
 
-			var cfg config.Config
+			snapshotterConfigPath := flags.Args.SnapshotterConfigPath
+			var snapshotterConfig config.SnapshotterConfig
 
-			if snapshotterCfg, err := config.LoadSnapshotterConfig(flags.Args.ConfigPath); err == nil && snapshotterCfg != nil {
-				if err = config.ProcessParameters(&snapshotterCfg.StartupFlag, &cfg); err != nil {
-					return errors.Wrap(err, "parse parameters")
+			if err := snapshotterConfig.FillUpWithDefaults(); err != nil {
+				return errors.New("failed to fill up nydus configuration with defaults")
+			}
+
+			// Once snapshotter's configuration file is provided, parse it and let command line parameters override it.
+			if snapshotterConfigPath != "" {
+				if c, err := config.LoadSnapshotterConfig(snapshotterConfigPath); err != nil {
+					// Command line parameters override the snapshotter's configurations for backwards compatibility
+					if err := config.ParseParameters(flags.Args, c); err != nil {
+						return errors.Wrap(err, "parse parameters")
+					}
+					snapshotterConfig = *c
 				}
 			} else {
-				if err := config.ProcessParameters(flags.Args, &cfg); err != nil {
+				if err := config.ParseParameters(flags.Args, &snapshotterConfig); err != nil {
 					return errors.Wrap(err, "parse parameters")
 				}
 			}
 
+			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
+				return errors.Wrap(err, "process configurations")
+			}
+
 			ctx := logging.WithContext()
+			logConfig := &snapshotterConfig.LoggingConfig
 			logRotateArgs := &logging.RotateLogArgs{
-				RotateLogMaxSize:    cfg.RotateLogMaxSize,
-				RotateLogMaxBackups: cfg.RotateLogMaxBackups,
-				RotateLogMaxAge:     cfg.RotateLogMaxAge,
-				RotateLogLocalTime:  cfg.RotateLogLocalTime,
-				RotateLogCompress:   cfg.RotateLogCompress,
+				RotateLogMaxSize:    logConfig.RotateLogMaxSize,
+				RotateLogMaxBackups: logConfig.RotateLogMaxBackups,
+				RotateLogMaxAge:     logConfig.RotateLogMaxAge,
+				RotateLogLocalTime:  logConfig.RotateLogLocalTime,
+				RotateLogCompress:   logConfig.RotateLogCompress,
 			}
 			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir, logRotateArgs); err != nil {
 				return errors.Wrap(err, "set up logger")
 			}
 
 			log.L.Infof("Start nydus-snapshotter. PID %d Version %s FsDriver %s DaemonMode %s",
-				os.Getpid(), version.Version, cfg.FsDriver, cfg.DaemonMode)
+				os.Getpid(), version.Version, config.GetFsDriver(), snapshotterConfig.DaemonMode)
 
-			return snapshotter.Start(ctx, cfg)
+			return snapshotter.Start(ctx, &snapshotterConfig)
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
