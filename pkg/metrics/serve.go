@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
@@ -132,7 +133,9 @@ outer:
 		select {
 		case <-timer.C:
 			// Collect FS metrics.
-			s.CollectFsMetrics(ctx)
+			if config.GetFsDriver() != config.FsDriverFscache {
+				s.CollectFsMetrics(ctx)
+			}
 			// Collect snapshotter metrics.
 			s.snCollector.Collect()
 		case <-InflightTimer.C:
