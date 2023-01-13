@@ -20,6 +20,7 @@ func init() {
 		data.FsTotalRead,
 		data.FsReadHit,
 		data.FsReadError,
+		data.TotalHungIO,
 		data.NydusdEventCount,
 		data.NydusdCount,
 		data.SnapshotEventElapsedHists,

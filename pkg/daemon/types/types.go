@@ -73,6 +73,15 @@ type FsMetrics struct {
 	NrOpens                   uint64   `json:"nr_opens"`
 }
 
+type InflightMetrics struct {
+	Values []struct {
+		Inode         uint64 `json:"inode"`
+		Opcode        uint32 `json:"opcode"`
+		Unique        uint64 `json:"unique"`
+		TimestampSecs uint64 `json:"timestamp_secs"`
+	}
+}
+
 type CacheMetrics struct {
 	ID                           string   `json:"id"`
 	UnderlyingFiles              []string `json:"underlying_files"`

@@ -15,17 +15,22 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 )
 
+// Default interval to determine a hung IO.
+const defaultHungIOInterval = 10 * time.Second
+
 type ServerOpt func(*Server) error
 
 type Server struct {
-	rootDir     string
-	pm          *manager.Manager
-	fsCollector *collector.FsMetricsVecCollector
-	snCollector *collector.SnapshotterMetricsCollector
+	rootDir           string
+	pm                *manager.Manager
+	fsCollector       *collector.FsMetricsVecCollector
+	inflightCollector *collector.InflightMetricsVecCollector
+	snCollector       *collector.SnapshotterMetricsCollector
 }
 
 func WithRootDir(rootDir string) ServerOpt {
@@ -51,6 +56,8 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	}
 
 	s.fsCollector = collector.NewFsMetricsVecCollector()
+	// TODO(tangbin): make hung IO interval configurable
+	s.inflightCollector = collector.NewInflightMetricsVecCollector(defaultHungIOInterval)
 	snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, s.pm.CacheDir(), os.Getpid())
 	if err != nil {
 		return nil, errors.Wrap(err, "new snapshotter metrics collector failed")
@@ -86,13 +93,39 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 			})
 		}
 	}
-	s.fsCollector.MetricsVec = fsMetricsVec
-	s.fsCollector.Collect()
+	if fsMetricsVec != nil {
+		s.fsCollector.MetricsVec = fsMetricsVec
+		s.fsCollector.Collect()
+	}
+}
+
+func (s *Server) CollectInflightMetrics(ctx context.Context) {
+	// Collect inflight metrics from daemons.
+	daemons := s.pm.ListDaemons()
+	var inflightMetricsVec []*types.InflightMetrics
+	for _, d := range daemons {
+		inflightMetrics, err := d.GetInflightMetrics()
+		if err != nil {
+			log.G(ctx).Errorf("failed to get inflight metric: %v", err)
+			continue
+		}
+		inflightMetricsVec = append(inflightMetricsVec, inflightMetrics)
+	}
+	if inflightMetricsVec != nil {
+		s.inflightCollector.MetricsVec = inflightMetricsVec
+		s.inflightCollector.Collect()
+	}
 }
 
 func (s *Server) StartCollectMetrics(ctx context.Context) error {
 	// TODO(renzhen): make collect interval time configurable
 	timer := time.NewTicker(time.Duration(1) * time.Minute)
+	// The timer period is the same as the interval for determining hung IOs.
+	//
+	// Since the elapsed time of hung IO is configuration dependent,
+	// e.g. timeout * retry times when the backend is a registry.
+	// Therefore, we cannot get complete hung IO data after 1 minute.
+	InflightTimer := time.NewTicker(s.inflightCollector.HungIOInterval)
 
 outer:
 	for {
@@ -102,8 +135,11 @@ outer:
 			s.CollectFsMetrics(ctx)
 			// Collect snapshotter metrics.
 			s.snCollector.Collect()
+		case <-InflightTimer.C:
+			// Collect inflight metrics.
+			s.CollectInflightMetrics(ctx)
 		case <-ctx.Done():
-			log.G(ctx).Infof("cancel daemon metrics collecting")
+			log.G(ctx).Infof("cancel metrics collecting")
 			break outer
 		}
 	}
