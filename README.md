@@ -2,7 +2,11 @@
 
 <p><img src="https://github.com/dragonflyoss/image-service/blob/master/misc/logo.svg" width="170"></p>
 
+[![Release Version](https://img.shields.io/github/v/release/containerd/nydus-snapshotter?style=flat)](https://github.com/containerd/nydus-snapshotter/releases)
+![CI](https://github.com/containerd/nydus-snapshotter/actions/workflows/ci.yml/badge.svg?event=push)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_shield)
+[![Go Report Card](https://goreportcard.com/badge/github.com/containerd/nydus-snapshotter?style=flat)](https://goreportcard.com/report/github.com/containerd/nydus-snapshotter)
+[![Nydus Stars](https://img.shields.io/github/stars/dragonflyoss/image-service?label=Nydus%20Stars&style=social)](https://github.com/dragonflyoss/image-service)
 
 Nydus-snapshotter is a **non-core** sub-project of containerd.
 
