@@ -75,7 +75,8 @@ func main() {
 				RotateLogLocalTime:  logConfig.RotateLogLocalTime,
 				RotateLogCompress:   logConfig.RotateLogCompress,
 			}
-			if err := logging.SetUp(flags.Args.LogLevel, flags.Args.LogToStdout, flags.Args.LogDir, flags.Args.RootDir, logRotateArgs); err != nil {
+
+			if err := logging.SetUp(logConfig.LogLevel, logConfig.LogToStdout, logConfig.LogDir, logRotateArgs); err != nil {
 				return errors.Wrap(err, "set up logger")
 			}
 
