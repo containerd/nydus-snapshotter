@@ -25,28 +25,17 @@ const (
 type Args struct {
 	Address                  string
 	LogLevel                 string
-	LogDir                   string
 	ConfigPath               string
 	SnapshotterConfigPath    string
 	RootDir                  string
-	CacheDir                 string
-	GCPeriod                 string
-	ValidateSignature        bool
-	PublicKeyFile            string
-	ConvertVpcRegistry       bool
 	NydusdPath               string
 	NydusImagePath           string
 	SharedDaemon             bool
 	DaemonMode               string
 	FsDriver                 string
-	SyncRemove               bool
 	MetricsAddress           string
-	EnableStargz             bool
-	DisableCacheManager      bool
 	LogToStdout              bool
 	EnableNydusOverlayFS     bool
-	NydusdThreadsNumber      int
-	CleanupOnClose           bool
 	KubeconfigPath           string
 	EnableKubeconfigKeychain bool
 	RecoverPolicy            string
@@ -76,19 +65,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.Address,
 		},
 		&cli.StringFlag{
-			Name:        "cache-dir",
-			Value:       "",
-			Aliases:     []string{"C"},
-			Usage:       "set `DIRECTORY` to store/cache downloaded image data",
-			Destination: &args.CacheDir,
-		},
-		&cli.BoolFlag{
-			Name:        "cleanup-on-close",
-			Value:       false,
-			Usage:       "whether to clean up on exit",
-			Destination: &args.CleanupOnClose,
-		},
-		&cli.StringFlag{
 			Name:        "config-path",
 			Aliases:     []string{"nydusd-config"},
 			Usage:       "path to the nydusd configuration",
@@ -99,22 +75,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "path to the nydus-snapshotter configuration",
 			Destination: &args.SnapshotterConfigPath,
 		},
-		&cli.BoolFlag{
-			Name:        "convert-vpc-registry",
-			Usage:       "whether to automatically convert the image to vpc registry to accelerate image pulling",
-			Destination: &args.ConvertVpcRegistry,
-		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
 			Value:       DefaultDaemonMode,
 			Aliases:     []string{"M"},
 			Usage:       "set daemon working `MODE`, one of \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
-		},
-		&cli.BoolFlag{
-			Name:        "disable-cache-manager",
-			Usage:       "whether to disable blob cache manager",
-			Destination: &args.DisableCacheManager,
 		},
 		&cli.StringFlag{
 			Name:        "metrics-address",
@@ -127,30 +93,12 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "whether to enable nydus-overlayfs",
 			Destination: &args.EnableNydusOverlayFS,
 		},
-		&cli.BoolFlag{
-			Name:        "enable-stargz",
-			Usage:       "whether to enable support of estargz image (experimental)",
-			Destination: &args.EnableStargz,
-		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
 			Value:       FsDriverFusedev,
 			Aliases:     []string{"daemon-backend"},
 			Usage:       "backend `DRIVER` to serve the filesystem, one of \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
-		},
-		&cli.StringFlag{
-			Name:        "gc-period",
-			Value:       defaultGCPeriod,
-			Usage:       "blob cache garbage collection `INTERVAL`, duration string(for example, 1m, 2h)",
-			Destination: &args.GCPeriod,
-		},
-		&cli.StringFlag{
-			Name:        "log-dir",
-			Value:       "",
-			Aliases:     []string{"L"},
-			Usage:       "set `DIRECTORY` to store log files",
-			Destination: &args.LogDir,
 		},
 		&cli.StringFlag{
 			Name:        "log-level",
@@ -178,17 +126,7 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "set `PATH` to the nydusd binary, default to lookup nydusd in $PATH",
 			Destination: &args.NydusdPath,
 		},
-		&cli.IntFlag{
-			Name:        "nydusd-thread-num",
-			Usage:       "set worker thread number for nydusd, default to the number of CPUs",
-			Destination: &args.NydusdThreadsNumber,
-		},
-		&cli.StringFlag{
-			Name:        "publickey-file",
-			Value:       defaultPublicKey,
-			Usage:       "path to the publickey `FILE` for signature validation",
-			Destination: &args.PublicKeyFile,
-		},
+
 		&cli.StringFlag{
 			Name:        "root",
 			Value:       defaultRootDir,
@@ -206,16 +144,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to restart",
 			Destination: &args.RecoverPolicy,
 			Value:       "restart",
-		},
-		&cli.BoolFlag{
-			Name:        "sync-remove",
-			Usage:       "whether to clean up snapshots in synchronous mode, default to asynchronous mode",
-			Destination: &args.SyncRemove,
-		},
-		&cli.BoolFlag{
-			Name:        "validate-signature",
-			Usage:       "whether to validate integrity of image bootstrap",
-			Destination: &args.ValidateSignature,
 		},
 		&cli.BoolFlag{
 			Name:        "enable-system-controller",
