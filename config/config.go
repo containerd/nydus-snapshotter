@@ -146,29 +146,29 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	return &config, nil
 }
 
-func ValidateParameters(args *command.Args) error {
-	if args == nil {
-		return errors.New("no startup parameter provided")
+func ValidateConfig(c *SnapshotterConfig) error {
+	if c == nil {
+		return errors.Wrapf(errdefs.ErrInvalidArgument, "configuration is none")
 	}
 
-	if args.ValidateSignature {
-		if args.PublicKeyFile == "" {
+	if c.ImageConfig.ValidateSignature {
+		if c.ImageConfig.PublicKeyFile == "" {
 			return errors.New("need to specify publicKey file for signature validation")
-		} else if _, err := os.Stat(args.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
+		} else if _, err := os.Stat(c.ImageConfig.PublicKeyFile); err != nil {
+			return errors.Wrapf(err, "failed to find publicKey file %q", c.ImageConfig.PublicKeyFile)
 		}
 	}
 
-	daemonMode, err := parseDaemonMode(args.DaemonMode)
+	daemonMode, err := parseDaemonMode(c.DaemonMode)
 	if err != nil {
 		return err
 	}
 
-	if args.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
+	if c.DaemonConfig.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
-	if len(args.RootDir) == 0 {
+	if len(c.Root) == 0 {
 		return errors.New("empty root directory")
 	}
 
