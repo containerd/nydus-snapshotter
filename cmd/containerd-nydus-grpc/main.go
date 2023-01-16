@@ -66,6 +66,10 @@ func main() {
 				return errors.Wrap(err, "process configurations")
 			}
 
+			if err := config.ValidateConfig(&snapshotterConfig); err != nil {
+				return errors.Wrapf(err, "validate configuration")
+			}
+
 			ctx := logging.WithContext()
 			logConfig := &snapshotterConfig.LoggingConfig
 			logRotateArgs := &logging.RotateLogArgs{
