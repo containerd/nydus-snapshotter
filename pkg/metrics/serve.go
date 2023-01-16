@@ -140,7 +140,9 @@ outer:
 			s.snCollector.Collect()
 		case <-InflightTimer.C:
 			// Collect inflight metrics.
-			s.CollectInflightMetrics(ctx)
+			if config.GetFsDriver() != config.FsDriverFscache {
+				s.CollectInflightMetrics(ctx)
+			}
 		case <-ctx.Done():
 			log.G(ctx).Infof("cancel metrics collecting")
 			break outer
