@@ -22,7 +22,7 @@ For more details about how to build Nydus container image, please refer to [nydu
 
 ## Architecture Based on Fscache/Erofs
 
-![fscache arch](./docs/diagram/nydus_fscache_erofs__arch.svg)
+![fscache arch](./docs/diagram/nydus_fscache_erofs_arch.svg)
 
 ## Building
 
