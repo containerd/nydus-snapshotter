@@ -35,6 +35,8 @@ const (
 )
 
 func (c *SnapshotterConfig) FillUpWithDefaults() error {
+	c.Root = defaultRootDir
+
 	// essential configuration
 	if c.DaemonMode == "" {
 		c.DaemonMode = DefaultDaemonMode
@@ -68,8 +70,6 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	if len(cacheConfig.CacheDir) == 0 {
 		cacheConfig.CacheDir = filepath.Join(c.Root, "cache")
 	}
-
-	c.Root = defaultRootDir
 
 	return c.SetupNydusBinaryPaths()
 }
