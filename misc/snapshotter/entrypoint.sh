@@ -8,7 +8,7 @@ LEVEL="${LEVEL:-info}"
 
 set -eu
 BACKEND_TYPE="${BACKEND_TYPE:-config}"
-NYDUSD_DAEMON_MODE="${NYDUSD_DAEMON_MODE:-shared}"
+NYDUSD_DAEMON_MODE="${NYDUSD_DAEMON_MODE:-multiple}"
 
 if [ "$#" -eq 0 ]; then
 	containerd-nydus-grpc \
