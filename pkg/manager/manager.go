@@ -311,8 +311,9 @@ func (m *Manager) handleDaemonDeathEvent() {
 			log.L.Warnf("Daemon %s was not found", ev.daemonID)
 			return
 		}
-		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
+
 		d.Lock()
+		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
 		d.State = types.DaemonStateUnknown
 		d.Unlock()
 		if m.RecoverPolicy == RecoverPolicyRestart {
