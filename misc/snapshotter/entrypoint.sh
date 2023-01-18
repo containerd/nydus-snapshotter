@@ -2,8 +2,6 @@
 
 NYDUS_LIB="${NYDUS_LIB:-/var/lib/containerd-nydus}"
 NYDUS_RUN="${NYDUS_RUN:-/run/containerd-nydus}"
-ENABLE_NYDUS_OVERLAY="${ENABLE_NYDUS_OVERLAY:-true}"
-ENABLE_METRICS="${ENABLE_METRICS:-false}"
 LEVEL="${LEVEL:-info}"
 
 set -eu
