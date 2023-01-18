@@ -13,7 +13,7 @@ import (
 )
 
 type DaemonEventCollector struct {
-	event string
+	event types.DaemonState
 }
 
 type DaemonInfoCollector struct {
@@ -22,7 +22,7 @@ type DaemonInfoCollector struct {
 }
 
 func (d *DaemonEventCollector) Collect() {
-	data.NydusdEventCount.WithLabelValues(d.event).Inc()
+	data.NydusdEventCount.WithLabelValues(string(d.event)).Inc()
 }
 
 func (d *DaemonInfoCollector) Collect() {

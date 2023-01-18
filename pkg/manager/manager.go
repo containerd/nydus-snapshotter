@@ -518,7 +518,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
 
-	collector.NewDaemonEventCollector(string(types.DaemonStateDestroyed)).Collect()
+	collector.NewDaemonEventCollector(types.DaemonStateDestroyed).Collect()
 	collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
 
 	return nil
