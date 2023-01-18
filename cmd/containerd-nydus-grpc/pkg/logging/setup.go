@@ -31,8 +31,7 @@ type RotateLogArgs struct {
 	RotateLogCompress   bool
 }
 
-func SetUp(logLevel string, logToStdout bool, logDir string,
-	rootDir string, logRotateArgs *RotateLogArgs) error {
+func SetUp(logLevel string, logToStdout bool, logDir string, logRotateArgs *RotateLogArgs) error {
 	lvl, err := logrus.ParseLevel(logLevel)
 	if err != nil {
 		return err
@@ -45,9 +44,7 @@ func SetUp(logLevel string, logToStdout bool, logDir string,
 		if logRotateArgs == nil {
 			return errors.New("logRotateArgs is needed when logToStdout is false")
 		}
-		if len(logDir) == 0 {
-			logDir = filepath.Join(rootDir, DefaultLogDirName)
-		}
+
 		if err := os.MkdirAll(logDir, 0755); err != nil {
 			return errors.Wrapf(err, "create log dir %s", logDir)
 		}

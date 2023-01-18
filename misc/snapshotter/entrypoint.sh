@@ -8,7 +8,7 @@ LEVEL="${LEVEL:-info}"
 
 set -eu
 BACKEND_TYPE="${BACKEND_TYPE:-config}"
-NYDUSD_DAEMON_MODE="${NYDUSD_DAEMON_MODE:-shared}"
+NYDUSD_DAEMON_MODE="${NYDUSD_DAEMON_MODE:-multiple}"
 
 if [ "$#" -eq 0 ]; then
 	containerd-nydus-grpc \
@@ -17,10 +17,7 @@ if [ "$#" -eq 0 ]; then
 		--root ${NYDUS_LIB} \
 		--address ${NYDUS_RUN}/containerd-nydus-grpc.sock \
 		--log-level ${LEVEL} \
-		--enable-metrics=${ENABLE_METRICS} \
-		--enable-nydus-overlayfs=${ENABLE_NYDUS_OVERLAY} \
 		--daemon-mode ${NYDUSD_DAEMON_MODE} \
-		--enable-stargz \
 		--log-to-stdout
 fi
 

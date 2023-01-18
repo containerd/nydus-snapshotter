@@ -146,29 +146,29 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	return &config, nil
 }
 
-func ValidateParameters(args *command.Args) error {
-	if args == nil {
-		return errors.New("no startup parameter provided")
+func ValidateConfig(c *SnapshotterConfig) error {
+	if c == nil {
+		return errors.Wrapf(errdefs.ErrInvalidArgument, "configuration is none")
 	}
 
-	if args.ValidateSignature {
-		if args.PublicKeyFile == "" {
+	if c.ImageConfig.ValidateSignature {
+		if c.ImageConfig.PublicKeyFile == "" {
 			return errors.New("need to specify publicKey file for signature validation")
-		} else if _, err := os.Stat(args.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "failed to find publicKey file %q", args.PublicKeyFile)
+		} else if _, err := os.Stat(c.ImageConfig.PublicKeyFile); err != nil {
+			return errors.Wrapf(err, "failed to find publicKey file %q", c.ImageConfig.PublicKeyFile)
 		}
 	}
 
-	daemonMode, err := parseDaemonMode(args.DaemonMode)
+	daemonMode, err := parseDaemonMode(c.DaemonMode)
 	if err != nil {
 		return err
 	}
 
-	if args.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
+	if c.DaemonConfig.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
 		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
-	if len(args.RootDir) == 0 {
+	if len(c.Root) == 0 {
 		return errors.New("empty root directory")
 	}
 
@@ -178,12 +178,9 @@ func ValidateParameters(args *command.Args) error {
 // Parse command line arguments and fill the nydus-snapshotter configuration
 // Always let options from CLI override those from configuration file.
 func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
-
 	// --- essential configuration
 	cfg.Address = args.Address
 	cfg.EnableSystemController = args.EnableSystemController
-	cfg.CleanupOnClose = args.CleanupOnClose
-	cfg.EnableStargz = args.EnableStargz
 	cfg.MetricsAddress = args.MetricsAddress
 	cfg.Root = args.RootDir
 
@@ -194,9 +191,7 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	}
 
 	// --- image processor configuration
-	imageConfig := &cfg.ImageConfig
-	imageConfig.PublicKeyFile = args.PublicKeyFile
-	imageConfig.ValidateSignature = args.ValidateSignature
+	// empty
 
 	// --- daemon configuration
 	daemonConfig := &cfg.DaemonConfig
@@ -207,27 +202,18 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	if args.NydusImagePath != "" {
 		daemonConfig.NydusImagePath = args.NydusImagePath
 	}
-	daemonConfig.ThreadsNumber = args.NydusdThreadsNumber
 	daemonConfig.RecoverPolicy = args.RecoverPolicy
 	daemonConfig.FsDriver = args.FsDriver
 
 	// --- cache manager configuration
-	cacheMangerConfig := &cfg.CacheManagerConfig
-	if args.CacheDir != "" {
-		cacheMangerConfig.CacheDir = args.CacheDir
-	}
-	cacheMangerConfig.GCPeriod = args.GCPeriod
-	cacheMangerConfig.Disable = args.DisableCacheManager
+	// empty
 
 	// --- logging configuration
 	logConfig := &cfg.LoggingConfig
 	logConfig.LogLevel = args.LogLevel
 	logConfig.LogToStdout = args.LogToStdout
-	logConfig.LogDir = args.LogDir
 
 	// --- remote storage configuration
-	remoteConfig := &cfg.RemoteConfig
-	remoteConfig.ConvertVpcRegistry = args.ConvertVpcRegistry
 	AuthConfig := &cfg.RemoteConfig.AuthConfig
 
 	AuthConfig.KubeconfigPath = args.KubeconfigPath
@@ -238,7 +224,6 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// --- snapshot configuration
 	snapshotConfig := &cfg.SnapshotsConfig
 	snapshotConfig.EnableNydusOverlayFS = args.EnableNydusOverlayFS
-	snapshotConfig.SyncRemove = args.SyncRemove
 
 	return nil
 }

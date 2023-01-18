@@ -50,13 +50,13 @@ func TestSetUp(t *testing.T) {
 	}
 	logLevel := logrus.InfoLevel.String()
 
-	err := SetUp(logLevel, true, TestLogDirName, TestRootDirName, nil)
+	err := SetUp(logLevel, true, TestLogDirName, nil)
 	assert.NilError(t, err, nil)
 
-	err = SetUp(logLevel, false, TestLogDirName, TestRootDirName, nil)
+	err = SetUp(logLevel, false, TestLogDirName, nil)
 	assert.ErrorContains(t, err, "logRotateArgs is needed when logToStdout is false")
 
-	err = SetUp(logLevel, false, TestLogDirName, TestRootDirName, logRotateArgs)
+	err = SetUp(logLevel, false, TestLogDirName, logRotateArgs)
 	assert.NilError(t, err)
 	for i := 0; i < 100000; i++ { // total 9.1MB
 		log.L.Infof("test log, now: %s", time.Now().Format("2006-01-02 15:04:05"))
