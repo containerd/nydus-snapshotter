@@ -22,7 +22,7 @@ fs_driver = "fusedev"
 log_level = "info"
 # How to process when daemon dies: "none", "restart" or "failover"
 recover_policy = "restart"
-# Speicfy a configuration file for nydusd
+# Specify a configuration file for nydusd
 nydusd_config = "/etc/nydus/config.json"
 # The fuse or fscache IO working threads started by nydusd
 threads_number = 4
