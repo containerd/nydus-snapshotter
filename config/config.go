@@ -10,6 +10,7 @@ package config
 import (
 	"os"
 
+	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 
@@ -144,6 +145,15 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 		return nil, errors.Wrapf(err, "unmarshal snapshotter configuration file %q", path)
 	}
 	return &config, nil
+}
+
+func MergeConfig(to, from *SnapshotterConfig) error {
+	err := mergo.Merge(to, from)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func ValidateConfig(c *SnapshotterConfig) error {

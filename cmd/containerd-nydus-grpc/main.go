@@ -41,9 +41,10 @@ func main() {
 			}
 
 			snapshotterConfigPath := flags.Args.SnapshotterConfigPath
+			var defaultSnapshotterConfig config.SnapshotterConfig
 			var snapshotterConfig config.SnapshotterConfig
 
-			if err := snapshotterConfig.FillUpWithDefaults(); err != nil {
+			if err := defaultSnapshotterConfig.FillUpWithDefaults(); err != nil {
 				return errors.New("failed to fill up nydus configuration with defaults")
 			}
 
@@ -64,12 +65,16 @@ func main() {
 				}
 			}
 
-			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
-				return errors.Wrap(err, "process configurations")
+			if err := config.MergeConfig(&snapshotterConfig, &defaultSnapshotterConfig); err != nil {
+				return errors.Wrap(err, "merge configurations")
 			}
 
 			if err := config.ValidateConfig(&snapshotterConfig); err != nil {
-				return errors.Wrapf(err, "validate configuration")
+				return errors.Wrapf(err, "validate configurations")
+			}
+
+			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
+				return errors.Wrap(err, "process configurations")
 			}
 
 			ctx := logging.WithContext()
