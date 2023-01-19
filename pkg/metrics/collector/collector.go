@@ -23,8 +23,8 @@ type Collector interface {
 	Collect()
 }
 
-func NewDaemonEventCollector(event string) *DaemonEventCollector {
-	return &DaemonEventCollector{event}
+func NewDaemonEventCollector(ev types.DaemonState) *DaemonEventCollector {
+	return &DaemonEventCollector{event: ev}
 }
 
 func NewFsMetricsCollector(m *types.FsMetrics, imageRef string) *FsMetricsCollector {

@@ -219,7 +219,7 @@ func (m *livenessMonitor) Run() {
 
 				if ev.Events&(unix.EPOLLHUP|unix.EPOLLERR) != 0 {
 					log.L.Warnf("Daemon %s died", target.id)
-					collector.NewDaemonEventCollector(string(types.DaemonStateDied)).Collect()
+					collector.NewDaemonEventCollector(types.DaemonStateDied).Collect()
 					// Notify subscribers that death event happens
 					target.notifier <- deathEvent{daemonID: target.id, path: target.path}
 				}

@@ -89,6 +89,9 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
 			return
 		}
+
+		collector.NewDaemonEventCollector(types.DaemonStateRunning).Collect()
+
 		daemonInfo, err := d.GetDaemonInfo()
 		if err != nil {
 			log.L.WithError(err).Errorf("failed to get daemon %s information", d.ID())
