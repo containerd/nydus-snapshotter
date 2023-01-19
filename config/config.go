@@ -172,6 +172,11 @@ func ValidateConfig(c *SnapshotterConfig) error {
 		return errors.New("empty root directory")
 	}
 
+	if c.RemoteConfig.AuthConfig.EnableCRIKeychain && c.RemoteConfig.AuthConfig.EnableKubeconfigKeychain {
+		return errors.Wrapf(errdefs.ErrInvalidArgument,
+			"\"enable_cri_keychain\" and \"enable_kubeconfig_keychain\" can't be set at the same time")
+	}
+
 	return nil
 }
 
