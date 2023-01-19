@@ -98,8 +98,8 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		}
 		d.Lock()
 		d.Version = daemonInfo.DaemonVersion()
-		d.Unlock()
 		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
+		d.Unlock()
 
 		if d.Supervisor == nil {
 			return

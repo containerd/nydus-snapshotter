@@ -520,7 +520,9 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	}
 
 	collector.NewDaemonEventCollector(types.DaemonStateDestroyed).Collect()
+	d.Lock()
 	collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
+	d.Unlock()
 
 	return nil
 }
