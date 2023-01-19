@@ -49,12 +49,14 @@ func main() {
 
 			// Once snapshotter's configuration file is provided, parse it and let command line parameters override it.
 			if snapshotterConfigPath != "" {
-				if c, err := config.LoadSnapshotterConfig(snapshotterConfigPath); err != nil {
+				if c, err := config.LoadSnapshotterConfig(snapshotterConfigPath); err == nil {
 					// Command line parameters override the snapshotter's configurations for backwards compatibility
 					if err := config.ParseParameters(flags.Args, c); err != nil {
 						return errors.Wrap(err, "parse parameters")
 					}
 					snapshotterConfig = *c
+				} else {
+					return errors.Wrapf(err, "Failed to load snapshotter's configuration at %q", snapshotterConfigPath)
 				}
 			} else {
 				if err := config.ParseParameters(flags.Args, &snapshotterConfig); err != nil {
