@@ -45,9 +45,11 @@ convert_vpc_registry = false
 [remote.auth]
 # Fetch the pricate registry auth by listening to K8s API server
 enable_kubeconfig_keychain = false
+# synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with specified kubeconfig (default `$KUBECONFIG` or `~/.kube/config`)
 kubeconfig_path = ""
 # Fetch the private regsitry auth as CRI image service proxy
 enable_cri_keychain = false
+# the target image service when using image proxy
 image_service_address = ""
 
 [snapshot]

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020. Ant Group. All rights reserved.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +8,6 @@
 package command
 
 import (
-	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -16,33 +16,27 @@ const (
 	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 	defaultLogLevel          = logrus.InfoLevel
 	defaultRootDir           = "/var/lib/containerd-nydus"
-	defaultGCPeriod          = "24h"
-	defaultPublicKey         = "/signing/nydus-image-signing-public.key"
 	DefaultDaemonMode string = "multiple"
 	FsDriverFusedev   string = "fusedev"
 )
 
 type Args struct {
-	Address                  string
-	LogLevel                 string
-	ConfigPath               string
-	SnapshotterConfigPath    string
-	RootDir                  string
-	NydusdPath               string
-	NydusImagePath           string
-	SharedDaemon             bool
-	DaemonMode               string
-	FsDriver                 string
-	MetricsAddress           string
-	LogToStdout              bool
-	EnableNydusOverlayFS     bool
-	KubeconfigPath           string
-	EnableKubeconfigKeychain bool
-	RecoverPolicy            string
-	PrintVersion             bool
-	EnableSystemController   bool
-	EnableCRIKeychain        bool
-	ImageServiceAddress      string
+	Address                string
+	LogLevel               string
+	ConfigPath             string
+	SnapshotterConfigPath  string
+	RootDir                string
+	NydusdPath             string
+	NydusImagePath         string
+	SharedDaemon           bool
+	DaemonMode             string
+	FsDriver               string
+	MetricsAddress         string
+	LogToStdout            bool
+	EnableNydusOverlayFS   bool
+	RecoverPolicy          string
+	PrintVersion           bool
+	EnableSystemController bool
 }
 
 type Flags struct {
@@ -150,30 +144,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "(experimental) unix domain socket path to serve HTTP-based system management",
 			Destination: &args.EnableSystemController,
 			Value:       true,
-		},
-		&cli.StringFlag{
-			Name:        "kubeconfig-path",
-			Value:       "",
-			Usage:       "path to the kubeconfig file",
-			Destination: &args.KubeconfigPath,
-		},
-		&cli.BoolFlag{
-			Name:        "enable-kubeconfig-keychain",
-			Value:       false,
-			Usage:       "synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with provided `--kubeconfig-path` (default `$KUBECONFIG` or `~/.kube/config`)",
-			Destination: &args.EnableKubeconfigKeychain,
-		},
-		&cli.BoolFlag{
-			Name:        "enable-cri-keychain",
-			Value:       false,
-			Usage:       "enable a CRI image proxy and retrieve image secret when proxying image request",
-			Destination: &args.EnableCRIKeychain,
-		},
-		&cli.StringFlag{
-			Name:        "image-service-address",
-			Value:       auth.DefaultImageServiceAddress,
-			Usage:       "the target image service when using image proxy",
-			Destination: &args.ImageServiceAddress,
 		},
 	}
 }

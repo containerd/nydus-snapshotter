@@ -219,12 +219,7 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	logConfig.LogToStdout = args.LogToStdout
 
 	// --- remote storage configuration
-	AuthConfig := &cfg.RemoteConfig.AuthConfig
-
-	AuthConfig.KubeconfigPath = args.KubeconfigPath
-	AuthConfig.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
-	AuthConfig.EnableCRIKeychain = args.EnableCRIKeychain
-	AuthConfig.ImageServiceAddress = args.ImageServiceAddress
+	// empty
 
 	// --- snapshot configuration
 	snapshotConfig := &cfg.SnapshotsConfig
