@@ -61,6 +61,7 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	if daemonConfig.NydusdConfigPath == "" {
 		daemonConfig.NydusdConfigPath = defaultNydusDaemonConfigPath
 	}
+	daemonConfig.RecoverPolicy = "restart"
 
 	// cache configuration
 	cacheConfig := &c.CacheManagerConfig
