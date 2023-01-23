@@ -8,6 +8,7 @@ set -eEuo pipefail
 
 FSCACHE_NYDUSD_CONFIG=/etc/nydus/nydusd-config.fscache.json
 FUSE_NYDUSD_LOCALFS_CONFIG=/etc/nydus/nydusd-config-localfs.json
+SNAPSHOTTER_CONFIG=/etc/nydus/config.toml
 
 CONTAINERD_ROOT=/var/lib/containerd/
 CONTAINERD_STATUS=/run/containerd/
@@ -116,6 +117,15 @@ function validate_mnt_number {
     fi
 }
 
+function set_recover_policy {
+    policy="${1}"
+
+    TARGET_KEY="recover_policy"
+    REPLACEMENT_VALUE=\"${policy}\"
+
+    sed -i "s/\($TARGET_KEY *= *\).*/\1$REPLACEMENT_VALUE/" "${SNAPSHOTTER_CONFIG}"
+}
+
 function reboot_containerd {
     killall "containerd" || true
     killall "containerd-nydus-grpc" || true
@@ -156,7 +166,12 @@ function reboot_containerd {
 
     # rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/* || fuser -m "${REMOTE_SNAPSHOTTER_ROOT}/mnt" && false
     rm -rf "${REMOTE_SNAPSHOTTER_ROOT:?}"/*
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" --recover-policy "${recover_policy}" --log-to-stdout --config-path "${nydusd_config}" &
+
+    set_recover_policy "${recover_policy}"
+
+    containerd-nydus-grpc --log-to-stdout \
+        --daemon-mode "${daemon_mode}" --fs-driver "${fs_driver}" \
+        --config "${SNAPSHOTTER_CONFIG}" --nydusd-config "${nydusd_config}" &
 
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
     containerd --log-level info --config=/etc/containerd/config.toml &
@@ -340,7 +355,8 @@ function kill_snapshotter_and_nydusd_recover {
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
+    containerd-nydus-grpc --config "${SNAPSHOTTER_CONFIG}" \
+        --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
 
     echo "start new containers"
@@ -354,7 +370,7 @@ function fscache_kill_snapshotter_and_nydusd_recover {
     local daemon_mode=$1
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd "${daemon_mode}" fscache restart
+    reboot_containerd "${daemon_mode}" fscache failover
 
     nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
@@ -370,7 +386,8 @@ function fscache_kill_snapshotter_and_nydusd_recover {
     sleep 1
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --fs-driver fscache --log-to-stdout --config-path /etc/nydus/nydusd-config.fscache.json &
+    containerd-nydus-grpc --log-to-stdout --config "${SNAPSHOTTER_CONFIG}" \
+        --daemon-mode "${daemon_mode}" --fs-driver fscache --config-path /etc/nydus/nydusd-config.fscache.json &
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
 
     echo "start new containers"
@@ -397,7 +414,8 @@ function only_restart_snapshotter {
     killall -9 containerd-nydus-grpc || true
 
     rm "${REMOTE_SNAPSHOTTER_SOCKET:?}"
-    containerd-nydus-grpc --daemon-mode "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
+    containerd-nydus-grpc --config "${SNAPSHOTTER_CONFIG}" --daemon-mode \
+        "${daemon_mode}" --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
     retry ls "${REMOTE_SNAPSHOTTER_SOCKET}"
 
     if [[ "${daemon_mode}" == "shared" ]]; then
