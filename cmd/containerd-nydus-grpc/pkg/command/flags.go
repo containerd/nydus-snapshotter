@@ -33,7 +33,6 @@ type Args struct {
 	FsDriver              string
 	MetricsAddress        string
 	LogToStdout           bool
-	RecoverPolicy         string
 	PrintVersion          bool
 }
 
@@ -125,12 +124,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "shared-daemon",
 			Usage:       "Deprecated, equivalent to \"--daemon-mode shared\"",
 			Destination: &args.SharedDaemon,
-		},
-		&cli.StringFlag{
-			Name:        "recover-policy",
-			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to restart",
-			Destination: &args.RecoverPolicy,
-			Value:       "restart",
 		},
 	}
 }
