@@ -3,9 +3,10 @@
 <p><img src="https://github.com/dragonflyoss/image-service/blob/master/misc/logo.svg" width="170"></p>
 
 [![Release Version](https://img.shields.io/github/v/release/containerd/nydus-snapshotter?style=flat)](https://github.com/containerd/nydus-snapshotter/releases)
+[![LICENSE](https://img.shields.io/github/license/containerd/nydus-snapshotter.svg?style=flat)](https://github.com/containerd/nydus-snapshotter/blob/main/LICENSE)
 ![CI](https://github.com/containerd/nydus-snapshotter/actions/workflows/ci.yml/badge.svg?event=push)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcontainerd%2Fnydus-snapshotter?ref=badge_shield)
 [![Go Report Card](https://goreportcard.com/badge/github.com/containerd/nydus-snapshotter?style=flat)](https://goreportcard.com/report/github.com/containerd/nydus-snapshotter)
+[![Twitter](https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Ftwitter.com%2Fdragonfly_oss)](https://twitter.com/dragonfly_oss)
 [![Nydus Stars](https://img.shields.io/github/stars/dragonflyoss/image-service?label=Nydus%20Stars&style=social)](https://github.com/dragonflyoss/image-service)
 
 Nydus-snapshotter is a **non-core** sub-project of containerd.
@@ -174,7 +175,18 @@ Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the con
 Nydus aims to form a **vendor-neutral opensource** image distribution solution to all communities.
 Questions, bug reports, technical discussion, feature requests and contribution are always welcomed!
 
-Join our Slack [workspace](https://join.slack.com/t/nydusimageservice/shared_invite/zt-pz4qvl4y-WIh4itPNILGhPS8JqdFm_w)
+We're very pleased to hear your use cases any time.
+Feel free to reach/join us via Slack and/or Dingtalk.
+
+- **Slack:** [Nydus Workspace](https://join.slack.com/t/nydusimageservice/shared_invite/zt-pz4qvl4y-WIh4itPNILGhPS8JqdFm_w)
+
+- **Twitter:** [@dragonfly_oss](https://twitter.com/dragonfly_oss)
+
+- **Dingtalk:** [34971767](https://qr.dingtalk.com/action/joingroup?code=v1,k1,ioWGzuDZEIO10Bf+/ohz4RcQqAkW0MtOwoG1nbbMxQg=&_dt_no_comment=1&origin=11)
+
+<img src="https://github.com/dragonflyoss/image-service/blob/master/misc/dingtalk.jpg" width="250" height="300"/>
+
+- **Technical Meeting:** Every Wednesday at 06:00 UTC (Beijing, Shanghai 14:00), please see our [HackMD](https://hackmd.io/@Nydus/Bk8u2X0p9) page for more information.
 
 ## License
 
