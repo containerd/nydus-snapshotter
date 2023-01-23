@@ -33,7 +33,6 @@ type Args struct {
 	FsDriver               string
 	MetricsAddress         string
 	LogToStdout            bool
-	EnableNydusOverlayFS   bool
 	RecoverPolicy          string
 	PrintVersion           bool
 	EnableSystemController bool
@@ -81,11 +80,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Value:       "",
 			Usage:       "Enable metrics server by setting to an `ADDRESS` such as \"localhost:8080\", \":8080\"",
 			Destination: &args.MetricsAddress,
-		},
-		&cli.BoolFlag{
-			Name:        "enable-nydus-overlayfs",
-			Usage:       "whether to enable nydus-overlayfs",
-			Destination: &args.EnableNydusOverlayFS,
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",

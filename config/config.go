@@ -239,8 +239,7 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// empty
 
 	// --- snapshot configuration
-	snapshotConfig := &cfg.SnapshotsConfig
-	snapshotConfig.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	// empty
 
 	// --- metrics configuration
 	metricsConfig := &cfg.MetricsConfig
