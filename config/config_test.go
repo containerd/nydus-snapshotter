@@ -25,7 +25,6 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		Address:                "/run/containerd-nydus/containerd-nydus-grpc.sock",
 		DaemonMode:             "multiple",
 		EnableSystemController: true,
-		MetricsAddress:         ":9110",
 		EnableStargz:           false,
 		CleanupOnClose:         false,
 		DaemonConfig: DaemonConfig{
@@ -63,6 +62,9 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			RotateLogMaxBackups: 5,
 			RotateLogMaxSize:    1,
 			LogToStdout:         false,
+		},
+		MetricsConfig: MetricsConfig{
+			Address: ":9110",
 		},
 	}
 
