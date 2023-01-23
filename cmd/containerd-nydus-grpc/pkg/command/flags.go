@@ -49,16 +49,16 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.PrintVersion,
 		},
 		&cli.StringFlag{
+			Name:        "root",
+			Value:       defaultRootDir,
+			Usage:       "set `DIRECTORY` to store snapshotter working state",
+			Destination: &args.RootDir,
+		},
+		&cli.StringFlag{
 			Name:        "address",
 			Value:       defaultAddress,
 			Usage:       "set `PATH` for gRPC socket",
 			Destination: &args.Address,
-		},
-		&cli.StringFlag{
-			Name:        "config-path",
-			Aliases:     []string{"nydusd-config"},
-			Usage:       "path to the nydusd configuration",
-			Destination: &args.ConfigPath,
 		},
 		&cli.StringFlag{
 			Name:        "config",
@@ -66,23 +66,26 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.SnapshotterConfigPath,
 		},
 		&cli.StringFlag{
+			Name:        "nydusd-config",
+			Aliases:     []string{"config-path"},
+			Usage:       "path to the nydusd configuration",
+			Destination: &args.ConfigPath,
+		},
+		&cli.StringFlag{
 			Name:        "daemon-mode",
 			Value:       DefaultDaemonMode,
-			Aliases:     []string{"M"},
 			Usage:       "set daemon working `MODE`, one of \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
 			Value:       FsDriverFusedev,
-			Aliases:     []string{"daemon-backend"},
 			Usage:       "backend `DRIVER` to serve the filesystem, one of \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
 		},
 		&cli.StringFlag{
 			Name:        "log-level",
 			Value:       defaultLogLevel.String(),
-			Aliases:     []string{"l"},
 			Usage:       "set the logging `LEVEL` [trace, debug, info, warn, error, fatal, panic]",
 			Destination: &args.LogLevel,
 		},
@@ -94,7 +97,6 @@ func buildFlags(args *Args) []cli.Flag {
 		&cli.StringFlag{
 			Name:        "nydus-image",
 			Value:       "",
-			Aliases:     []string{"nydusimg-path"},
 			Usage:       "set `PATH` to the nydus-image binary, default to lookup nydus-image in $PATH",
 			Destination: &args.NydusImagePath,
 		},
@@ -104,14 +106,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Aliases:     []string{"nydusd-path"},
 			Usage:       "set `PATH` to the nydusd binary, default to lookup nydusd in $PATH",
 			Destination: &args.NydusdPath,
-		},
-
-		&cli.StringFlag{
-			Name:        "root",
-			Value:       defaultRootDir,
-			Aliases:     []string{"R"},
-			Usage:       "set `DIRECTORY` to store snapshotter working state",
-			Destination: &args.RootDir,
 		},
 	}
 }
