@@ -207,9 +207,6 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 
 	// Give --shared-daemon higher priority
 	cfg.DaemonMode = args.DaemonMode
-	if args.SharedDaemon {
-		cfg.DaemonMode = string(DaemonModeShared)
-	}
 
 	// --- image processor configuration
 	// empty

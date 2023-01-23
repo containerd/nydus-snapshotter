@@ -28,7 +28,6 @@ type Args struct {
 	RootDir               string
 	NydusdPath            string
 	NydusImagePath        string
-	SharedDaemon          bool
 	DaemonMode            string
 	FsDriver              string
 	MetricsAddress        string
@@ -119,11 +118,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Aliases:     []string{"R"},
 			Usage:       "set `DIRECTORY` to store snapshotter working state",
 			Destination: &args.RootDir,
-		},
-		&cli.BoolFlag{
-			Name:        "shared-daemon",
-			Usage:       "Deprecated, equivalent to \"--daemon-mode shared\"",
-			Destination: &args.SharedDaemon,
 		},
 	}
 }
