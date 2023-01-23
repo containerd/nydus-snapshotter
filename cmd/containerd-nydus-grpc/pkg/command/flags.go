@@ -23,7 +23,7 @@ const (
 type Args struct {
 	Address               string
 	LogLevel              string
-	ConfigPath            string
+	NydusdConfigPath      string
 	SnapshotterConfigPath string
 	RootDir               string
 	NydusdPath            string
@@ -69,7 +69,7 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "nydusd-config",
 			Aliases:     []string{"config-path"},
 			Usage:       "path to the nydusd configuration",
-			Destination: &args.ConfigPath,
+			Destination: &args.NydusdConfigPath,
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",

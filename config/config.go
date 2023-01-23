@@ -213,7 +213,7 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 
 	// --- daemon configuration
 	daemonConfig := &cfg.DaemonConfig
-	daemonConfig.NydusdConfigPath = args.ConfigPath
+	daemonConfig.NydusdConfigPath = args.NydusdConfigPath
 	if args.NydusdPath != "" {
 		daemonConfig.NydusdPath = args.NydusdPath
 	}
