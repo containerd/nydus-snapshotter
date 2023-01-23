@@ -9,9 +9,6 @@ NYDUS_NYDUSD ?= /usr/bin/nydusd
 GOOS ?= linux
 GOARCH ?= $(shell go env GOARCH)
 KERNEL_VER = $(shell uname -r)
-E2E_DOWNLOADS_MIRROR=
-#GOPROXY ?= https://goproxy.io
-
 
 # Used to populate variables in version package.
 BUILD_TIMESTAMP=$(shell date '+%Y-%m-%dT%H:%M:%S')
@@ -24,7 +21,7 @@ ENV_TARGET_IMAGES_FILE = --env-file ${E2E_TEST_TARGET_IMAGES_FILE}
 endif
 
 ifdef E2E_DOWNLOADS_MIRROR
-BUILD_ARG_E2E_DOWNLOADS_MIRROR = --build-arg ${E2E_DOWNLOADS_MIRROR}
+BUILD_ARG_E2E_DOWNLOADS_MIRROR = --build-arg DOWNLOADS_MIRROR=${E2E_DOWNLOADS_MIRROR}
 endif
 
 ifdef GOPROXY
