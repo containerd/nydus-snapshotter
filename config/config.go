@@ -237,8 +237,7 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// empty
 
 	// --- metrics configuration
-	metricsConfig := &cfg.MetricsConfig
-	metricsConfig.Address = args.MetricsAddress
+	// empty
 
 	return nil
 }

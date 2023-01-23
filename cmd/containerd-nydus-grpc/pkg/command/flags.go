@@ -73,12 +73,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.DaemonMode,
 		},
 		&cli.StringFlag{
-			Name:        "metrics-address",
-			Value:       "",
-			Usage:       "Enable metrics server by setting to an `ADDRESS` such as \"localhost:8080\", \":8080\"",
-			Destination: &args.MetricsAddress,
-		},
-		&cli.StringFlag{
 			Name:        "fs-driver",
 			Value:       FsDriverFusedev,
 			Aliases:     []string{"daemon-backend"},
