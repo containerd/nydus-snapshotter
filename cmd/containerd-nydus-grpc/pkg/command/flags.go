@@ -21,21 +21,20 @@ const (
 )
 
 type Args struct {
-	Address                string
-	LogLevel               string
-	ConfigPath             string
-	SnapshotterConfigPath  string
-	RootDir                string
-	NydusdPath             string
-	NydusImagePath         string
-	SharedDaemon           bool
-	DaemonMode             string
-	FsDriver               string
-	MetricsAddress         string
-	LogToStdout            bool
-	RecoverPolicy          string
-	PrintVersion           bool
-	EnableSystemController bool
+	Address               string
+	LogLevel              string
+	ConfigPath            string
+	SnapshotterConfigPath string
+	RootDir               string
+	NydusdPath            string
+	NydusImagePath        string
+	SharedDaemon          bool
+	DaemonMode            string
+	FsDriver              string
+	MetricsAddress        string
+	LogToStdout           bool
+	RecoverPolicy         string
+	PrintVersion          bool
 }
 
 type Flags struct {
@@ -132,12 +131,6 @@ func buildFlags(args *Args) []cli.Flag {
 			Usage:       "Policy on recovering nydus filesystem service [none, restart, failover], default to restart",
 			Destination: &args.RecoverPolicy,
 			Value:       "restart",
-		},
-		&cli.BoolFlag{
-			Name:        "enable-system-controller",
-			Usage:       "(experimental) unix domain socket path to serve HTTP-based system management",
-			Destination: &args.EnableSystemController,
-			Value:       true,
 		},
 	}
 }

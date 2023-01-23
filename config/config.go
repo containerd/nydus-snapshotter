@@ -203,7 +203,6 @@ func ValidateConfig(c *SnapshotterConfig) error {
 func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// --- essential configuration
 	cfg.Address = args.Address
-	cfg.EnableSystemController = args.EnableSystemController
 	cfg.Root = args.RootDir
 
 	// Give --shared-daemon higher priority
@@ -224,7 +223,6 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	if args.NydusImagePath != "" {
 		daemonConfig.NydusImagePath = args.NydusImagePath
 	}
-	daemonConfig.RecoverPolicy = args.RecoverPolicy
 	daemonConfig.FsDriver = args.FsDriver
 
 	// --- cache manager configuration
