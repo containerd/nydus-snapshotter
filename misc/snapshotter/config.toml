@@ -6,8 +6,6 @@ address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 daemon_mode = "multiple"
 # Snapshotter's debug and trace HTTP server interface
 enable_system_controller = true
-# Enable by assigning an address, empty indicates metrics server is disabled
-metrics_address = ":9110"
 # Whether tp enable stargz support
 enable_stargz = false
 # Whether snapshotter should try to clean up resources when it is closed
@@ -38,6 +36,10 @@ log_rotation_max_backups = 5
 # In unit MB(megabytes)
 log_rotation_max_size = 1
 log_to_stdout = false
+
+[metrics]
+# Enable by assigning an address, empty indicates metrics server is disabled
+address = ":9110"
 
 [remote]
 convert_vpc_registry = false

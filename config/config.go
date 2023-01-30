@@ -110,6 +110,10 @@ type RemoteConfig struct {
 	ConvertVpcRegistry bool       `toml:"convert_vpc_registry"`
 }
 
+type MetricsConfig struct {
+	Address string `toml:"address"`
+}
+
 type SnapshotterConfig struct {
 	// Configuration format version
 	Version int `toml:"version"`
@@ -117,12 +121,12 @@ type SnapshotterConfig struct {
 	Root                   string `toml:"root"`
 	Address                string `toml:"address"`
 	EnableSystemController bool   `toml:"enable_system_controller"`
-	MetricsAddress         string `toml:"metrics_address"`
 	DaemonMode             string `toml:"daemon_mode"`
 	EnableStargz           bool   `toml:"enable_stargz"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`
 
+	MetricsConfig      MetricsConfig      `toml:"metrics"`
 	DaemonConfig       DaemonConfig       `toml:"daemon"`
 	SnapshotsConfig    SnapshotConfig     `toml:"snapshot"`
 	RemoteConfig       RemoteConfig       `toml:"remote"`
@@ -200,7 +204,6 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// --- essential configuration
 	cfg.Address = args.Address
 	cfg.EnableSystemController = args.EnableSystemController
-	cfg.MetricsAddress = args.MetricsAddress
 	cfg.Root = args.RootDir
 
 	// Give --shared-daemon higher priority
@@ -238,6 +241,10 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// --- snapshot configuration
 	snapshotConfig := &cfg.SnapshotsConfig
 	snapshotConfig.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+
+	// --- metrics configuration
+	metricsConfig := &cfg.MetricsConfig
+	metricsConfig.Address = args.MetricsAddress
 
 	return nil
 }
