@@ -41,20 +41,23 @@ func main() {
 			}
 
 			snapshotterConfigPath := flags.Args.SnapshotterConfigPath
+			var defaultSnapshotterConfig config.SnapshotterConfig
 			var snapshotterConfig config.SnapshotterConfig
 
-			if err := snapshotterConfig.FillUpWithDefaults(); err != nil {
+			if err := defaultSnapshotterConfig.FillUpWithDefaults(); err != nil {
 				return errors.New("failed to fill up nydus configuration with defaults")
 			}
 
 			// Once snapshotter's configuration file is provided, parse it and let command line parameters override it.
 			if snapshotterConfigPath != "" {
-				if c, err := config.LoadSnapshotterConfig(snapshotterConfigPath); err != nil {
+				if c, err := config.LoadSnapshotterConfig(snapshotterConfigPath); err == nil {
 					// Command line parameters override the snapshotter's configurations for backwards compatibility
 					if err := config.ParseParameters(flags.Args, c); err != nil {
 						return errors.Wrap(err, "parse parameters")
 					}
 					snapshotterConfig = *c
+				} else {
+					return errors.Wrapf(err, "Failed to load snapshotter's configuration at %q", snapshotterConfigPath)
 				}
 			} else {
 				if err := config.ParseParameters(flags.Args, &snapshotterConfig); err != nil {
@@ -62,12 +65,16 @@ func main() {
 				}
 			}
 
-			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
-				return errors.Wrap(err, "process configurations")
+			if err := config.MergeConfig(&snapshotterConfig, &defaultSnapshotterConfig); err != nil {
+				return errors.Wrap(err, "merge configurations")
 			}
 
 			if err := config.ValidateConfig(&snapshotterConfig); err != nil {
-				return errors.Wrapf(err, "validate configuration")
+				return errors.Wrapf(err, "validate configurations")
+			}
+
+			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
+				return errors.Wrap(err, "process configurations")
 			}
 
 			ctx := logging.WithContext()

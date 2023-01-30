@@ -23,18 +23,16 @@ spec:
       args:
         - containerd-nydus-grpc
         - --nydusd-path /usr/local/bin/nydusd
-        - --config-path /etc/nydus/config.json
-        - --root /var/lib/containerd-nydus
-        - --address /run/containerd-nydus/containerd-nydus-grpc.sock
+        - --config-path /etc/nydus/nydusd.json
+        - --config /etc/nydus/config.toml
         - --log-level debug
         - --daemon-mode shared
         - --log-to-stdout
-        - --enable-cri-keychain
       securityContext:
         privileged: true
       volumeMounts:
         - mountPath: /etc/nydus/
-          name: config
+          name: nydus-all-config
         - mountPath: /var/lib/containerd-nydus
           mountPropagation: Bidirectional
           name: nydus-lib
@@ -52,10 +50,13 @@ spec:
   hostPID: true
   serviceAccountName: nydus-snapshotter-sa
   volumes:
-    - configMap:
-        defaultMode: 420
-        name: nydus-snapshotter
-      name: config
+    - name: nydus-all-config
+      projected:
+        sources:
+          - configMap:
+              name: nydusd-config
+          - configMap:
+              name: snapshotter-config
     - hostPath:
         path: /run/containerd-nydus
         type: DirectoryOrCreate
@@ -79,10 +80,10 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nydus-snapshotter
+  name: nydusd-config
   namespace: nydus-system
 data:
-  config.json: |-
+  nydusd.json: |-
     {
       "device": {
         "backend": {
@@ -113,3 +114,75 @@ data:
         "bandwidth_rate": 1048576
       }
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snapshotter-config
+  namespace: nydus-system
+data:
+  config.toml: |-
+    version = 1
+    root = "/var/lib/containerd-nydus"
+    address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+    daemon_mode = "multiple"
+    enable_system_controller = true
+    # Enable by assigning an address, empty indicates metrics server is disabled
+    metrics_address = ":9110"
+    # Whether tp enable stargz support
+    enable_stargz = false
+    # Whether snapshotter should try to clean up resources when it is closed
+    cleanup_on_close = false
+
+    [daemon]
+    nydusd_path = "/usr/local/bin/nydusd"
+    nydusimage_path = "/usr/local/bin/nydus-image"
+    # fusedev or fscache
+    fs_driver = "fusedev"
+    # Specify nydusd log level
+    log_level = "info"
+    # How to process when daemon dies: "none", "restart" or "failover"
+    recover_policy = "restart"
+    # Specify a configuration file for nydusd
+    nydusd_config = "/etc/nydus/nydusd.json"
+    # The fuse or fscache IO working threads started by nydusd
+    threads_number = 4
+
+    [log]
+    # Snapshotter's log level
+    level = "info"
+    log_rotation_compress = true
+    log_rotation_local_time = true
+    # Max number of days to retain logs
+    log_rotation_max_age = 7
+    log_rotation_max_backups = 5
+    # In unit MB(megabytes)
+    log_rotation_max_size = 1
+    log_to_stdout = false
+
+    [remote]
+    convert_vpc_registry = false
+
+    [remote.auth]
+    # Fetch the private registry auth by listening to K8s API server
+    enable_kubeconfig_keychain = false
+    # synchronize `kubernetes.io/dockerconfigjson` secret from kubernetes API server with specified kubeconfig (default `$KUBECONFIG` or `~/.kube/config`)
+    kubeconfig_path = ""
+    # Fetch the private registry auth as CRI image service proxy
+    enable_cri_keychain = true
+    # the target image service when using image proxy
+    image_service_address = ""
+
+    [snapshot]
+    enable_nydus_overlayfs = false
+    # Whether to remove resources when a snapshot is removed
+    sync_remove = false
+
+    [cache_manager]
+    disable = false
+    gc_period = "24h"
+    cache_dir = ""
+
+    [image]
+    public_key_file = ""
+    validate_signature = false

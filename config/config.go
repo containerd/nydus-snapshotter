@@ -10,6 +10,7 @@ package config
 import (
 	"os"
 
+	"github.com/imdario/mergo"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 
@@ -146,6 +147,15 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	return &config, nil
 }
 
+func MergeConfig(to, from *SnapshotterConfig) error {
+	err := mergo.Merge(to, from)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func ValidateConfig(c *SnapshotterConfig) error {
 	if c == nil {
 		return errors.Wrapf(errdefs.ErrInvalidArgument, "configuration is none")
@@ -170,6 +180,15 @@ func ValidateConfig(c *SnapshotterConfig) error {
 
 	if len(c.Root) == 0 {
 		return errors.New("empty root directory")
+	}
+
+	if c.RemoteConfig.AuthConfig.EnableCRIKeychain && c.RemoteConfig.AuthConfig.EnableKubeconfigKeychain {
+		return errors.Wrapf(errdefs.ErrInvalidArgument,
+			"\"enable_cri_keychain\" and \"enable_kubeconfig_keychain\" can't be set at the same time")
+	}
+
+	if !c.CacheManagerConfig.Disable && c.CacheManagerConfig.CacheDir == "" {
+		return errors.Wrapf(errdefs.ErrInvalidArgument, "cache directory is specified to empty")
 	}
 
 	return nil
@@ -214,12 +233,7 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	logConfig.LogToStdout = args.LogToStdout
 
 	// --- remote storage configuration
-	AuthConfig := &cfg.RemoteConfig.AuthConfig
-
-	AuthConfig.KubeconfigPath = args.KubeconfigPath
-	AuthConfig.EnableKubeconfigKeychain = args.EnableKubeconfigKeychain
-	AuthConfig.EnableCRIKeychain = args.EnableCRIKeychain
-	AuthConfig.ImageServiceAddress = args.ImageServiceAddress
+	// empty
 
 	// --- snapshot configuration
 	snapshotConfig := &cfg.SnapshotsConfig
