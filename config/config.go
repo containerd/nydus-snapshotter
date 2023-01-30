@@ -46,6 +46,48 @@ func parseDaemonMode(m string) (DaemonMode, error) {
 	}
 }
 
+type DaemonRecoverPolicy int
+
+const (
+	RecoverPolicyInvalid DaemonRecoverPolicy = iota
+	RecoverPolicyNone
+	RecoverPolicyRestart
+	RecoverPolicyFailover
+)
+
+func (p DaemonRecoverPolicy) String() string {
+	switch p {
+	case RecoverPolicyNone:
+		return "none"
+	case RecoverPolicyRestart:
+		return "restart"
+	case RecoverPolicyFailover:
+		return "failover"
+	case RecoverPolicyInvalid:
+		fallthrough
+	default:
+		return ""
+	}
+}
+
+var recoverPolicyParser map[string]DaemonRecoverPolicy
+
+func init() {
+	recoverPolicyParser = map[string]DaemonRecoverPolicy{
+		RecoverPolicyNone.String():     RecoverPolicyNone,
+		RecoverPolicyRestart.String():  RecoverPolicyRestart,
+		RecoverPolicyFailover.String(): RecoverPolicyFailover}
+}
+
+func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
+	policy, ok := recoverPolicyParser[p]
+	if !ok {
+		return RecoverPolicyInvalid, errdefs.ErrNotFound
+	}
+
+	return policy, nil
+}
+
 const (
 	FsDriverFusedev string = "fusedev"
 	FsDriverFscache string = "fscache"

@@ -80,7 +80,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "create database")
 	}
 
-	rp, err := manager.ParseRecoverPolicy(cfg.DaemonConfig.RecoverPolicy)
+	rp, err := config.ParseRecoverPolicy(cfg.DaemonConfig.RecoverPolicy)
 	if err != nil {
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
