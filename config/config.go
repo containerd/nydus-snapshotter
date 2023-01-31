@@ -209,19 +209,10 @@ func ValidateConfig(c *SnapshotterConfig) error {
 
 	if c.ImageConfig.ValidateSignature {
 		if c.ImageConfig.PublicKeyFile == "" {
-			return errors.New("need to specify publicKey file for signature validation")
+			return errors.New("public key file for signature validation is not provided")
 		} else if _, err := os.Stat(c.ImageConfig.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "failed to find publicKey file %q", c.ImageConfig.PublicKeyFile)
+			return errors.Wrapf(err, "find publicKey file %q", c.ImageConfig.PublicKeyFile)
 		}
-	}
-
-	daemonMode, err := parseDaemonMode(c.DaemonMode)
-	if err != nil {
-		return err
-	}
-
-	if c.DaemonConfig.FsDriver == FsDriverFscache && daemonMode != DaemonModeShared {
-		return errors.New("`fscache` driver only supports `shared` daemon mode")
 	}
 
 	if len(c.Root) == 0 {
@@ -234,7 +225,7 @@ func ValidateConfig(c *SnapshotterConfig) error {
 	}
 
 	if !c.CacheManagerConfig.Disable && c.CacheManagerConfig.CacheDir == "" {
-		return errors.Wrapf(errdefs.ErrInvalidArgument, "cache directory is specified to empty")
+		return errors.Wrapf(errdefs.ErrInvalidArgument, "cache directory is empty")
 	}
 
 	return nil
