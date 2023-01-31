@@ -46,6 +46,48 @@ func parseDaemonMode(m string) (DaemonMode, error) {
 	}
 }
 
+type DaemonRecoverPolicy int
+
+const (
+	RecoverPolicyInvalid DaemonRecoverPolicy = iota
+	RecoverPolicyNone
+	RecoverPolicyRestart
+	RecoverPolicyFailover
+)
+
+func (p DaemonRecoverPolicy) String() string {
+	switch p {
+	case RecoverPolicyNone:
+		return "none"
+	case RecoverPolicyRestart:
+		return "restart"
+	case RecoverPolicyFailover:
+		return "failover"
+	case RecoverPolicyInvalid:
+		fallthrough
+	default:
+		return ""
+	}
+}
+
+var recoverPolicyParser map[string]DaemonRecoverPolicy
+
+func init() {
+	recoverPolicyParser = map[string]DaemonRecoverPolicy{
+		RecoverPolicyNone.String():     RecoverPolicyNone,
+		RecoverPolicyRestart.String():  RecoverPolicyRestart,
+		RecoverPolicyFailover.String(): RecoverPolicyFailover}
+}
+
+func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
+	policy, ok := recoverPolicyParser[p]
+	if !ok {
+		return RecoverPolicyInvalid, errdefs.ErrNotFound
+	}
+
+	return policy, nil
+}
+
 const (
 	FsDriverFusedev string = "fusedev"
 	FsDriverFscache string = "fscache"
@@ -203,28 +245,23 @@ func ValidateConfig(c *SnapshotterConfig) error {
 func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// --- essential configuration
 	cfg.Address = args.Address
-	cfg.EnableSystemController = args.EnableSystemController
 	cfg.Root = args.RootDir
 
 	// Give --shared-daemon higher priority
 	cfg.DaemonMode = args.DaemonMode
-	if args.SharedDaemon {
-		cfg.DaemonMode = string(DaemonModeShared)
-	}
 
 	// --- image processor configuration
 	// empty
 
 	// --- daemon configuration
 	daemonConfig := &cfg.DaemonConfig
-	daemonConfig.NydusdConfigPath = args.ConfigPath
+	daemonConfig.NydusdConfigPath = args.NydusdConfigPath
 	if args.NydusdPath != "" {
 		daemonConfig.NydusdPath = args.NydusdPath
 	}
 	if args.NydusImagePath != "" {
 		daemonConfig.NydusImagePath = args.NydusImagePath
 	}
-	daemonConfig.RecoverPolicy = args.RecoverPolicy
 	daemonConfig.FsDriver = args.FsDriver
 
 	// --- cache manager configuration
@@ -239,12 +276,10 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// empty
 
 	// --- snapshot configuration
-	snapshotConfig := &cfg.SnapshotsConfig
-	snapshotConfig.EnableNydusOverlayFS = args.EnableNydusOverlayFS
+	// empty
 
 	// --- metrics configuration
-	metricsConfig := &cfg.MetricsConfig
-	metricsConfig.Address = args.MetricsAddress
+	// empty
 
 	return nil
 }

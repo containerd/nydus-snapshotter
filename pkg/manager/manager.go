@@ -28,48 +28,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 )
 
-type DaemonRecoverPolicy int
-
-const (
-	RecoverPolicyInvalid DaemonRecoverPolicy = iota
-	RecoverPolicyNone
-	RecoverPolicyRestart
-	RecoverPolicyFailover
-)
-
-func (p DaemonRecoverPolicy) String() string {
-	switch p {
-	case RecoverPolicyNone:
-		return "none"
-	case RecoverPolicyRestart:
-		return "restart"
-	case RecoverPolicyFailover:
-		return "failover"
-	case RecoverPolicyInvalid:
-		fallthrough
-	default:
-		return ""
-	}
-}
-
-var recoverPolicyParser map[string]DaemonRecoverPolicy
-
-func init() {
-	recoverPolicyParser = map[string]DaemonRecoverPolicy{
-		RecoverPolicyNone.String():     RecoverPolicyNone,
-		RecoverPolicyRestart.String():  RecoverPolicyRestart,
-		RecoverPolicyFailover.String(): RecoverPolicyFailover}
-}
-
-func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
-	policy, ok := recoverPolicyParser[p]
-	if !ok {
-		return RecoverPolicyInvalid, errdefs.ErrNotFound
-	}
-
-	return policy, nil
-}
-
 type DaemonStates struct {
 	mu              sync.Mutex
 	idxBySnapshotID map[string]*daemon.Daemon // index by snapshot ID
@@ -207,7 +165,7 @@ type Manager struct {
 	monitor LivenessMonitor
 	// TODO: Close me
 	LivenessNotifier chan deathEvent
-	RecoverPolicy    DaemonRecoverPolicy
+	RecoverPolicy    config.DaemonRecoverPolicy
 	SupervisorSet    *supervisor.SupervisorsSet
 
 	// A basic configuration template loaded from the file
@@ -225,7 +183,7 @@ type Opt struct {
 	Database         *store.Database
 	DaemonMode       config.DaemonMode
 	CacheDir         string
-	RecoverPolicy    DaemonRecoverPolicy
+	RecoverPolicy    config.DaemonRecoverPolicy
 	// Nydus-snapshotter work directory
 	RootDir      string
 	DaemonConfig daemonconfig.DaemonConfig
@@ -316,10 +274,10 @@ func (m *Manager) handleDaemonDeathEvent() {
 		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
 		d.State = types.DaemonStateUnknown
 		d.Unlock()
-		if m.RecoverPolicy == RecoverPolicyRestart {
+		if m.RecoverPolicy == config.RecoverPolicyRestart {
 			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
-		} else if m.RecoverPolicy == RecoverPolicyFailover {
+		} else if m.RecoverPolicy == config.RecoverPolicyFailover {
 			log.L.Infof("Do failover for daemon %s", ev.daemonID)
 			go m.doDaemonFailover(d)
 		}
@@ -338,7 +296,7 @@ func NewManager(opt Opt) (*Manager, error) {
 	}
 
 	var supervisorSet *supervisor.SupervisorsSet
-	if opt.RecoverPolicy == RecoverPolicyFailover {
+	if opt.RecoverPolicy == config.RecoverPolicyFailover {
 		supervisorSet, err = supervisor.NewSupervisorSet(filepath.Join(opt.RootDir, "supervisor"))
 		if err != nil {
 			return nil, errors.Wrap(err, "create supervisor set")
