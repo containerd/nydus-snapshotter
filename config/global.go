@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/containerd/containerd/log"
 	"github.com/pkg/errors"
 )
 
@@ -93,6 +94,12 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	if err != nil {
 		return err
 	}
+
+	if c.DaemonConfig.FsDriver == FsDriverFscache && m != DaemonModeShared {
+		log.L.Infof("fscache driver must enforce \"shared\" daemon mode, change it forcefully from %s", m)
+		m = DaemonModeShared
+	}
+
 	globalConfig.DaemonMode = m
 
 	return nil
