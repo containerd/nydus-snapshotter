@@ -32,7 +32,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			NydusImagePath:   "/usr/local/bin/nydus-image",
 			FsDriver:         "fusedev",
 			RecoverPolicy:    "restart",
-			NydusdConfigPath: "/etc/nydus/config.json",
+			NydusdConfigPath: "/etc/nydus/nydusd-config.fusedev.json",
 			ThreadsNumber:    4,
 		},
 		SnapshotsConfig: SnapshotConfig{
