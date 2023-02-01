@@ -44,7 +44,11 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			AuthConfig: AuthConfig{
 				EnableKubeconfigKeychain: false,
 				KubeconfigPath:           "",
-			}},
+			},
+			MirrorsConfig: MirrorsConfig{
+				Dir: "/etc/nydus/certs.d",
+			},
+		},
 		ImageConfig: ImageConfig{
 			PublicKeyFile:     "",
 			ValidateSignature: false,
