@@ -6,7 +6,7 @@ Before=containerd.service
 [Service]
 Type=simple
 Environment=HOME=/root
-ExecStart=/usr/local/bin/containerd-nydus-grpc --fs-driver fscache --config-path /etc/nydus/nydusd-config.fscache.json
+ExecStart=/usr/local/bin/containerd-nydus-grpc --config /etc/nydus/config.toml --fs-driver fscache --nydusd-config /etc/nydus/nydusd-config.fscache.json
 Restart=always
 RestartSec=1
 KillMode=process
