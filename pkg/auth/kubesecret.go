@@ -113,7 +113,7 @@ func (kubelistener *KubeSecretListener) SyncKubeSecrets(ctx context.Context, cli
 		cache.Indexers{},
 	)
 	kubelistener.informer = informer
-	kubelistener.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	_, err := kubelistener.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(obj)
 			if err != nil {
@@ -144,6 +144,9 @@ func (kubelistener *KubeSecretListener) SyncKubeSecrets(ctx context.Context, cli
 			kubelistener.deleteDockerConfig(key)
 		}},
 	)
+	if err != nil {
+		return errors.Wrap(err, "add event handler to informer")
+	}
 	go kubelistener.informer.Run(ctx.Done())
 	if !cache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
 		return fmt.Errorf("timed out for syncing cache")

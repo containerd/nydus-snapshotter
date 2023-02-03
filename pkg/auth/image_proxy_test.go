@@ -21,12 +21,20 @@ import (
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
-type MockImageService struct {
+type MockAlphaImageService struct {
 	runtime_alpha.UnimplementedImageServiceServer
 }
 
-func (*MockImageService) PullImage(ctx context.Context, req *runtime_alpha.PullImageRequest) (*runtime_alpha.PullImageResponse, error) {
+func (*MockAlphaImageService) PullImage(ctx context.Context, req *runtime_alpha.PullImageRequest) (*runtime_alpha.PullImageResponse, error) {
 	return &runtime_alpha.PullImageResponse{}, nil
+}
+
+type MockImageService struct {
+	runtime.UnimplementedImageServiceServer
+}
+
+func (*MockImageService) PullImage(ctx context.Context, req *runtime.PullImageRequest) (*runtime.PullImageResponse, error) {
+	return &runtime.PullImageResponse{}, nil
 }
 
 func TestFromImagePull(t *testing.T) {
@@ -55,14 +63,23 @@ func TestFromImagePull(t *testing.T) {
 	assert.NoError(err)
 
 	// Mocking the end CRI request consumer.
+	serverAlpha := &MockAlphaImageService{}
 	server := &MockImageService{}
-	runtime_alpha.RegisterImageServiceServer(mockRPC, server)
-	go mockRPC.Serve(lm)
-	defer lm.Close()
+	runtime_alpha.RegisterImageServiceServer(mockRPC, serverAlpha)
+	runtime.RegisterImageServiceServer(mockRPC, server)
+
+	go func() {
+		err := mockRPC.Serve(lm)
+		assert.NoError(err)
+	}()
+	defer mockRPC.Stop()
 
 	AddImageProxy(ctx, proxyRPC, mockSocket)
-	go proxyRPC.Serve(lp)
-	defer lp.Close()
+	go func() {
+		err := proxyRPC.Serve(lp)
+		assert.NoError(err)
+	}()
+	defer proxyRPC.Stop()
 
 	kc, err = FromCRI("docker.io", tagImage)
 	// should return empty kc before pulling
@@ -85,7 +102,8 @@ func TestFromImagePull(t *testing.T) {
 			Password: "passwd",
 		},
 	}
-	criAlphaClient.PullImage(ctx, irAlpha)
+	_, err = criAlphaClient.PullImage(ctx, irAlpha)
+	assert.NoError(err)
 
 	criClient := runtime.NewImageServiceClient(conn)
 
@@ -111,7 +129,8 @@ func TestFromImagePull(t *testing.T) {
 			Password: "passwd_1",
 		},
 	}
-	criClient.PullImage(ctx, ir)
+	_, err = criClient.PullImage(ctx, ir)
+	assert.NoError(err)
 
 	kc, err = FromCRI("ghcr.io", image2)
 	assert.Equal(kc.Username, "test_1")
@@ -129,11 +148,11 @@ func TestFromImagePull(t *testing.T) {
 			Password: "dpwd",
 		},
 	}
-	criAlphaClient.PullImage(ctx, irAlpha)
+	_, err = criAlphaClient.PullImage(ctx, irAlpha)
+	assert.NoError(err)
 
 	kc, err = FromCRI("docker.io", digestImage)
 	assert.Equal("digest", kc.Username)
 	assert.Equal("dpwd", kc.Password)
 	assert.NoError(err)
-
 }
