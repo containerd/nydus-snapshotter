@@ -52,8 +52,8 @@ spec:
       imagePullPolicy: IfNotPresent
       args:
         - containerd-nydus-grpc
-        - --nydusd-path /usr/local/bin/nydusd
-        - --config-path /etc/nydus/nydusd.json
+        - --nydusd /usr/local/bin/nydusd
+        - --nydusd-config /etc/nydus/nydusd.json
         - --config /etc/nydus/config.toml
         - --log-level debug
         - --daemon-mode shared

@@ -10,8 +10,8 @@ NYDUSD_DAEMON_MODE="${NYDUSD_DAEMON_MODE:-multiple}"
 
 if [ "$#" -eq 0 ]; then
 	containerd-nydus-grpc \
-		--nydusd-path /usr/local/bin/nydusd \
-		--config-path /etc/nydus/${BACKEND_TYPE}.json \
+		--nydusd /usr/local/bin/nydusd \
+		--nydusd-config /etc/nydus/${BACKEND_TYPE}.json \
 		--root ${NYDUS_LIB} \
 		--address ${NYDUS_RUN}/containerd-nydus-grpc.sock \
 		--log-level ${LEVEL} \
