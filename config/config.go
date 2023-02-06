@@ -148,8 +148,13 @@ type AuthConfig struct {
 
 // Configure remote storage like container registry
 type RemoteConfig struct {
-	AuthConfig         AuthConfig `toml:"auth"`
-	ConvertVpcRegistry bool       `toml:"convert_vpc_registry"`
+	AuthConfig         AuthConfig    `toml:"auth"`
+	ConvertVpcRegistry bool          `toml:"convert_vpc_registry"`
+	MirrorsConfig      MirrorsConfig `toml:"mirrors_config"`
+}
+
+type MirrorsConfig struct {
+	Dir string `toml:"dir"`
 }
 
 type MetricsConfig struct {

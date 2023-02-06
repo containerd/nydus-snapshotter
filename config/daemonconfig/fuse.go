@@ -75,6 +75,17 @@ func (c *FuseDaemonConfig) FillAuth(kc *auth.PassKeyChain) {
 	}
 }
 
+func (c *FuseDaemonConfig) UpdateMirrors(mirrorsConfigDir string) error {
+	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir)
+	if err != nil {
+		return err
+	}
+	if len(mirrors) > 0 {
+		c.Device.Backend.Config.Mirrors = mirrors
+	}
+	return nil
+}
+
 func (c *FuseDaemonConfig) StorageBackendType() string {
 	return c.Device.Backend.BackendType
 }
