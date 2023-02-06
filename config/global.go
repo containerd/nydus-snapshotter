@@ -32,6 +32,7 @@ type GlobalConfig struct {
 	ConfigRoot       string
 	DaemonThreadsNum int
 	CacheGCPeriod    time.Duration
+	MirrorsConfig    MirrorsConfig
 }
 
 func GetDaemonMode() DaemonMode {
@@ -48,7 +49,10 @@ func GetSocketRoot() string {
 
 func GetConfigRoot() string {
 	return globalConfig.ConfigRoot
+}
 
+func GetMirrorsConfigDir() string {
+	return globalConfig.MirrorsConfig.Dir
 }
 
 func GetFsDriver() string {
@@ -81,6 +85,8 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.SnapshotsDir = filepath.Join(c.Root, "snapshots")
 	globalConfig.ConfigRoot = filepath.Join(c.Root, "config")
 	globalConfig.SocketRoot = filepath.Join(c.Root, "socket")
+
+	globalConfig.MirrorsConfig = c.RemoteConfig.MirrorsConfig
 
 	if c.CacheManagerConfig.GCPeriod != "" {
 		d, err := time.ParseDuration(c.CacheManagerConfig.GCPeriod)

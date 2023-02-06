@@ -243,6 +243,10 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		daemonconfig.CacheDir: cacheDir}
 
 	cfg := deepcopy.Copy(fs.Manager.DaemonConfig).(daemonconfig.DaemonConfig)
+
+	if err := cfg.UpdateMirrors(config.GetMirrorsConfigDir()); err != nil {
+		return errors.Wrap(err, "update mirrors config")
+	}
 	err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
 	if err != nil {
 		return errors.Wrap(err, "supplement configuration")
