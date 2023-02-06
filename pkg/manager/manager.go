@@ -546,6 +546,10 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID())
 		liveDaemons[d.ID()] = d
 
+		d.Lock()
+		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
+		d.Unlock()
+
 		go func() {
 			if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
 				log.L.Errorf("Nydusd %s probably not started", d.ID())
