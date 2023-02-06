@@ -79,6 +79,18 @@ func GetLogToStdout() bool {
 	return globalConfig.origin.LoggingConfig.LogToStdout
 }
 
+func IsSystemControllerEnabled() bool {
+	return globalConfig.origin.SystemControllerConfig.Enable
+}
+
+func SystemControllerAddress() string {
+	return globalConfig.origin.SystemControllerConfig.Address
+}
+
+func GetDaemonProfileCPUDuration() int64 {
+	return globalConfig.origin.SystemControllerConfig.DebugConfig.ProfileDuration
+}
+
 func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.origin = c
 

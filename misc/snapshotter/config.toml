@@ -4,12 +4,21 @@ root = "/var/lib/containerd-nydus"
 # The snapshotter's GRPC server socket, containerd will connect to plugin on this socket
 address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 daemon_mode = "multiple"
-# Snapshotter's debug and trace HTTP server interface
-enable_system_controller = true
 # Whether tp enable stargz support
 enable_stargz = false
 # Whether snapshotter should try to clean up resources when it is closed
 cleanup_on_close = false
+
+[system]
+# Snapshotter's debug and trace HTTP server interface
+enable = true
+# Unix domain socket path where system controller is listening on
+address = "/var/lib/containerd-nydus/system.sock"
+
+[system.debug]
+# Snapshotter can profile the CPU utilization of each nydusd daemon when it is being started.
+# This option specifies the profile duration when nydusd is downloading and uncomproessing data.
+daemon_cpu_profile_duration_secs = 5
 
 [daemon]
 nydusd_path = "/usr/local/bin/nydusd"

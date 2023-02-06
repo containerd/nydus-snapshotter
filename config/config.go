@@ -18,6 +18,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 )
 
+func init() {
+	recoverPolicyParser = map[string]DaemonRecoverPolicy{
+		RecoverPolicyNone.String():     RecoverPolicyNone,
+		RecoverPolicyRestart.String():  RecoverPolicyRestart,
+		RecoverPolicyFailover.String(): RecoverPolicyFailover}
+}
+
 // Define a policy how to fork nydusd daemon and attach file system instances to serve.
 type DaemonMode string
 
@@ -71,13 +78,6 @@ func (p DaemonRecoverPolicy) String() string {
 }
 
 var recoverPolicyParser map[string]DaemonRecoverPolicy
-
-func init() {
-	recoverPolicyParser = map[string]DaemonRecoverPolicy{
-		RecoverPolicyNone.String():     RecoverPolicyNone,
-		RecoverPolicyRestart.String():  RecoverPolicyRestart,
-		RecoverPolicyFailover.String(): RecoverPolicyFailover}
-}
 
 func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
 	policy, ok := recoverPolicyParser[p]
@@ -161,25 +161,35 @@ type MetricsConfig struct {
 	Address string `toml:"address"`
 }
 
+type DebugConfig struct {
+	ProfileDuration int64 `toml:"daemon_cpu_profile_duration_secs"`
+}
+
+type SystemControllerConfig struct {
+	Enable      bool        `toml:"enable"`
+	Address     string      `toml:"address"`
+	DebugConfig DebugConfig `toml:"debug"`
+}
+
 type SnapshotterConfig struct {
 	// Configuration format version
 	Version int `toml:"version"`
 	// Snapshotter's root work directory
-	Root                   string `toml:"root"`
-	Address                string `toml:"address"`
-	EnableSystemController bool   `toml:"enable_system_controller"`
-	DaemonMode             string `toml:"daemon_mode"`
-	EnableStargz           bool   `toml:"enable_stargz"`
+	Root         string `toml:"root"`
+	Address      string `toml:"address"`
+	DaemonMode   string `toml:"daemon_mode"`
+	EnableStargz bool   `toml:"enable_stargz"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`
 
-	MetricsConfig      MetricsConfig      `toml:"metrics"`
-	DaemonConfig       DaemonConfig       `toml:"daemon"`
-	SnapshotsConfig    SnapshotConfig     `toml:"snapshot"`
-	RemoteConfig       RemoteConfig       `toml:"remote"`
-	ImageConfig        ImageConfig        `toml:"image"`
-	CacheManagerConfig CacheManagerConfig `toml:"cache_manager"`
-	LoggingConfig      LoggingConfig      `toml:"log"`
+	SystemControllerConfig SystemControllerConfig `toml:"system"`
+	MetricsConfig          MetricsConfig          `toml:"metrics"`
+	DaemonConfig           DaemonConfig           `toml:"daemon"`
+	SnapshotsConfig        SnapshotConfig         `toml:"snapshot"`
+	RemoteConfig           RemoteConfig           `toml:"remote"`
+	ImageConfig            ImageConfig            `toml:"image"`
+	CacheManagerConfig     CacheManagerConfig     `toml:"cache_manager"`
+	LoggingConfig          LoggingConfig          `toml:"log"`
 }
 
 func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
