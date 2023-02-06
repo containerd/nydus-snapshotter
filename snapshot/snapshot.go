@@ -139,7 +139,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
 		filesystem.WithVerifier(verifier),
 		filesystem.WithRootMountpoint(path.Join(cfg.Root, "mnt")),
-		filesystem.WithEnableStargz(cfg.EnableStargz),
+		filesystem.WithEnableStargz(cfg.Experimental.EnableStargz),
 	}
 
 	cacheConfig := &cfg.CacheManagerConfig
