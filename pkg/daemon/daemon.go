@@ -167,6 +167,7 @@ func (d *Daemon) GetState() (types.DaemonState, error) {
 
 	d.Lock()
 	d.State = st
+	d.Version = info.DaemonVersion()
 	d.Unlock()
 
 	return st, nil
