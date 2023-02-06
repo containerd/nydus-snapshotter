@@ -145,6 +145,25 @@ Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the con
 
 `auth_through=false` means nydusd's authentication request will directly go to original registry rather than relayed by Dragonfly.
 
+### Hot updating mirror configurations
+In addition to setting the registry mirror in nydusd's json configuration file, `nydus-snapshotter` also supports hot updating mirror configurations. You can set the configuration directory in nudus-snapshotter's toml configuration file with `remote.mirrors_config.dir`. The empty `remote.mirrors_config.dir` means disabling it.
+```toml
+[remote.mirrors_config]
+dir = "/etc/nydus/certs.d"
+```
+Configuration file is compatible with containerd's configuration file in toml format.
+```toml
+server = "https://p2p-nydus.com"
+[host]
+  [host."http://127.0.0.1:65001"]
+    auth_through = false
+    [host."http://127.0.0.1:65001".header]
+      X-Dragonfly-Registry = ["https://p2p-nydus.com"]
+```
+
+Mirror configurations loaded from nydusd's json file will be overwritten before pulling image if the valid mirror configuration items loaded from `remote.mirrors_config.dir` are greater than 0.
+
+
 ## Community
 
 Nydus aims to form a **vendor-neutral opensource** image distribution solution to all communities.
