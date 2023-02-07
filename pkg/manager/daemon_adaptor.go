@@ -92,12 +92,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 		collector.NewDaemonEventCollector(types.DaemonStateRunning).Collect()
 
-		daemonInfo, err := d.GetDaemonInfo()
-		if err != nil {
-			log.L.WithError(err).Errorf("failed to get daemon %s information", d.ID())
-		}
 		d.Lock()
-		d.Version = daemonInfo.DaemonVersion()
 		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 		d.Unlock()
 
