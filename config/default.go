@@ -23,8 +23,9 @@ const (
 	nydusdBinaryName             string = "nydusd"
 	nydusImageBinaryName         string = "nydus-image"
 
-	defaultRootDir    = "/var/lib/containerd-nydus"
-	oldDefaultRootDir = "/var/lib/containerd-nydus-grpc"
+	defaultRootDir                 = "/var/lib/containerd-nydus"
+	oldDefaultRootDir              = "/var/lib/containerd-nydus-grpc"
+	defaultSystemControllerAddress = "/var/lib/containerd-nydus/system.sock"
 
 	// Log rotation
 	defaultRotateLogMaxSize    = 200 // 200 megabytes
@@ -41,6 +42,9 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	if c.DaemonMode == "" {
 		c.DaemonMode = DefaultDaemonMode
 	}
+
+	// system controller configuration
+	c.SystemControllerConfig.Address = defaultSystemControllerAddress
 
 	// logging configuration
 	logConfig := &c.LoggingConfig

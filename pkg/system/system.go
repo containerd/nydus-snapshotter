@@ -96,10 +96,10 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 }
 
 type daemonInfo struct {
-	ID                    string `json:"id"`
-	Pid                   int    `json:"pid"`
-	APISock               string `json:"api_socket"`
-	SupervisorPath        string
+	ID                    string  `json:"id"`
+	Pid                   int     `json:"pid"`
+	APISock               string  `json:"api_socket"`
+	SupervisorPath        string  `json:"supervisor_path"`
 	Reference             int     `json:"reference"`
 	HostMountpoint        string  `json:"mountpoint"`
 	StartupCPUUtilization float64 `json:"startup_cpu_utilization"`
