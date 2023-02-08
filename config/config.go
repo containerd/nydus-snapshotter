@@ -93,6 +93,10 @@ const (
 	FsDriverFscache string = "fscache"
 )
 
+type Experimental struct {
+	EnableStargz bool `toml:"enable_stargz"`
+}
+
 // Configure how to start and recover nydusd daemons
 type DaemonConfig struct {
 	NydusdPath       string `toml:"nydusd_path"`
@@ -175,10 +179,9 @@ type SnapshotterConfig struct {
 	// Configuration format version
 	Version int `toml:"version"`
 	// Snapshotter's root work directory
-	Root         string `toml:"root"`
-	Address      string `toml:"address"`
-	DaemonMode   string `toml:"daemon_mode"`
-	EnableStargz bool   `toml:"enable_stargz"`
+	Root       string `toml:"root"`
+	Address    string `toml:"address"`
+	DaemonMode string `toml:"daemon_mode"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`
 
@@ -190,6 +193,7 @@ type SnapshotterConfig struct {
 	ImageConfig            ImageConfig            `toml:"image"`
 	CacheManagerConfig     CacheManagerConfig     `toml:"cache_manager"`
 	LoggingConfig          LoggingConfig          `toml:"log"`
+	Experimental           Experimental           `toml:"experimental"`
 }
 
 func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
