@@ -68,7 +68,7 @@ Please follow instructions to [configure nydus](./docs/configure_nydus.md) in or
 
 Nydus-snapshotter is implemented as a [proxy plugin](https://github.com/containerd/containerd/blob/04985039cede6aafbb7dfb3206c9c4d04e2f924d/PLUGINS.md#proxy-plugins) (`containerd-nydus-grpc`) for containerd.
 
-Assume your server systemd based, install nydus-snapshotter:
+Assume your server is systemd based, install nydus-snapshotter:
 Note: `nydusd` and `nydus-image` should be found from $PATH.
 
 ```bash
