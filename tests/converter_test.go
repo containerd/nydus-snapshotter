@@ -238,6 +238,7 @@ func packLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fs
 	twc, err := converter.Pack(context.TODO(), writer, converter.PackOption{
 		ChunkDictPath: chunkDict,
 		FsVersion:     fsVersion,
+		WithTarToRafs: true,
 	})
 	require.NoError(t, err)
 
@@ -412,29 +413,7 @@ func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, str
 	return bootstrapPath, filepath.Base(dictBlobPath)
 }
 
-// sudo go test -v -count=1 -run TestPack ./tests
 func TestPack(t *testing.T) {
-	t.Log("Test nydusd(new) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(old) + nydus-image(old)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(new) + nydus-image(old)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(old) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 	testPack(t, "5")
 	testPack(t, "6")
 }

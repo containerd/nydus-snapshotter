@@ -91,9 +91,10 @@ cover:
 	go test -v -covermode=atomic -coverprofile=coverage.txt $(PACKAGES)
 	go tool cover -func=coverage.txt
 
+# make smoke TESTS=TestPack
 smoke:
-	$(SUDO) NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ${GO_EXECUTABLE_PATH} test -race -v ./tests
-	$(SUDO) NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ${GO_EXECUTABLE_PATH} test -race -v ./tests
+	${GO_EXECUTABLE_PATH} test -o smoke.tests -c -race -v -cover ./tests
+	$(SUDO) -E NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ./smoke.tests -test.v -test.timeout 10m -test.parallel=8 -test.run=$(TESTS)
 
 .PHONY: integration
 integration:
