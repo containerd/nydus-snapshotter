@@ -302,9 +302,12 @@ func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOC
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
 	if opt.OCIRef {
 		if opt.FsVersion == "" || opt.FsVersion == "6" {
-			return packRef(ctx, dest, opt)
+			return packFromTar(ctx, dest, opt)
 		}
 		return nil, fmt.Errorf("oci ref can only be supported by fs version 6")
+	}
+	if opt.WithTarToRafs {
+		return packFromTar(ctx, dest, opt)
 	}
 
 	workDir, err := ensureWorkDir(opt.WorkDir)
@@ -381,7 +384,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
-func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
+func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure work directory")
@@ -392,16 +395,16 @@ func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteClose
 		}
 	}()
 
-	blobMetaPath := filepath.Join(workDir, "blob.meta")
-	blobMetaFifo, err := fifo.OpenFifo(ctx, blobMetaPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+	rafsBlobPath := filepath.Join(workDir, "blob.rafs")
+	rafsBlobFifo, err := fifo.OpenFifo(ctx, rafsBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create fifo file")
 	}
 
-	sourcePath := filepath.Join(workDir, "blob.targz")
-	sourceFifo, err := fifo.OpenFifo(ctx, sourcePath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0644)
+	tarBlobPath := filepath.Join(workDir, "blob.targz")
+	tarBlobFifo, err := fifo.OpenFifo(ctx, tarBlobPath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0644)
 	if err != nil {
-		defer blobMetaFifo.Close()
+		defer rafsBlobFifo.Close()
 		return nil, errors.Wrapf(err, "create fifo file")
 	}
 
@@ -410,34 +413,56 @@ func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteClose
 	eg := errgroup.Group{}
 
 	eg.Go(func() error {
-		defer sourceFifo.Close()
+		defer tarBlobFifo.Close()
 		buffer := bufPool.Get().(*[]byte)
 		defer bufPool.Put(buffer)
-		if _, err := io.CopyBuffer(sourceFifo, pr, *buffer); err != nil {
+		if _, err := io.CopyBuffer(tarBlobFifo, pr, *buffer); err != nil {
 			return errors.Wrapf(err, "copy targz to fifo")
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		defer blobMetaFifo.Close()
+		defer rafsBlobFifo.Close()
 		buffer := bufPool.Get().(*[]byte)
 		defer bufPool.Put(buffer)
-		if _, err := io.CopyBuffer(dest, blobMetaFifo, *buffer); err != nil {
+		if _, err := io.CopyBuffer(dest, rafsBlobFifo, *buffer); err != nil {
 			return errors.Wrapf(err, "copy blob meta fifo to nydus blob")
 		}
 		return nil
 	})
 
 	eg.Go(func() error {
-		err := tool.Pack(tool.PackOption{
-			BuilderPath: getBuilder(opt.BuilderPath),
+		var err error
+		switch {
+		case opt.OCIRef:
+			err = tool.Pack(tool.PackOption{
+				BuilderPath: getBuilder(opt.BuilderPath),
 
-			OCIRef:     opt.OCIRef,
-			BlobPath:   blobMetaPath,
-			SourcePath: sourcePath,
-			Timeout:    opt.Timeout,
-		})
+				OCIRef:     opt.OCIRef,
+				BlobPath:   rafsBlobPath,
+				SourcePath: tarBlobPath,
+				Timeout:    opt.Timeout,
+			})
+			return errors.Wrapf(err, "call builder")
+		case opt.WithTarToRafs:
+			err = tool.Pack(tool.PackOption{
+				BuilderPath: getBuilder(opt.BuilderPath),
+
+				WithTarToRafs:    opt.WithTarToRafs,
+				BlobPath:         rafsBlobPath,
+				FsVersion:        opt.FsVersion,
+				SourcePath:       tarBlobPath,
+				ChunkDictPath:    opt.ChunkDictPath,
+				PrefetchPatterns: opt.PrefetchPatterns,
+				AlignedChunk:     opt.AlignedChunk,
+				ChunkSize:        opt.ChunkSize,
+				Compressor:       opt.Compressor,
+				Timeout:          opt.Timeout,
+			})
+		default:
+			return fmt.Errorf("unsupported operation")
+		}
 		return errors.Wrapf(err, "call builder")
 	})
 

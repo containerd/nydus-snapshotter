@@ -29,6 +29,7 @@ func isSignalKilled(err error) bool {
 type PackOption struct {
 	BuilderPath string
 
+	WithTarToRafs    bool
 	BootstrapPath    string
 	BlobPath         string
 	FsVersion        string
@@ -86,14 +87,35 @@ func Pack(option PackOption) error {
 		"fs",
 		"--blob",
 		option.BlobPath,
-		"--source-type",
-		"directory",
 		"--whiteout-spec",
 		"none",
 		"--fs-version",
 		option.FsVersion,
-		"--inline-bootstrap",
 	}
+
+	if option.WithTarToRafs {
+		args = append(
+			args,
+			"--type",
+			"tar-rafs",
+			"--blob-inline-meta",
+		)
+		if option.FsVersion == "6" {
+			args = append(
+				args,
+				"--features",
+				"blob-toc",
+			)
+		}
+	} else {
+		args = append(
+			args,
+			"--source-type",
+			"directory",
+			"--inline-bootstrap",
+		)
+	}
+
 	if option.ChunkDictPath != "" {
 		args = append(args, "--chunk-dict", fmt.Sprintf("bootstrap=%s", option.ChunkDictPath))
 	}
