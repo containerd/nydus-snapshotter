@@ -22,13 +22,13 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
 
+	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
@@ -183,7 +183,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		return nil
 	}
 
-	imageID, ok := labels[label.CRIImageRef]
+	imageID, ok := labels[snpkg.TargetRefLabel]
 	if !ok {
 		return errors.Errorf("failed to find image ref of snapshot %s, labels %v",
 			snapshotID, labels)
@@ -332,7 +332,7 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapshots.Usage, error) {
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %s", label.CRILayerDigest)
+		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %s", snpkg.TargetLayerDigestLabel)
 	}
 	blobID := digest.Hex()
 	return fs.cacheMgr.CacheUsage(ctx, blobID)
@@ -341,7 +341,7 @@ func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapsh
 func (fs *Filesystem) RemoveCache(blobDigest string) error {
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return errors.Wrapf(err, "invalid blob digest from label %s", label.CRILayerDigest)
+		return errors.Wrapf(err, "invalid blob digest from label %s", snpkg.TargetLayerDigestLabel)
 	}
 	blobID := digest.Hex()
 	if config.GetFsDriver() == config.FsDriverFscache {

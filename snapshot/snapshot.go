@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
+	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
@@ -270,7 +271,7 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 
 	// Blob layers are all committed snapshots
 	if info.Kind == snapshots.KindCommitted {
-		blobDigest := info.Labels[label.CRILayerDigest]
+		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
 		// Try to get nydus meta layer/snapshot disk usage
 		cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
 		if err != nil {
@@ -510,7 +511,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	}
 
 	if info.Kind == snapshots.KindCommitted {
-		blobDigest := info.Labels[label.CRILayerDigest]
+		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
 		go func() {
 			if err := o.fs.RemoveCache(blobDigest); err != nil {
 				log.L.WithError(err).Errorf("Failed to remove cache %s", blobDigest)
@@ -525,7 +526,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	var blobDigest string
 	_, cleanupBlob := info.Labels[label.NydusDataLayer]
 	if cleanupBlob {
-		blobDigest = info.Labels[label.CRILayerDigest]
+		blobDigest = info.Labels[snpkg.TargetLayerDigestLabel]
 	}
 
 	if o.syncRemove {

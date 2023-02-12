@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/reference/docker"
-	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -49,10 +49,10 @@ func ParseImage(imageID string) (Image, error) {
 }
 
 func ParseLabels(labels map[string]string) (rRef, rDigest string) {
-	if ref, ok := labels[label.CRIImageRef]; ok {
+	if ref, ok := labels[snpkg.TargetRefLabel]; ok {
 		rRef = ref
 	}
-	if layerDigest, ok := labels[label.CRILayerDigest]; ok {
+	if layerDigest, ok := labels[snpkg.TargetLayerDigestLabel]; ok {
 		rDigest = layerDigest
 	}
 	return
