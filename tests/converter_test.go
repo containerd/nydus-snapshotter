@@ -238,8 +238,6 @@ func packLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fs
 	twc, err := converter.Pack(context.TODO(), writer, converter.PackOption{
 		ChunkDictPath: chunkDict,
 		FsVersion:     fsVersion,
-		WithTarToRafs: true,
-		Features:      []string{"blob-toc"},
 	})
 	require.NoError(t, err)
 

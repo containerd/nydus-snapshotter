@@ -1018,7 +1018,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	}
 
 	if opt.FsVersion == "" {
-		opt.FsVersion = "5"
+		opt.FsVersion = "6"
 	}
 
 	bootstrapDesc := ocispec.Descriptor{

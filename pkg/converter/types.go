@@ -56,7 +56,7 @@ type PackOption struct {
 	// BuilderPath holds the path of `nydus-image` binary tool.
 	BuilderPath string
 	// FsVersion specifies nydus RAFS format version, possible
-	// values: `5`, `6` (EROFS-compatible), default is `5`.
+	// values: `5`, `6` (EROFS-compatible), default is `6`.
 	FsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
@@ -88,7 +88,7 @@ type MergeOption struct {
 	// BuilderPath holds the path of `nydus-image` binary tool.
 	BuilderPath string
 	// FsVersion specifies nydus RAFS format version, possible
-	// values: `5`, `6` (EROFS-compatible), default is `5`.
+	// values: `5`, `6` (EROFS-compatible), default is `6`.
 	FsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string

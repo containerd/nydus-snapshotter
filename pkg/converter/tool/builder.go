@@ -77,7 +77,7 @@ func Pack(option PackOption) error {
 	}
 
 	if option.FsVersion == "" {
-		option.FsVersion = "5"
+		option.FsVersion = "6"
 	}
 
 	args := []string{
