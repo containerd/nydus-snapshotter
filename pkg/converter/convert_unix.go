@@ -409,8 +409,15 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 	}
 
 	pr, pw := io.Pipe()
-
 	eg := errgroup.Group{}
+
+	wc := newWriteCloser(pw, func() error {
+		defer os.RemoveAll(workDir)
+		if err := eg.Wait(); err != nil {
+			return errors.Wrapf(err, "convert nydus ref")
+		}
+		return nil
+	})
 
 	eg.Go(func() error {
 		defer tarBlobFifo.Close()
@@ -463,15 +470,12 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 		default:
 			return fmt.Errorf("unsupported operation")
 		}
-		return errors.Wrapf(err, "call builder")
-	})
-
-	wc := newWriteCloser(pw, func() error {
-		defer os.RemoveAll(workDir)
-		if err := eg.Wait(); err != nil {
-			return errors.Wrapf(err, "convert nydus ref")
+		if err != nil {
+			// Without handling the returned error because we just only
+			// focus on the command exit status in `tool.Pack`.
+			wc.Close()
 		}
-		return nil
+		return errors.Wrapf(err, "call builder")
 	})
 
 	return wc, nil
