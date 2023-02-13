@@ -364,6 +364,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 				AlignedChunk:     opt.AlignedChunk,
 				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
+				Features:         opt.Features,
 				Timeout:          opt.Timeout,
 			})
 			if err != nil {
@@ -449,6 +450,7 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 				OCIRef:     opt.OCIRef,
 				BlobPath:   rafsBlobPath,
 				SourcePath: tarBlobPath,
+				Features:   opt.Features,
 				Timeout:    opt.Timeout,
 			})
 			return errors.Wrapf(err, "call builder")
@@ -465,6 +467,7 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 				AlignedChunk:     opt.AlignedChunk,
 				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
+				Features:         opt.Features,
 				Timeout:          opt.Timeout,
 			})
 		default:
