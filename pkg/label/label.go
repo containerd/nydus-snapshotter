@@ -6,12 +6,22 @@
 
 package label
 
-const (
-	CRIImageRef       = "containerd.io/snapshot/cri.image-ref"
-	CRIImageLayers    = "containerd.io/snapshot/cri.image-layers"
-	CRILayerDigest    = "containerd.io/snapshot/cri.layer-digest"
-	CRIManifestDigest = "containerd.io/snapshot/cri.manifest-digest"
+import (
+	snpkg "github.com/containerd/containerd/pkg/snapshotters"
+)
 
+// For package compatibility, we still keep the old exported name here.
+var AppendLabelsHandlerWrapper = snpkg.AppendInfoHandlerWrapper
+
+// For package compatibility, we still keep the old exported name here.
+const (
+	CRIImageRef       = snpkg.TargetRefLabel
+	CRIImageLayers    = snpkg.TargetImageLayersLabel
+	CRILayerDigest    = snpkg.TargetLayerDigestLabel
+	CRIManifestDigest = snpkg.TargetManifestDigestLabel
+)
+
+const (
 	// Marker for remote snapshotter to handle the pull request.
 	// During image pull, the containerd client calls Prepare API with the label containerd.io/snapshot.ref.
 	// This is a containerd-defined label which contains ChainID that targets a committed snapshot that the
