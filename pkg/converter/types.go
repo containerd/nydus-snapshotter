@@ -76,6 +76,8 @@ type PackOption struct {
 	// directly, eliminating the need to decompress it to a local directory
 	// first, thus greatly accelerating the pack process.
 	WithTarToRafs bool
+	// Features enables feature collection for nydus-image builder.
+	Features []string
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
 }

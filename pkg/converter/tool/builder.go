@@ -40,6 +40,7 @@ type PackOption struct {
 	OCIRef           bool
 	AlignedChunk     bool
 	ChunkSize        string
+	Features         []string
 	Timeout          *time.Duration
 }
 
@@ -93,6 +94,14 @@ func Pack(option PackOption) error {
 		option.FsVersion,
 	}
 
+	if len(option.Features) > 0 {
+		args = append(
+			args,
+			"--features",
+			strings.Join(option.Features, ","),
+		)
+	}
+
 	if option.WithTarToRafs {
 		args = append(
 			args,
@@ -100,18 +109,13 @@ func Pack(option PackOption) error {
 			"tar-rafs",
 			"--blob-inline-meta",
 		)
-		if option.FsVersion == "6" {
-			args = append(
-				args,
-				"--features",
-				"blob-toc",
-			)
-		}
 	} else {
 		args = append(
 			args,
 			"--source-type",
 			"directory",
+			// Sames with `--blob-inline-meta`, it's used for compatibility
+			// with the old nydus-image builder.
 			"--inline-bootstrap",
 		)
 	}

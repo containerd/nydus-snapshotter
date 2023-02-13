@@ -239,6 +239,7 @@ func packLayer(t *testing.T, source io.ReadCloser, chunkDict, workDir string, fs
 		ChunkDictPath: chunkDict,
 		FsVersion:     fsVersion,
 		WithTarToRafs: true,
+		Features:      []string{"blob-toc"},
 	})
 	require.NoError(t, err)
 
