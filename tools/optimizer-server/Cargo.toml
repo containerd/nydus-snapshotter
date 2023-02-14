@@ -1,0 +1,13 @@
+[package]
+name = "optimizer-server"
+version = "0.1.0"
+edition = "2021"
+description = "Optimizer server to generate accessed files in target mount namespace"
+authors = ["The Nydus Developers"]
+license = "Apache-2.0 OR BSD-3-Clause"
+
+[dependencies]
+clap = "2.33.3"
+lazy_static = "1.4.0"
+libc = "0.2.139"
+nix = "0.19.0"
