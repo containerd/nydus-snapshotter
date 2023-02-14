@@ -55,13 +55,13 @@ clear:
 .PHONY: install
 install:
 	sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
-	sudo mkdir -p /etc/nydus/certs.d
 	sudo install -D -m 755 misc/snapshotter/nydusd-config.fusedev.json /etc/nydus/nydusd-config.fusedev.json
 	sudo install -D -m 755 misc/snapshotter/nydusd-config.fscache.json /etc/nydus/nydusd-config.fscache.json
 	sudo install -D -m 755 misc/snapshotter/config.toml /etc/nydus/config.toml
 	sudo ln -f -s /etc/nydus/nydusd-config.${FS_DRIVER}.json /etc/nydus/nydusd-config.json
 	sudo install -D -m 644 misc/snapshotter/nydus-snapshotter.${FS_DRIVER}.service /etc/systemd/system/nydus-snapshotter.service
 
+	@sudo mkdir -p /etc/nydus/certs.d
 	@if which systemctl; then sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service; sudo systemctl restart nydus-snapshotter; fi
 
 .PHONY: vet
