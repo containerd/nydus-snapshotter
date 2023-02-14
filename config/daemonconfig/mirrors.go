@@ -65,7 +65,6 @@ func makeStringSlice(slice []interface{}, cb func(string) string) ([]string, err
 func parseMirrorsConfigFromToml(b []byte) ([]MirrorConfig, error) {
 	var parsedMirrors []MirrorConfig
 
-	type HostFileConfig = hostFileConfig
 	c := struct {
 		HostConfigs map[string]hostFileConfig `toml:"host"`
 	}{}
