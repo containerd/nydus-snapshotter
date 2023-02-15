@@ -29,7 +29,6 @@ func isSignalKilled(err error) bool {
 type PackOption struct {
 	BuilderPath string
 
-	WithTarToRafs    bool
 	BootstrapPath    string
 	BlobPath         string
 	FsVersion        string
@@ -40,8 +39,9 @@ type PackOption struct {
 	OCIRef           bool
 	AlignedChunk     bool
 	ChunkSize        string
-	Features         []string
 	Timeout          *time.Duration
+
+	Features Features
 }
 
 type MergeOption struct {
@@ -71,11 +71,7 @@ type outputJSON struct {
 	Blobs []string
 }
 
-func Pack(option PackOption) error {
-	if option.OCIRef {
-		return packRef(option)
-	}
-
+func buildPackArgs(option PackOption) []string {
 	if option.FsVersion == "" {
 		option.FsVersion = "6"
 	}
@@ -94,21 +90,20 @@ func Pack(option PackOption) error {
 		option.FsVersion,
 	}
 
-	if len(option.Features) > 0 {
-		args = append(
-			args,
-			"--features",
-			strings.Join(option.Features, ","),
-		)
-	}
-
-	if option.WithTarToRafs {
+	if option.Features.Contains(FeatureTar2Rafs) {
 		args = append(
 			args,
 			"--type",
 			"tar-rafs",
 			"--blob-inline-meta",
 		)
+		if option.FsVersion == "6" {
+			args = append(
+				args,
+				"--features",
+				"blob-toc",
+			)
+		}
 	} else {
 		args = append(
 			args,
@@ -137,6 +132,14 @@ func Pack(option PackOption) error {
 	}
 	args = append(args, option.SourcePath)
 
+	return args
+}
+
+func Pack(option PackOption) error {
+	if option.OCIRef {
+		return packRef(option)
+	}
+
 	ctx := context.Background()
 	var cancel context.CancelFunc
 	if option.Timeout != nil {
@@ -144,6 +147,7 @@ func Pack(option PackOption) error {
 		defer cancel()
 	}
 
+	args := buildPackArgs(option)
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
