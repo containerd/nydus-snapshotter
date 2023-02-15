@@ -843,15 +843,11 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 		return nil, errors.Wrap(err, "read manifest json")
 	}
 
+	// This option needs to be enabled for image scenario.
+	opt.WithTar = true
+
 	// Append bootstrap layer to manifest.
-	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
-		BuilderPath:   opt.BuilderPath,
-		WorkDir:       opt.WorkDir,
-		ChunkDictPath: opt.ChunkDictPath,
-		FsVersion:     opt.FsVersion,
-		OCIRef:        opt.OCIRef,
-		WithTar:       true,
-	})
+	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, opt)
 	if err != nil {
 		return nil, errors.Wrap(err, "merge nydus layers")
 	}
