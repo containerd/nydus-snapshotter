@@ -110,6 +110,9 @@ type UnpackOption struct {
 	BuilderPath string
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
+	// Stream enables streaming mode, which doesn't unpack the blob data to disk,
+	// but setup a http server to serve the blob data.
+	Stream bool
 }
 
 type TOCEntry struct {

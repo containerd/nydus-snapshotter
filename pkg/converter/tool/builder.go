@@ -60,11 +60,12 @@ type MergeOption struct {
 }
 
 type UnpackOption struct {
-	BuilderPath   string
-	BootstrapPath string
-	BlobPath      string
-	TarPath       string
-	Timeout       *time.Duration
+	BuilderPath       string
+	BootstrapPath     string
+	BlobPath          string
+	BackendConfigPath string
+	TarPath           string
+	Timeout           *time.Duration
 }
 
 type outputJSON struct {
@@ -290,7 +291,10 @@ func Unpack(option UnpackOption) error {
 		"--output",
 		option.TarPath,
 	}
-	if option.BlobPath != "" {
+
+	if option.BackendConfigPath != "" {
+		args = append(args, "--backend-config", option.BackendConfigPath)
+	} else if option.BlobPath != "" {
 		args = append(args, "--blob", option.BlobPath)
 	}
 
