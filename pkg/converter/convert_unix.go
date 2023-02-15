@@ -300,13 +300,21 @@ func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOC
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
 // the conversion workflow is finished.
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
+	if opt.FsVersion == "" {
+		opt.FsVersion = "6"
+	}
+
+	builderPath := getBuilder(opt.BuilderPath)
+	opt.features = tool.DetectFeatures(builderPath, []tool.Feature{tool.FeatureTar2Rafs})
+
 	if opt.OCIRef {
-		if opt.FsVersion == "" || opt.FsVersion == "6" {
+		if opt.FsVersion == "6" {
 			return packFromTar(ctx, dest, opt)
 		}
 		return nil, fmt.Errorf("oci ref can only be supported by fs version 6")
 	}
-	if opt.WithTarToRafs {
+
+	if opt.features.Contains(tool.FeatureTar2Rafs) {
 		return packFromTar(ctx, dest, opt)
 	}
 
@@ -354,7 +362,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 
 		go func() {
 			err := tool.Pack(tool.PackOption{
-				BuilderPath: getBuilder(opt.BuilderPath),
+				BuilderPath: builderPath,
 
 				BlobPath:         blobPath,
 				FsVersion:        opt.FsVersion,
@@ -364,8 +372,9 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 				AlignedChunk:     opt.AlignedChunk,
 				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
-				Features:         opt.Features,
 				Timeout:          opt.Timeout,
+
+				Features: opt.features,
 			})
 			if err != nil {
 				pw.CloseWithError(errors.Wrapf(err, "convert blob for %s", sourceDir))
@@ -442,23 +451,21 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 
 	eg.Go(func() error {
 		var err error
-		switch {
-		case opt.OCIRef:
+		if opt.OCIRef {
 			err = tool.Pack(tool.PackOption{
 				BuilderPath: getBuilder(opt.BuilderPath),
 
 				OCIRef:     opt.OCIRef,
 				BlobPath:   rafsBlobPath,
 				SourcePath: tarBlobPath,
-				Features:   opt.Features,
 				Timeout:    opt.Timeout,
+
+				Features: opt.features,
 			})
-			return errors.Wrapf(err, "call builder")
-		case opt.WithTarToRafs:
+		} else {
 			err = tool.Pack(tool.PackOption{
 				BuilderPath: getBuilder(opt.BuilderPath),
 
-				WithTarToRafs:    opt.WithTarToRafs,
 				BlobPath:         rafsBlobPath,
 				FsVersion:        opt.FsVersion,
 				SourcePath:       tarBlobPath,
@@ -467,11 +474,10 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 				AlignedChunk:     opt.AlignedChunk,
 				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
-				Features:         opt.Features,
 				Timeout:          opt.Timeout,
+
+				Features: opt.features,
 			})
-		default:
-			return fmt.Errorf("unsupported operation")
 		}
 		if err != nil {
 			// Without handling the returned error because we just only

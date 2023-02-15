@@ -489,10 +489,6 @@ func TestPackRef(t *testing.T) {
 		t.Skip("skip TestPackRef test until new nydus-image/nydusd release")
 	}
 
-	t.Log("Test nydusd(new) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
-
 	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
