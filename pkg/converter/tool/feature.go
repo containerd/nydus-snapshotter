@@ -23,7 +23,7 @@ var currentVersion string
 var currentVersionDetectOnce sync.Once
 var disableTar2Rafs = os.Getenv(envNydusDisableTar2Rafs) != ""
 
-var (
+const (
 	// The option `--type tar-rafs` enables converting OCI tar blob
 	// stream into nydus blob directly, the tar2rafs eliminates the
 	// need to decompress it to a local directory first, thus greatly
@@ -60,6 +60,15 @@ func (features *Features) Remove(feature Feature) {
 	}
 }
 
+func detectVersion(msg []byte) string {
+	re := regexp.MustCompile(`Version:\s*v*(\d+.\d+.\d+)`)
+	matches := re.FindSubmatch(msg)
+	if len(matches) > 1 {
+		return string(matches[1])
+	}
+	return ""
+}
+
 // DetectFeatures returns supported feature list from required feature list.
 func DetectFeatures(builder string, required Features) Features {
 	currentVersionDetectOnce.Do(func() {
@@ -73,8 +82,7 @@ func DetectFeatures(builder string, required Features) Features {
 			return
 		}
 
-		re := regexp.MustCompile(`\d+.\d+.\d+`)
-		currentVersion = string(re.Find(output))
+		currentVersion = detectVersion(output)
 	})
 
 	if currentVersion == "" {
@@ -92,7 +100,7 @@ func DetectFeatures(builder string, required Features) Features {
 		// The feature is supported by current version
 		supported := semver.Compare(requiredVersion, "v"+currentVersion) <= 0
 		if supported {
-			// It is an experimental feture, so we still provide an env
+			// It is an experimental feature, so we still provide an env
 			// variable to allow users to disable it.
 			if feature == FeatureTar2Rafs && disableTar2Rafs {
 				continue
