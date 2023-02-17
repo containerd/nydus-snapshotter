@@ -128,7 +128,7 @@ The Nydus snapshotter will get the new secret and parse the authorization. If yo
 
 ## Metrics
 
-Nydusd records metrics in its own format. The metrics are exported via a HTTP server on top of unix domain socket. Nydus-snapshotter fetches the metrics and convert them in to Prometheus format which is exported via a network address. Nydus-snapshotter by default does not fetch metrics from nydusd. You can enable the nydusd metrics download by assigning an network address to `metrics.address` in nydus-snapshotter's toml [configuration file](../../misc/snapshotter/config.toml).
+Nydusd records metrics in its own format. The metrics are exported via a HTTP server on top of unix domain socket. Nydus-snapshotter fetches the metrics and convert them in to Prometheus format which is exported via a network address. Nydus-snapshotter by default does not fetch metrics from nydusd. You can enable the nydusd metrics download by assigning an network address to `metrics.address` in nydus-snapshotter's toml [configuration file](../misc/snapshotter/config.toml).
 
 ## Diagnose
 
