@@ -42,11 +42,10 @@ version = 2
   runtime_type = "io.containerd.runc.v2"
 
 [plugins."io.containerd.grpc.v1.cri"]
-  sandbox_image = "k8s.gcr.io/pause:3.6"
+  sandbox_image = "registry.k8s.io/pause:3.6"
 ```
 
 With these two configuration files, we can create a kind cluster.
-
 
 ```bash
 $ kind create cluster --config=kind-config.yaml
