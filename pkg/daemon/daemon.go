@@ -514,7 +514,9 @@ func (d *Daemon) Wait() error {
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
 		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
 			log.L.Errorf("failed to process wait, %v", err)
-		} else {
+		} else if d.HostMountpoint() != "" || config.GetFsDriver() != config.FsDriverFscache {
+			// No need to umount if the nydusd never performs mount. In other word, it does not
+			// associate with a host mountpoint.
 			if err := mount.WaitUntilUnmounted(d.HostMountpoint()); err != nil {
 				log.L.WithError(err).Errorf("umount %s", d.HostMountpoint())
 			}
