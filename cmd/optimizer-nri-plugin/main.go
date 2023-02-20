@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/syslog"
 	"os"
 	"path/filepath"
@@ -235,7 +236,7 @@ func main() {
 			})
 			logWriter, err = syslog.New(syslog.LOG_INFO, "optimizer-nri-plugin")
 			if err == nil {
-				log.SetOutput(logWriter)
+				log.SetOutput(io.MultiWriter(os.Stdout, logWriter))
 			}
 
 			if flags.Args.PluginName != "" {
