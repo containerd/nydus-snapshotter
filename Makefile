@@ -92,6 +92,13 @@ install:
 	@sudo mkdir -p /etc/nydus/certs.d
 	@if which systemctl >/dev/null; then sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service; sudo systemctl restart nydus-snapshotter; fi
 
+install-optimizer:
+	sudo install -D -m 755 bin/02-optimizer-nri-plugin /opt/nri/plugins/02-optimizer-nri-plugin
+	sudo install -D -m 755 bin/optimizer-server /usr/local/bin/optimizer-server
+	sudo install -D -m 755 misc/example/02-optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
+
+	@sudo mkdir -p /opt/nri/optimizer/results
+
 .PHONY: vet
 vet:
 	go vet $(PACKAGES) ./tests
