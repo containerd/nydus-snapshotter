@@ -55,6 +55,7 @@ build:
 
 .PHONY: build-optimizer
 build-optimizer:
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/02-optimizer-nri-plugin ./cmd/optimizer-nri-plugin
 	${CARGO} fmt --manifest-path ${OPTIMIZER_SERVER_TOML} -- --check
 	${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} && cp ${OPTIMIZER_SERVER_BIN} ./bin
 	${CARGO} clippy --manifest-path ${OPTIMIZER_SERVER_TOML} --bins -- -Dwarnings
@@ -73,6 +74,7 @@ clear:
 
 .PHONY: clear-optimizer
 clear-optimizer:
+	rm -rf bin/02-optimizer-nri-plugin
 	${CARGO} clean --manifest-path ${OPTIMIZER_SERVER_TOML}
 
 .PHONY: install
