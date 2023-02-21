@@ -76,6 +76,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	// So we can ignore the subscribing error.
 	go func() {
 		if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+			// FIXME: Should clean the daemon record in DB if the nydusd fails starting
 			log.L.Errorf("Nydusd %s probably not started", d.ID())
 			return
 		}

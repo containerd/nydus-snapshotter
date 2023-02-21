@@ -34,6 +34,13 @@ else
 FS_DRIVER = fusedev
 endif
 
+SNAPSHOTTER_CONFIG=/etc/nydus/config.toml
+SOURCE_SNAPSHOTTER_CONFIG=misc/snapshotter/config.toml
+NYDUSD_CONFIG=/etc/nydus/nydusd-config.${FS_DRIVER}.json
+SOURCE_NYDUSD_CONFIG=misc/snapshotter/nydusd-config.${FS_DRIVER}.json
+
+SNAPSHOTTER_SYSTEMD_UNIT_SERVICE=misc/snapshotter/nydus-snapshotter.${FS_DRIVER}.service
+
 LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
 
 .PHONY: build
@@ -54,15 +61,18 @@ clear:
 
 .PHONY: install
 install:
-	sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
-	sudo install -D -m 755 misc/snapshotter/nydusd-config.fusedev.json /etc/nydus/nydusd-config.fusedev.json
-	sudo install -D -m 755 misc/snapshotter/nydusd-config.fscache.json /etc/nydus/nydusd-config.fscache.json
-	sudo install -D -m 755 misc/snapshotter/config.toml /etc/nydus/config.toml
-	sudo ln -f -s /etc/nydus/nydusd-config.${FS_DRIVER}.json /etc/nydus/nydusd-config.json
-	sudo install -D -m 644 misc/snapshotter/nydus-snapshotter.${FS_DRIVER}.service /etc/systemd/system/nydus-snapshotter.service
+	@echo "+ $@ bin/containerd-nydus-grpc"
+	@sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
+
+	@if [ ! -e ${NYDUSD_CONFIG} ]; then echo "+ $@ SOURCE_NYDUSD_CONFIG"; sudo install -D -m 664 ${SOURCE_NYDUSD_CONFIG} ${NYDUSD_CONFIG}; fi
+	@if [ ! -e ${SNAPSHOTTER_CONFIG} ]; then echo "+ $@ ${SOURCE_SNAPSHOTTER_CONFIG}"; sudo install -D -m 664 ${SOURCE_SNAPSHOTTER_CONFIG} ${SNAPSHOTTER_CONFIG}; fi
+	@sudo ln -f -s /etc/nydus/nydusd-config.${FS_DRIVER}.json /etc/nydus/nydusd-config.json
+
+	@echo "+ $@ ${SNAPSHOTTER_SYSTEMD_UNIT_SERVICE}"
+	@sudo install -D -m 644 ${SNAPSHOTTER_SYSTEMD_UNIT_SERVICE} /etc/systemd/system/nydus-snapshotter.service
 
 	@sudo mkdir -p /etc/nydus/certs.d
-	@if which systemctl; then sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service; sudo systemctl restart nydus-snapshotter; fi
+	@if which systemctl >/dev/null; then sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service; sudo systemctl restart nydus-snapshotter; fi
 
 .PHONY: vet
 vet:
