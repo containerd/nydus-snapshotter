@@ -38,6 +38,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
+	"github.com/containerd/nydus-snapshotter/pkg/pprof"
 
 	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
@@ -133,6 +134,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 				log.L.WithError(err).Error("Failed to start system controller")
 			}
 		}()
+		pprofAddress := config.SystemControllerPprofAddress()
+		if pprofAddress != "" {
+			if err := pprof.NewPprofHTTPListener(pprofAddress); err != nil {
+				return nil, errors.Wrap(err, "Failed to start pprof HTTP server")
+			}
+		}
 	}
 
 	opts := []filesystem.NewFSOpt{
