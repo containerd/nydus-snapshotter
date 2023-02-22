@@ -87,6 +87,10 @@ func SystemControllerAddress() string {
 	return globalConfig.origin.SystemControllerConfig.Address
 }
 
+func SystemControllerPprofAddress() string {
+	return globalConfig.origin.SystemControllerConfig.DebugConfig.PprofAddress
+}
+
 func GetDaemonProfileCPUDuration() int64 {
 	return globalConfig.origin.SystemControllerConfig.DebugConfig.ProfileDuration
 }
