@@ -113,7 +113,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	// Start to collect metrics.
 	if cfg.MetricsConfig.Address != "" {
 		go func() {
-			if err := metrics.NewHTTPListener(cfg.MetricsConfig.Address); err != nil {
+			if err := metrics.NewMetricsHTTPListener(cfg.MetricsConfig.Address); err != nil {
 				log.L.WithError(err).Error("Failed to start metrics HTTP server")
 			}
 		}()
