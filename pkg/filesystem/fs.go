@@ -332,7 +332,8 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapshots.Usage, error) {
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %s", snpkg.TargetLayerDigestLabel)
+		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %s, digest=%s",
+			snpkg.TargetLayerDigestLabel, blobDigest)
 	}
 	blobID := digest.Hex()
 	return fs.cacheMgr.CacheUsage(ctx, blobID)
@@ -341,7 +342,8 @@ func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapsh
 func (fs *Filesystem) RemoveCache(blobDigest string) error {
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return errors.Wrapf(err, "invalid blob digest from label %s", snpkg.TargetLayerDigestLabel)
+		return errors.Wrapf(err, "invalid blob digest from label %s. digest=%s",
+			snpkg.TargetLayerDigestLabel, blobDigest)
 	}
 	blobID := digest.Hex()
 	if config.GetFsDriver() == config.FsDriverFscache {
