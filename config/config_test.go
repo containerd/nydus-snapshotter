@@ -28,7 +28,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		CleanupOnClose: false,
 		SystemControllerConfig: SystemControllerConfig{
 			Enable:  true,
-			Address: "/var/lib/containerd-nydus/system.sock",
+			Address: "/var/run/containerd-nydus/system.sock",
 			DebugConfig: DebugConfig{
 				ProfileDuration: 5,
 			},

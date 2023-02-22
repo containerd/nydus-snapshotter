@@ -11,7 +11,7 @@ cleanup_on_close = false
 # Snapshotter's debug and trace HTTP server interface
 enable = true
 # Unix domain socket path where system controller is listening on
-address = "/var/lib/containerd-nydus/system.sock"
+address = "/var/run/containerd-nydus/system.sock"
 
 [system.debug]
 # Snapshotter can profile the CPU utilization of each nydusd daemon when it is being started.
