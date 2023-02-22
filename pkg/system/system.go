@@ -113,6 +113,7 @@ type rafsInstanceInfo struct {
 	SnapshotID  string `json:"snapshot_id"`
 	SnapshotDir string `json:"snapshot_dir"`
 	Mountpoint  string `json:"mountpoint"`
+	ImageID     string `json:"image_id"`
 }
 
 func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
@@ -156,7 +157,9 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 				instances[i.SnapshotID] = rafsInstanceInfo{
 					SnapshotID:  i.SnapshotID,
 					SnapshotDir: i.SnapshotDir,
-					Mountpoint:  i.GetMountpoint()}
+					Mountpoint:  i.GetMountpoint(),
+					ImageID:     i.ImageID,
+				}
 			}
 
 			memRSS, err := metrics.GetProcessMemoryRSS(d.Pid())
