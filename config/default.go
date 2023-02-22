@@ -25,7 +25,7 @@ const (
 
 	defaultRootDir                 = "/var/lib/containerd-nydus"
 	oldDefaultRootDir              = "/var/lib/containerd-nydus-grpc"
-	defaultSystemControllerAddress = "/var/lib/containerd-nydus/system.sock"
+	defaultSystemControllerAddress = "/var/run/containerd-nydus/system.sock"
 
 	// Log rotation
 	defaultRotateLogMaxSize    = 200 // 200 megabytes

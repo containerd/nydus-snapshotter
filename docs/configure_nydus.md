@@ -133,4 +133,4 @@ Nydusd records metrics in its own format. The metrics are exported via a HTTP se
 ## Diagnose
 
 A system controller can be ran insides nydus-snapshotter.
-By setting `system.enable` to `true`,  nydus-snapshotter will start a simple HTTP serve on unix domain socket `system.address` path and exports some internal working status to users. The address defaults to `$ROOT/system.sock`
+By setting `system.enable` to `true`,  nydus-snapshotter will start a simple HTTP serve on unix domain socket `system.address` path and exports some internal working status to users. The address defaults to `/var/run/containerd-nydus/system.sock`
