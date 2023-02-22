@@ -39,6 +39,7 @@ const (
 	// it's very helpful to check daemon's record in database.
 	endpointDaemonRecords  string = "/api/v1/daemons/records"
 	endpointDaemonsUpgrade string = "/api/v1/daemons/upgrade"
+	endpointRemoteAuth     string = "/api/v1/remote/auth"
 )
 
 const defaultErrorCode string = "Unknown"
@@ -63,6 +64,12 @@ type upgradeRequest struct {
 	NydusdPath string `json:"nydusd_path"`
 	Version    string `json:"version"`
 	Policy     string `json:"policy"`
+}
+
+type ImagePullCreds struct {
+	Host   string `json:"host"`
+	User   string `json:"user"`
+	Secret string `json:"secret"`
 }
 
 type errorMessage struct {
@@ -152,6 +159,7 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
 	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPut)
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
+	sc.router.HandleFunc(endpointRemoteAuth, sc.storeRemoteAuth()).Methods(http.MethodPut)
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +215,30 @@ func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Req
 	return func(w http.ResponseWriter, r *http.Request) {
 		m := newErrorMessage("not implemented")
 		http.Error(w, m.encode(), http.StatusNotImplemented)
+	}
+}
+
+func (sc *Controller) storeRemoteAuth() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		var statusCode int
+		var creds ImagePullCreds
+
+		defer func() {
+			if err != nil {
+				m := newErrorMessage(err.Error())
+				http.Error(w, m.encode(), statusCode)
+			}
+		}()
+
+		err = json.NewDecoder(r.Body).Decode(&creds)
+		if err != nil {
+			log.L.Errorf("request %v, decode error %s", r, err)
+			statusCode = http.StatusBadRequest
+			return
+		}
+
+		log.L.Infof("Stored registry credential %+v", creds)
 	}
 }
 
