@@ -17,6 +17,8 @@ address = "/var/run/containerd-nydus/system.sock"
 # Snapshotter can profile the CPU utilization of each nydusd daemon when it is being started.
 # This option specifies the profile duration when nydusd is downloading and uncomproessing data.
 daemon_cpu_profile_duration_secs = 5
+# Enable by assigning an address, empty indicates pprof server is disabled
+pprof_address = ""
 
 [daemon]
 nydusd_path = "/usr/local/bin/nydusd"
