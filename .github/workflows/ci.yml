@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.19.1"
+          go-version: "1.20.1"
       - name: Check out code
         uses: actions/checkout@v3
       - name: cache go mod
@@ -27,7 +27,7 @@ jobs:
             ${{ runner.os }}-go
       - name: Build
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
           export PATH=$PATH:$(go env GOPATH)/bin
           make
           make test
@@ -41,7 +41,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.18.6"
+          go-version: "1.19.6"
       - name: Check out code
         uses: actions/checkout@v3
       - name: cache go mod
@@ -76,7 +76,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.18.6"
+          go-version: "1.19.6"
       - name: Check out code
         uses: actions/checkout@v3
       - name: cache go mod
@@ -99,7 +99,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v3
         with:
-          go-version: "1.18.6"
+          go-version: "1.19.6"
       - name: Checkout code
         uses: actions/checkout@v3
       - name: cache go mod
