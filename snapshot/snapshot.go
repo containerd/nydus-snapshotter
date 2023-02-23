@@ -275,7 +275,7 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 	}
 
 	// Blob layers are all committed snapshots
-	if info.Kind == snapshots.KindCommitted {
+	if info.Kind == snapshots.KindCommitted && isNydusDataLayer(info.Labels) {
 		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
 		// Try to get nydus meta layer/snapshot disk usage
 		cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
