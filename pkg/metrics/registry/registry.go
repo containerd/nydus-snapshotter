@@ -23,6 +23,7 @@ func init() {
 		data.TotalHungIO,
 		data.NydusdEventCount,
 		data.NydusdCount,
+		data.NydusdRSS,
 		data.SnapshotEventElapsedHists,
 		data.CacheUsage,
 		data.CPUUsage,

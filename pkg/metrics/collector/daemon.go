@@ -21,6 +21,11 @@ type DaemonInfoCollector struct {
 	value   float64
 }
 
+type DaemonResourceCollector struct {
+	DaemonID string
+	Value    float64
+}
+
 func (d *DaemonEventCollector) Collect() {
 	data.NydusdEventCount.WithLabelValues(string(d.event)).Inc()
 }
@@ -31,4 +36,8 @@ func (d *DaemonInfoCollector) Collect() {
 		return
 	}
 	data.NydusdCount.WithLabelValues(d.Version.PackageVer).Add(d.value)
+}
+
+func (d *DaemonResourceCollector) Collect() {
+	data.NydusdRSS.WithLabelValues(d.DaemonID).Set(d.Value)
 }

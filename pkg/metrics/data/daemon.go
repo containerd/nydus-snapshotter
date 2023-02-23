@@ -6,11 +6,15 @@
 
 package data
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/types/ttl"
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var (
 	nydusdEventLabel   = "nydusd_event"
 	nydusdVersionLabel = "version"
+	daemonIDLabel      = "daemon_id"
 )
 
 var (
@@ -27,5 +31,13 @@ var (
 			Help: "The counts of nydus daemon.",
 		},
 		[]string{nydusdVersionLabel},
+	)
+	NydusdRSS = ttl.NewGaugeVecWithTTL(
+		prometheus.GaugeOpts{
+			Name: "nydusd_rss_kilobytes",
+			Help: "Memory usage (RSS) of nydus daemon.",
+		},
+		[]string{daemonIDLabel},
+		ttl.DefaultTTL,
 	)
 )
