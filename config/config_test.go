@@ -31,6 +31,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			Address: "/var/run/containerd-nydus/system.sock",
 			DebugConfig: DebugConfig{
 				ProfileDuration: 5,
+				PprofAddress:    "",
 			},
 		},
 		DaemonConfig: DaemonConfig{

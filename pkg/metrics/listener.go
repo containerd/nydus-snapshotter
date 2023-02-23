@@ -18,8 +18,8 @@ import (
 // Endpoint for prometheus metrics
 var endpointPromMetrics = "/v1/metrics"
 
-// NewListener creates a new TCP listener bound to the given address.
-func NewHTTPListener(addr string) error {
+// NewMetricsHTTPListener creates a new TCP listener bound to the given address for metrics server.
+func NewMetricsHTTPListener(addr string) error {
 	if addr == "" {
 		return fmt.Errorf("the address for metrics HTTP server is invalid")
 	}

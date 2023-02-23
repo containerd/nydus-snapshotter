@@ -166,7 +166,8 @@ type MetricsConfig struct {
 }
 
 type DebugConfig struct {
-	ProfileDuration int64 `toml:"daemon_cpu_profile_duration_secs"`
+	ProfileDuration int64  `toml:"daemon_cpu_profile_duration_secs"`
+	PprofAddress    string `toml:"pprof_address"`
 }
 
 type SystemControllerConfig struct {
