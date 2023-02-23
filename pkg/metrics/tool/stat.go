@@ -50,13 +50,13 @@ func CalculateCPUUtilization(begin *Stat, now *Stat) (float64, error) {
 	return cpuPercent, nil
 }
 
-func GetProcessMemoryRSS(pid int) (float64, error) {
+func GetProcessMemoryRSSKiloBytes(pid int) (float64, error) {
 	stat, err := GetProcessStat(pid)
 	if err != nil {
 		return 0.0, errors.Wrapf(err, "get process stat")
 	}
 
-	return stat.Rss, nil
+	return stat.Rss * PageSize / 1024, nil
 }
 
 func GetProcessStat(pid int) (*Stat, error) {
