@@ -27,7 +27,7 @@ jobs:
       - name: Setup Kind
         uses: engineerd/setup-kind@v0.5.0
         with:
-          version: v0.16.0
+          version: v0.17.0
           config: tests/e2e/k8s/kind.yaml
       - name: Build nydus snapshotter dev image
         run: |

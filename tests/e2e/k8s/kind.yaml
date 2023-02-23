@@ -10,3 +10,6 @@ nodes:
         containerPath: /etc/containerd/config.toml
       - hostPath: /dev/fuse
         containerPath: /dev/fuse
+  # - role: worker
+  #   image: kindest/node:v1.26.0
+
