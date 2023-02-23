@@ -162,7 +162,7 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 				}
 			}
 
-			memRSS, err := metrics.GetProcessMemoryRSS(d.Pid())
+			memRSS, err := metrics.GetProcessMemoryRSSKiloBytes(d.Pid())
 			if err != nil {
 				log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
 			}
