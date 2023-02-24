@@ -35,8 +35,6 @@ nydusd_config = "/etc/nydus/nydusd-config.fusedev.json"
 threads_number = 4
 
 [log]
-# Print logs to stdout rather than logging files
-log_to_stdout = false
 # Snapshotter's log level
 level = "info"
 log_rotation_compress = true
