@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.4
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.43
-	github.com/containerd/containerd v1.6.17
+	github.com/containerd/containerd v1.6.18
 	github.com/containerd/continuity v0.3.0
 	github.com/containerd/fifo v1.0.0
 	github.com/containerd/nri v0.2.0
