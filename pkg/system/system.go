@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -117,6 +118,10 @@ type rafsInstanceInfo struct {
 }
 
 func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
+	if err := os.MkdirAll(filepath.Dir(sock), os.ModePerm); err != nil {
+		return nil, err
+	}
+
 	if err := os.Remove(sock); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err
