@@ -181,7 +181,6 @@ data:
     log_rotation_max_backups = 5
     # In unit MB(megabytes)
     log_rotation_max_size = 1
-    log_to_stdout = false
 
     [remote]
     convert_vpc_registry = false
