@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/file"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 )
@@ -32,17 +33,6 @@ type hostFileConfig struct {
 	HealthCheckInterval int    `toml:"health_check_interval,omitempty"`
 	FailureLimit        uint8  `toml:"failure_limit,omitempty"`
 	PingURL             string `toml:"ping_url,omitempty"`
-}
-
-func isDirExisted(path string) (bool, error) {
-	s, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return s.IsDir(), nil
 }
 
 func makeStringSlice(slice []interface{}, cb func(string) string) ([]string, error) {
@@ -136,7 +126,7 @@ func LoadMirrorsConfig(mirrorsConfigDir string) ([]MirrorConfig, error) {
 	if mirrorsConfigDir == "" {
 		return mirrors, nil
 	}
-	dirExisted, err := isDirExisted(mirrorsConfigDir)
+	dirExisted, err := file.IsDirExisted(mirrorsConfigDir)
 	if err != nil {
 		return nil, err
 	}
