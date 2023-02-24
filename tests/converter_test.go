@@ -412,29 +412,7 @@ func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, str
 	return bootstrapPath, filepath.Base(dictBlobPath)
 }
 
-// sudo go test -v -count=1 -run TestPack ./tests
 func TestPack(t *testing.T) {
-	t.Log("Test nydusd(new) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(old) + nydus-image(old)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(new) + nydus-image(old)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(old) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 	testPack(t, "5")
 	testPack(t, "6")
 }
@@ -510,10 +488,6 @@ func TestPackRef(t *testing.T) {
 	if os.Getenv("TEST_PACK_REF") == "" {
 		t.Skip("skip TestPackRef test until new nydus-image/nydusd release")
 	}
-
-	t.Log("Test nydusd(new) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 
 	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)

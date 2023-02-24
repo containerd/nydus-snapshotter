@@ -40,6 +40,8 @@ type PackOption struct {
 	AlignedChunk     bool
 	ChunkSize        string
 	Timeout          *time.Duration
+
+	Features Features
 }
 
 type MergeOption struct {
@@ -69,13 +71,9 @@ type outputJSON struct {
 	Blobs []string
 }
 
-func Pack(option PackOption) error {
-	if option.OCIRef {
-		return packRef(option)
-	}
-
+func buildPackArgs(option PackOption) []string {
 	if option.FsVersion == "" {
-		option.FsVersion = "5"
+		option.FsVersion = "6"
 	}
 
 	args := []string{
@@ -86,14 +84,37 @@ func Pack(option PackOption) error {
 		"fs",
 		"--blob",
 		option.BlobPath,
-		"--source-type",
-		"directory",
 		"--whiteout-spec",
 		"none",
 		"--fs-version",
 		option.FsVersion,
-		"--inline-bootstrap",
 	}
+
+	if option.Features.Contains(FeatureTar2Rafs) {
+		args = append(
+			args,
+			"--type",
+			"tar-rafs",
+			"--blob-inline-meta",
+		)
+		if option.FsVersion == "6" {
+			args = append(
+				args,
+				"--features",
+				"blob-toc",
+			)
+		}
+	} else {
+		args = append(
+			args,
+			"--source-type",
+			"directory",
+			// Sames with `--blob-inline-meta`, it's used for compatibility
+			// with the old nydus-image builder.
+			"--inline-bootstrap",
+		)
+	}
+
 	if option.ChunkDictPath != "" {
 		args = append(args, "--chunk-dict", fmt.Sprintf("bootstrap=%s", option.ChunkDictPath))
 	}
@@ -111,6 +132,14 @@ func Pack(option PackOption) error {
 	}
 	args = append(args, option.SourcePath)
 
+	return args
+}
+
+func Pack(option PackOption) error {
+	if option.OCIRef {
+		return packRef(option)
+	}
+
 	ctx := context.Background()
 	var cancel context.CancelFunc
 	if option.Timeout != nil {
@@ -118,6 +147,7 @@ func Pack(option PackOption) error {
 		defer cancel()
 	}
 
+	args := buildPackArgs(option)
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
