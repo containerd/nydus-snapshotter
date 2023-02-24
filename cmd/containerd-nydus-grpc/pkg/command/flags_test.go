@@ -20,7 +20,7 @@ func TestNewFlags(t *testing.T) {
 		err := i.Apply(set)
 		assert.Nil(t, err)
 	}
-	err := set.Parse([]string{"--config-path", "/etc/testconfig", "--root", "/root"})
+	err := set.Parse([]string{"--config-path", "/etc/testconfig", "--root", "/root", "--log-level", "info"})
 	assert.Nil(t, err)
 	assert.Equal(t, flags.Args.NydusdConfigPath, "/etc/testconfig")
 	assert.Equal(t, flags.Args.LogLevel, "info")
