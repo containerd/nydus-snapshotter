@@ -16,6 +16,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/file"
 )
 
 func init() {
@@ -246,6 +247,16 @@ func ValidateConfig(c *SnapshotterConfig) error {
 
 	if !c.CacheManagerConfig.Disable && c.CacheManagerConfig.CacheDir == "" {
 		return errors.Wrapf(errdefs.ErrInvalidArgument, "cache directory is empty")
+	}
+
+	if c.RemoteConfig.MirrorsConfig.Dir != "" {
+		dirExisted, err := file.IsDirExisted(c.RemoteConfig.MirrorsConfig.Dir)
+		if err != nil {
+			return err
+		}
+		if !dirExisted {
+			return errors.Errorf("mirrors config directory %s is not existed", c.RemoteConfig.MirrorsConfig.Dir)
+		}
 	}
 
 	return nil
