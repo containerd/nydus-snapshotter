@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
 // Default interval to determine a hung IO.
@@ -100,6 +101,23 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 	}
 }
 
+func (s *Server) CollectDaemonResourceMetrics(ctx context.Context) {
+	// Collect daemon resource usage metrics.
+	daemons := s.pm.ListDaemons()
+	var daemonResource collector.DaemonResourceCollector
+	for _, d := range daemons {
+
+		memRSS, err := tool.GetProcessMemoryRSSKiloBytes(d.Pid())
+		if err != nil {
+			log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
+		}
+
+		daemonResource.DaemonID = d.ID()
+		daemonResource.Value = memRSS
+		daemonResource.Collect()
+	}
+}
+
 func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	// Collect inflight metrics from daemons.
 	daemons := s.pm.ListDaemons()
@@ -136,6 +154,7 @@ outer:
 			if config.GetFsDriver() != config.FsDriverFscache {
 				s.CollectFsMetrics(ctx)
 			}
+			s.CollectDaemonResourceMetrics(ctx)
 			// Collect snapshotter metrics.
 			s.snCollector.Collect()
 		case <-InflightTimer.C:
