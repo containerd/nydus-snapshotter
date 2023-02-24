@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -80,6 +81,20 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 	}
 
 	A.EqualValues(cfg, &exampleConfig)
+
+	var args = command.Args{}
+	args.RootDir = "/var/lib/containerd/nydus"
+	exampleConfig.Root = "/var/lib/containerd/nydus"
+	err = ParseParameters(&args, cfg)
+	A.NoError(err)
+	A.EqualValues(cfg, &exampleConfig)
+
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, false)
+
+	args.LogToStdout = true
+	err = ParseParameters(&args, cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, true)
 
 	err = ProcessConfigurations(cfg)
 	A.NoError(err)
