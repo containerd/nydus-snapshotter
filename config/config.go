@@ -255,32 +255,44 @@ func ValidateConfig(c *SnapshotterConfig) error {
 // Always let options from CLI override those from configuration file.
 func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	// --- essential configuration
-	cfg.Address = args.Address
-	cfg.Root = args.RootDir
+	if args.Address != "" {
+		cfg.Address = args.Address
+	}
+	if args.RootDir != "" {
+		cfg.Root = args.RootDir
+	}
 
 	// Give --shared-daemon higher priority
-	cfg.DaemonMode = args.DaemonMode
+	if args.DaemonMode != "" {
+		cfg.DaemonMode = args.DaemonMode
+	}
 
 	// --- image processor configuration
 	// empty
 
 	// --- daemon configuration
 	daemonConfig := &cfg.DaemonConfig
-	daemonConfig.NydusdConfigPath = args.NydusdConfigPath
+	if args.NydusdConfigPath != "" {
+		daemonConfig.NydusdConfigPath = args.NydusdConfigPath
+	}
 	if args.NydusdPath != "" {
 		daemonConfig.NydusdPath = args.NydusdPath
 	}
 	if args.NydusImagePath != "" {
 		daemonConfig.NydusImagePath = args.NydusImagePath
 	}
-	daemonConfig.FsDriver = args.FsDriver
+	if args.FsDriver != "" {
+		daemonConfig.FsDriver = args.FsDriver
+	}
 
 	// --- cache manager configuration
 	// empty
 
 	// --- logging configuration
 	logConfig := &cfg.LoggingConfig
-	logConfig.LogLevel = args.LogLevel
+	if args.LogLevel != "" {
+		logConfig.LogLevel = args.LogLevel
+	}
 	logConfig.LogToStdout = args.LogToStdout
 
 	// --- remote storage configuration

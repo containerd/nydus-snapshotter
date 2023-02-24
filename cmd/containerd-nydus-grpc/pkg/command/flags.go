@@ -8,16 +8,7 @@
 package command
 
 import (
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
-)
-
-const (
-	defaultAddress           = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultLogLevel          = logrus.InfoLevel
-	defaultRootDir           = "/var/lib/containerd-nydus"
-	defaultDaemonMode string = "multiple"
-	defaultFsDriver   string = "fusedev"
 )
 
 type Args struct {
@@ -48,13 +39,11 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "root",
-			Value:       defaultRootDir,
 			Usage:       "the directory storing snapshotter working states",
 			Destination: &args.RootDir,
 		},
 		&cli.StringFlag{
 			Name:        "address",
-			Value:       defaultAddress,
 			Usage:       "gRPC socket path",
 			Destination: &args.Address,
 		},
@@ -71,19 +60,16 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
-			Value:       defaultDaemonMode,
 			Usage:       "spawning nydusd daemon mode, legal values include \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
-			Value:       defaultFsDriver,
 			Usage:       "fulfill image service based on what fs driver, possible values include \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
 		},
 		&cli.StringFlag{
 			Name:        "log-level",
-			Value:       defaultLogLevel.String(),
 			Usage:       "logging level, possible values \"trace\", \"debug\", \"info\", \"warn\", \"error\"",
 			Destination: &args.LogLevel,
 		},
