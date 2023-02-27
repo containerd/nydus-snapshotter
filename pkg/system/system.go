@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
@@ -50,6 +51,7 @@ const defaultErrorCode string = "Unknown"
 // 3. Rolling update
 // 4. Daemons failures record as metrics
 type Controller struct {
+	fs      *filesystem.Filesystem
 	manager *manager.Manager
 	// httpSever *http.Server
 	addr   *net.UnixAddr
@@ -117,7 +119,7 @@ type rafsInstanceInfo struct {
 	ImageID     string `json:"image_id"`
 }
 
-func NewSystemController(manager *manager.Manager, sock string) (*Controller, error) {
+func NewSystemController(fs *filesystem.Filesystem, manager *manager.Manager, sock string) (*Controller, error) {
 	if err := os.MkdirAll(filepath.Dir(sock), os.ModePerm); err != nil {
 		return nil, err
 	}
@@ -134,6 +136,7 @@ func NewSystemController(manager *manager.Manager, sock string) (*Controller, er
 	}
 
 	sc := Controller{
+		fs:      fs,
 		manager: manager,
 		addr:    addr,
 		router:  mux.NewRouter(),
@@ -293,6 +296,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
 
 	manager := sc.manager
+	fs := sc.fs
 
 	var new daemon.Daemon
 	new.States = d.States
@@ -336,6 +340,8 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 	if err := d.Exit(); err != nil {
 		return errors.Wrap(err, "old daemon exits")
 	}
+
+	fs.TryRetainSharedDaemon(&new)
 
 	if err := new.Start(); err != nil {
 		return errors.Wrap(err, "start file system service")

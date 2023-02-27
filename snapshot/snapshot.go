@@ -39,10 +39,10 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
+	"github.com/containerd/nydus-snapshotter/pkg/system"
 
 	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
-	"github.com/containerd/nydus-snapshotter/pkg/system"
 
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
@@ -122,24 +122,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}()
 	}
 
-	if config.IsSystemControllerEnabled() {
-		systemController, err := system.NewSystemController(manager, config.SystemControllerAddress())
-		if err != nil {
-			return nil, errors.Wrap(err, "create system controller")
-		}
-		go func() {
-			if err := systemController.Run(); err != nil {
-				log.L.WithError(err).Error("Failed to start system controller")
-			}
-		}()
-		pprofAddress := config.SystemControllerPprofAddress()
-		if pprofAddress != "" {
-			if err := pprof.NewPprofHTTPListener(pprofAddress); err != nil {
-				return nil, errors.Wrap(err, "Failed to start pprof HTTP server")
-			}
-		}
-	}
-
 	opts := []filesystem.NewFSOpt{
 		filesystem.WithManager(manager),
 		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
@@ -167,6 +149,24 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
+	}
+
+	if config.IsSystemControllerEnabled() {
+		systemController, err := system.NewSystemController(nydusFs, manager, config.SystemControllerAddress())
+		if err != nil {
+			return nil, errors.Wrap(err, "create system controller")
+		}
+		go func() {
+			if err := systemController.Run(); err != nil {
+				log.L.WithError(err).Error("Failed to start system controller")
+			}
+		}()
+		pprofAddress := config.SystemControllerPprofAddress()
+		if pprofAddress != "" {
+			if err := pprof.NewPprofHTTPListener(pprofAddress); err != nil {
+				return nil, errors.Wrap(err, "Failed to start pprof HTTP server")
+			}
+		}
 	}
 
 	// With fuse driver enabled and a fuse daemon configuration with "localfs"
