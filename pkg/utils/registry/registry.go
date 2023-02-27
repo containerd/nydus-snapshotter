@@ -7,6 +7,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -74,7 +75,8 @@ func AuthnTransport(ref name.Reference, tr http.RoundTripper, keychain authn.Key
 	errCh := make(chan error)
 	var rTr http.RoundTripper
 	go func() {
-		rTr, err = transport.New(
+		rTr, err = transport.NewWithContext(
+			context.TODO(),
 			ref.Context().Registry,
 			auth,
 			tr,
