@@ -99,21 +99,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 		d.Unlock()
 
-		if d.Supervisor == nil {
-			return
-		}
-
-		su := d.Supervisor
-		err = su.FetchDaemonStates(func() error {
-			if err := d.SendStates(); err != nil {
-				return errors.Wrapf(err, "send daemon %s states", d.ID())
-			}
-			return nil
-		})
-		if err != nil {
-			log.L.Errorf("send states")
-			return
-		}
+		d.SendStates()
 	}()
 
 	return nil

@@ -211,23 +211,7 @@ func (d *Daemon) SharedMount(rafs *Rafs) error {
 		return errors.Wrapf(err, "mount instance %s", rafs.SnapshotID)
 	}
 
-	defer func() {
-		su := d.Supervisor
-		if su != nil {
-			// TODO: This should be optional by checking snapshotter's configuration.
-			// FIXME: Is it possible the states are overwritten during two API mounts.
-			// FIXME: What if nydusd does not support sending states.
-			err = su.FetchDaemonStates(func() error {
-				if err := d.SendStates(); err != nil {
-					return errors.Wrapf(err, "send daemon %s states", d.ID())
-				}
-				return nil
-			})
-			if err != nil {
-				log.L.Warnf("Daemon %s does not support sending states, %v", d.ID(), err)
-			}
-		}
-	}()
+	defer d.SendStates()
 
 	if d.States.FsDriver == config.FsDriverFscache {
 		if err := d.sharedErofsMount(rafs); err != nil {
@@ -265,6 +249,8 @@ func (d *Daemon) SharedUmount(rafs *Rafs) error {
 	if err != nil {
 		return errors.Wrapf(err, "umount instance %s", rafs.SnapshotID)
 	}
+
+	defer d.SendStates()
 
 	if d.States.FsDriver == config.FsDriverFscache {
 		if err := d.sharedErofsUmount(rafs); err != nil {
@@ -357,7 +343,25 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 	return nil
 }
 
-func (d *Daemon) SendStates() error {
+func (d *Daemon) SendStates() {
+	su := d.Supervisor
+	if su != nil {
+		// TODO: This should be optional by checking snapshotter's configuration.
+		// FIXME: Is it possible the states are overwritten during two API mounts.
+		// FIXME: What if nydusd does not support sending states.
+		err := su.FetchDaemonStates(func() error {
+			if err := d.doSendStates(); err != nil {
+				return errors.Wrapf(err, "send daemon %s states", d.ID())
+			}
+			return nil
+		})
+		if err != nil {
+			log.L.Warnf("Daemon %s does not support sending states, %v", d.ID(), err)
+		}
+	}
+}
+
+func (d *Daemon) doSendStates() error {
 	c, err := d.GetClient()
 	if err != nil {
 		return errors.Wrapf(err, "send states %s", d.ID())

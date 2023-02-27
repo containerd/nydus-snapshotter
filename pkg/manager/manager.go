@@ -566,19 +566,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 			}
 
 			// Snapshotter's lost the daemons' states after exit, refetch them.
-			su := d.Supervisor
-			if su != nil {
-				err = su.FetchDaemonStates(func() error {
-					if err := d.SendStates(); err != nil {
-						return errors.Wrapf(err, "send daemon %s states", d.ID())
-					}
-					return nil
-				})
-				if err != nil {
-					log.L.Errorf("Send daemon %s states", d.ID())
-					return
-				}
-			}
+			d.SendStates()
 		}()
 
 		return nil
