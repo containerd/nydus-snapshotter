@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -300,6 +301,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 
 	var new daemon.Daemon
 	new.States = d.States
+	new.Supervisor = d.Supervisor
 	new.CloneInstances(d)
 
 	s := path.Base(d.GetAPISock())
@@ -314,6 +316,11 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 	cmd, err := manager.BuildDaemonCommand(&new, c.NydusdPath, true)
 	if err != nil {
 		return err
+	}
+
+	su := manager.SupervisorSet.GetSupervisor(d.ID())
+	if err := su.SendStatesTimeout(time.Second * 10); err != nil {
+		return errors.Wrap(err, "Send states")
 	}
 
 	if err := cmd.Start(); err != nil {
