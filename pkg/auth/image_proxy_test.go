@@ -17,15 +17,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+
+	runtime_alpha "github.com/containerd/containerd/third_party/k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
 
 type MockImageService struct {
-	runtime.UnimplementedImageServiceServer
+	runtime_alpha.UnimplementedImageServiceServer
 }
 
-func (*MockImageService) PullImage(ctx context.Context, req *runtime.PullImageRequest) (*runtime.PullImageResponse, error) {
-	return &runtime.PullImageResponse{}, nil
+func (*MockImageService) PullImage(ctx context.Context, req *runtime_alpha.PullImageRequest) (*runtime_alpha.PullImageResponse, error) {
+	return &runtime_alpha.PullImageResponse{}, nil
 }
 
 func TestFromImagePull(t *testing.T) {
@@ -52,7 +53,7 @@ func TestFromImagePull(t *testing.T) {
 	assert.NoError(err)
 
 	server := &MockImageService{}
-	runtime.RegisterImageServiceServer(mockRPC, server)
+	runtime_alpha.RegisterImageServiceServer(mockRPC, server)
 	go mockRPC.Serve(lm)
 	defer lm.Close()
 
@@ -71,12 +72,12 @@ func TestFromImagePull(t *testing.T) {
 	}
 	conn, err := grpc.Dial(dialer.DialAddress(proxySocket), gopts...)
 	assert.NoError(err)
-	criClient := runtime.NewImageServiceClient(conn)
-	ir := &runtime.PullImageRequest{
-		Image: &runtime.ImageSpec{
+	criClient := runtime_alpha.NewImageServiceClient(conn)
+	ir := &runtime_alpha.PullImageRequest{
+		Image: &runtime_alpha.ImageSpec{
 			Image: tagImage,
 		},
-		Auth: &runtime.AuthConfig{
+		Auth: &runtime_alpha.AuthConfig{
 			Username: "test",
 			Password: "passwd",
 		},
@@ -95,11 +96,11 @@ func TestFromImagePull(t *testing.T) {
 
 	// should work with digest
 	digestImage := "docker.io/library/busybox@sha256:7cc4b5aefd1d0cadf8d97d4350462ba51c694ebca145b08d7d41b41acc8db5aa"
-	ir = &runtime.PullImageRequest{
-		Image: &runtime.ImageSpec{
+	ir = &runtime_alpha.PullImageRequest{
+		Image: &runtime_alpha.ImageSpec{
 			Image: digestImage,
 		},
-		Auth: &runtime.AuthConfig{
+		Auth: &runtime_alpha.AuthConfig{
 			Username: "digest",
 			Password: "dpwd",
 		},

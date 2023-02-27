@@ -16,12 +16,13 @@ import (
 	"github.com/containerd/containerd/pkg/dialer"
 	"github.com/containerd/containerd/reference"
 	distribution "github.com/containerd/containerd/reference/docker"
-	"github.com/containerd/stargz-snapshotter/service/keychain/cri"
+	"github.com/containerd/stargz-snapshotter/service/keychain/crialpha"
 	"github.com/containerd/stargz-snapshotter/service/resolver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+
+	runtime_alpha "github.com/containerd/containerd/third_party/k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 )
 
 const DefaultImageServiceAddress = "/run/containerd/containerd.sock"
@@ -34,7 +35,7 @@ func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress st
 	if imageServiceAddress != "" {
 		criAddr = imageServiceAddress
 	}
-	connectCRI := func() (runtime.ImageServiceClient, error) {
+	connectCRI := func() (runtime_alpha.ImageServiceClient, error) {
 		// TODO: make gRPC options configurable from config.toml
 		backoffConfig := backoff.DefaultConfig
 		backoffConfig.MaxDelay = 3 * time.Second
@@ -52,12 +53,12 @@ func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress st
 		if err != nil {
 			return nil, err
 		}
-		return runtime.NewImageServiceClient(conn), nil
+		return runtime_alpha.NewImageServiceClient(conn), nil
 	}
 
-	var criServer runtime.ImageServiceServer
-	Cred, criServer = cri.NewCRIKeychain(ctx, connectCRI)
-	runtime.RegisterImageServiceServer(rpc, criServer)
+	var criAlphaServer runtime_alpha.ImageServiceServer
+	Cred, criAlphaServer = crialpha.NewCRIAlphaKeychain(ctx, connectCRI)
+	runtime_alpha.RegisterImageServiceServer(rpc, criAlphaServer)
 	log.G(ctx).WithField("target-image-service", criAddr).Info("setup image proxy keychain")
 }
 
