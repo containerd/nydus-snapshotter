@@ -55,7 +55,7 @@ type Filesystem struct {
 	rootMountpoint       string
 }
 
-func (fs *Filesystem) tryRetainSharedDaemon(d *daemon.Daemon) {
+func (fs *Filesystem) TryRetainSharedDaemon(d *daemon.Daemon) {
 	// FsDriver can be changed between two startups.
 	if d.HostMountpoint() == fs.rootMountpoint || config.GetFsDriver() == config.FsDriverFscache {
 		fs.sharedDaemon = d
@@ -110,13 +110,13 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 
 		// Found shared daemon
 		// Fscache userspace daemon has no host mountpoint.
-		fs.tryRetainSharedDaemon(d)
+		fs.TryRetainSharedDaemon(d)
 
 	}
 
 	for _, d := range liveDaemons {
 		// Found shared daemon
-		fs.tryRetainSharedDaemon(d)
+		fs.TryRetainSharedDaemon(d)
 	}
 
 	return &fs, nil
