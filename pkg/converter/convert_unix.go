@@ -725,9 +725,20 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 		if opt.OCIRef {
 			tr = io.NopCloser(rdr)
 		} else {
-			tr, err = compression.DecompressStream(rdr)
-			if err != nil {
-				return nil, errors.Wrap(err, "decompress blob stream")
+			br := newBufferedReader(rdr)
+			// 10 bytes is enough to detect compression type.
+			bs, err := br.Peek(10)
+			if err != nil && err != io.EOF {
+				return nil, err
+			}
+			compType := compression.DetectCompression(bs)
+			if compType == compression.Gzip {
+				tr = io.NopCloser(br)
+			} else {
+				tr, err = compression.DecompressStream(br)
+				if err != nil {
+					return nil, errors.Wrap(err, "decompress blob stream")
+				}
 			}
 		}
 
