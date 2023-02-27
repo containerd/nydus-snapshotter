@@ -391,6 +391,10 @@ func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	return m.UpdateDaemonNoLock(daemon)
+}
+
+func (m *Manager) UpdateDaemonNoLock(daemon *daemon.Daemon) error {
 	if old := m.daemonStates.GetByDaemonID(daemon.ID(), nil); old == nil {
 		return errdefs.ErrNotFound
 	}

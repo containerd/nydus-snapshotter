@@ -347,9 +347,11 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 
 	log.L.Infof("Started service of upgraded daemon on socket %s", new.GetAPISock())
 
-	if err := manager.UpdateDaemon(&new); err != nil {
+	if err := manager.UpdateDaemonNoLock(&new); err != nil {
 		return err
 	}
+
+	log.L.Infof("Upgraded daemon success on socket %s", new.GetAPISock())
 
 	return nil
 }
