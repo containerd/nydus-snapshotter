@@ -24,7 +24,6 @@ const (
 	nydusImageBinaryName         string = "nydus-image"
 
 	defaultRootDir                 = "/var/lib/containerd-nydus"
-	oldDefaultRootDir              = "/var/lib/containerd-nydus-grpc"
 	defaultSystemControllerAddress = "/var/run/containerd-nydus/system.sock"
 
 	// Log rotation

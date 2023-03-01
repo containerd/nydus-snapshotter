@@ -119,8 +119,9 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 	return nil
 }
 
-// Unpack a Nydus formatted tar stream into a directory.
-func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt) error {
+// unpackNydusBlob unpacks a Nydus formatted tar stream into a directory.
+// unpackBlob indicates whether to unpack blob data.
+func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt, unpackBlob bool) error {
 	boot, err := os.OpenFile(bootDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return errors.Wrapf(err, "write to bootstrap %s", bootDst)
@@ -131,20 +132,22 @@ func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt) error {
 		return errors.Wrap(err, "unpack bootstrap from nydus")
 	}
 
-	blob, err := os.OpenFile(blobDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return errors.Wrapf(err, "write to blob %s", blobDst)
-	}
-	defer blob.Close()
+	if unpackBlob {
+		blob, err := os.OpenFile(blobDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			return errors.Wrapf(err, "write to blob %s", blobDst)
+		}
+		defer blob.Close()
 
-	if _, err = UnpackEntry(ra, EntryBlob, blob); err != nil {
-		return errors.Wrap(err, "unpack blob from nydus")
+		if _, err = UnpackEntry(ra, EntryBlob, blob); err != nil {
+			return errors.Wrap(err, "unpack blob from nydus")
+		}
 	}
 
 	return nil
 }
 
-func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.Reader, io.Reader) error) error {
+func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.Reader, *tar.Header) error) error {
 	const headerSize = 512
 
 	if headerSize > ra.Size() {
@@ -180,10 +183,9 @@ func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.
 			if err != nil {
 				return errors.Wrap(err, "seek target data offset")
 			}
-			headerReader := io.NewSectionReader(reader, cur+hdr.Size, headerSize)
 			dataReader := io.NewSectionReader(reader, cur-hdr.Size, hdr.Size)
 
-			if err := handle(dataReader, headerReader); err != nil {
+			if err := handle(dataReader, hdr); err != nil {
 				return errors.Wrap(err, "handle target data")
 			}
 
@@ -199,11 +201,11 @@ func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.
 	return errors.Wrapf(ErrNotFound, "can't find target %s by seeking tar", targetName)
 }
 
-func seekFileByTOC(ra content.ReaderAt, targetName string, handle func(io.Reader, io.Reader) error) (*TOCEntry, error) {
+func seekFileByTOC(ra content.ReaderAt, targetName string, handle func(io.Reader, *tar.Header) error) (*TOCEntry, error) {
 	entrySize := 128
 	var tocEntry *TOCEntry
 
-	err := seekFileByTarHeader(ra, EntryTOC, func(tocEntryDataReader io.Reader, tarHeaderReader io.Reader) error {
+	err := seekFileByTarHeader(ra, EntryTOC, func(tocEntryDataReader io.Reader, _ *tar.Header) error {
 		entryData, err := io.ReadAll(tocEntryDataReader)
 		if err != nil {
 			return errors.Wrap(err, "read toc entries")
@@ -265,7 +267,7 @@ func seekFileByTOC(ra content.ReaderAt, targetName string, handle func(io.Reader
 //
 // `data | tar_header | ... | data | tar_header | [toc_entry | ... | toc_entry | tar_header]`
 func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOCEntry, error) {
-	handle := func(dataReader io.Reader, tarHeaderReader io.Reader) error {
+	handle := func(dataReader io.Reader, _ *tar.Header) error {
 		// Copy data to provided target writer.
 		if _, err := io.Copy(target, dataReader); err != nil {
 			return errors.Wrap(err, "copy target data to reader")
@@ -274,6 +276,10 @@ func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOC
 		return nil
 	}
 
+	return seekFile(ra, targetName, handle)
+}
+
+func seekFile(ra content.ReaderAt, targetName string, handle func(io.Reader, *tar.Header) error) (*TOCEntry, error) {
 	// Try seek target data by TOC.
 	entry, err := seekFileByTOC(ra, targetName, handle)
 	if err != nil {
@@ -300,11 +306,22 @@ func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOC
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
 // the conversion workflow is finished.
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
+	if opt.FsVersion == "" {
+		opt.FsVersion = "6"
+	}
+
+	builderPath := getBuilder(opt.BuilderPath)
+	opt.features = tool.DetectFeatures(builderPath, []tool.Feature{tool.FeatureTar2Rafs})
+
 	if opt.OCIRef {
-		if opt.FsVersion == "" || opt.FsVersion == "6" {
-			return packRef(ctx, dest, opt)
+		if opt.FsVersion == "6" {
+			return packFromTar(ctx, dest, opt)
 		}
 		return nil, fmt.Errorf("oci ref can only be supported by fs version 6")
+	}
+
+	if opt.features.Contains(tool.FeatureTar2Rafs) {
+		return packFromTar(ctx, dest, opt)
 	}
 
 	workDir, err := ensureWorkDir(opt.WorkDir)
@@ -351,7 +368,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 
 		go func() {
 			err := tool.Pack(tool.PackOption{
-				BuilderPath: getBuilder(opt.BuilderPath),
+				BuilderPath: builderPath,
 
 				BlobPath:         blobPath,
 				FsVersion:        opt.FsVersion,
@@ -362,6 +379,8 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
 				Timeout:          opt.Timeout,
+
+				Features: opt.features,
 			})
 			if err != nil {
 				pw.CloseWithError(errors.Wrapf(err, "convert blob for %s", sourceDir))
@@ -381,7 +400,7 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	return wc, nil
 }
 
-func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
+func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure work directory")
@@ -392,54 +411,21 @@ func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteClose
 		}
 	}()
 
-	blobMetaPath := filepath.Join(workDir, "blob.meta")
-	blobMetaFifo, err := fifo.OpenFifo(ctx, blobMetaPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+	rafsBlobPath := filepath.Join(workDir, "blob.rafs")
+	rafsBlobFifo, err := fifo.OpenFifo(ctx, rafsBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create fifo file")
 	}
 
-	sourcePath := filepath.Join(workDir, "blob.targz")
-	sourceFifo, err := fifo.OpenFifo(ctx, sourcePath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0644)
+	tarBlobPath := filepath.Join(workDir, "blob.targz")
+	tarBlobFifo, err := fifo.OpenFifo(ctx, tarBlobPath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0644)
 	if err != nil {
-		defer blobMetaFifo.Close()
+		defer rafsBlobFifo.Close()
 		return nil, errors.Wrapf(err, "create fifo file")
 	}
 
 	pr, pw := io.Pipe()
-
 	eg := errgroup.Group{}
-
-	eg.Go(func() error {
-		defer sourceFifo.Close()
-		buffer := bufPool.Get().(*[]byte)
-		defer bufPool.Put(buffer)
-		if _, err := io.CopyBuffer(sourceFifo, pr, *buffer); err != nil {
-			return errors.Wrapf(err, "copy targz to fifo")
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		defer blobMetaFifo.Close()
-		buffer := bufPool.Get().(*[]byte)
-		defer bufPool.Put(buffer)
-		if _, err := io.CopyBuffer(dest, blobMetaFifo, *buffer); err != nil {
-			return errors.Wrapf(err, "copy blob meta fifo to nydus blob")
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		err := tool.Pack(tool.PackOption{
-			BuilderPath: getBuilder(opt.BuilderPath),
-
-			OCIRef:     opt.OCIRef,
-			BlobPath:   blobMetaPath,
-			SourcePath: sourcePath,
-			Timeout:    opt.Timeout,
-		})
-		return errors.Wrapf(err, "call builder")
-	})
 
 	wc := newWriteCloser(pw, func() error {
 		defer os.RemoveAll(workDir)
@@ -449,13 +435,71 @@ func packRef(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteClose
 		return nil
 	})
 
+	eg.Go(func() error {
+		defer tarBlobFifo.Close()
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(tarBlobFifo, pr, *buffer); err != nil {
+			return errors.Wrapf(err, "copy targz to fifo")
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		defer rafsBlobFifo.Close()
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(dest, rafsBlobFifo, *buffer); err != nil {
+			return errors.Wrapf(err, "copy blob meta fifo to nydus blob")
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		var err error
+		if opt.OCIRef {
+			err = tool.Pack(tool.PackOption{
+				BuilderPath: getBuilder(opt.BuilderPath),
+
+				OCIRef:     opt.OCIRef,
+				BlobPath:   rafsBlobPath,
+				SourcePath: tarBlobPath,
+				Timeout:    opt.Timeout,
+
+				Features: opt.features,
+			})
+		} else {
+			err = tool.Pack(tool.PackOption{
+				BuilderPath: getBuilder(opt.BuilderPath),
+
+				BlobPath:         rafsBlobPath,
+				FsVersion:        opt.FsVersion,
+				SourcePath:       tarBlobPath,
+				ChunkDictPath:    opt.ChunkDictPath,
+				PrefetchPatterns: opt.PrefetchPatterns,
+				AlignedChunk:     opt.AlignedChunk,
+				ChunkSize:        opt.ChunkSize,
+				Compressor:       opt.Compressor,
+				Timeout:          opt.Timeout,
+
+				Features: opt.features,
+			})
+		}
+		if err != nil {
+			// Without handling the returned error because we just only
+			// focus on the command exit status in `tool.Pack`.
+			wc.Close()
+		}
+		return errors.Wrapf(err, "call builder")
+	})
+
 	return wc, nil
 }
 
 func calcBlobTOCDigest(ra content.ReaderAt) (*digest.Digest, error) {
 	digester := digest.Canonical.Digester()
-	if err := seekFileByTarHeader(ra, EntryTOC, func(tocData io.Reader, tarHeader io.Reader) error {
-		if _, err := io.Copy(digester.Hash(), io.MultiReader(tocData, tarHeader)); err != nil {
+	if err := seekFileByTarHeader(ra, EntryTOC, func(tocData io.Reader, _ *tar.Header) error {
+		if _, err := io.Copy(digester.Hash(), tocData); err != nil {
 			return errors.Wrap(err, "calc toc data and header digest")
 		}
 		return nil
@@ -576,7 +620,7 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 	defer os.RemoveAll(workDir)
 
 	bootPath, blobPath := filepath.Join(workDir, EntryBootstrap), filepath.Join(workDir, EntryBlob)
-	if err = unpackNydusBlob(bootPath, blobPath, ra); err != nil {
+	if err = unpackNydusBlob(bootPath, blobPath, ra, !opt.Stream); err != nil {
 		return errors.Wrap(err, "unpack nydus tar")
 	}
 
@@ -587,16 +631,35 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 	}
 	defer blobFifo.Close()
 
+	unpackOpt := tool.UnpackOption{
+		BuilderPath:   getBuilder(opt.BuilderPath),
+		BootstrapPath: bootPath,
+		BlobPath:      blobPath,
+		TarPath:       tarPath,
+		Timeout:       opt.Timeout,
+	}
+
+	if opt.Stream {
+		proxy, err := setupContentStoreProxy(opt.WorkDir, ra)
+		if err != nil {
+			return errors.Wrap(err, "new content store proxy")
+		}
+		defer proxy.close()
+
+		// generate backend config file
+		backendConfigStr := fmt.Sprintf(`{"version":2,"backend":{"type":"http-proxy","http-proxy":{"addr":"%s"}}}`, proxy.socketPath)
+		backendConfigPath := filepath.Join(workDir, "backend-config.json")
+		if err := os.WriteFile(backendConfigPath, []byte(backendConfigStr), 0644); err != nil {
+			return errors.Wrap(err, "write backend config")
+		}
+		unpackOpt.BlobPath = ""
+		unpackOpt.BackendConfigPath = backendConfigPath
+	}
+
 	unpackErrChan := make(chan error)
 	go func() {
 		defer close(unpackErrChan)
-		err := tool.Unpack(tool.UnpackOption{
-			BuilderPath:   getBuilder(opt.BuilderPath),
-			BootstrapPath: bootPath,
-			BlobPath:      blobPath,
-			TarPath:       tarPath,
-			Timeout:       opt.Timeout,
-		})
+		err := tool.Unpack(unpackOpt)
 		if err != nil {
 			blobFifo.Close()
 			unpackErrChan <- err
@@ -805,15 +868,11 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 		return nil, errors.Wrap(err, "read manifest json")
 	}
 
+	// This option needs to be enabled for image scenario.
+	opt.WithTar = true
+
 	// Append bootstrap layer to manifest.
-	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, MergeOption{
-		BuilderPath:   opt.BuilderPath,
-		WorkDir:       opt.WorkDir,
-		ChunkDictPath: opt.ChunkDictPath,
-		FsVersion:     opt.FsVersion,
-		OCIRef:        opt.OCIRef,
-		WithTar:       true,
-	})
+	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, opt)
 	if err != nil {
 		return nil, errors.Wrap(err, "merge nydus layers")
 	}
@@ -986,7 +1045,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	}
 
 	if opt.FsVersion == "" {
-		opt.FsVersion = "5"
+		opt.FsVersion = "6"
 	}
 
 	bootstrapDesc := ocispec.Descriptor{

@@ -180,12 +180,12 @@ func buildOCILowerTar(t *testing.T, n int) (io.ReadCloser, map[string]string) {
 	return pr, fileTree
 }
 
-func buildOCIUpperTar(t *testing.T, teePath string, lowerFileTree map[string]string) (io.ReadCloser, map[string]string) {
+func buildOCIUpperTar(t *testing.T, teePath string, lowerFileTree map[string]string, tarSize int) (io.ReadCloser, map[string]string) {
 	if lowerFileTree == nil {
 		lowerFileTree = map[string]string{}
 	}
 
-	hugeStr := hugeString(3)
+	hugeStr := hugeString(tarSize)
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -293,11 +293,13 @@ func packLayerRef(t *testing.T, gzipSource io.ReadCloser, workDir string) (strin
 	return tarBlobMetaFilePath, blobMetaDigest, gzipBlobDigest
 }
 
-func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt) (string, digest.Digest) {
+func unpackLayer(t *testing.T, workDir string, ra content.ReaderAt, stream bool) (string, digest.Digest) {
 	var data bytes.Buffer
 	writer := io.Writer(&data)
 
-	err := converter.Unpack(context.TODO(), ra, writer, converter.UnpackOption{})
+	err := converter.Unpack(context.TODO(), ra, writer, converter.UnpackOption{
+		Stream: stream,
+	})
 	require.NoError(t, err)
 
 	digester := digest.Canonical.Digester()
@@ -412,29 +414,7 @@ func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, str
 	return bootstrapPath, filepath.Base(dictBlobPath)
 }
 
-// sudo go test -v -count=1 -run TestPack ./tests
 func TestPack(t *testing.T) {
-	t.Log("Test nydusd(new) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(old) + nydus-image(old)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(new) + nydus-image(old)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER_OLD"))
-	testPack(t, "5")
-	testPack(t, "6")
-
-	t.Log("Test nydusd(old) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD_OLD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 	testPack(t, "5")
 	testPack(t, "6")
 }
@@ -445,7 +425,7 @@ func testPack(t *testing.T, fsVersion string) {
 	defer os.RemoveAll(workDir)
 
 	lowerOCITarReader, expectedLowerFileTree := buildOCILowerTar(t, 100)
-	upperOCITarReader, expectedOverlayFileTree := buildOCIUpperTar(t, "", expectedLowerFileTree)
+	upperOCITarReader, expectedOverlayFileTree := buildOCIUpperTar(t, "", expectedLowerFileTree, 3)
 
 	blobDir := filepath.Join(workDir, "blobs")
 	err = os.MkdirAll(blobDir, 0755)
@@ -510,10 +490,6 @@ func TestPackRef(t *testing.T) {
 	if os.Getenv("TEST_PACK_REF") == "" {
 		t.Skip("skip TestPackRef test until new nydus-image/nydusd release")
 	}
-
-	t.Log("Test nydusd(new) + nydus-image(new)")
-	t.Setenv("NYDUS_NYDUSD", os.Getenv("NYDUS_NYDUSD"))
-	t.Setenv("NYDUS_BUILDER", os.Getenv("NYDUS_BUILDER"))
 
 	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)
@@ -587,31 +563,33 @@ func TestPackRef(t *testing.T) {
 
 // sudo go test -v -count=1 -run TestUnpack ./tests
 func TestUnpack(t *testing.T) {
-	testUnpack(t, "5")
-	testUnpack(t, "6")
+	testUnpack(t, "5", 3)
+	testUnpack(t, "6", 3)
 }
 
-func testUnpack(t *testing.T, fsVersion string) {
+func testUnpack(t *testing.T, fsVersion string, tarSize int) {
 	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
 
 	ociTar := filepath.Join(workDir, "oci.tar")
-	ociTarReader, _ := buildOCIUpperTar(t, ociTar, nil)
+	ociTarReader, _ := buildOCIUpperTar(t, ociTar, nil, tarSize)
 	nydusTar, _ := packLayer(t, ociTarReader, "", workDir, fsVersion)
 
 	tarTa, err := local.OpenReader(nydusTar)
 	require.NoError(t, err)
 	defer tarTa.Close()
 
-	_, newTarDigest := unpackLayer(t, workDir, tarTa)
-
 	ociTarReader, err = os.OpenFile(ociTar, os.O_RDONLY, 0644)
 	require.NoError(t, err)
 	ociTarDigest, err := digest.Canonical.FromReader(ociTarReader)
 	require.NoError(t, err)
 
-	require.Equal(t, ociTarDigest, newTarDigest)
+	for _, stream := range []bool{true, false} {
+		tarPath, newTarDigest := unpackLayer(t, workDir, tarTa, stream)
+		os.RemoveAll(tarPath)
+		require.Equal(t, ociTarDigest, newTarDigest)
+	}
 }
 
 type ConvertTestOption struct {

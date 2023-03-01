@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -56,7 +57,7 @@ type PackOption struct {
 	// BuilderPath holds the path of `nydus-image` binary tool.
 	BuilderPath string
 	// FsVersion specifies nydus RAFS format version, possible
-	// values: `5`, `6` (EROFS-compatible), default is `5`.
+	// values: `5`, `6` (EROFS-compatible), default is `6`.
 	FsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
@@ -74,6 +75,10 @@ type PackOption struct {
 	Backend Backend
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
+
+	// Features keeps a feature list supported by newer version of builder,
+	// It is detected automatically, so don't export it.
+	features tool.Features
 }
 
 type MergeOption struct {
@@ -82,7 +87,7 @@ type MergeOption struct {
 	// BuilderPath holds the path of `nydus-image` binary tool.
 	BuilderPath string
 	// FsVersion specifies nydus RAFS format version, possible
-	// values: `5`, `6` (EROFS-compatible), default is `5`.
+	// values: `5`, `6` (EROFS-compatible), default is `6`.
 	FsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
@@ -105,6 +110,9 @@ type UnpackOption struct {
 	BuilderPath string
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
+	// Stream enables streaming mode, which doesn't unpack the blob data to disk,
+	// but setup a http server to serve the blob data.
+	Stream bool
 }
 
 type TOCEntry struct {
