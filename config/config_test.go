@@ -101,3 +101,63 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 
 	A.Equal(GetCacheGCPeriod(), time.Hour*24)
 }
+
+func TestSnapshotterConfig(t *testing.T) {
+	A := assert.New(t)
+
+	var cfg SnapshotterConfig
+	var args command.Args
+
+	// The log_to_stdout is false in toml file without --log-to-stdout flag.
+	// Expected false.
+	cfg.LoggingConfig.LogToStdout = false
+	args.LogToStdoutCount = 0
+	err := ParseParameters(&args, &cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, false)
+
+	// The log_to_stdout is true in toml file without --log-to-stdout flag.
+	// Expected true.
+	// This case is failed.
+	cfg.LoggingConfig.LogToStdout = true
+	args.LogToStdoutCount = 0
+	err = ParseParameters(&args, &cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, true)
+
+	// The log_to_stdout is false in toml file with --log-to-stdout=true.
+	// Expected true (command flag has higher priority).
+	args.LogToStdout = true
+	args.LogToStdoutCount = 1
+	cfg.LoggingConfig.LogToStdout = false
+	err = ParseParameters(&args, &cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, true)
+
+	// The log_to_stdout is true in toml file with --log-to-stdout=true.
+	// Expected true (command flag has higher priority).
+	args.LogToStdout = true
+	args.LogToStdoutCount = 1
+	cfg.LoggingConfig.LogToStdout = true
+	err = ParseParameters(&args, &cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, true)
+
+	// The log_to_stdout is false in toml file with --log-to-stdout=false.
+	// Expected false (command flag has higher priority).
+	args.LogToStdout = false
+	args.LogToStdoutCount = 1
+	cfg.LoggingConfig.LogToStdout = false
+	err = ParseParameters(&args, &cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, false)
+
+	// The log_to_stdout is true in toml file with --log-to-stdout=false.
+	// Expected false (command flag has higher priority).
+	args.LogToStdout = false
+	args.LogToStdoutCount = 1
+	cfg.LoggingConfig.LogToStdout = true
+	err = ParseParameters(&args, &cfg)
+	A.NoError(err)
+	A.EqualValues(cfg.LoggingConfig.LogToStdout, false)
+}

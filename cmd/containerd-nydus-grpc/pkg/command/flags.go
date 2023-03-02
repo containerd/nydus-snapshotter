@@ -22,6 +22,7 @@ type Args struct {
 	DaemonMode            string
 	FsDriver              string
 	LogToStdout           bool
+	LogToStdoutCount      int
 	PrintVersion          bool
 }
 
@@ -77,6 +78,7 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "log-to-stdout",
 			Usage:       "print log messages to STDOUT",
 			Destination: &args.LogToStdout,
+			Count:       &args.LogToStdoutCount,
 		},
 		&cli.StringFlag{
 			Name:        "nydus-image",

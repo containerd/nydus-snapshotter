@@ -304,7 +304,9 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	if args.LogLevel != "" {
 		logConfig.LogLevel = args.LogLevel
 	}
-	logConfig.LogToStdout = args.LogToStdout
+	if args.LogToStdoutCount > 0 {
+		logConfig.LogToStdout = args.LogToStdout
+	}
 
 	// --- remote storage configuration
 	// empty
