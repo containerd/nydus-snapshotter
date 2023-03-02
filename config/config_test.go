@@ -92,6 +92,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 	A.EqualValues(cfg.LoggingConfig.LogToStdout, false)
 
 	args.LogToStdout = true
+	args.LogToStdoutCount = 1
 	err = ParseParameters(&args, cfg)
 	A.NoError(err)
 	A.EqualValues(cfg.LoggingConfig.LogToStdout, true)
