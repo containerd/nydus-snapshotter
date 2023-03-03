@@ -91,6 +91,8 @@ type MergeOption struct {
 	FsVersion string
 	// ChunkDictPath holds the bootstrap path of chunk dict image.
 	ChunkDictPath string
+	// ParentBootstrapPath holds the bootstrap path of parent image.
+	ParentBootstrapPath string
 	// PrefetchPatterns holds file path pattern list want to prefetch.
 	PrefetchPatterns string
 	// WithTar puts bootstrap into a tar stream (no gzip).
