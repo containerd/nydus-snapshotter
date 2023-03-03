@@ -109,7 +109,7 @@ type DaemonConfig struct {
 }
 
 type LoggingConfig struct {
-	LogToStdout         bool
+	LogToStdout         bool   `toml:"log_to_stdout"`
 	LogLevel            string `toml:"level"`
 	LogDir              string `toml:"dir"`
 	RotateLogMaxSize    int    `toml:"log_rotation_max_size"`
