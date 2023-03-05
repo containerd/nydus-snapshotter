@@ -109,7 +109,7 @@ type DaemonConfig struct {
 }
 
 type LoggingConfig struct {
-	LogToStdout         bool
+	LogToStdout         bool   `toml:"log_to_stdout"`
 	LogLevel            string `toml:"level"`
 	LogDir              string `toml:"dir"`
 	RotateLogMaxSize    int    `toml:"log_rotation_max_size"`
@@ -304,7 +304,9 @@ func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
 	if args.LogLevel != "" {
 		logConfig.LogLevel = args.LogLevel
 	}
-	logConfig.LogToStdout = args.LogToStdout
+	if args.LogToStdoutCount > 0 {
+		logConfig.LogToStdout = args.LogToStdout
+	}
 
 	// --- remote storage configuration
 	// empty
