@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
+	"github.com/containerd/nydus-snapshotter/internal/flags"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -83,7 +83,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 
 	A.EqualValues(cfg, &exampleConfig)
 
-	var args = command.Args{}
+	var args = flags.Args{}
 	args.RootDir = "/var/lib/containerd/nydus"
 	exampleConfig.Root = "/var/lib/containerd/nydus"
 	err = ParseParameters(&args, cfg)
@@ -108,7 +108,7 @@ func TestSnapshotterConfig(t *testing.T) {
 	A := assert.New(t)
 
 	var cfg SnapshotterConfig
-	var args command.Args
+	var args flags.Args
 
 	// The log_to_stdout is false in toml file without --log-to-stdout flag.
 	// Expected false.
