@@ -98,6 +98,11 @@ TYPE                            ID                       PLATFORMS      STATUS
 io.containerd.snapshotter.v1    nydus                    -              ok
 ```
 
+## Optimize Nydus Image as per Workload
+
+Nydus usually prefetch image data to local filesystem before a real user on-demand read. It helps to improve the performance and availability. A containerd NRI plugin [container image optimizer](docs/optimize_nydus_image.md) can be used to generate nydus image building suggestions to optimize your nydus image making the nydusd runtime match your workload IO pattern. The optimized nydus image has
+a better performance.
+
 ## Quickly Start Container with Lazy Pulling
 
 ### Start Container on single Node
