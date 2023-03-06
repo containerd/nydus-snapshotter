@@ -8,9 +8,6 @@ package config
 
 import (
 	"os/exec"
-	"path/filepath"
-
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 )
 
 const (
@@ -50,9 +47,6 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	if logConfig.LogLevel == "" {
 		logConfig.LogLevel = DefaultLogLevel
 	}
-	if len(logConfig.LogDir) == 0 {
-		logConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
-	}
 	logConfig.RotateLogMaxSize = defaultRotateLogMaxSize
 	logConfig.RotateLogMaxBackups = defaultRotateLogMaxBackups
 	logConfig.RotateLogMaxAge = defaultRotateLogMaxAge
@@ -70,9 +64,6 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	cacheConfig := &c.CacheManagerConfig
 	if cacheConfig.GCPeriod == "" {
 		cacheConfig.GCPeriod = defaultGCPeriod
-	}
-	if len(cacheConfig.CacheDir) == 0 {
-		cacheConfig.CacheDir = filepath.Join(c.Root, "cache")
 	}
 
 	return c.SetupNydusBinaryPaths()
