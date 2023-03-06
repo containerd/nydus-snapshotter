@@ -196,3 +196,32 @@ func TestMergeConfig(t *testing.T) {
 	A.Equal(snapshotterConfig2.LoggingConfig.LogDir, "")
 	A.Equal(snapshotterConfig2.CacheManagerConfig.CacheDir, "")
 }
+
+func TestProcessConfigurations(t *testing.T) {
+	A := assert.New(t)
+	var defaultSnapshotterConfig SnapshotterConfig
+	var snapshotterConfig1 SnapshotterConfig
+
+	defaultSnapshotterConfig.FillUpWithDefaults()
+
+	MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
+	err := ValidateConfig(&snapshotterConfig1)
+	A.NoError(err)
+	err = ProcessConfigurations(&snapshotterConfig1)
+	A.NoError(err)
+
+	A.Equal(snapshotterConfig1.LoggingConfig.LogDir, filepath.Join(snapshotterConfig1.Root, "logs"))
+	A.Equal(snapshotterConfig1.CacheManagerConfig.CacheDir, filepath.Join(snapshotterConfig1.Root, "cache"))
+
+	var snapshotterConfig2 SnapshotterConfig
+	snapshotterConfig2.Root = "/snapshotter/root"
+
+	MergeConfig(&snapshotterConfig2, &defaultSnapshotterConfig)
+	err = ValidateConfig(&snapshotterConfig2)
+	A.NoError(err)
+	err = ProcessConfigurations(&snapshotterConfig2)
+	A.NoError(err)
+
+	A.Equal(snapshotterConfig2.LoggingConfig.LogDir, filepath.Join(snapshotterConfig2.Root, "logs"))
+	A.Equal(snapshotterConfig2.CacheManagerConfig.CacheDir, filepath.Join(snapshotterConfig2.Root, "cache"))
+}
