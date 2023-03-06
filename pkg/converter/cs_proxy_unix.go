@@ -101,7 +101,8 @@ func contentProxyHandler(ra content.ReaderAt) http.Handler {
 		totalLen  int64
 	)
 	resetReader := func() {
-		seekFile(ra, EntryBlob, func(reader io.Reader, hdr *tar.Header) error {
+		// TODO: Handle error?
+		_, _ = seekFile(ra, EntryBlob, func(reader io.Reader, hdr *tar.Header) error {
 			dataReader, tarHeader = reader, hdr
 			return nil
 		})
@@ -127,7 +128,8 @@ func contentProxyHandler(ra content.ReaderAt) http.Handler {
 				start, wantedLen, err := parseRangeHeader(strings.TrimPrefix(r.Header.Get("Range"), "bytes="), totalLen)
 				if err != nil {
 					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(err.Error()))
+					// TODO: Handle error?
+					_, _ = w.Write([]byte(err.Error()))
 					return
 				}
 
@@ -139,7 +141,8 @@ func contentProxyHandler(ra content.ReaderAt) http.Handler {
 					_, err = io.CopyN(io.Discard, dataReader, start-curPos)
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
-						w.Write([]byte(err.Error()))
+						// TODO: Handle error?
+						_, _ = w.Write([]byte(err.Error()))
 						return
 					}
 					curPos = start
@@ -149,7 +152,8 @@ func contentProxyHandler(ra content.ReaderAt) http.Handler {
 				readLen, err := io.CopyN(w, dataReader, wantedLen)
 				if err != nil && !errors.Is(err, io.EOF) {
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(err.Error()))
+					// TODO: Handle error?
+					_, _ = w.Write([]byte(err.Error()))
 					return
 				}
 				curPos += readLen
