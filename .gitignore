@@ -4,3 +4,4 @@ coverage.txt
 .vscode/
 tests/output/
 smoke.tests
+tools/optimizer-server/target

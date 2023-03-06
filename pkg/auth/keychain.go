@@ -91,7 +91,8 @@ func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyCha
 		return kc
 	}
 
-	kc = FromCRI(host, ref)
+	// TODO: Handle error
+	kc, _ = FromCRI(host, ref)
 	if kc != nil {
 		return kc
 	}
