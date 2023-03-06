@@ -76,18 +76,14 @@ func (c *SnapshotterConfig) SetupNydusBinaryPaths() error {
 	}
 
 	// resolve nydusd path
-	path, err := exec.LookPath(nydusdBinaryName)
-	if err != nil {
-		return err
+	if path, err := exec.LookPath(nydusdBinaryName); err == nil {
+		c.DaemonConfig.NydusdPath = path
 	}
-	c.DaemonConfig.NydusdPath = path
 
 	// resolve nydus-image path
-	path, err = exec.LookPath(nydusImageBinaryName)
-	if err != nil {
-		return err
+	if path, err := exec.LookPath(nydusImageBinaryName); err == nil {
+		c.DaemonConfig.NydusImagePath = path
 	}
-	c.DaemonConfig.NydusImagePath = path
 
 	return nil
 }
