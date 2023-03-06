@@ -7,6 +7,7 @@
 package config
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -161,4 +162,37 @@ func TestSnapshotterConfig(t *testing.T) {
 	err = ParseParameters(&args, &cfg)
 	A.NoError(err)
 	A.EqualValues(cfg.LoggingConfig.LogToStdout, false)
+}
+
+func TestMergeConfig(t *testing.T) {
+	A := assert.New(t)
+	var defaultSnapshotterConfig SnapshotterConfig
+	var snapshotterConfig1 SnapshotterConfig
+
+	defaultSnapshotterConfig.FillUpWithDefaults()
+
+	MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
+	A.Equal(snapshotterConfig1.Root, defaultRootDir)
+	A.Equal(snapshotterConfig1.LoggingConfig.LogDir, "")
+	A.Equal(snapshotterConfig1.CacheManagerConfig.CacheDir, "")
+
+	A.Equal(snapshotterConfig1.DaemonMode, DefaultDaemonMode)
+	A.Equal(snapshotterConfig1.SystemControllerConfig.Address, defaultSystemControllerAddress)
+	A.Equal(snapshotterConfig1.LoggingConfig.LogLevel, DefaultLogLevel)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxSize, defaultRotateLogMaxSize)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxBackups, defaultRotateLogMaxBackups)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxAge, defaultRotateLogMaxAge)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogCompress, defaultRotateLogCompress)
+
+	A.Equal(snapshotterConfig1.DaemonConfig.NydusdConfigPath, defaultNydusDaemonConfigPath)
+	A.Equal(snapshotterConfig1.DaemonConfig.RecoverPolicy, RecoverPolicyRestart.String())
+	A.Equal(snapshotterConfig1.CacheManagerConfig.GCPeriod, defaultGCPeriod)
+
+	var snapshotterConfig2 SnapshotterConfig
+	snapshotterConfig2.Root = "/snapshotter/root"
+
+	MergeConfig(&snapshotterConfig2, &defaultSnapshotterConfig)
+	A.Equal(snapshotterConfig2.Root, "/snapshotter/root")
+	A.Equal(snapshotterConfig2.LoggingConfig.LogDir, "")
+	A.Equal(snapshotterConfig2.CacheManagerConfig.CacheDir, "")
 }
