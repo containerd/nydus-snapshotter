@@ -22,6 +22,13 @@ linters-settings:
     # If lower than 0, disable the check.
     # Default: 40
     statements: 80
+  nilnil:
+    checked-types:
+      - ptr
+      - func
+      - iface
+      - map
+      - chan
 
 linters:
   enable:
@@ -37,7 +44,7 @@ linters:
     - bodyclose
     # - cyclop
     - dogsled
-    # - nilnil
+    - nilnil
     - unparam
     - nilerr
     # - goerr113
@@ -49,5 +56,5 @@ linters:
     - tenv
     # - funlen
     - exhaustive
-  disable:
     - errcheck
+  disable:

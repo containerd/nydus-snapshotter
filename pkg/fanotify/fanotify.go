@@ -18,6 +18,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/pkg/fanotify/conn"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 func StartFanotifier(client *conn.Client, persistFile string) error {
@@ -98,7 +99,11 @@ func (fserver *Server) RunServer() error {
 
 	fserver.Cmd = cmd
 
-	go StartFanotifier(fserver.Client, fserver.PersistFile)
+	go func() {
+		if err := StartFanotifier(fserver.Client, fserver.PersistFile); err != nil {
+			logrus.WithError(err).Errorf("Start files scanner failed!")
+		}
+	}()
 
 	if fserver.Timeout > 0 {
 		go func() {
@@ -113,7 +118,9 @@ func (fserver *Server) RunServer() error {
 func (fserver *Server) StopServer() {
 	if fserver.Cmd != nil {
 		if err := fserver.Cmd.Process.Kill(); err == nil {
-			fserver.Cmd.Process.Wait()
+			if _, err := fserver.Cmd.Process.Wait(); err != nil {
+				logrus.WithError(err).Errorf("Failed to wait for fanotify server")
+			}
 		}
 	}
 }

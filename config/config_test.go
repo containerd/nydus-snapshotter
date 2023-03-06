@@ -169,9 +169,11 @@ func TestMergeConfig(t *testing.T) {
 	var defaultSnapshotterConfig SnapshotterConfig
 	var snapshotterConfig1 SnapshotterConfig
 
-	defaultSnapshotterConfig.FillUpWithDefaults()
+	err := defaultSnapshotterConfig.FillUpWithDefaults()
+	A.NoError(err)
 
-	MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
+	err = MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
+	A.NoError(err)
 	A.Equal(snapshotterConfig1.Root, defaultRootDir)
 	A.Equal(snapshotterConfig1.LoggingConfig.LogDir, "")
 	A.Equal(snapshotterConfig1.CacheManagerConfig.CacheDir, "")
@@ -191,7 +193,8 @@ func TestMergeConfig(t *testing.T) {
 	var snapshotterConfig2 SnapshotterConfig
 	snapshotterConfig2.Root = "/snapshotter/root"
 
-	MergeConfig(&snapshotterConfig2, &defaultSnapshotterConfig)
+	err = MergeConfig(&snapshotterConfig2, &defaultSnapshotterConfig)
+	A.NoError(err)
 	A.Equal(snapshotterConfig2.Root, "/snapshotter/root")
 	A.Equal(snapshotterConfig2.LoggingConfig.LogDir, "")
 	A.Equal(snapshotterConfig2.CacheManagerConfig.CacheDir, "")
@@ -202,10 +205,11 @@ func TestProcessConfigurations(t *testing.T) {
 	var defaultSnapshotterConfig SnapshotterConfig
 	var snapshotterConfig1 SnapshotterConfig
 
-	defaultSnapshotterConfig.FillUpWithDefaults()
-
-	MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
-	err := ValidateConfig(&snapshotterConfig1)
+	err := defaultSnapshotterConfig.FillUpWithDefaults()
+	A.NoError(err)
+	err = MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
+	A.NoError(err)
+	err = ValidateConfig(&snapshotterConfig1)
 	A.NoError(err)
 	err = ProcessConfigurations(&snapshotterConfig1)
 	A.NoError(err)
@@ -216,7 +220,8 @@ func TestProcessConfigurations(t *testing.T) {
 	var snapshotterConfig2 SnapshotterConfig
 	snapshotterConfig2.Root = "/snapshotter/root"
 
-	MergeConfig(&snapshotterConfig2, &defaultSnapshotterConfig)
+	err = MergeConfig(&snapshotterConfig2, &defaultSnapshotterConfig)
+	A.NoError(err)
 	err = ValidateConfig(&snapshotterConfig2)
 	A.NoError(err)
 	err = ProcessConfigurations(&snapshotterConfig2)

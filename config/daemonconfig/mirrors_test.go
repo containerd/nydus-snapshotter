@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,9 +36,11 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, mirrors)
 
-	os.Mkdir(mirrorsConfigDir, os.ModePerm)
+	err = os.Mkdir(mirrorsConfigDir, os.ModePerm)
+	assert.NoError(t, err)
 
-	os.WriteFile(mirrorsInvalidConfigDir, []byte(`""`), 0600)
+	err = os.WriteFile(mirrorsInvalidConfigDir, []byte(`""`), 0600)
+	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsInvalidConfigDir)
 	require.ErrorContains(t, err, "is not existed")
 	require.Nil(t, mirrors)
@@ -51,8 +54,8 @@ func TestLoadMirrorConfig(t *testing.T) {
 
 		[host."http://p2p-mirror1:65001".header]
 		  X-Dragonfly-Registry = ["https://docker.hub.com"]`)
-	os.WriteFile(mirrorsConfigPath1, buf1, 0600)
-
+	err = os.WriteFile(mirrorsConfigPath1, buf1, 0600)
+	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir)
 	require.Nil(t, err)
 	require.Equal(t, len(mirrors), 1)
@@ -60,7 +63,8 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.Equal(t, mirrors[0].AuthThrough, false)
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
 
-	os.Mkdir(mirrorsInvalidConfigPath1, os.ModePerm)
+	err = os.Mkdir(mirrorsInvalidConfigPath1, os.ModePerm)
+	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir)
 	require.Nil(t, err)
 	require.Equal(t, len(mirrors), 1)
@@ -74,7 +78,8 @@ func TestLoadMirrorConfig(t *testing.T) {
 	
 		[host."http://p2p-mirror2:65001".header]
 		  X-Dragonfly-Registry = ["https://docker.hub.com"]`)
-	os.WriteFile(mirrorsConfigPath2, buf2, 0600)
+	err = os.WriteFile(mirrorsConfigPath2, buf2, 0600)
+	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir)
 	require.Nil(t, err)
 	require.Equal(t, len(mirrors), 2)
@@ -89,7 +94,8 @@ func TestLoadMirrorConfig(t *testing.T) {
 
 	    [host."http://127.0.0.1:65001".header]
 	      X-Dragonfly-Registry = ["https://docker.hub.com"]`)
-	os.WriteFile(mirrorsConfigPath3, buf3, 0600)
+	err = os.WriteFile(mirrorsConfigPath3, buf3, 0600)
+	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir)
 	require.Nil(t, err)
 	require.Equal(t, len(mirrors), 3)
@@ -98,14 +104,17 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.Equal(t, mirrors[2].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
 
 	buf4 := []byte(`[test]`)
-	os.WriteFile(mirrorsConfigPath4, buf4, 0600)
+	err = os.WriteFile(mirrorsConfigPath4, buf4, 0600)
+	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir)
 	require.ErrorContains(t, err, "invalid file path")
 	require.Equal(t, len(mirrors), 0)
 
 	buf5 := []byte(`}`)
-	os.Mkdir(mirrorsConfigDir, os.ModePerm)
-	os.WriteFile(mirrorsConfigPath5, buf5, 0600)
+	err = os.MkdirAll(mirrorsConfigDir, os.ModePerm)
+	assert.NoError(t, err)
+	err = os.WriteFile(mirrorsConfigPath5, buf5, 0600)
+	assert.NoError(t, err)
 
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir)
 	require.ErrorContains(t, err, "invalid file path")

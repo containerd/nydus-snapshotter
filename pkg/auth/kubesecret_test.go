@@ -33,7 +33,8 @@ func TestGetCredentialsStore(t *testing.T) {
 	assert := assert.New(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	InitKubeSecretListener(ctx, "")
+	// Host may not has kubeconfig, so ignore the error and continue the test
+	_ = InitKubeSecretListener(ctx, "")
 	assert.NotNil(kubeSecretListener)
 
 	var obj interface{} = &corev1.Secret{

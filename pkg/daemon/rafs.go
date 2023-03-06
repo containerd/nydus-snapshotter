@@ -200,7 +200,7 @@ func (d *Daemon) UmountAllInstances() error {
 	return nil
 }
 
-func (d *Daemon) CloneInstances(src *Daemon) error {
+func (d *Daemon) CloneInstances(src *Daemon) {
 	src.Instances.Lock()
 	defer src.Instances.Unlock()
 
@@ -209,8 +209,6 @@ func (d *Daemon) CloneInstances(src *Daemon) error {
 	d.Lock()
 	defer d.Unlock()
 	d.Instances.instances = instances
-
-	return nil
 }
 
 func (d *Daemon) UmountInstance(r *Rafs) error {

@@ -137,7 +137,7 @@ func (b *OSSBackend) push(ctx context.Context, cs content.Store, desc ocispec.De
 	}
 
 	if err := g.Wait(); err != nil {
-		b.bucket.AbortMultipartUpload(imur)
+		_ = b.bucket.AbortMultipartUpload(imur)
 		close(partsChan)
 		return errors.Wrap(err, "upload parts")
 	}
