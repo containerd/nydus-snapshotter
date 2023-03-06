@@ -14,7 +14,7 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
+	"github.com/containerd/nydus-snapshotter/internal/flags"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/file"
 )
@@ -260,7 +260,7 @@ func ValidateConfig(c *SnapshotterConfig) error {
 
 // Parse command line arguments and fill the nydus-snapshotter configuration
 // Always let options from CLI override those from configuration file.
-func ParseParameters(args *command.Args, cfg *SnapshotterConfig) error {
+func ParseParameters(args *flags.Args, cfg *SnapshotterConfig) error {
 	// --- essential configuration
 	if args.Address != "" {
 		cfg.Address = args.Address

@@ -15,16 +15,15 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/app/snapshotter"
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/command"
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/flags"
+	"github.com/containerd/nydus-snapshotter/internal/logging"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/version"
 )
 
 func main() {
-	flags := command.NewFlags()
+	flags := flags.NewFlags()
 	app := &cli.App{
 		Name:        "containerd-nydus-grpc",
 		Usage:       "Nydus remote snapshotter for containerd",
@@ -94,7 +93,7 @@ func main() {
 			log.L.Infof("Start nydus-snapshotter. PID %d Version %s FsDriver %s DaemonMode %s",
 				os.Getpid(), version.Version, config.GetFsDriver(), snapshotterConfig.DaemonMode)
 
-			return snapshotter.Start(ctx, &snapshotterConfig)
+			return Start(ctx, &snapshotterConfig)
 		},
 	}
 	if err := app.Run(os.Args); err != nil {

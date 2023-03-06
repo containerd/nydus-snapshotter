@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/log"
-	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
+	"github.com/containerd/nydus-snapshotter/internal/logging"
 	"github.com/pkg/errors"
 )
 

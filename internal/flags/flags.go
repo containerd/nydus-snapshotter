@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package command
+package flags
 
 import (
 	"github.com/urfave/cli/v2"
