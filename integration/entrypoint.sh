@@ -192,7 +192,9 @@ function umount_global_shared_mnt {
 }
 
 function is_cache_cleared {
-    if [[ $(ls -A "${SNAPSHOTTER_CACHE_DIR}") == "" ]]; then
+    # With fscache driver, 2.1 nydusd don't have API to release the cache files.
+    # Thy locate at directory ${SNAPSHOTTER_CACHE_DIR}/cache
+    if [[ $(ls -A -p "${SNAPSHOTTER_CACHE_DIR}" | grep -v /) == "" ]]; then
         true
     else
         echo "ERROR: Cache is not cleared"
@@ -207,8 +209,7 @@ function nerdctl_prune_images {
     nerdctl container prune -f
     nerdctl image prune --all -f
     nerdctl images
-    # FIXME:
-    # is_cache_cleared
+    is_cache_cleared
 }
 
 function start_single_container_multiple_daemons {
@@ -366,11 +367,12 @@ function kill_snapshotter_and_nydusd_recover {
     detect_go_race
 }
 
+# No restart or failover recover policy. Just let snapshotter start a new nydusd when it refreshes.
 function fscache_kill_snapshotter_and_nydusd_recover {
     local daemon_mode=$1
     echo "testing $FUNCNAME"
     nerdctl_prune_images
-    reboot_containerd "${daemon_mode}" fscache failover
+    reboot_containerd "${daemon_mode}" fscache
 
     nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
     nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
@@ -396,6 +398,29 @@ function fscache_kill_snapshotter_and_nydusd_recover {
 
     # killall -9 nydusd
     sleep 0.2
+    detect_go_race
+}
+
+function fscache_kill_nydusd_failover() {
+    local daemon_mode=shared
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd "${daemon_mode}" fscache failover
+
+    nerdctl --snapshotter nydus image pull "${WORDPRESS_IMAGE}"
+    nerdctl --snapshotter nydus image pull "${JAVA_IMAGE}"
+    c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
+    c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
+
+
+    killall -9 nydusd
+
+    echo "start new containers"
+    nerdctl --snapshotter nydus start "$c1"
+    nerdctl --snapshotter nydus start "$c2"
+
+    sleep 1
+
     detect_go_race
 }
 
@@ -571,8 +596,6 @@ only_restart_snapshotter multiple
 kill_snapshotter_and_nydusd_recover shared
 kill_snapshotter_and_nydusd_recover multiple
 
-# kill_multiple_nydusd_recover_failover multiple
-# kill_multiple_nydusd_recover_failover shared
 
 ctr_snapshot_usage multiple
 ctr_snapshot_usage shared
@@ -580,8 +603,12 @@ ctr_snapshot_usage shared
 blob_manager_pull_preheat multiple fusedev
 
 if [[ $(can_erofs_ondemand_read) == 0 ]]; then
+    kill_multiple_nydusd_recover_failover multiple
+    kill_multiple_nydusd_recover_failover shared
+
     start_multiple_containers_shared_daemon_fscache
     fscache_kill_snapshotter_and_nydusd_recover shared
+    fscache_kill_nydusd_failover
 fi
 
 start_container_on_oci
