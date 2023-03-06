@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/cmd/containerd-nydus-grpc/pkg/logging"
 	"github.com/pkg/errors"
 )
 
@@ -96,6 +97,13 @@ func GetDaemonProfileCPUDuration() int64 {
 }
 
 func ProcessConfigurations(c *SnapshotterConfig) error {
+	if c.LoggingConfig.LogDir == "" {
+		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
+	}
+	if c.CacheManagerConfig.CacheDir == "" {
+		c.CacheManagerConfig.CacheDir = filepath.Join(c.Root, "cache")
+	}
+
 	globalConfig.origin = c
 
 	globalConfig.SnapshotsDir = filepath.Join(c.Root, "snapshots")

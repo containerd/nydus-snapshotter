@@ -245,10 +245,6 @@ func ValidateConfig(c *SnapshotterConfig) error {
 			"\"enable_cri_keychain\" and \"enable_kubeconfig_keychain\" can't be set at the same time")
 	}
 
-	if !c.CacheManagerConfig.Disable && c.CacheManagerConfig.CacheDir == "" {
-		return errors.Wrapf(errdefs.ErrInvalidArgument, "cache directory is empty")
-	}
-
 	if c.RemoteConfig.MirrorsConfig.Dir != "" {
 		dirExisted, err := file.IsDirExisted(c.RemoteConfig.MirrorsConfig.Dir)
 		if err != nil {
