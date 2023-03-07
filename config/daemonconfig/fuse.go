@@ -75,8 +75,8 @@ func (c *FuseDaemonConfig) FillAuth(kc *auth.PassKeyChain) {
 	}
 }
 
-func (c *FuseDaemonConfig) UpdateMirrors(mirrorsConfigDir string) error {
-	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir)
+func (c *FuseDaemonConfig) UpdateMirrors(mirrorsConfigDir, registryHost string) error {
+	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		return err
 	}

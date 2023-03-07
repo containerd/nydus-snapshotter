@@ -68,8 +68,8 @@ func LoadFscacheConfig(p string) (*FscacheDaemonConfig, error) {
 	return &cfg, nil
 }
 
-func (c *FscacheDaemonConfig) UpdateMirrors(mirrorsConfigDir string) error {
-	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir)
+func (c *FscacheDaemonConfig) UpdateMirrors(mirrorsConfigDir, registryHost string) error {
+	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		return err
 	}

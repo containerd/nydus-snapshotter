@@ -9,18 +9,19 @@ package daemonconfig
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/containerd/containerd/log"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/file"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 )
 
 // Copied from containerd, for compatibility with containerd's toml configuration file.
-type hostFileConfig struct {
+type HostFileConfig struct {
 	Capabilities []string               `toml:"capabilities"`
 	CACert       interface{}            `toml:"ca"`
 	Client       interface{}            `toml:"client"`
@@ -33,6 +34,17 @@ type hostFileConfig struct {
 	HealthCheckInterval int    `toml:"health_check_interval,omitempty"`
 	FailureLimit        uint8  `toml:"failure_limit,omitempty"`
 	PingURL             string `toml:"ping_url,omitempty"`
+}
+
+type hostConfig struct {
+	Scheme string
+	Host   string
+	Header http.Header
+
+	AuthThrough         bool
+	HealthCheckInterval int
+	FailureLimit        uint8
+	PingURL             string
 }
 
 func makeStringSlice(slice []interface{}, cb func(string) string) ([]string, error) {
@@ -52,111 +64,211 @@ func makeStringSlice(slice []interface{}, cb func(string) string) ([]string, err
 	return out, nil
 }
 
-func parseMirrorsConfigFromToml(b []byte) ([]MirrorConfig, error) {
-	var parsedMirrors []MirrorConfig
+func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
+	var parsedMirrors = make([]MirrorConfig, len(hosts))
 
-	c := struct {
-		HostConfigs map[string]hostFileConfig `toml:"host"`
-	}{}
+	for i, host := range hosts {
+		parsedMirrors[i].Host = fmt.Sprintf("%s://%s", host.Scheme, host.Host)
+		parsedMirrors[i].AuthThrough = host.AuthThrough
+		parsedMirrors[i].HealthCheckInterval = host.HealthCheckInterval
+		parsedMirrors[i].FailureLimit = host.FailureLimit
+		parsedMirrors[i].PingURL = host.PingURL
+
+		if len(host.Header) > 0 {
+			mirrorHeader := make(map[string]string, len(host.Header))
+			for key, value := range host.Header {
+				if len(value) > 1 {
+					log.L.Warnf("some values of the header[%q] are omitted: %#v", key, value[1:])
+				}
+				mirrorHeader[key] = host.Header.Get(key)
+			}
+			parsedMirrors[i].Headers = mirrorHeader
+		}
+	}
+
+	return parsedMirrors
+}
+
+// hostDirectory converts ":port" to "_port_" in directory names
+func hostDirectory(host string) string {
+	idx := strings.LastIndex(host, ":")
+	if idx > 0 {
+		return host[:idx] + "_" + host[idx+1:] + "_"
+	}
+	return host
+}
+
+func hostPaths(root, host string) []string {
+	var hosts []string
+	ch := hostDirectory(host)
+	if ch != host {
+		hosts = append(hosts, filepath.Join(root, ch))
+	}
+	return append(hosts,
+		filepath.Join(root, host),
+		filepath.Join(root, "_default"),
+	)
+}
+
+func hostDirFromRoot(root, host string) (string, error) {
+	for _, p := range hostPaths(root, host) {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	return "", nil
+}
+
+// getSortedHosts returns the list of hosts as they defined in the file.
+func getSortedHosts(root *toml.Tree) ([]string, error) {
+	iter, ok := root.Get("host").(*toml.Tree)
+	if !ok {
+		return nil, errors.New("invalid `host` tree")
+	}
+
+	list := append([]string{}, iter.Keys()...)
+
+	// go-toml stores TOML sections in the map object, so no order guaranteed.
+	// We retrieve line number for each key and sort the keys by position.
+	sort.Slice(list, func(i, j int) bool {
+		h1 := iter.GetPath([]string{list[i]}).(*toml.Tree)
+		h2 := iter.GetPath([]string{list[j]}).(*toml.Tree)
+		return h1.Position().Line < h2.Position().Line
+	})
+
+	return list, nil
+}
+
+func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
+	var (
+		result = hostConfig{}
+		err    error
+	)
+
+	if server != "" {
+		if !strings.HasPrefix(server, "http") {
+			server = "https://" + server
+		}
+		u, err := url.Parse(server)
+		if err != nil {
+			return hostConfig{}, fmt.Errorf("unable to parse server %v: %w", server, err)
+		}
+		result.Scheme = u.Scheme
+		result.Host = u.Host
+	}
+
+	if config.Header != nil {
+		header := http.Header{}
+		for key, ty := range config.Header {
+			switch value := ty.(type) {
+			case string:
+				header[key] = []string{value}
+			case []interface{}:
+				header[key], err = makeStringSlice(value, nil)
+				if err != nil {
+					return hostConfig{}, err
+				}
+			default:
+				return hostConfig{}, fmt.Errorf("invalid type %v for header %q", ty, key)
+			}
+		}
+		result.Header = header
+	}
+
+	result.AuthThrough = config.AuthThrough
+	result.HealthCheckInterval = config.HealthCheckInterval
+	result.FailureLimit = config.FailureLimit
+	result.PingURL = config.PingURL
+
+	return result, nil
+}
+
+func parseHostsFile(b []byte) ([]hostConfig, error) {
 	tree, err := toml.LoadBytes(b)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TOML: %w", err)
 	}
+	c := struct {
+		HostFileConfig
+		// Server specifies the default server. When `host` is
+		// also specified, those hosts are tried first.
+		Server string `toml:"server"`
+		// HostConfigs store the per-host configuration
+		HostConfigs map[string]HostFileConfig `toml:"host"`
+	}{}
+
+	orderedHosts, err := getSortedHosts(tree)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		hosts []hostConfig
+	)
+
 	if err := tree.Unmarshal(&c); err != nil {
 		return nil, err
 	}
 
-	for key, value := range c.HostConfigs {
-		mirror := MirrorConfig{
-			Host:                key,
-			AuthThrough:         value.AuthThrough,
-			HealthCheckInterval: value.HealthCheckInterval,
-			FailureLimit:        value.FailureLimit,
-			PingURL:             value.PingURL,
-		}
-		if value.Header != nil {
-			header := http.Header{}
-			mirrorHeader := make(map[string]string, 0)
-			for key, ty := range value.Header {
-				switch v := ty.(type) {
-				case string:
-					header[key] = []string{v}
-				case []interface{}:
-					header[key], err = makeStringSlice(v, nil)
-					if err != nil {
-						return nil, err
-					}
-				default:
-					return nil, fmt.Errorf("invalid type %v for header %q", ty, key)
-				}
-				mirrorHeader[key] = header.Get(key)
-				if len(header[key]) > 1 {
-					log.L.Warnf("some values of the header[%q] are omitted: %#v", key, header.Values(key)[1:])
-				}
-			}
-			mirror.Headers = mirrorHeader
+	// Parse hosts array
+	for _, host := range orderedHosts {
+		config := c.HostConfigs[host]
 
+		parsed, err := parseHostConfig(host, config)
+		if err != nil {
+			return nil, err
 		}
-		parsedMirrors = append(parsedMirrors, mirror)
+		hosts = append(hosts, parsed)
 	}
 
-	return parsedMirrors, nil
-}
-
-func parseMirrorsConfig(path string, b []byte) ([]MirrorConfig, error) {
-	format := strings.Trim(filepath.Ext(path), ".")
-
-	var parsedMirrors []MirrorConfig
-	var err error
-	switch format {
-	case "toml":
-		parsedMirrors, err = parseMirrorsConfigFromToml(b)
-	default:
-		return nil, errors.Errorf("invalid file path: %v, supported suffix includes [ \"toml\" ]", path)
-	}
+	// Parse root host config and append it as the last element
+	parsed, err := parseHostConfig(c.Server, c.HostFileConfig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid config file %s", path)
+		return nil, err
 	}
-	return parsedMirrors, nil
+	hosts = append(hosts, parsed)
+
+	return hosts, nil
 }
 
-func LoadMirrorsConfig(mirrorsConfigDir string) ([]MirrorConfig, error) {
+func loadHostDir(hostsDir string) ([]hostConfig, error) {
+	b, err := os.ReadFile(filepath.Join(hostsDir, "hosts.toml"))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		return []hostConfig{}, nil
+	}
+
+	hosts, err := parseHostsFile(b)
+	if err != nil {
+		return nil, err
+	}
+
+	return hosts, nil
+}
+
+func LoadMirrorsConfig(mirrorsConfigDir, registryHost string) ([]MirrorConfig, error) {
 	var mirrors []MirrorConfig
 
 	if mirrorsConfigDir == "" {
 		return mirrors, nil
 	}
-	dirExisted, err := file.IsDirExisted(mirrorsConfigDir)
+	hostDir, err := hostDirFromRoot(mirrorsConfigDir, registryHost)
 	if err != nil {
 		return nil, err
 	}
-	if !dirExisted {
-		return nil, errors.Errorf("mirrors config directory %s is not existed", mirrorsConfigDir)
+	if hostDir == "" {
+		return mirrors, nil
 	}
 
-	if err := filepath.Walk(mirrorsConfigDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return errors.Errorf("read mirror configuration file %s failed: %v", path, err)
-		}
-
-		parsedMirrors, err := parseMirrorsConfig(path, b)
-		if err != nil {
-			return errors.Errorf("parse mirrors config failed: %v", err)
-		}
-		mirrors = append(mirrors, parsedMirrors...)
-
-		return nil
-	}); err != nil {
+	hostConfig, err := loadHostDir(hostDir)
+	if err != nil {
 		return nil, err
 	}
+	mirrors = append(mirrors, parseMirrorsConfig(hostConfig)...)
 
 	return mirrors, nil
 }
