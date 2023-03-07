@@ -4,18 +4,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use std::{env, ffi, fs, io, io::Write, mem, os::unix::io::AsRawFd, path::Path, slice};
+use std::{
+    env, ffi, fs, io,
+    io::Write,
+    mem,
+    os::unix::io::AsRawFd,
+    path::Path,
+    process, slice,
+    sync::{Arc, Mutex},
+    thread,
+};
 
+use chrono::prelude::Utc;
 use lazy_static::lazy_static;
 use libc::{__s32, __u16, __u32, __u64, __u8};
 use nix::{
     poll::{poll, PollFd, PollFlags},
     sched::{setns, CloneFlags},
     unistd::{
-        fork,
+        fork, getpgid,
         ForkResult::{Child, Parent},
     },
 };
+use serde::Serialize;
+use signal_hook::{consts::SIGTERM, iterator::Signals};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -27,6 +39,19 @@ struct fanotify_event {
     mask: __u64,
     fd: __s32,
     pid: __s32,
+}
+
+#[derive(Serialize, Debug)]
+struct EventInfo {
+    path: String,
+    size: u64,
+    timestamp: i64,
+}
+
+impl PartialEq for EventInfo {
+    fn eq(&self, target: &EventInfo) -> bool {
+        self.path == target.path
+    }
 }
 
 lazy_static! {
@@ -54,6 +79,12 @@ const AT_FDCWD: i32 = -100;
 enum SetnsError {
     IO(io::Error),
     Nix(nix::Error),
+}
+
+#[derive(Debug)]
+enum SendError {
+    IO(io::Error),
+    Serde(serde_json::Error),
 }
 
 fn get_pid() -> Option<String> {
@@ -117,21 +148,49 @@ fn read_fanotify(fanotify_fd: i32) -> Vec<fanotify_event> {
     vec
 }
 
-fn send_path(writer: &mut io::Stdout, path: String) -> Result<(), io::Error> {
-    writer.write_all(path.as_bytes())?;
-    writer.flush()
-}
-
 fn close_fd(fd: i32) {
     unsafe {
         libc::close(fd);
     }
 }
 
-fn handle_fanotify_event(fd: i32) {
-    let mut writer = io::stdout();
+fn generate_event_info(path: &str) -> Result<EventInfo, io::Error> {
+    fs::metadata(path).map(|metadata| EventInfo {
+        path: path.to_string(),
+        size: metadata.len(),
+        timestamp: Utc::now().timestamp_micros(),
+    })
+}
 
+fn send_event_info(event_info: &Vec<EventInfo>) -> Result<(), SendError> {
+    let mut writer = io::stdout();
+    serde_json::to_writer(writer.lock(), event_info).map_err(SendError::Serde)?;
+    writer.flush().map_err(SendError::IO)
+}
+
+fn handle_fanotify_event(fd: i32) {
     let mut fds = [PollFd::new(fd.as_raw_fd(), PollFlags::POLLIN)];
+    let event_info = Arc::new(Mutex::<Vec<EventInfo>>::new(Vec::default()));
+    let local_event_info = event_info.clone();
+
+    if let Err(e) = Signals::new([SIGTERM]).map(|mut signals| {
+        thread::spawn(move || {
+            for _ in signals.forever() {
+                eprintln!("received SIGTERM signal, sending event information");
+                if let Ok(event_info) = local_event_info.lock().as_deref() {
+                    if let Err(e) = send_event_info(event_info) {
+                        eprintln!("failed to send event information {event_info:?} {e:?}");
+                    }
+                }
+                eprintln!("send event information successfully, exiting");
+                process::exit(0);
+            }
+        })
+    }) {
+        eprintln!("failed to set SIGTERM signal handler {e:?}");
+        return;
+    }
+
     loop {
         if let Ok(poll_num) = poll(&mut fds, -1) {
             if poll_num > 0 {
@@ -140,9 +199,17 @@ fn handle_fanotify_event(fd: i32) {
                         let events = read_fanotify(fd);
                         for event in events {
                             if let Some(path) = get_fd_path(event.fd) {
-                                if let Err(e) = send_path(&mut writer, path.clone() + "\n") {
-                                    eprintln!("send path {path} failed: {e:?}");
-                                };
+                                if let Ok(event_info) = event_info.lock().as_deref_mut() {
+                                    if let Err(e) = generate_event_info(&path).map(|info| {
+                                        if !event_info.contains(&info) {
+                                            event_info.push(info)
+                                        }
+                                    }) {
+                                        eprintln!(
+                                            "failed to generate event information for {path} {e:?}"
+                                        )
+                                    };
+                                }
                                 close_fd(event.fd);
                             }
                         }
@@ -165,7 +232,6 @@ fn main() {
             return;
         }
     }
-
     let pid = unsafe { fork() };
     match pid.expect("fork failed: unable to create child process") {
         Child => {
@@ -176,7 +242,11 @@ fn main() {
             }
         }
         Parent { child } => {
-            eprintln!("forked optimizer server subprocess, pid: {child}");
+            if let Err(e) = getpgid(Some(child)).map(|pgid| {
+                eprintln!("forked optimizer server subprocess, pid: {child}, pgid: {pgid}");
+            }) {
+                eprintln!("failed to get pgid of {child} {e:?}");
+            };
         }
     }
 }
