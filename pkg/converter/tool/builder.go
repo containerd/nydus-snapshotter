@@ -54,6 +54,7 @@ type MergeOption struct {
 
 	TargetBootstrapPath string
 	ChunkDictPath       string
+	ParentBootstrapPath string
 	PrefetchPatterns    string
 	OutputJSONPath      string
 	Timeout             *time.Duration
@@ -222,6 +223,9 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 	}
 	if option.ChunkDictPath != "" {
 		args = append(args, "--chunk-dict", fmt.Sprintf("bootstrap=%s", option.ChunkDictPath))
+	}
+	if option.ParentBootstrapPath != "" {
+		args = append(args, "--parent-bootstrap", option.ParentBootstrapPath)
 	}
 	if option.PrefetchPatterns == "" {
 		option.PrefetchPatterns = "/"

@@ -579,6 +579,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 
 		TargetBootstrapPath: targetBootstrapPath,
 		ChunkDictPath:       opt.ChunkDictPath,
+		ParentBootstrapPath: opt.ParentBootstrapPath,
 		PrefetchPatterns:    opt.PrefetchPatterns,
 		OutputJSONPath:      filepath.Join(workDir, "merge-output.json"),
 		Timeout:             opt.Timeout,
