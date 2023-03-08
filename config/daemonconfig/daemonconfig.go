@@ -32,7 +32,7 @@ type DaemonConfig interface {
 	// Provide auth
 	FillAuth(kc *auth.PassKeyChain)
 	StorageBackendType() string
-	UpdateMirrors(mirrorsConfigDir string) error
+	UpdateMirrors(mirrorsConfigDir, registryHost string) error
 	DumpString() (string, error)
 	DumpFile(path string) error
 }
@@ -156,6 +156,10 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		} else if registryHost == "docker.io" {
 			// For docker.io images, we should use index.docker.io
 			registryHost = "index.docker.io"
+		}
+
+		if err := c.UpdateMirrors(config.GetMirrorsConfigDir(), registryHost); err != nil {
+			return errors.Wrap(err, "update mirrors config")
 		}
 
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
