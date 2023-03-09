@@ -1,6 +1,6 @@
 # Configure Nydus-snapshotter
 
-Nydus-snapshotter can receive a toml file as its configurations to start providing image service through CLI parameter `--config`. A example configuration file can be found [here](./misc/snapshotter/config.toml). Besides nydus-snapshotter's configuration, `nydusd`'s configuration has to be provided to nydus-snapshotter too. Nydusd is started by nydus-snapshotter and it is configured by the provided json configuration file. A minimal configuration file can be found [here](./misc/snapshotter/nydusd-config.fusedev.json)
+Nydus-snapshotter can receive a toml file as its configurations to start providing image service through CLI parameter `--config`. A example configuration file can be found [here](../misc/snapshotter/config.toml). Besides nydus-snapshotter's configuration, `nydusd`'s configuration has to be provided to nydus-snapshotter too. Nydusd is started by nydus-snapshotter and it is configured by the provided json configuration file. A minimal configuration file can be found [here](../misc/snapshotter/nydusd-config.fusedev.json)
 
 ## Authentication
 
