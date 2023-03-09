@@ -10,9 +10,10 @@ ExecStart=/usr/local/bin/containerd-nydus-grpc --config /etc/nydus/config.toml
 Restart=always
 RestartSec=1
 KillMode=process
-OOMScoreAdjust=-999
+OOMScoreAdjust=-1000
 StandardOutput=journal
 StandardError=journal
+MemoryMax=2G
 
 [Install]
 WantedBy=multi-user.target
