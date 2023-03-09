@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/oom"
 )
 
 // Fork the nydusd daemon with the process PID decided
@@ -40,6 +41,10 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	defer d.Unlock()
 
 	d.States.ProcessID = cmd.Process.Pid
+	err = oom.ChangeDaemonOOMScoreAdj(d.States.ProcessID, -999)
+	if err != nil {
+		return errors.Wrapf(err, "change oom score adj for %d", cmd.Process.Pid)
+	}
 
 	// Profile nydusd daemon CPU usage during its startup.
 	if config.GetDaemonProfileCPUDuration() > 0 {

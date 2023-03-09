@@ -29,6 +29,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/oom"
 )
 
 const (
@@ -325,6 +326,10 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 
 	if err := cmd.Start(); err != nil {
 		return errors.Wrap(err, "start process")
+	}
+	err = oom.ChangeDaemonOOMScoreAdj(cmd.Process.Pid, -999)
+	if err != nil {
+		return errors.Wrapf(err, "change oom score adj for %d", cmd.Process.Pid)
 	}
 
 	if err := new.WaitUntilState(types.DaemonStateInit); err != nil {
