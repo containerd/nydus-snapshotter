@@ -45,7 +45,7 @@ func main() {
 			var snapshotterConfig config.SnapshotterConfig
 
 			if err := defaultSnapshotterConfig.FillUpWithDefaults(); err != nil {
-				return errors.New("failed to fill up nydus configuration with defaults")
+				return errors.Wrap(err, "failed to fill up nydus configuration with defaults")
 			}
 
 			// Once snapshotter's configuration file is provided, parse it and let command line parameters override it.

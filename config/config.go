@@ -228,6 +228,10 @@ func ValidateConfig(c *SnapshotterConfig) error {
 		return errors.Wrapf(errdefs.ErrInvalidArgument, "configuration is none")
 	}
 
+	if err := c.ValidateNydusBinaryPaths(); err != nil {
+		return errors.Wrapf(err, "failed to validate nydusd path.")
+	}
+
 	if c.ImageConfig.ValidateSignature {
 		if c.ImageConfig.PublicKeyFile == "" {
 			return errors.New("public key file for signature validation is not provided")

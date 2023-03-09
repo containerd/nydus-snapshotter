@@ -65,6 +65,9 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 		daemonConfig.NydusdConfigPath = defaultNydusDaemonConfigPath
 	}
 	daemonConfig.RecoverPolicy = RecoverPolicyRestart.String()
+	daemonConfig.NydusdPath = nydusdBinaryName
+	daemonConfig.NydusImagePath = nydusImageBinaryName
+	daemonConfig.FsDriver = FsDriverFusedev
 
 	// cache configuration
 	cacheConfig := &c.CacheManagerConfig
@@ -75,24 +78,24 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 		cacheConfig.CacheDir = filepath.Join(c.Root, "cache")
 	}
 
-	return c.SetupNydusBinaryPaths()
+	return nil
 }
 
-func (c *SnapshotterConfig) SetupNydusBinaryPaths() error {
+func (c *SnapshotterConfig) ValidateNydusBinaryPaths() error {
 	// when using DaemonMode = none, nydusd and nydus-image binaries are not required
 	if c.DaemonMode == string(DaemonModeNone) {
 		return nil
 	}
 
 	// resolve nydusd path
-	path, err := exec.LookPath(nydusdBinaryName)
+	path, err := exec.LookPath(c.DaemonConfig.NydusdPath)
 	if err != nil {
 		return err
 	}
 	c.DaemonConfig.NydusdPath = path
 
 	// resolve nydus-image path
-	path, err = exec.LookPath(nydusImageBinaryName)
+	path, err = exec.LookPath(c.DaemonConfig.NydusImagePath)
 	if err != nil {
 		return err
 	}
