@@ -687,11 +687,11 @@ func IsNydusBlobAndExists(ctx context.Context, cs content.Store, desc ocispec.De
 		return false
 	}
 
-	return IsNydusBlob(ctx, desc)
+	return IsNydusBlob(desc)
 }
 
-// IsNydusBlob returns true when the specified descriptor is nydus blob format.
-func IsNydusBlob(ctx context.Context, desc ocispec.Descriptor) bool {
+// IsNydusBlob returns true when the specified descriptor is nydus blob layer.
+func IsNydusBlob(desc ocispec.Descriptor) bool {
 	if desc.Annotations == nil {
 		return false
 	}
@@ -700,11 +700,26 @@ func IsNydusBlob(ctx context.Context, desc ocispec.Descriptor) bool {
 	return hasAnno
 }
 
+// IsNydusBootstrap returns true when the specified descriptor is nydus bootstrap layer.
+func IsNydusBootstrap(desc ocispec.Descriptor) bool {
+	if desc.Annotations == nil {
+		return false
+	}
+
+	_, hasAnno := desc.Annotations[LayerAnnotationNydusBootstrap]
+	return hasAnno
+}
+
 // LayerConvertFunc returns a function which converts an OCI image layer to
 // a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
 func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if !images.IsLayerType(desc.MediaType) {
+			return nil, nil
+		}
+
+		// Skip the conversion of nydus layer.
+		if IsNydusBlob(desc) || IsNydusBootstrap(desc) {
 			return nil, nil
 		}
 
@@ -809,6 +824,10 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 // the index conversion and the manifest conversion.
 func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
+		// If the previous conversion did not occur, the `newDesc` may be nil.
+		if newDesc == nil {
+			return &orgDesc, nil
+		}
 		switch {
 		case images.IsIndexType(newDesc.MediaType):
 			return convertIndex(ctx, cs, orgDesc, newDesc)
@@ -858,6 +877,19 @@ func convertIndex(ctx context.Context, cs content.Store, orgDesc ocispec.Descrip
 	return newIndexDesc, nil
 }
 
+// isNydusImage checks if the last layer is nydus bootstrap,
+// so that we can ensure it is a nydus image.
+func isNydusImage(manifest *ocispec.Manifest) bool {
+	layers := manifest.Layers
+	if len(layers) != 0 {
+		desc := layers[len(layers)-1]
+		if IsNydusBootstrap(desc) {
+			return true
+		}
+	}
+	return false
+}
+
 // convertManifest merges all the nydus blob layers into a
 // nydus bootstrap layer, update the image config,
 // and modify the image manifest.
@@ -867,6 +899,10 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 	manifestLabels, err := readJSON(ctx, cs, &manifest, manifestDesc)
 	if err != nil {
 		return nil, errors.Wrap(err, "read manifest json")
+	}
+
+	if isNydusImage(&manifest) {
+		return &manifestDesc, nil
 	}
 
 	// This option needs to be enabled for image scenario.
