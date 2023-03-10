@@ -39,7 +39,7 @@ func (m *Mounter) Umount(target string) error {
 	return syscall.Unmount(target, 0)
 }
 
-func normalizePath(path string) (realPath string, err error) {
+func NormalizePath(path string) (realPath string, err error) {
 	if realPath, err = filepath.Abs(path); err != nil {
 		return "", errors.Wrapf(err, "get absolute path for %s", path)
 	}
@@ -54,7 +54,7 @@ func normalizePath(path string) (realPath string, err error) {
 
 // return value `true` means the path is mounted
 func IsMountpoint(path string) (bool, error) {
-	realPath, err := normalizePath(path)
+	realPath, err := NormalizePath(path)
 	if err != nil {
 		return false, err
 	}
