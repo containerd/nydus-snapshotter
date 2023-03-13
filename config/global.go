@@ -10,11 +10,13 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/internal/logging"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
 	"github.com/pkg/errors"
 )
 
@@ -132,5 +134,18 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 
 	globalConfig.DaemonMode = m
 
+	return nil
+}
+
+func SetupEnvironment(c *SnapshotterConfig) error {
+	if err := os.MkdirAll(c.Root, 0700); err != nil {
+		return errors.Wrapf(err, "create root dir %s", c.Root)
+	}
+
+	realPath, err := mount.NormalizePath(c.Root)
+	if err != nil {
+		return errors.Wrapf(err, "root path invalid")
+	}
+	c.Root = realPath
 	return nil
 }

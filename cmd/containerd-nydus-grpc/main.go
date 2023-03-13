@@ -76,6 +76,10 @@ func main() {
 				return errors.Wrap(err, "process configurations")
 			}
 
+			if err := config.SetupEnvironment(&snapshotterConfig); err != nil {
+				return errors.Wrap(err, "setup environment failed")
+			}
+
 			ctx := logging.WithContext()
 			logConfig := &snapshotterConfig.LoggingConfig
 			logRotateArgs := &logging.RotateLogArgs{

@@ -86,6 +86,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 	var args = flags.Args{}
 	args.RootDir = "/var/lib/containerd/nydus"
 	exampleConfig.Root = "/var/lib/containerd/nydus"
+
 	err = ParseParameters(&args, cfg)
 	A.NoError(err)
 	A.EqualValues(cfg, &exampleConfig)
@@ -211,6 +212,7 @@ func TestProcessConfigurations(t *testing.T) {
 	A.NoError(err)
 	err = ValidateConfig(&snapshotterConfig1)
 	A.NoError(err)
+
 	err = ProcessConfigurations(&snapshotterConfig1)
 	A.NoError(err)
 
@@ -224,9 +226,21 @@ func TestProcessConfigurations(t *testing.T) {
 	A.NoError(err)
 	err = ValidateConfig(&snapshotterConfig2)
 	A.NoError(err)
+
 	err = ProcessConfigurations(&snapshotterConfig2)
 	A.NoError(err)
 
 	A.Equal(snapshotterConfig2.LoggingConfig.LogDir, filepath.Join(snapshotterConfig2.Root, "logs"))
 	A.Equal(snapshotterConfig2.CacheManagerConfig.CacheDir, filepath.Join(snapshotterConfig2.Root, "cache"))
+
+	var snapshotterConfig3 SnapshotterConfig
+	snapshotterConfig3.Root = "./snapshotter/root"
+
+	err = MergeConfig(&snapshotterConfig3, &defaultSnapshotterConfig)
+	A.NoError(err)
+	err = ValidateConfig(&snapshotterConfig3)
+	A.NoError(err)
+
+	err = ProcessConfigurations(&snapshotterConfig3)
+	A.NoError(err)
 }
