@@ -166,10 +166,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}
 	}
 
-	if err := os.MkdirAll(cfg.Root, 0700); err != nil {
-		return nil, err
-	}
-
 	supportsDType, err := getSupportsDType(cfg.Root)
 	if err != nil {
 		return nil, err
