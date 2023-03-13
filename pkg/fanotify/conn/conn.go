@@ -9,7 +9,6 @@ package conn
 import (
 	"bufio"
 	"encoding/json"
-	"io"
 )
 
 type Client struct {
@@ -23,15 +22,10 @@ type EventInfo struct {
 }
 
 func (c *Client) GetEventInfo() ([]EventInfo, error) {
-	// Before reaching '\n', the reader has successfully read
-	// the event information from optimizer server.
-	data, err := c.Reader.ReadBytes('\n')
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-
 	eventInfo := []EventInfo{}
-	if err := json.Unmarshal(data, &eventInfo); err != nil {
+
+	err := json.NewDecoder(c.Reader).Decode(&eventInfo)
+	if err != nil {
 		return nil, err
 	}
 
