@@ -8,16 +8,32 @@ package conn
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 )
 
 type Client struct {
-	Scanner *bufio.Scanner
+	Reader *bufio.Reader
 }
 
-func (c *Client) GetPath() (string, error) {
-	if !c.Scanner.Scan() { // NOTE: no timeout
-		return "", io.EOF
+type EventInfo struct {
+	Path      string `json:"path"`
+	Size      uint32 `json:"size"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+func (c *Client) GetEventInfo() ([]EventInfo, error) {
+	// Before reaching '\n', the reader has successfully read
+	// the event information from optimizer server.
+	data, err := c.Reader.ReadBytes('\n')
+	if err != nil && err != io.EOF {
+		return nil, err
 	}
-	return c.Scanner.Text(), nil
+
+	eventInfo := []EventInfo{}
+	if err := json.Unmarshal(data, &eventInfo); err != nil {
+		return nil, err
+	}
+
+	return eventInfo, nil
 }

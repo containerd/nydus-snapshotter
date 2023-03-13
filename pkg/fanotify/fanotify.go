@@ -8,8 +8,8 @@ package fanotify
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
-	"io"
 	"log/syslog"
 	"os"
 	"os/exec"
@@ -20,30 +20,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
-
-func StartFanotifier(client *conn.Client, persistFile string) error {
-	f, err := os.OpenFile(persistFile, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return errors.Wrapf(err, "failed to open persist file %q", persistFile)
-	}
-	var existedFiles = make(map[string]struct{}, 1)
-	for {
-		path, err := client.GetPath()
-		if err != nil {
-			f.Close()
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("failed to get notified path: %v", err)
-		}
-
-		if _, ok := existedFiles[path]; !ok {
-			existedFiles[path] = struct{}{}
-			fmt.Fprintln(f, path)
-		}
-	}
-	return nil
-}
 
 type Server struct {
 	BinaryPath   string
@@ -90,20 +66,13 @@ func (fserver *Server) RunServer() error {
 		return err
 	}
 	fserver.Client = &conn.Client{
-		Scanner: bufio.NewScanner(notifyR),
+		Reader: bufio.NewReader(notifyR),
 	}
 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-
 	fserver.Cmd = cmd
-
-	go func() {
-		if err := StartFanotifier(fserver.Client, fserver.PersistFile); err != nil {
-			logrus.WithError(err).Errorf("Start files scanner failed!")
-		}
-	}()
 
 	if fserver.Timeout > 0 {
 		go func() {
@@ -115,12 +84,45 @@ func (fserver *Server) RunServer() error {
 	return nil
 }
 
+func (fserver *Server) ReceiveEventInfo() error {
+	eventInfo, err := fserver.Client.GetEventInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get event inforation: %v", err)
+	}
+
+	f, err := os.OpenFile(fserver.PersistFile, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open persist file %q", fserver.PersistFile)
+	}
+	defer f.Close()
+
+	for _, event := range eventInfo {
+		fmt.Fprintln(f, event.Path)
+	}
+
+	persistJSONFile := fmt.Sprintf("%s.json", fserver.PersistFile)
+	data, err := json.MarshalIndent(eventInfo, "", "      ")
+	if err != nil {
+		return errors.Wrapf(err, "failed to encode event information %v", eventInfo)
+	}
+	if err := os.WriteFile(persistJSONFile, data, 0644); err != nil {
+		return errors.Wrapf(err, "failed to write file %s", persistJSONFile)
+	}
+
+	return nil
+}
+
 func (fserver *Server) StopServer() {
 	if fserver.Cmd != nil {
-		if err := fserver.Cmd.Process.Kill(); err == nil {
-			if _, err := fserver.Cmd.Process.Wait(); err != nil {
-				logrus.WithError(err).Errorf("Failed to wait for fanotify server")
-			}
+		logrus.Infof("send SIGTERM signal to process group %d", fserver.Cmd.Process.Pid)
+		if err := syscall.Kill(-fserver.Cmd.Process.Pid, syscall.SIGTERM); err != nil {
+			logrus.WithError(err).Errorf("kill process group %d failed!", fserver.Cmd.Process.Pid)
+		}
+		if err := fserver.ReceiveEventInfo(); err != nil {
+			logrus.WithError(err).Errorf("Failed to receive event information")
+		}
+		if _, err := fserver.Cmd.Process.Wait(); err != nil {
+			logrus.WithError(err).Errorf("Failed to wait for fanotify server")
 		}
 	}
 }
