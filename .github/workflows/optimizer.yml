@@ -1,0 +1,90 @@
+name: optimizer test
+
+on:
+  push:
+    branches:
+      - "main"
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+  pull_request:
+    branches:
+      - "main"
+  schedule:
+    # Trigger test every day at 00:03 clock UTC
+    - cron: "3 0 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  run_optimizer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.19.6"
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: cache go mod
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go
+      - name: cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            tools/optimizer-server/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('tools/optimizer-server/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo
+      - name: containerd runc and crictl
+        run: |
+          sudo wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.26.0/crictl-v1.26.0-linux-amd64.tar.gz
+          sudo tar zxvf ./crictl-v1.26.0-linux-amd64.tar.gz -C /usr/local/bin
+          sudo install -D -m 755 misc/optimizer/crictl.yaml /etc/crictl.yaml
+          sudo wget https://github.com/containerd/containerd/releases/download/v1.7.0/containerd-static-1.7.0-linux-amd64.tar.gz
+          sudo systemctl stop containerd
+          sudo tar -zxf ./containerd-static-1.7.0-linux-amd64.tar.gz -C /usr/
+          sudo install -D -m 755 misc/optimizer/containerd-config.toml /etc/containerd/config.toml
+          sudo systemctl restart containerd
+          sudo wget https://github.com/opencontainers/runc/releases/download/v1.1.4/runc.amd64 -O /usr/bin/runc
+          sudo chmod +x /usr/bin/runc
+      - name: Setup CNI
+        run: |
+          wget https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-amd64-v1.2.0.tgz
+          sudo mkdir -p /opt/cni/bin
+          sudo tar xzf cni-plugins-linux-amd64-v1.2.0.tgz -C /opt/cni/bin/
+          sudo install -D -m 755 misc/example/10-containerd-net.conflist /etc/cni/net.d/10-containerd-net.conflist
+      - name: Build and install optimizer
+        run: |
+          rustup component add rustfmt clippy
+          make optimizer
+          sudo chown -R $(id -un):$(id -gn) . ~/.cargo/
+          pwd
+          ls -lh bin/*optimizer*
+          sudo make install-optimizer
+          sudo install -D -m 755 misc/example/02-optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
+          sudo systemctl restart containerd
+      - name: Generate accessed files list
+        run: |
+          sudo crictl run misc/optimizer/nginx.yaml misc/optimizer/sandbox.yaml
+          sleep 20
+          sudo crictl rmp  -f --all
+          tree /opt/nri/optimizer/results/
+          count=$(cat /opt/nri/optimizer/results/library/nginx:1.23.3 | wc -l)
+          echo $count
+          if [ "$count" != 44 ]; then
+            echo "failed to generate accessed files list for nginx:1.23.3"
+            exit 1
+          fi
+          cat /opt/nri/optimizer/results/library/nginx:1.23.3.json
+    
