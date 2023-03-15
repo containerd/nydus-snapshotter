@@ -16,9 +16,9 @@ type Client struct {
 }
 
 type EventInfo struct {
-	Path      string `json:"path"`
-	Size      uint32 `json:"size"`
-	Timestamp int64  `json:"timestamp"`
+	Path    string `json:"path"`
+	Size    uint32 `json:"size"`
+	Elapsed uint64 `json:"elapsed"`
 }
 
 func (c *Client) GetEventInfo() ([]EventInfo, error) {

@@ -9,13 +9,12 @@ use std::{
     io::Write,
     mem,
     os::unix::io::AsRawFd,
-    path::Path,
+    path::{Path, PathBuf},
     process, slice,
     sync::{Arc, Mutex},
     thread,
 };
 
-use chrono::prelude::Utc;
 use lazy_static::lazy_static;
 use libc::{__s32, __u16, __u32, __u64, __u8};
 use nix::{
@@ -28,6 +27,7 @@ use nix::{
 };
 use serde::Serialize;
 use signal_hook::{consts::SIGTERM, iterator::Signals};
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -45,7 +45,7 @@ struct fanotify_event {
 struct EventInfo {
     path: String,
     size: u64,
-    timestamp: i64,
+    elapsed: u128,
 }
 
 impl PartialEq for EventInfo {
@@ -56,6 +56,7 @@ impl PartialEq for EventInfo {
 
 lazy_static! {
     static ref FAN_EVENT_METADATA_LEN: usize = mem::size_of::<fanotify_event>();
+    static ref BEGIN_TIME: Instant = Instant::now();
 }
 
 const DEFAULT_TARGET: &str = "/";
@@ -95,9 +96,9 @@ fn get_target() -> String {
     env::var("_TARGET").map_or(DEFAULT_TARGET.to_string(), |str| str)
 }
 
-fn get_fd_path(fd: i32) -> Option<String> {
+fn get_fd_path(fd: i32) -> io::Result<PathBuf> {
     let fd_path = format!("/proc/self/fd/{fd}");
-    fs::read_link(fd_path).map_or(None, |path| Some(path.to_string_lossy().to_string()))
+    fs::read_link(fd_path)
 }
 
 fn set_ns(ns_path: String, flags: CloneFlags) -> Result<(), SetnsError> {
@@ -154,11 +155,11 @@ fn close_fd(fd: i32) {
     }
 }
 
-fn generate_event_info(path: &str) -> Result<EventInfo, io::Error> {
+fn generate_event_info(path: &Path) -> Result<EventInfo, io::Error> {
     fs::metadata(path).map(|metadata| EventInfo {
-        path: path.to_string(),
+        path: path.to_string_lossy().to_string(),
         size: metadata.len(),
-        timestamp: Utc::now().timestamp_micros(),
+        elapsed: BEGIN_TIME.elapsed().as_micros(),
     })
 }
 
