@@ -192,13 +192,18 @@ fn handle_fanotify_event(fd: i32) {
     }
 
     loop {
-        if let Ok(poll_num) = poll(&mut fds, -1) {
-            if poll_num > 0 {
+        match poll(&mut fds, -1) {
+            Ok(polled_num) => {
+                if polled_num <= 0 {
+                    eprintln!("polled_num <= 0!");
+                    break;
+                }
+
                 if let Some(flag) = fds[0].revents() {
                     if flag.contains(PollFlags::POLLIN) {
                         let events = read_fanotify(fd);
                         for event in events {
-                            if let Some(path) = get_fd_path(event.fd) {
+                            if let Ok(path) = get_fd_path(event.fd) {
                                 if let Ok(event_info) = event_info.lock().as_deref_mut() {
                                     if let Err(e) = generate_event_info(&path).map(|info| {
                                         if !event_info.contains(&info) {
@@ -206,17 +211,22 @@ fn handle_fanotify_event(fd: i32) {
                                         }
                                     }) {
                                         eprintln!(
-                                            "failed to generate event information for {path} {e:?}"
+                                            "failed to generate event information for {path:?} {e:?}"
                                         )
                                     };
                                 }
-                                close_fd(event.fd);
                             }
+                            // No matter the target path is valid or not, we should close the fd
+                            close_fd(event.fd);
                         }
                     }
                 }
-            } else {
-                eprintln!("poll_num <= 0!");
+            }
+            Err(e) => {
+                if e == nix::Error::EINTR {
+                    continue;
+                }
+                eprintln!("Poll error {:?}", e);
                 break;
             }
         }
