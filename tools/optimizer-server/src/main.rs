@@ -31,7 +31,7 @@ use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-struct fanotify_event {
+struct FanotifyEvent {
     event_len: __u32,
     vers: __u8,
     reserved: __u8,
@@ -55,7 +55,7 @@ impl PartialEq for EventInfo {
 }
 
 lazy_static! {
-    static ref FAN_EVENT_METADATA_LEN: usize = mem::size_of::<fanotify_event>();
+    static ref FAN_EVENT_METADATA_LEN: usize = mem::size_of::<FanotifyEvent>();
     static ref BEGIN_TIME: Instant = Instant::now();
 }
 
@@ -134,13 +134,13 @@ fn mark_fanotify(fd: i32, path: &str) -> Result<(), io::Error> {
     }
 }
 
-fn read_fanotify(fanotify_fd: i32) -> Vec<fanotify_event> {
+fn read_fanotify(fanotify_fd: i32) -> Vec<FanotifyEvent> {
     let mut vec = Vec::new();
     unsafe {
         let buffer = libc::malloc(*FAN_EVENT_METADATA_LEN * 1024);
         let sizeof = libc::read(fanotify_fd, buffer, *FAN_EVENT_METADATA_LEN * 1024);
         let src = slice::from_raw_parts(
-            buffer as *mut fanotify_event,
+            buffer as *mut FanotifyEvent,
             sizeof as usize / *FAN_EVENT_METADATA_LEN,
         );
         vec.extend_from_slice(src);
