@@ -31,7 +31,7 @@ type DaemonConfig interface {
 	Supplement(host, repo, snapshotID string, params map[string]string)
 	// Provide auth
 	FillAuth(kc *auth.PassKeyChain)
-	StorageBackendType() string
+	StorageBackend() (StorageBackendType, *BackendConfig)
 	UpdateMirrors(mirrorsConfigDir, registryHost string) error
 	DumpString() (string, error)
 	DumpFile(path string) error
@@ -65,6 +65,7 @@ type MirrorConfig struct {
 	FailureLimit        uint8             `json:"failure_limit,omitempty"`
 	PingURL             string            `json:"ping_url,omitempty"`
 }
+
 type BackendConfig struct {
 	// Localfs backend configs
 	BlobFile     string `json:"blob_file,omitempty"`
@@ -146,9 +147,9 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		return errors.Wrapf(err, "parse image %s", imageID)
 	}
 
-	backend := c.StorageBackendType()
+	backendType, _ := c.StorageBackend()
 
-	switch backend {
+	switch backendType {
 	case backendTypeRegistry:
 		registryHost := image.Host
 		if vpcRegistry {
@@ -174,7 +175,7 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	case backendTypeLocalfs:
 	case backendTypeOss:
 	default:
-		return errors.Errorf("unknown backend type %s", backend)
+		return errors.Errorf("unknown backend type %s", backendType)
 	}
 
 	return nil

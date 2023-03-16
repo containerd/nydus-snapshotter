@@ -150,3 +150,8 @@ retract (
 	v0.11.0
 	v0.3.0 // retagged: cd604c1b597558ea045a79c4f80a8c780909801b -> 85653575c7dafb6b06548478ee1dc61ac5905d00
 )
+
+// We are using the forked containerd package version for enabling
+// OCI reference type feature. Once containerd officially releases
+// this feature, we will remove the replacement here.
+replace github.com/containerd/containerd => github.com/nydusaccelerator/containerd v0.0.0-20230331034304-d4d4bdc00ef9
