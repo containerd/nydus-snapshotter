@@ -1,5 +1,5 @@
-all: clear build
-optimizer: clear-optimizer build-optimizer
+all: clean build
+optimizer: clean-optimizer build-optimizer
 
 PKG = github.com/containerd/nydus-snapshotter
 PACKAGES ?= $(shell go list ./... | grep -v /tests)
@@ -67,14 +67,15 @@ static-release:
 converter:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/converter ./cmd/converter
 
-.PHONY: clear
-clear:
+.PHONY: clean
+clean:
 	rm -f bin/*
 	rm -rf _out
 
-.PHONY: clear-optimizer
-clear-optimizer:
+.PHONY: clean-optimizer
+clean-optimizer:
 	rm -rf bin/02-optimizer-nri-plugin
+	rm -rf bin/optimizer-server
 	${CARGO} clean --manifest-path ${OPTIMIZER_SERVER_TOML}
 
 .PHONY: install
