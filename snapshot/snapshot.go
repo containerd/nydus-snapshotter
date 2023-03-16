@@ -31,7 +31,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 
-	blob "github.com/containerd/nydus-snapshotter/pkg/blob"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
@@ -41,7 +40,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
 
-	"github.com/containerd/nydus-snapshotter/pkg/resolve"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
@@ -58,7 +56,6 @@ type snapshotter struct {
 	// Storing snapshots' state, parentage and other metadata
 	ms                   *storage.MetaStore
 	fs                   *filesystem.Filesystem
-	blobMgr              *blob.Manager
 	manager              *manager.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
@@ -169,26 +166,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}
 	}
 
-	// With fuse driver enabled and a fuse daemon configuration with "localfs"
-	// storage backend, it indicates that a Blobs Manager is needed to download
-	// blobs from registry alone with no help of nydusd or containerd.
-	var blobMgr *blob.Manager
-	if fuseConfig, ok := daemonConfig.(*daemonconfig.FuseDaemonConfig); ok {
-		d := fuseConfig.Device.Backend.Config.Dir
-		if fuseConfig.Device.Backend.BackendType == "localfs" && len(d) != 0 {
-			if err := os.MkdirAll(d, 0700); err != nil {
-				return nil, errors.Wrap(err, "create blob manager's directory")
-			}
-			blobMgr = blob.NewBlobManager(d, resolve.NewResolver())
-			go func() {
-				err := blobMgr.Run(ctx)
-				if err != nil {
-					log.G(ctx).Warnf("blob manager run failed %s", err)
-				}
-			}()
-		}
-	}
-
 	if err := os.MkdirAll(cfg.Root, 0700); err != nil {
 		return nil, err
 	}
@@ -225,7 +202,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
-		blobMgr:              blobMgr,
 	}, nil
 }
 
@@ -362,15 +338,6 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		// check if image layer is nydus data layer
 		if isNydusDataLayer(info.Labels) {
 			logger.Debugf("nydus data layer %s", key)
-
-			if o.blobMgr != nil {
-				err = o.blobMgr.PrepareBlobLayer(s, info.Labels)
-				if err != nil {
-					logger.Errorf("failed to prepare nydus data layer of snapshot ID %s, err: %v", s.ID, err)
-					return nil, err
-				}
-			}
-
 			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
 			if err == nil || errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
@@ -528,11 +495,6 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to remove key %s", key)
 	}
-	var blobDigest string
-	_, cleanupBlob := info.Labels[label.NydusDataLayer]
-	if cleanupBlob {
-		blobDigest = info.Labels[snpkg.TargetLayerDigestLabel]
-	}
 
 	if o.syncRemove {
 		var removals []string
@@ -551,22 +513,10 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 						log.G(ctx).WithError(err).WithField("path", dir).Warn("failed to remove directory")
 					}
 				}
-				if cleanupBlob && o.blobMgr != nil {
-					if err := o.blobMgr.CleanupBlobLayer(ctx, blobDigest, false); err != nil {
-						log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
-					}
-				}
-			}
-		}()
-	} else {
-		defer func() {
-			if cleanupBlob && o.blobMgr != nil {
-				if err := o.blobMgr.CleanupBlobLayer(ctx, blobDigest, true); err != nil {
-					log.G(ctx).WithError(err).WithField("id", key).Warn("failed to remove blob")
-				}
 			}
 		}()
 	}
+
 	return t.Commit()
 }
 
