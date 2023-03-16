@@ -832,7 +832,7 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 		case images.IsIndexType(newDesc.MediaType):
 			return convertIndex(ctx, cs, orgDesc, newDesc)
 		case images.IsManifestType(newDesc.MediaType):
-			return convertManifest(ctx, cs, newDesc, opt)
+			return convertManifest(ctx, cs, orgDesc, newDesc, opt)
 		default:
 			return newDesc, nil
 		}
@@ -869,6 +869,13 @@ func convertIndex(ctx context.Context, cs content.Store, orgDesc ocispec.Descrip
 		manifest.Platform.OSFeatures = append(manifest.Platform.OSFeatures, ManifestOSFeatureNydus)
 		index.Manifests[i] = manifest
 	}
+
+	// If the converted manifest list contains only one manifest,
+	// convert it directly to manifest.
+	if len(index.Manifests) == 1 {
+		return &index.Manifests[0], nil
+	}
+
 	// Update image index in content store.
 	newIndexDesc, err := writeJSON(ctx, cs, index, *newDesc, indexLabels)
 	if err != nil {
@@ -893,7 +900,7 @@ func isNydusImage(manifest *ocispec.Manifest) bool {
 // convertManifest merges all the nydus blob layers into a
 // nydus bootstrap layer, update the image config,
 // and modify the image manifest.
-func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
+func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Descriptor, newDesc *ocispec.Descriptor, opt MergeOption) (*ocispec.Descriptor, error) {
 	var manifest ocispec.Manifest
 	manifestDesc := *newDesc
 	manifestLabels, err := readJSON(ctx, cs, &manifest, manifestDesc)
@@ -957,6 +964,11 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 	manifest.Config = *newConfigDesc
 	// Update the config gc label
 	manifestLabels[configGCLabelKey] = newConfigDesc.Digest.String()
+
+	// Associate a reference to the original OCI manifest.
+	// See the `subject` field description in
+	// https://github.com/opencontainers/image-spec/blob/main/manifest.md#image-manifest-property-descriptions
+	manifest.Subject = &oldDesc
 
 	// Update image manifest in content store.
 	newManifestDesc, err := writeJSON(ctx, cs, manifest, manifestDesc, manifestLabels)
