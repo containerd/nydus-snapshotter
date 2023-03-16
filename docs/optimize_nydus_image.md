@@ -106,7 +106,7 @@ Nydus provides a [nydusify](https://github.com/dragonflyoss/image-service/blob/m
 We can install the `nydusify` cli tool from the nydus package.
 
 ```console
-VERSION=v2.1.4
+VERSION=v2.1.5
 
 wget https://github.com/dragonflyoss/image-service/releases/download/$VERSION/nydus-static-$VERSION-linux-amd64.tgz
 tar -zxvf nydus-static-$VERSION-linux-amd64.tgz

@@ -1,6 +1,6 @@
 FROM alpine:3.17.0 AS sourcer
 
-ARG NYDUS_VER=v2.1.2
+ARG NYDUS_VER=v2.1.5
 
 RUN apk add --no-cache curl
 RUN apk add --no-cache --upgrade grep
