@@ -87,7 +87,7 @@ func (fserver *Server) RunServer() error {
 func (fserver *Server) ReceiveEventInfo() error {
 	eventInfo, err := fserver.Client.GetEventInfo()
 	if err != nil {
-		return fmt.Errorf("failed to get event inforation: %v", err)
+		return fmt.Errorf("failed to get event information: %v", err)
 	}
 
 	f, err := os.OpenFile(fserver.PersistFile, os.O_CREATE|os.O_WRONLY, 0644)
@@ -114,9 +114,9 @@ func (fserver *Server) ReceiveEventInfo() error {
 
 func (fserver *Server) StopServer() {
 	if fserver.Cmd != nil {
-		logrus.Infof("send SIGTERM signal to process group %d", fserver.Cmd.Process.Pid)
+		logrus.Infof("Send SIGTERM signal to process group %d", fserver.Cmd.Process.Pid)
 		if err := syscall.Kill(-fserver.Cmd.Process.Pid, syscall.SIGTERM); err != nil {
-			logrus.WithError(err).Errorf("kill process group %d failed!", fserver.Cmd.Process.Pid)
+			logrus.WithError(err).Errorf("Stop process group %d failed!", fserver.Cmd.Process.Pid)
 		}
 		if err := fserver.ReceiveEventInfo(); err != nil {
 			logrus.WithError(err).Errorf("Failed to receive event information")
