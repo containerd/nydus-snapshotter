@@ -17,10 +17,7 @@ if [ "$#" -eq 0 ]; then
 		--root ${NYDUS_LIB} \
 		--address ${NYDUS_RUN}/containerd-nydus-grpc.sock \
 		--log-level ${LEVEL} \
-		--enable-metrics=${ENABLE_METRICS} \
-		--enable-nydus-overlayfs=${ENABLE_NYDUS_OVERLAY} \
 		--daemon-mode ${NYDUSD_DAEMON_MODE} \
-		--enable-stargz \
 		--log-to-stdout
 fi
 
