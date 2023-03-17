@@ -11,7 +11,9 @@ import (
 )
 
 const (
-	DefaultDaemonMode string = string(DaemonModeMultiple)
+	defaultDaemonMode string = string(DaemonModeMultiple)
+
+	defaultFsDriver string = FsDriverFusedev
 
 	DefaultLogLevel string = "info"
 	defaultGCPeriod string = "24h"
@@ -36,7 +38,7 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 
 	// essential configuration
 	if c.DaemonMode == "" {
-		c.DaemonMode = DefaultDaemonMode
+		c.DaemonMode = defaultDaemonMode
 	}
 
 	// system controller configuration
@@ -59,6 +61,7 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 		daemonConfig.NydusdConfigPath = defaultNydusDaemonConfigPath
 	}
 	daemonConfig.RecoverPolicy = RecoverPolicyRestart.String()
+	daemonConfig.FsDriver = defaultFsDriver
 
 	// cache configuration
 	cacheConfig := &c.CacheManagerConfig
