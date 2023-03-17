@@ -53,7 +53,7 @@ func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
 		}
 		return cfg, nil
 	default:
-		return nil, errors.Errorf("unsupported, fs driver %s", fsDriver)
+		return nil, errors.Errorf("unsupported, fs driver %q", fsDriver)
 	}
 }
 
