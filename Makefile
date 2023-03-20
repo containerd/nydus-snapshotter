@@ -1,5 +1,5 @@
-all: clear build
-optimizer: clear-optimizer build-optimizer
+all: clean build
+optimizer: clean-optimizer build-optimizer
 
 PKG = github.com/containerd/nydus-snapshotter
 PACKAGES ?= $(shell go list ./... | grep -v /tests)
@@ -48,6 +48,7 @@ CARGO ?= $(shell which cargo)
 OPTIMIZER_SERVER = tools/optimizer-server
 OPTIMIZER_SERVER_TOML = ${OPTIMIZER_SERVER}/Cargo.toml
 OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/release/optimizer-server
+STATIC_OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/x86_64-unknown-linux-gnu/release/optimizer-server
 
 .PHONY: build
 build:
@@ -55,26 +56,29 @@ build:
 
 .PHONY: build-optimizer
 build-optimizer:
-	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/02-optimizer-nri-plugin ./cmd/optimizer-nri-plugin
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
 	${CARGO} fmt --manifest-path ${OPTIMIZER_SERVER_TOML} -- --check
 	${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} && cp ${OPTIMIZER_SERVER_BIN} ./bin
 	${CARGO} clippy --manifest-path ${OPTIMIZER_SERVER_TOML} --bins -- -Dwarnings
 
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
+	RUSTFLAGS="-C target-feature=+crt-static" ${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} --target x86_64-unknown-linux-gnu && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
 
 # Majorly for cross build for converter package since it is imported by other projects
 converter:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/converter ./cmd/converter
 
-.PHONY: clear
-clear:
+.PHONY: clean
+clean:
 	rm -f bin/*
 	rm -rf _out
 
-.PHONY: clear-optimizer
-clear-optimizer:
-	rm -rf bin/02-optimizer-nri-plugin
+.PHONY: clean-optimizer
+clean-optimizer:
+	rm -rf bin/optimizer-nri-plugin
+	rm -rf bin/optimizer-server
 	${CARGO} clean --manifest-path ${OPTIMIZER_SERVER_TOML}
 
 .PHONY: install
@@ -93,9 +97,9 @@ install:
 	@if which systemctl >/dev/null; then sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service; sudo systemctl restart nydus-snapshotter; fi
 
 install-optimizer:
-	sudo install -D -m 755 bin/02-optimizer-nri-plugin /opt/nri/plugins/02-optimizer-nri-plugin
+	sudo install -D -m 755 bin/optimizer-nri-plugin /opt/nri/plugins/02-optimizer-nri-plugin
 	sudo install -D -m 755 bin/optimizer-server /usr/local/bin/optimizer-server
-	sudo install -D -m 755 misc/example/02-optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
+	sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
 
 	@sudo mkdir -p /opt/nri/optimizer/results
 
