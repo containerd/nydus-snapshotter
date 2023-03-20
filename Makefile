@@ -48,6 +48,7 @@ CARGO ?= $(shell which cargo)
 OPTIMIZER_SERVER = tools/optimizer-server
 OPTIMIZER_SERVER_TOML = ${OPTIMIZER_SERVER}/Cargo.toml
 OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/release/optimizer-server
+STATIC_OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/x86_64-unknown-linux-gnu/release/optimizer-server
 
 .PHONY: build
 build:
@@ -62,6 +63,8 @@ build-optimizer:
 
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
+	RUSTFLAGS="-C target-feature=+crt-static" ${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} --target x86_64-unknown-linux-gnu && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
 
 # Majorly for cross build for converter package since it is imported by other projects
 converter:
