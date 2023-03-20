@@ -91,7 +91,7 @@ func (bb *Blob) ReadToc() (io.Reader, error) {
 		return nil, err
 	}
 	if h.Name != TocFileName {
-		return nil, fmt.Errorf("failed to find toc from image %s blob %s", bb.ref, bb.digest)
+		return nil, fmt.Errorf("Failed to find toc from image %s blob %s", bb.ref, bb.digest)
 	}
 	var buf bytes.Buffer
 	_, err = buf.ReadFrom(tr)
@@ -99,6 +99,14 @@ func (bb *Blob) ReadToc() (io.Reader, error) {
 		return nil, err
 	}
 	return &buf, nil
+}
+
+func (bb *Blob) GetDigest() string {
+	return bb.digest
+}
+
+func (bb *Blob) GetImageReference() string {
+	return bb.ref
 }
 
 func (r *Resolver) GetBlob(ref, digest string, keychain authn.Keychain) (*Blob, error) {

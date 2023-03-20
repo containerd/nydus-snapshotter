@@ -16,7 +16,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/pkg/errors"
 
@@ -166,10 +165,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}
 	}
 
-	if err := os.MkdirAll(cfg.Root, 0700); err != nil {
-		return nil, err
-	}
-
 	supportsDType, err := getSupportsDType(cfg.Root)
 	if err != nil {
 		return nil, err
@@ -314,7 +309,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		return o.remoteMounts(ctx, *snap, metaSnapshotID)
 	}
 
-	return o.mounts(ctx, &info, *snap)
+	return o.mounts(ctx, info.Labels, *snap)
 }
 
 func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
@@ -322,10 +317,12 @@ func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare); timer != nil {
-		defer timer.ObserveDuration()
-	}
+	// `timer` can't be nil
+	timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare)
+	defer timer.ObserveDuration()
+
 	logger := log.L.WithField("key", key).WithField("parent", parent)
+
 	info, s, err := o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
 	if err != nil {
 		return nil, err
@@ -333,67 +330,26 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 
 	logger.Debugf("prepare snapshot with labels %v", info.Labels)
 
-	// Handle nydus/stargz image data layers.
-	if target, ok := info.Labels[label.TargetSnapshotRef]; ok {
-		// check if image layer is nydus data layer
-		if isNydusDataLayer(info.Labels) {
-			logger.Debugf("nydus data layer %s", key)
-			err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
-			if err == nil || errdefs.IsAlreadyExists(err) {
-				return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
-			}
-		} else if !isNydusMetaLayer(info.Labels) {
-			// Check if image layer is estargz layer
-			if ok, ref, layerDigest, blob := o.fs.IsStargzDataLayer(ctx, info.Labels); ok {
-				err = o.fs.PrepareStargzMetaLayer(ctx, blob, ref, layerDigest, s, info.Labels)
-				if err != nil {
-					logger.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
-					// fallback to default OCIv1 handler
-				} else {
-					// Mark this snapshot as stargz layer
-					info.Labels[label.StargzLayer] = "true"
-					err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
-					if err == nil || errdefs.IsAlreadyExists(err) {
-						return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
-					}
-				}
-			}
-		}
-	} else {
-		// Mount image for running container, which has a nydus/stargz image as parent.
-		logger.Infof("Prepares active snapshot %s, nydusd should start afterwards", key)
+	processor, target, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func() string { return o.upperPath(s.ID) })
+	if err != nil {
+		return nil, err
+	}
 
-		if id, info, err := o.findMetaLayer(ctx, key); err == nil {
-			// For stargz layer, we need to merge all bootstraps into one.
-			if o.fs.StargzLayer(info.Labels) {
-				if err := o.fs.MergeStargzMetaLayer(ctx, s); err != nil {
-					return nil, errors.Wrap(err, "merge stargz meta layer")
-				}
-			}
+	needCommit, mounts, err := processor()
 
-			logger.Debugf("Found nydus meta layer id %s", id)
-			if err := o.prepareRemoteSnapshot(id, info.Labels); err != nil {
-				return nil, err
-			}
-
-			// FIXME: What's strange it that we are providing meta snapshot
-			// contents but not wait for it reaching RUNNING
-			return o.remoteMounts(ctx, s, id)
+	if needCommit {
+		err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
+		if err == nil || errdefs.IsAlreadyExists(err) {
+			return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 		}
 	}
 
-	return o.mounts(ctx, info, s)
+	return mounts, err
 }
 
 func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
 	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, i snapshots.Info) bool {
-		ok := isNydusMetaLayer(i.Labels)
-
-		if !ok && o.fs.StargzEnabled() {
-			_, ok = i.Labels[label.StargzLayer]
-		}
-
-		return ok
+		return isNydusMetaLayer(i.Labels)
 	})
 }
 
@@ -405,7 +361,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 
 	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
-	return o.mounts(ctx, base, s)
+	return o.mounts(ctx, base.Labels, s)
 }
 
 func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
@@ -588,7 +544,7 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	defer func() {
 		if td != "" {
 			if err1 := o.cleanupSnapshotDirectory(ctx, td); err1 != nil {
-				log.G(ctx).WithError(err1).Warn("failed to cleanup temp snapshot directory")
+				log.G(ctx).WithError(err1).Warn("failed to clean up temp snapshot directory")
 			}
 		}
 		if path != "" {
@@ -601,35 +557,36 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 
 	td, err = o.prepareDirectory(o.snapshotRoot(), kind)
 	if err != nil {
-		return nil, storage.Snapshot{}, errors.Wrap(err, "failed to create prepare snapshot dir")
+		return nil, storage.Snapshot{}, errors.Wrap(err, "create prepare snapshot dir")
 	}
 
 	s, err := storage.CreateSnapshot(ctx, kind, key, parent, opts...)
 	if err != nil {
-		return nil, storage.Snapshot{}, errors.Wrap(err, "failed to create snapshot")
+		return nil, storage.Snapshot{}, errors.Wrap(err, "create snapshot")
 	}
 
 	if len(s.ParentIDs) > 0 {
+		// FIXME: closest parent should be s.ParentIDs[len(s.ParentIDs)-1]?
 		st, err := os.Stat(o.upperPath(s.ParentIDs[0]))
 		if err != nil {
-			return nil, storage.Snapshot{}, errors.Wrap(err, "failed to stat parent")
+			return nil, storage.Snapshot{}, errors.Wrap(err, "stat parent")
 		}
 
 		// FIXME: Why only change owner of having parent?
 		if err := lchown(filepath.Join(td, "fs"), st); err != nil {
-			return nil, storage.Snapshot{}, errors.Wrap(err, "failed to chown")
+			return nil, storage.Snapshot{}, errors.Wrap(err, "perform chown")
 		}
 	}
 
 	path = o.snapshotDir(s.ID)
 	if err = os.Rename(td, path); err != nil {
-		return nil, storage.Snapshot{}, errors.Wrap(err, "failed to rename")
+		return nil, storage.Snapshot{}, errors.Wrap(err, "perform rename")
 	}
 	td = ""
 
 	rollback = false
 	if err = t.Commit(); err != nil {
-		return nil, storage.Snapshot{}, errors.Wrap(err, "commit failed")
+		return nil, storage.Snapshot{}, errors.Wrap(err, "perform commit")
 	}
 	path = ""
 
@@ -718,6 +675,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	}
 
 	// get version from bootstrap
+	// TODO: Make me configurable
 	f, err := os.Open(source)
 	if err != nil {
 		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to open bootstrap")
@@ -758,7 +716,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	}, nil
 }
 
-func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storage.Snapshot) ([]mount.Mount, error) {
+func (o *snapshotter) mounts(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
 	if len(s.ParentIDs) == 0 {
 		// if we only have one layer/no parents then just return a bind mount as overlay will not work
 		roFlag := "rw"
@@ -784,7 +742,7 @@ func (o *snapshotter) mounts(ctx context.Context, info *snapshots.Info, s storag
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
-		if _, ok := info.Labels[label.OverlayfsVolatileOpt]; ok {
+		if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
 			options = append(options, "volatile")
 		}
 	} else if len(s.ParentIDs) == 1 {
@@ -907,13 +865,4 @@ func (o *snapshotter) snapshotRoot() string {
 
 func (o *snapshotter) snapshotDir(id string) string {
 	return filepath.Join(o.snapshotRoot(), id)
-}
-
-func getSupportsDType(dir string) (bool, error) {
-	return fs.SupportsDType(dir)
-}
-
-func lchown(target string, st os.FileInfo) error {
-	stat := st.Sys().(*syscall.Stat_t)
-	return os.Lchown(target, int(stat.Uid), int(stat.Gid))
 }

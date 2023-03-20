@@ -36,37 +36,38 @@ func (fs *Filesystem) StargzEnabled() bool {
 	return fs.stargzResolver != nil
 }
 
-func (fs *Filesystem) IsStargzDataLayer(ctx context.Context, labels map[string]string) (bool, string, string, *stargz.Blob) {
-	if !fs.StargzEnabled() {
-		return false, "", "", nil
-	}
+// Detect if the blob is type of estargz by downloading its footer since estargz image does not
+// have any characteristic annotation.
+func (fs *Filesystem) IsStargzDataLayer(labels map[string]string) (bool, *stargz.Blob) {
+
 	ref, layerDigest := registry.ParseLabels(labels)
 	if ref == "" || layerDigest == "" {
-		return false, "", "", nil
+		return false, nil
 	}
 
-	log.G(ctx).Infof("image ref %s digest %s", ref, layerDigest)
+	log.L.Infof("Checking stargz image ref %s digest %s", ref, layerDigest)
+
 	keychain, err := auth.GetKeyChainByRef(ref, labels)
 	if err != nil {
-		log.L.WithError(err).Warn("get key chain by ref")
-		return false, ref, layerDigest, nil
+		log.L.WithError(err).Warn("get keychain from image reference")
+		return false, nil
 	}
 	blob, err := fs.stargzResolver.GetBlob(ref, layerDigest, keychain)
 	if err != nil {
 		log.L.WithError(err).Warn("get stargz blob")
-		return false, ref, layerDigest, nil
+		return false, nil
 	}
 	off, err := blob.GetTocOffset()
 	if err != nil {
 		log.L.WithError(err).Warn("get toc offset")
-		return false, ref, layerDigest, nil
+		return false, nil
 	}
 	if off <= 0 {
-		log.L.WithError(err).Warnf("invalid stargz toc offset %d", off)
-		return false, ref, layerDigest, nil
+		log.L.WithError(err).Warnf("Invalid stargz toc offset %d", off)
+		return false, nil
 	}
 
-	return true, ref, layerDigest, blob
+	return true, blob
 }
 
 func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapshot) error {
@@ -158,15 +159,20 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 	return nil
 }
 
-func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.Blob, ref, layerDigest string, s storage.Snapshot, labels map[string]string) error {
+// Generate nydus bootstrap from stargz layers
+// Download estargz TOC part from each layer as `nydus-image` conversion source.
+// After conversion, a nydus metadata or bootstrap is used to pointing to each estargz blob
+func (fs *Filesystem) PrepareStargzMetaLayer(blob *stargz.Blob, storagePath string, labels map[string]string) error {
+	ref := blob.GetImageReference()
+	layerDigest := blob.GetDigest()
+
 	if !fs.StargzEnabled() {
-		return fmt.Errorf("stargz is not enabled")
+		return fmt.Errorf("stargz compatibility is not enabled")
 	}
 
-	upperPath := fs.UpperPath(s.ID)
 	blobID := digest.Digest(layerDigest).Hex()
-	convertedBootstrap := filepath.Join(upperPath, blobID)
-	stargzFile := filepath.Join(upperPath, stargz.TocFileName)
+	convertedBootstrap := filepath.Join(storagePath, blobID)
+	stargzFile := filepath.Join(storagePath, stargz.TocFileName)
 	if _, err := os.Stat(convertedBootstrap); err == nil {
 		return nil
 	}
@@ -174,23 +180,23 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start)
-		log.G(ctx).Infof("total stargz prepare layer duration %d", duration.Milliseconds())
+		log.L.Infof("total stargz prepare layer duration %d", duration.Milliseconds())
 	}()
 
 	r, err := blob.ReadToc()
 	if err != nil {
-		return errors.Wrapf(err, "failed to read toc from ref %s, digest %s", ref, layerDigest)
+		return errors.Wrapf(err, "read TOC, image reference: %s, layer digest: %s", ref, layerDigest)
 	}
 	starGzToc, err := os.OpenFile(stargzFile, os.O_CREATE|os.O_RDWR, 0640)
 	if err != nil {
-		return errors.Wrap(err, "failed to create stargz index")
+		return errors.Wrap(err, "create stargz index")
 	}
 
 	defer starGzToc.Close()
 
 	_, err = io.Copy(starGzToc, r)
 	if err != nil {
-		return errors.Wrap(err, "failed to save stargz index")
+		return errors.Wrap(err, "save stargz index")
 	}
 	err = os.Chmod(stargzFile, 0440)
 	if err != nil {
@@ -201,13 +207,13 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 	if config.GetFsDriver() == config.FsDriverFscache {
 		// For fscache, the cache directory is managed linux fscache driver, so the blob.meta file
 		// can't be stored there.
-		if err := os.MkdirAll(upperPath, 0750); err != nil {
-			return errors.Wrapf(err, "failed to create fscache work dir %s", upperPath)
+		if err := os.MkdirAll(storagePath, 0750); err != nil {
+			return errors.Wrapf(err, "failed to create fscache work dir %s", storagePath)
 		}
-		blobMetaPath = filepath.Join(upperPath, fmt.Sprintf("%s.blob.meta", blobID))
+		blobMetaPath = filepath.Join(storagePath, fmt.Sprintf("%s.blob.meta", blobID))
 	}
 
-	tf, err := os.CreateTemp(upperPath, "converting-stargz")
+	tf, err := os.CreateTemp(storagePath, "converting-stargz")
 	if err != nil {
 		return errors.Wrap(err, "create temp file for merging stargz layers")
 	}
@@ -231,11 +237,11 @@ func (fs *Filesystem) PrepareStargzMetaLayer(ctx context.Context, blob *stargz.B
 		"--chunk-size", "0x400000",
 		"--blob-meta", blobMetaPath,
 	}
-	options = append(options, filepath.Join(fs.UpperPath(s.ID), stargz.TocFileName))
+	options = append(options, filepath.Join(storagePath, stargz.TocFileName))
 	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
-	log.G(ctx).Infof("nydus image command %v", options)
+	log.L.Infof("nydus image command %v", options)
 	err = cmd.Run()
 	if err != nil {
 		return errors.Wrap(err, "converting stargz layer")
