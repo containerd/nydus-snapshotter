@@ -72,7 +72,7 @@ jobs:
           pwd
           ls -lh bin/*optimizer*
           sudo make install-optimizer
-          sudo install -D -m 755 misc/example/02-optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
+          sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
           sudo systemctl restart containerd
       - name: Generate accessed files list
         run: |

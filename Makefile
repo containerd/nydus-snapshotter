@@ -55,7 +55,7 @@ build:
 
 .PHONY: build-optimizer
 build-optimizer:
-	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/02-optimizer-nri-plugin ./cmd/optimizer-nri-plugin
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
 	${CARGO} fmt --manifest-path ${OPTIMIZER_SERVER_TOML} -- --check
 	${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} && cp ${OPTIMIZER_SERVER_BIN} ./bin
 	${CARGO} clippy --manifest-path ${OPTIMIZER_SERVER_TOML} --bins -- -Dwarnings
@@ -74,7 +74,7 @@ clean:
 
 .PHONY: clean-optimizer
 clean-optimizer:
-	rm -rf bin/02-optimizer-nri-plugin
+	rm -rf bin/optimizer-nri-plugin
 	rm -rf bin/optimizer-server
 	${CARGO} clean --manifest-path ${OPTIMIZER_SERVER_TOML}
 
@@ -94,9 +94,9 @@ install:
 	@if which systemctl >/dev/null; then sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service; sudo systemctl restart nydus-snapshotter; fi
 
 install-optimizer:
-	sudo install -D -m 755 bin/02-optimizer-nri-plugin /opt/nri/plugins/02-optimizer-nri-plugin
+	sudo install -D -m 755 bin/optimizer-nri-plugin /opt/nri/plugins/02-optimizer-nri-plugin
 	sudo install -D -m 755 bin/optimizer-server /usr/local/bin/optimizer-server
-	sudo install -D -m 755 misc/example/02-optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
+	sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
 
 	@sudo mkdir -p /opt/nri/optimizer/results
 
