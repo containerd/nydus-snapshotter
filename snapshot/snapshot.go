@@ -318,10 +318,12 @@ func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare); timer != nil {
-		defer timer.ObserveDuration()
-	}
+	// `timer` can't be nil
+	timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare)
+	defer timer.ObserveDuration()
+
 	logger := log.L.WithField("key", key).WithField("parent", parent)
+
 	info, s, err := o.createSnapshot(ctx, snapshots.KindActive, key, parent, opts)
 	if err != nil {
 		return nil, err
