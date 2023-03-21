@@ -908,6 +908,12 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 	// This option needs to be enabled for image scenario.
 	opt.WithTar = true
 
+	// If the original image is already an OCI type, we should forcibly set the
+	// bootstrap layer to the OCI type.
+	if !opt.OCI && oldDesc.MediaType == ocispec.MediaTypeImageManifest {
+		opt.OCI = true
+	}
+
 	// Append bootstrap layer to manifest.
 	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, opt)
 	if err != nil {
@@ -939,8 +945,13 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 	if err != nil {
 		return nil, errors.Wrap(err, "read image config")
 	}
+	bootstrapHistory := ocispec.History{
+		CreatedBy: "Nydus Converter",
+		Comment:   "Nydus Bootstrap Layer",
+	}
 	if opt.Backend != nil {
 		config.RootFS.DiffIDs = []digest.Digest{digest.Digest(bootstrapDesc.Annotations[LayerAnnotationUncompressed])}
+		config.History = []ocispec.History{bootstrapHistory}
 	} else {
 		config.RootFS.DiffIDs = make([]digest.Digest, 0, len(manifest.Layers))
 		for i, layer := range manifest.Layers {
@@ -948,6 +959,9 @@ func convertManifest(ctx context.Context, cs content.Store, newDesc *ocispec.Des
 			// Remove useless annotation.
 			delete(manifest.Layers[i].Annotations, LayerAnnotationUncompressed)
 		}
+		// Append history item for bootstrap layer, to ensure the history consistency.
+		// See https://github.com/distribution/distribution/blob/e5d5810851d1f17a5070e9b6f940d8af98ea3c29/manifest/schema1/config_builder.go#L136
+		config.History = append(config.History, bootstrapHistory)
 	}
 	// Update image config in content store.
 	newConfigDesc, err := writeJSON(ctx, cs, config, manifest.Config, configLabels)
@@ -1084,11 +1098,15 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	if opt.FsVersion == "" {
 		opt.FsVersion = "6"
 	}
+	mediaType := images.MediaTypeDockerSchema2LayerGzip
+	if opt.OCI {
+		mediaType = ocispec.MediaTypeImageLayerGzip
+	}
 
 	bootstrapDesc := ocispec.Descriptor{
 		Digest:    compressedDgst,
 		Size:      bootstrapInfo.Size,
-		MediaType: ocispec.MediaTypeImageLayerGzip,
+		MediaType: mediaType,
 		Annotations: map[string]string{
 			LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
 			LayerAnnotationFSVersion:    opt.FsVersion,
