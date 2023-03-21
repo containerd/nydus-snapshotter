@@ -11,7 +11,9 @@ import (
 )
 
 const (
-	DefaultDaemonMode string = string(DaemonModeMultiple)
+	defaultDaemonMode string = string(DaemonModeMultiple)
+
+	defaultFsDriver string = FsDriverFusedev
 
 	DefaultLogLevel string = "info"
 	defaultGCPeriod string = "24h"
@@ -21,7 +23,8 @@ const (
 	nydusImageBinaryName         string = "nydus-image"
 
 	defaultRootDir                 = "/var/lib/containerd-nydus"
-	defaultSystemControllerAddress = "/var/run/containerd-nydus/system.sock"
+	defaultAddress                 = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+	defaultSystemControllerAddress = "/run/containerd-nydus/system.sock"
 
 	// Log rotation
 	defaultRotateLogMaxSize    = 200 // 200 megabytes
@@ -32,11 +35,13 @@ const (
 )
 
 func (c *SnapshotterConfig) FillUpWithDefaults() error {
+	c.Version = 1
 	c.Root = defaultRootDir
+	c.Address = defaultAddress
 
 	// essential configuration
 	if c.DaemonMode == "" {
-		c.DaemonMode = DefaultDaemonMode
+		c.DaemonMode = defaultDaemonMode
 	}
 
 	// system controller configuration
@@ -59,6 +64,7 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 		daemonConfig.NydusdConfigPath = defaultNydusDaemonConfigPath
 	}
 	daemonConfig.RecoverPolicy = RecoverPolicyRestart.String()
+	daemonConfig.FsDriver = defaultFsDriver
 
 	// cache configuration
 	cacheConfig := &c.CacheManagerConfig

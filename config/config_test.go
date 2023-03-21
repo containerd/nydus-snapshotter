@@ -30,7 +30,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		CleanupOnClose: false,
 		SystemControllerConfig: SystemControllerConfig{
 			Enable:  true,
-			Address: "/var/run/containerd-nydus/system.sock",
+			Address: "/run/containerd-nydus/system.sock",
 			DebugConfig: DebugConfig{
 				ProfileDuration: 5,
 				PprofAddress:    "",
@@ -178,7 +178,7 @@ func TestMergeConfig(t *testing.T) {
 	A.Equal(snapshotterConfig1.LoggingConfig.LogDir, "")
 	A.Equal(snapshotterConfig1.CacheManagerConfig.CacheDir, "")
 
-	A.Equal(snapshotterConfig1.DaemonMode, DefaultDaemonMode)
+	A.Equal(snapshotterConfig1.DaemonMode, defaultDaemonMode)
 	A.Equal(snapshotterConfig1.SystemControllerConfig.Address, defaultSystemControllerAddress)
 	A.Equal(snapshotterConfig1.LoggingConfig.LogLevel, DefaultLogLevel)
 	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxSize, defaultRotateLogMaxSize)
