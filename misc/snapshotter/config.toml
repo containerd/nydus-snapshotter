@@ -25,8 +25,6 @@ nydusd_path = "/usr/local/bin/nydusd"
 nydusimage_path = "/usr/local/bin/nydus-image"
 # fusedev or fscache
 fs_driver = "fusedev"
-# Specify nydusd log level
-log_level = "info"
 # How to process when daemon dies: "none", "restart" or "failover"
 recover_policy = "restart"
 # Specify a configuration file for nydusd
