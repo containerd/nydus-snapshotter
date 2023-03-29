@@ -51,12 +51,10 @@ func TestLoadMirrorConfig(t *testing.T) {
 	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	require.NoError(t, err)
-	require.Equal(t, len(mirrors), 2)
+	require.Equal(t, len(mirrors), 1)
 	require.Equal(t, mirrors[0].Host, "http://default-p2p-mirror1:65001")
 	require.Equal(t, mirrors[0].AuthThrough, true)
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://default-docker.hub.com")
-	require.Equal(t, mirrors[1].Host, "https://default-docker.hub.com")
-	require.Equal(t, mirrors[1].AuthThrough, false)
 
 	err = os.MkdirAll(registryHostConfigDir, os.ModePerm)
 	assert.NoError(t, err)
@@ -64,7 +62,6 @@ func TestLoadMirrorConfig(t *testing.T) {
 	buf2 := []byte(`server = "https://docker.hub.com"
 	[host]
 	  [host."http://p2p-mirror1:65001"]
-		auth_through = true
 		[host."http://p2p-mirror1:65001".header]
 		  X-Dragonfly-Registry = ["https://docker.hub.com"]
 	`)
@@ -72,10 +69,22 @@ func TestLoadMirrorConfig(t *testing.T) {
 	assert.NoError(t, err)
 	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	require.NoError(t, err)
-	require.Equal(t, len(mirrors), 2)
+	require.Equal(t, len(mirrors), 1)
 	require.Equal(t, mirrors[0].Host, "http://p2p-mirror1:65001")
-	require.Equal(t, mirrors[0].AuthThrough, true)
+	require.Equal(t, mirrors[0].AuthThrough, false)
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
-	require.Equal(t, mirrors[1].Host, "https://docker.hub.com")
-	require.Equal(t, mirrors[1].AuthThrough, false)
+
+	buf3 := []byte(`
+		[host."http://p2p-mirror2:65001"]
+		[host."http://p2p-mirror2:65001".header]
+			X-Dragonfly-Registry = ["https://docker.hub.com"]
+	`)
+	err = os.WriteFile(filepath.Join(registryHostConfigDir, "hosts.toml"), buf3, 0600)
+	assert.NoError(t, err)
+	mirrors, err = LoadMirrorsConfig(mirrorsConfigDir, registryHost)
+	require.NoError(t, err)
+	require.Equal(t, len(mirrors), 1)
+	require.Equal(t, mirrors[0].Host, "http://p2p-mirror2:65001")
+	require.Equal(t, mirrors[0].AuthThrough, false)
+	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
 }
