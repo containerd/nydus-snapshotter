@@ -137,7 +137,7 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	return nil
 }
 
-func SetupEnvironment(c *SnapshotterConfig) error {
+func SetUpEnvironment(c *SnapshotterConfig) error {
 	if err := os.MkdirAll(c.Root, 0700); err != nil {
 		return errors.Wrapf(err, "create root dir %s", c.Root)
 	}
