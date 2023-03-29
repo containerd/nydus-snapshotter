@@ -43,6 +43,7 @@ SOURCE_NYDUSD_CONFIG=misc/snapshotter/nydusd-config.${FS_DRIVER}.json
 SNAPSHOTTER_SYSTEMD_UNIT_SERVICE=misc/snapshotter/nydus-snapshotter.${FS_DRIVER}.service
 
 LDFLAGS = -s -w -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
+DEBUG_LDFLAGS = -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=$(REVISION) -X ${PKG}/version.BuildTimestamp=$(BUILD_TIMESTAMP)
 
 CARGO ?= $(shell which cargo)
 OPTIMIZER_SERVER = tools/optimizer-server
@@ -53,6 +54,9 @@ STATIC_OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/x86_64-unknown-linux-gn
 .PHONY: build
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+
+debug:
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 
 .PHONY: build-optimizer
 build-optimizer:
