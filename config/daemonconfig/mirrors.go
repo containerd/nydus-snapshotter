@@ -141,23 +141,22 @@ func getSortedHosts(root *toml.Tree) ([]string, error) {
 	return list, nil
 }
 
+// parseHostConfig returns the parsed host configuration, make sure the server is not null.
 func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 	var (
 		result = hostConfig{}
 		err    error
 	)
 
-	if server != "" {
-		if !strings.HasPrefix(server, "http") {
-			server = "https://" + server
-		}
-		u, err := url.Parse(server)
-		if err != nil {
-			return hostConfig{}, fmt.Errorf("unable to parse server %v: %w", server, err)
-		}
-		result.Scheme = u.Scheme
-		result.Host = u.Host
+	if !strings.HasPrefix(server, "http") {
+		server = "https://" + server
 	}
+	u, err := url.Parse(server)
+	if err != nil {
+		return hostConfig{}, fmt.Errorf("unable to parse server %v: %w", server, err)
+	}
+	result.Scheme = u.Scheme
+	result.Host = u.Host
 
 	if config.Header != nil {
 		header := http.Header{}
@@ -191,10 +190,6 @@ func parseHostsFile(b []byte) ([]hostConfig, error) {
 		return nil, fmt.Errorf("failed to parse TOML: %w", err)
 	}
 	c := struct {
-		HostFileConfig
-		// Server specifies the default server. When `host` is
-		// also specified, those hosts are tried first.
-		Server string `toml:"server"`
 		// HostConfigs store the per-host configuration
 		HostConfigs map[string]HostFileConfig `toml:"host"`
 	}{}
@@ -214,21 +209,15 @@ func parseHostsFile(b []byte) ([]hostConfig, error) {
 
 	// Parse hosts array
 	for _, host := range orderedHosts {
-		config := c.HostConfigs[host]
-
-		parsed, err := parseHostConfig(host, config)
-		if err != nil {
-			return nil, err
+		if host != "" {
+			config := c.HostConfigs[host]
+			parsed, err := parseHostConfig(host, config)
+			if err != nil {
+				return nil, err
+			}
+			hosts = append(hosts, parsed)
 		}
-		hosts = append(hosts, parsed)
 	}
-
-	// Parse root host config and append it as the last element
-	parsed, err := parseHostConfig(c.Server, c.HostFileConfig)
-	if err != nil {
-		return nil, err
-	}
-	hosts = append(hosts, parsed)
 
 	return hosts, nil
 }
