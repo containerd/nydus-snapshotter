@@ -470,7 +470,7 @@ func (d *Daemon) ensureClientUnlocked() error {
 	if d.client == nil {
 		sock := d.GetAPISock()
 		// The socket file may be residual from a dead nydusd
-		err := WaitUntilSocketExisted(sock)
+		err := WaitUntilSocketExisted(sock, d.Pid())
 		if err != nil {
 			return errors.Wrapf(errdefs.ErrNotFound, "daemon socket %s", sock)
 		}

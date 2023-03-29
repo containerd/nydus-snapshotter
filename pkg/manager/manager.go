@@ -555,7 +555,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		d.Unlock()
 
 		go func() {
-			if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+			if err := daemon.WaitUntilSocketExisted(d.GetAPISock(), d.Pid()); err != nil {
 				log.L.Errorf("Nydusd %s probably not started", d.ID())
 				return
 			}
