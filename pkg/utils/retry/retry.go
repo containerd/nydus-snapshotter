@@ -28,6 +28,8 @@ var (
 // Function signature of retry if function
 type retryIfFunc func(error) bool
 
+type AbortFunc func(error) bool
+
 // Function signature of OnRetry function
 // n = count of attempts
 type OnRetryFunc func(n uint, err error)
@@ -61,6 +63,18 @@ func LastErrorOnly(lastErrorOnly bool) Option {
 func Attempts(attempts uint) Option {
 	return func(c *Config) {
 		c.attempts = attempts
+	}
+}
+
+// `abortFunc` return true means no further need to retry
+func OnlyRetryIf(abortFunc AbortFunc) Option {
+	return func(c *Config) {
+		c.retryIf = func(err error) bool {
+			if !IsRecoverable(err) {
+				return false
+			}
+			return !abortFunc(err)
+		}
 	}
 }
 
@@ -127,7 +141,7 @@ func OnRetry(onRetry OnRetryFunc) Option {
 	}
 }
 
-func Do(retryableFunc RetryableFunc, opts ...Option) error {
+func Do(retryFunc RetryableFunc, opts ...Option) error {
 	var n uint
 
 	// default
@@ -155,7 +169,7 @@ func Do(retryableFunc RetryableFunc, opts ...Option) error {
 
 	lastErrIndex := n
 	for n < config.attempts {
-		err := retryableFunc()
+		err := retryFunc()
 
 		if err != nil {
 			errorLog[lastErrIndex] = unpackUnrecoverable(err)
