@@ -226,7 +226,7 @@ func (d *Daemon) RecoveredMountInstances() error {
 	d.Instances.Lock()
 	defer d.Instances.Unlock()
 
-	var instances []*Rafs
+	instances := make([]*Rafs, 0, 16)
 	for _, r := range d.Instances.ListUnlocked() {
 		instances = append(instances, r)
 	}

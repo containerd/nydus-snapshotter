@@ -50,11 +50,11 @@ linters:
     # - goerr113
     - exportloopref
     # - gosec
-    - govet
     - gocritic
-    # - prealloc
+    - prealloc
     - tenv
     # - funlen
     - exhaustive
     - errcheck
   disable:
+    - gosec

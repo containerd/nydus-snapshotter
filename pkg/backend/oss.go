@@ -143,7 +143,7 @@ func (b *OSSBackend) push(ctx context.Context, cs content.Store, desc ocispec.De
 	}
 	close(partsChan)
 
-	var parts []oss.UploadPart
+	parts := make([]oss.UploadPart, 0, 16)
 	for p := range partsChan {
 		parts = append(parts, p)
 	}

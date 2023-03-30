@@ -129,7 +129,7 @@ func (s *Server) CollectDaemonResourceMetrics(ctx context.Context) {
 func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	// Collect inflight metrics from daemons.
 	daemons := s.pm.ListDaemons()
-	var inflightMetricsVec []*types.InflightMetrics
+	inflightMetricsVec := make([]*types.InflightMetrics, 0, 16)
 	for _, d := range daemons {
 
 		// Only count for daemon that is serving

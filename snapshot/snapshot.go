@@ -823,7 +823,7 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 		return nil, err
 	}
 
-	var cleanup []string
+	cleanup := make([]string, 0, 16)
 	for _, d := range dirs {
 		if _, ok := ids[d]; ok {
 			continue
