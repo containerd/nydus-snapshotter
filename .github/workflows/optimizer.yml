@@ -56,7 +56,7 @@ jobs:
           sudo tar -zxf ./containerd-static-1.7.0-linux-amd64.tar.gz -C /usr/
           sudo install -D -m 755 misc/optimizer/containerd-config.toml /etc/containerd/config.toml
           sudo systemctl restart containerd
-          sudo wget https://github.com/opencontainers/runc/releases/download/v1.1.4/runc.amd64 -O /usr/bin/runc
+          sudo wget https://github.com/opencontainers/runc/releases/download/v1.1.5/runc.amd64 -O /usr/bin/runc
           sudo chmod +x /usr/bin/runc
       - name: Setup CNI
         run: |
