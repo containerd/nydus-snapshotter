@@ -23,11 +23,13 @@ Nydus supports lazy pulling feature since pulling image is one of the time-consu
 
 For more details about how to build Nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool and [acceld](https://github.com/goharbor/acceleration-service).
 
-## Architecture Based on FUSE
+## Architecture
+
+### Architecture Based on FUSE
 
 ![fuse arch](./docs/diagram/nydus_fuse_arch.svg)
 
-## Architecture Based on Fscache/Erofs
+### Architecture Based on Fscache/Erofs
 
 ![fscache arch](./docs/diagram/nydus_fscache_erofs_arch.svg)
 
@@ -60,17 +62,17 @@ Restart your containerd service making the change take effect. Assume that your 
 systemctl restart containerd
 ```
 
-## Get Nydus Binaries
+### Get Nydus Binaries
 
 Get `nydusd` `nydus-image` and `nydusctl` binaries from [nydus releases page](https://github.com/dragonflyoss/image-service/releases).
 It's suggested to install the binaries to your system path. `nydusd` is FUSE userspace daemon and a vhost-user-fs backend. Nydus-snapshotter
 will fork a nydusd process when necessary.
 
-## Configure Nydus
+### Configure Nydus
 
 Please follow instructions to [configure nydus](./docs/configure_nydus.md) in order to make it work properly in your environment.
 
-## Start Nydus Snapshotter
+### Start Nydus Snapshotter
 
 Nydus-snapshotter is implemented as a [proxy plugin](https://github.com/containerd/containerd/blob/04985039cede6aafbb7dfb3206c9c4d04e2f924d/PLUGINS.md#proxy-plugins) (`containerd-nydus-grpc`) for containerd.
 
@@ -104,12 +106,12 @@ TYPE                            ID                       PLATFORMS      STATUS
 io.containerd.snapshotter.v1    nydus                    -              ok
 ```
 
-## Optimize Nydus Image as per Workload
+### Optimize Nydus Image as per Workload
 
 Nydus usually prefetch image data to local filesystem before a real user on-demand read. It helps to improve the performance and availability. A containerd NRI plugin [container image optimizer](docs/optimize_nydus_image.md) can be used to generate nydus image building suggestions to optimize your nydus image making the nydusd runtime match your workload IO pattern. The optimized nydus image has
 a better performance.
 
-## Quickly Start Container with Lazy Pulling
+## Quickstart Container with Lazy Pulling
 
 ### Start Container on single Node
 
@@ -136,9 +138,17 @@ Use `crictl` to debug starting container via Kubernetes CRI. Dry run [steps](./d
 
 We can also use the `nydus-snapshotter` container image when we want to put Nydus stuffs inside a container. See the [nydus-snapshotter example](./misc/example/README.md) for how to setup and use it.
 
-## Integrate with Dragonfly to Distribute Images in P2P
+## Integrate with Dragonfly to Distribute Images by P2P
 
-Nydus is also a sub-project of [Dragonfly](https://github.com/dragonflyoss/Dragonfly2). So it closely works with Dragonfly to distribute container images in a fast and efficient P2P fashion to reduce network latency and lower the pressure on a single-point of the registry.
+Nydus is a sub-project of [Dragonfly](https://github.com/dragonflyoss/Dragonfly2). So it closely works with Dragonfly to distribute container images in a fast and efficient P2P fashion to reduce network latency and lower the pressure on a single-point of the registry.
+
+### Quickstart Dragonfly & Nydus in Kubernetes
+
+We recommend using the Dragonfly P2P data distribution system to further improve the runtime performance of Nydus images.
+
+If you want to deploy Dragonfly and Nydus at the same time, please refer to this **[Quick Start](https://github.com/dragonflyoss/helm-charts/blob/main/INSTALL.md)**.
+
+### Config Dragonfly mode
 
 Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the containers startup. It is suggested to use Dragonfly mirror mode. To integrate with Dragonfly in the mirror mode, please provide registry mirror in nydusd's json configuration file in section `device.backend.mirrors`
 
@@ -157,12 +167,16 @@ Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the con
 `auth_through=false` means nydusd's authentication request will directly go to original registry rather than relayed by Dragonfly.
 
 ### Hot updating mirror configurations
+
 In addition to setting the registry mirror in nydusd's json configuration file, `nydus-snapshotter` also supports hot updating mirror configurations. You can set the configuration directory in nudus-snapshotter's toml configuration file with `remote.mirrors_config.dir`. The empty `remote.mirrors_config.dir` means disabling it.
+
 ```toml
 [remote.mirrors_config]
 dir = "/etc/nydus/certs.d"
 ```
+
 Configuration file is compatible with containerd's configuration file in toml format.
+
 ```toml
 server = "https://p2p-nydus.com"
 [host]
@@ -174,7 +188,6 @@ server = "https://p2p-nydus.com"
 
 Mirror configurations loaded from nydusd's json file will be overwritten before pulling image if the valid mirror configuration items loaded from `remote.mirrors_config.dir` are greater than 0.
 
-
 ## Community
 
 Nydus aims to form a **vendor-neutral opensource** image distribution solution to all communities.
@@ -184,9 +197,7 @@ We're very pleased to hear your use cases any time.
 Feel free to reach/join us via Slack and/or Dingtalk.
 
 - **Slack:** [Nydus Workspace](https://join.slack.com/t/nydusimageservice/shared_invite/zt-pz4qvl4y-WIh4itPNILGhPS8JqdFm_w)
-
 - **Twitter:** [@dragonfly_oss](https://twitter.com/dragonfly_oss)
-
 - **Dingtalk:** [34971767](https://qr.dingtalk.com/action/joingroup?code=v1,k1,ioWGzuDZEIO10Bf+/ohz4RcQqAkW0MtOwoG1nbbMxQg=&_dt_no_comment=1&origin=11)
 
 <img src="https://github.com/dragonflyoss/image-service/blob/master/misc/dingtalk.jpg" width="250" height="300"/>
