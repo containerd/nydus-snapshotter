@@ -16,7 +16,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
 
-	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
