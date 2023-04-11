@@ -1,3 +1,9 @@
+# Run Dragonfly & Nydus in Kubernetes
+
+We recommend using the Dragonfly P2P data distribution system to further improve the runtime performance of Nydus images.
+
+If you want to deploy Dragonfly and Nydus at the same time through Helm, please refer to the **[Quick Start](https://github.com/dragonflyoss/helm-charts/blob/main/INSTALL.md)**.
+
 # Run Nydus snapshotter in Kubernetes
 
 This document will introduce how to run Nydus snapshotter in Kubernetes cluster, you can use helm to deploy Nydus snapshotter container.
