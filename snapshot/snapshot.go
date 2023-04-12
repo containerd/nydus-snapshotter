@@ -109,13 +109,15 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	// Start to collect metrics.
 	if cfg.MetricsConfig.Address != "" {
 		if err := metrics.NewMetricsHTTPListenerServer(cfg.MetricsConfig.Address); err != nil {
-			return nil, errors.Wrap(err, "Failed to start metrics HTTP server")
+			return nil, errors.Wrap(err, "start metrics HTTP server")
 		}
 		go func() {
 			if err := metricServer.StartCollectMetrics(ctx); err != nil {
 				log.L.WithError(err).Errorf("Failed to start collecting metrics")
 			}
 		}()
+
+		log.L.Infof("Started metrics HTTP server on %q", cfg.MetricsConfig.Address)
 	}
 
 	opts := []filesystem.NewFSOpt{
@@ -144,7 +146,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize nydus filesystem")
+		return nil, errors.Wrap(err, "initialize filesystem thin layer")
 	}
 
 	if config.IsSystemControllerEnabled() {
@@ -152,16 +154,22 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
+
 		go func() {
 			if err := systemController.Run(); err != nil {
 				log.L.WithError(err).Error("Failed to start system controller")
 			}
 		}()
+
+		log.L.Infof("Started system controller on %q", config.SystemControllerAddress())
+
 		pprofAddress := config.SystemControllerPprofAddress()
 		if pprofAddress != "" {
 			if err := pprof.NewPprofHTTPListener(pprofAddress); err != nil {
-				return nil, errors.Wrap(err, "Failed to start pprof HTTP server")
+				return nil, errors.Wrap(err, "start pprof HTTP server")
 			}
+
+			log.L.Infof("Started pprof sever on %q", pprofAddress)
 		}
 	}
 
@@ -815,7 +823,7 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 		return nil, err
 	}
 
-	var cleanup []string
+	cleanup := make([]string, 0, 16)
 	for _, d := range dirs {
 		if _, ok := ids[d]; ok {
 			continue

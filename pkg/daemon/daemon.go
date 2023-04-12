@@ -80,7 +80,7 @@ type Daemon struct {
 
 	ref int32
 	// Cache the nydusd daemon state to avoid frequently querying nydusd by API.
-	State types.DaemonState
+	state types.DaemonState
 }
 
 func (d *Daemon) Lock() {
@@ -166,11 +166,25 @@ func (d *Daemon) GetState() (types.DaemonState, error) {
 	st := info.DaemonState()
 
 	d.Lock()
-	d.State = st
+	d.state = st
 	d.Version = info.DaemonVersion()
 	d.Unlock()
 
 	return st, nil
+}
+
+// Return the cached nydusd working status, no API is invoked.
+func (d *Daemon) State() types.DaemonState {
+	d.Lock()
+	defer d.Unlock()
+	return d.state
+}
+
+// Reset the cached nydusd working status
+func (d *Daemon) ResetState() {
+	d.Lock()
+	defer d.Unlock()
+	d.state = types.DaemonStateUnknown
 }
 
 // Waits for some time until daemon reaches the expected state.
@@ -180,12 +194,9 @@ func (d *Daemon) GetState() (types.DaemonState, error) {
 //  3. RUNNING
 func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 	return retry.Do(func() error {
-		d.Lock()
-		if expected == d.State {
-			d.Unlock()
+		if expected == d.State() {
 			return nil
 		}
-		d.Unlock()
 
 		state, err := d.GetState()
 		if err != nil {
@@ -470,7 +481,7 @@ func (d *Daemon) ensureClientUnlocked() error {
 	if d.client == nil {
 		sock := d.GetAPISock()
 		// The socket file may be residual from a dead nydusd
-		err := WaitUntilSocketExisted(sock)
+		err := WaitUntilSocketExisted(sock, d.Pid())
 		if err != nil {
 			return errors.Wrapf(errdefs.ErrNotFound, "daemon socket %s", sock)
 		}

@@ -75,7 +75,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	// If nydusd fails startup, manager can't subscribe its death event.
 	// So we can ignore the subscribing error.
 	go func() {
-		if err := daemon.WaitUntilSocketExisted(d.GetAPISock()); err != nil {
+		if err := daemon.WaitUntilSocketExisted(d.GetAPISock(), d.States.ProcessID); err != nil {
 			// FIXME: Should clean the daemon record in DB if the nydusd fails starting
 			log.L.Errorf("Nydusd %s probably not started", d.ID())
 			return

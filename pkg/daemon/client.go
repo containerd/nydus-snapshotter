@@ -22,7 +22,9 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
@@ -160,7 +162,7 @@ func buildTransport(sock string) http.RoundTripper {
 	}
 }
 
-func WaitUntilSocketExisted(sock string) error {
+func WaitUntilSocketExisted(sock string, pid int) error {
 	return retry.Do(func() (err error) {
 		var st fs.FileInfo
 		if st, err = os.Stat(sock); err != nil {
@@ -175,7 +177,20 @@ func WaitUntilSocketExisted(sock string) error {
 	},
 		retry.Attempts(100), // totally wait for 10 seconds, should be enough
 		retry.LastErrorOnly(true),
-		retry.Delay(100*time.Millisecond))
+		retry.Delay(100*time.Millisecond),
+		retry.OnlyRetryIf(func(error) bool {
+			zombie, err := tool.IsZombieProcess(pid)
+			if err != nil {
+				return false
+			}
+			// Check process state if is Zombie
+			if zombie {
+				log.L.Errorf("Process %d has been a zombie", pid)
+				return true
+			}
+			return false
+		}),
+	)
 }
 
 func NewNydusClient(sock string) (NydusdClient, error) {

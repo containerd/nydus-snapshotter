@@ -178,11 +178,11 @@ dir = "/etc/nydus/certs.d"
 Configuration file is compatible with containerd's configuration file in toml format.
 
 ```toml
-server = "https://p2p-nydus.com"
 [host]
   [host."http://127.0.0.1:65001"]
     auth_through = false
     [host."http://127.0.0.1:65001".header]
+      # NOTE: For Dragonfly, the HTTP scheme must be explicitly specified.
       X-Dragonfly-Registry = ["https://p2p-nydus.com"]
 ```
 

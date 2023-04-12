@@ -94,3 +94,23 @@ func GetProcessStat(pid int) (*Stat, error) {
 		Uptime: uptime,
 	}, nil
 }
+
+func GetProcessRunningState(pid int) (string, error) {
+	statBytes, err := os.ReadFile(path.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return "", errors.Wrapf(err, "get process %d stat", pid)
+	}
+
+	segments := strings.Split(string(statBytes), " ")
+	state := segments[2]
+	return state, nil
+}
+
+func IsZombieProcess(pid int) (bool, error) {
+	s, err := GetProcessRunningState(pid)
+	if err != nil {
+		return false, err
+	}
+
+	return s == "Z", nil
+}

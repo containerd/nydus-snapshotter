@@ -44,7 +44,6 @@ func NewMetricsHTTPListenerServer(addr string) error {
 	}
 
 	go func() {
-		log.L.Infof("Start metrics HTTP server on %s", addr)
 		if err := http.Serve(l, nil); trapClosedConnErr(err) != nil {
 			log.L.Errorf("Metrics server fails to listen or serve %s: %v", addr, err)
 		}

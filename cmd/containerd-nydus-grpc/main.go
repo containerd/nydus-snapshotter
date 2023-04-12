@@ -76,7 +76,7 @@ func main() {
 				return errors.Wrap(err, "process configurations")
 			}
 
-			if err := config.SetupEnvironment(&snapshotterConfig); err != nil {
+			if err := config.SetUpEnvironment(&snapshotterConfig); err != nil {
 				return errors.Wrap(err, "setup environment failed")
 			}
 

@@ -74,6 +74,11 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 	daemons := s.pm.ListDaemons()
 	var fsMetricsVec []collector.FsMetricsCollector
 	for _, d := range daemons {
+		// Skip daemons that are not serving
+		if d.State() != types.DaemonStateRunning {
+			continue
+		}
+
 		for _, i := range d.Instances.List() {
 			var sid string
 
@@ -121,8 +126,14 @@ func (s *Server) CollectDaemonResourceMetrics(ctx context.Context) {
 func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	// Collect inflight metrics from daemons.
 	daemons := s.pm.ListDaemons()
-	var inflightMetricsVec []*types.InflightMetrics
+	inflightMetricsVec := make([]*types.InflightMetrics, 0, 16)
 	for _, d := range daemons {
+
+		// Only count for daemon that is serving
+		if d.State() != types.DaemonStateRunning {
+			continue
+		}
+
 		inflightMetrics, err := d.GetInflightMetrics()
 		if err != nil {
 			log.G(ctx).Errorf("failed to get inflight metric: %v", err)
