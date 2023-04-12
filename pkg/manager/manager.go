@@ -272,8 +272,10 @@ func (m *Manager) handleDaemonDeathEvent() {
 
 		d.Lock()
 		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
-		d.State = types.DaemonStateUnknown
 		d.Unlock()
+
+		d.ResetState()
+
 		if m.RecoverPolicy == config.RecoverPolicyRestart {
 			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
