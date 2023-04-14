@@ -59,7 +59,7 @@ type seekReader struct {
 
 func (ra *seekReader) Read(p []byte) (int, error) {
 	n, err := ra.ReaderAt.ReadAt(p, ra.pos)
-	ra.pos += int64(len(p))
+	ra.pos += int64(n)
 	return n, err
 }
 
