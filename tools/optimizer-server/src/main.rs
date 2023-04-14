@@ -10,9 +10,11 @@ use std::{
     mem,
     os::unix::io::AsRawFd,
     path::{Path, PathBuf},
-    process, slice,
-    sync::{Arc, Mutex},
-    thread,
+    slice,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use lazy_static::lazy_static;
@@ -26,7 +28,6 @@ use nix::{
     },
 };
 use serde::Serialize;
-use signal_hook::{consts::SIGTERM, iterator::Signals};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
@@ -171,28 +172,24 @@ fn send_event_info(event_info: &Vec<EventInfo>) -> Result<(), SendError> {
 
 fn handle_fanotify_event(fd: i32) {
     let mut fds = [PollFd::new(fd.as_raw_fd(), PollFlags::POLLIN)];
-    let event_info = Arc::new(Mutex::<Vec<EventInfo>>::new(Vec::default()));
-    let local_event_info = event_info.clone();
+    let mut event_info = Vec::new();
 
-    if let Err(e) = Signals::new([SIGTERM]).map(|mut signals| {
-        thread::spawn(move || {
-            for _ in signals.forever() {
-                eprintln!("received SIGTERM signal, sending event information");
-                if let Ok(event_info) = local_event_info.lock().as_deref() {
-                    if let Err(e) = send_event_info(event_info) {
-                        eprintln!("failed to send event information {event_info:?} {e:?}");
-                    }
-                }
-                eprintln!("send event information successfully, exiting");
-                process::exit(0);
-            }
-        })
-    }) {
+    let term = Arc::new(AtomicBool::new(false));
+    if let Err(e) = signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term)) {
         eprintln!("failed to set SIGTERM signal handler {e:?}");
         return;
     }
 
     loop {
+        if term.load(Ordering::Relaxed) {
+            eprintln!("received SIGTERM signal, sending event information");
+            if let Err(e) = send_event_info(&event_info) {
+                eprintln!("failed to send event information {event_info:?} {e:?}");
+            }
+            eprintln!("send event information successfully, exiting");
+            break;
+        }
+
         match poll(&mut fds, -1) {
             Ok(polled_num) => {
                 if polled_num <= 0 {
@@ -205,17 +202,15 @@ fn handle_fanotify_event(fd: i32) {
                         let events = read_fanotify(fd);
                         for event in events {
                             if let Ok(path) = get_fd_path(event.fd) {
-                                if let Ok(event_info) = event_info.lock().as_deref_mut() {
-                                    if let Err(e) = generate_event_info(&path).map(|info| {
-                                        if !event_info.contains(&info) {
-                                            event_info.push(info)
-                                        }
-                                    }) {
-                                        eprintln!(
-                                            "failed to generate event information for {path:?} {e:?}"
-                                        )
-                                    };
-                                }
+                                if let Err(e) = generate_event_info(&path).map(|info| {
+                                    if !event_info.contains(&info) {
+                                        event_info.push(info)
+                                    }
+                                }) {
+                                    eprintln!(
+                                        "failed to generate event information for {path:?} {e:?}"
+                                    )
+                                };
                             }
                             // No matter the target path is valid or not, we should close the fd
                             close_fd(event.fd);
