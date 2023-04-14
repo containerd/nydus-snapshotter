@@ -86,7 +86,7 @@ func DetectFeatures(builder string, required Features) Features {
 	})
 
 	if currentVersion == "" {
-		return required
+		return Features{}
 	}
 
 	detectedFeatures := Features{}
