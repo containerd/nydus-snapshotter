@@ -58,7 +58,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					logger.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
 				} else {
 					// Mark this snapshot as stargz layer since estargz image format does not
-					// has special annotation or media-type.
+					// has special annotation or media type.
 					labels[label.StargzLayer] = "true"
 				}
 			}
@@ -68,14 +68,18 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	} else {
 		// Container writable layer comes into this branch. It can't be committed within this Prepare
 
-		remoteHandler := func(id string, lables map[string]string) func() (bool, []mount.Mount, error) {
+		remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
 			return func() (bool, []mount.Mount, error) {
 				logger.Debugf("Found nydus meta layer id %s", id)
-				if err := sn.prepareRemoteSnapshot(id, lables); err != nil {
+				if err := sn.prepareRemoteSnapshot(id, labels); err != nil {
 					return false, nil, err
 				}
-				// FIXME: What's strange is that we are providing meta snapshot
-				// contents but not wait for it reaching RUNNING
+
+				// Let Prepare operation show the rootfs content.
+				if err := sn.fs.WaitUntilReady(id); err != nil {
+					return false, nil, err
+				}
+
 				mounts, err := sn.remoteMounts(ctx, s, id)
 				return false, mounts, err
 			}

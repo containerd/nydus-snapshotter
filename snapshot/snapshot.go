@@ -394,7 +394,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		metaSnapshotID   string
 	)
 
-	if isNydusMetaLayer(pInfo.Labels) {
+	if label.IsNydusMetaLayer(pInfo.Labels) {
 		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
 		if err = o.fs.WaitUntilReady(pID); err != nil {
 			if errors.Is(err, errdefs.ErrNotFound) {
@@ -412,7 +412,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 
 		needRemoteMounts = true
 		metaSnapshotID = pID
-	} else if isNydusDataLayer(pInfo.Labels) {
+	} else if label.IsNydusDataLayer(pInfo.Labels) {
 		return nil, errors.New("only can view nydus topmost layer")
 	}
 	// Otherwise, it is OCI snapshots
