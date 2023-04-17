@@ -164,15 +164,18 @@ fn generate_event_info(path: &Path) -> Result<EventInfo, io::Error> {
     })
 }
 
-fn send_event_info(event_info: &Vec<EventInfo>) -> Result<(), SendError> {
+fn send_event_info(event_info: &EventInfo) -> Result<(), SendError> {
     let mut writer = io::stdout();
-    serde_json::to_writer(writer.lock(), event_info).map_err(SendError::Serde)?;
+    let event_string = serde_json::to_string(event_info).map_err(SendError::Serde)?;
+    writer
+        .write_all(format!("{event_string}\n").as_bytes())
+        .map_err(SendError::IO)?;
     writer.flush().map_err(SendError::IO)
 }
 
 fn handle_fanotify_event(fd: i32) {
     let mut fds = [PollFd::new(fd.as_raw_fd(), PollFlags::POLLIN)];
-    let mut event_info = Vec::new();
+    let mut event_duplicate = Vec::new();
 
     let term = Arc::new(AtomicBool::new(false));
     if let Err(e) = signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term)) {
@@ -182,11 +185,7 @@ fn handle_fanotify_event(fd: i32) {
 
     loop {
         if term.load(Ordering::Relaxed) {
-            eprintln!("received SIGTERM signal, sending event information");
-            if let Err(e) = send_event_info(&event_info) {
-                eprintln!("failed to send event information {event_info:?} {e:?}");
-            }
-            eprintln!("send event information successfully, exiting");
+            eprintln!("received SIGTERM signal, break fanotify event handler");
             break;
         }
 
@@ -203,8 +202,13 @@ fn handle_fanotify_event(fd: i32) {
                         for event in events {
                             if let Ok(path) = get_fd_path(event.fd) {
                                 if let Err(e) = generate_event_info(&path).map(|info| {
-                                    if !event_info.contains(&info) {
-                                        event_info.push(info)
+                                    if !event_duplicate.contains(&info.path) {
+                                        if let Err(e) = send_event_info(&info) {
+                                            eprintln!(
+                                                "failed to send event information {info:?} {e:?}"
+                                            );
+                                        }
+                                        event_duplicate.push(info.path)
                                     }
                                 }) {
                                     eprintln!(
