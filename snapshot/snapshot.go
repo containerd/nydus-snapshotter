@@ -37,6 +37,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
+	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
 
 	"github.com/containerd/nydus-snapshotter/pkg/store"
@@ -140,6 +141,13 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			return nil, errors.Wrap(err, "create cache manager")
 		}
 		opts = append(opts, filesystem.WithCacheManager(cacheMgr))
+	}
+
+	if cfg.Experimental.EnableReferrerDetect {
+		// FIXME: get the insecure option from nydusd config.
+		_, backendConfig := daemonConfig.StorageBackend()
+		referrerMgr := referrer.NewManager(backendConfig.SkipVerify)
+		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
 
 	hasDaemon := config.GetDaemonMode() != config.DaemonModeNone
@@ -254,7 +262,7 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 	}
 
 	// Blob layers are all committed snapshots
-	if info.Kind == snapshots.KindCommitted && isNydusDataLayer(info.Labels) {
+	if info.Kind == snapshots.KindCommitted && label.IsNydusDataLayer(info.Labels) {
 		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
 		// Try to get nydus meta layer/snapshot disk usage
 		cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
@@ -282,7 +290,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
 
-	if isNydusMetaLayer(info.Labels) {
+	if label.IsNydusMetaLayer(info.Labels) {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
 			return nil, errors.Wrapf(err, "snapshot %s is not ready, err: %v", id, err)
@@ -298,7 +306,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 			return nil, errors.Wrapf(err, "get snapshot %s info", pKey)
 		}
 
-		if isNydusMetaLayer(info.Labels) {
+		if label.IsNydusMetaLayer(info.Labels) {
 			err = o.fs.WaitUntilReady(pID)
 			if err != nil {
 				return nil, errors.Wrapf(err, "snapshot %s is not ready, err: %v", pID, err)
@@ -306,6 +314,11 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 			metaSnapshotID = pID
 			needRemoteMounts = true
 		}
+	}
+
+	if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
+		needRemoteMounts = true
+		metaSnapshotID = id
 	}
 
 	snap, err := snapshot.GetSnapshot(ctx, o.ms, key)
@@ -355,9 +368,15 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	return mounts, err
 }
 
+func (o *snapshotter) findReferrerLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
+	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, info snapshots.Info) bool {
+		return o.fs.CheckReferrer(ctx, info.Labels)
+	})
+}
+
 func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
 	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, i snapshots.Info) bool {
-		return isNydusMetaLayer(i.Labels)
+		return label.IsNydusMetaLayer(i.Labels)
 	})
 }
 
@@ -397,7 +416,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 	var usage fs.Usage
 	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
 	// Nydus disk usage calculation will be delayed until containerd queries.
-	if !isNydusMetaLayer(info.Labels) && !isNydusDataLayer(info.Labels) {
+	if !label.IsNydusMetaLayer(info.Labels) && !label.IsNydusDataLayer(info.Labels) {
 		usage, err = fs.DiskUsage(ctx, o.upperPath(id))
 		if err != nil {
 			return err
@@ -442,7 +461,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
 	log.L.Debugf("[Remove] snapshot with key %s snapshot id %s", key, id)
 
-	if isNydusMetaLayer(info.Labels) {
+	if label.IsNydusMetaLayer(info.Labels) {
 		log.L.Infof("[Remove] nydus meta snapshot with key %s snapshot id %s", key, id)
 	}
 

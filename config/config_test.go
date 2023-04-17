@@ -22,11 +22,14 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 	A.NoError(err)
 
 	exampleConfig := SnapshotterConfig{
-		Version:        1,
-		Root:           "/var/lib/containerd-nydus",
-		Address:        "/run/containerd-nydus/containerd-nydus-grpc.sock",
-		DaemonMode:     "multiple",
-		Experimental:   Experimental{EnableStargz: false},
+		Version:    1,
+		Root:       "/var/lib/containerd-nydus",
+		Address:    "/run/containerd-nydus/containerd-nydus-grpc.sock",
+		DaemonMode: "multiple",
+		Experimental: Experimental{
+			EnableStargz:         false,
+			EnableReferrerDetect: false,
+		},
 		CleanupOnClose: false,
 		SystemControllerConfig: SystemControllerConfig{
 			Enable:  true,

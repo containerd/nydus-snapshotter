@@ -79,8 +79,8 @@ func (c *FscacheDaemonConfig) UpdateMirrors(mirrorsConfigDir, registryHost strin
 	return nil
 }
 
-func (c *FscacheDaemonConfig) StorageBackendType() string {
-	return c.Config.BackendType
+func (c *FscacheDaemonConfig) StorageBackend() (string, *BackendConfig) {
+	return c.Config.BackendType, &c.Config.BackendConfig
 }
 
 // Each fscache/erofs has a configuration with different fscache ID built from snapshot ID.

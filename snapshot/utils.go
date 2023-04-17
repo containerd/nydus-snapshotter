@@ -11,18 +11,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/continuity/fs"
-	"github.com/containerd/nydus-snapshotter/pkg/label"
 )
-
-func isNydusDataLayer(labels map[string]string) bool {
-	_, ok := labels[label.NydusDataLayer]
-	return ok
-}
-
-func isNydusMetaLayer(labels map[string]string) bool {
-	_, ok := labels[label.NydusMetaLayer]
-	return ok
-}
 
 func getSupportsDType(dir string) (bool, error) {
 	return fs.SupportsDType(dir)

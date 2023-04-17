@@ -30,6 +30,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
+	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
 )
@@ -48,6 +49,7 @@ type Filesystem struct {
 	// Managing all daemons serving filesystem.
 	Manager              *manager.Manager
 	cacheMgr             *cache.Manager
+	referrerMgr          *referrer.Manager
 	sharedDaemon         *daemon.Daemon
 	stargzResolver       *stargz.Resolver
 	verifier             *signature.Verifier

@@ -7,6 +7,8 @@ run:
   tests: true
   skip-dirs:
     - misc
+    # The package is ported from containerd project, let's skip it.
+    - pkg/remote/remotes
 
 linters-settings:
   #   govet:

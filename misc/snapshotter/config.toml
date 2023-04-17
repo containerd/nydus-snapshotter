@@ -85,5 +85,9 @@ validate_signature = false
 
 # The configuraions for features that are not production ready
 [experimental]
-# Whether tp enable stargz support
+# Whether to enable stargz support
 enable_stargz = false
+# Whether to enable referrers support
+# The option enables trying to fetch the Nydus image associated with the OCI image and run it.
+# Also see https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers
+enable_referrer_detect = false

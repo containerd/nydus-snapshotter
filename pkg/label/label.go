@@ -49,3 +49,16 @@ const (
 	// this snapshot will include volatile option
 	OverlayfsVolatileOpt = "containerd.io/snapshot/overlay.volatile"
 )
+
+func IsNydusDataLayer(labels map[string]string) bool {
+	_, ok := labels[NydusDataLayer]
+	return ok
+}
+
+func IsNydusMetaLayer(labels map[string]string) bool {
+	if labels == nil {
+		return false
+	}
+	_, ok := labels[NydusMetaLayer]
+	return ok
+}

@@ -95,7 +95,8 @@ const (
 )
 
 type Experimental struct {
-	EnableStargz bool `toml:"enable_stargz"`
+	EnableStargz         bool `toml:"enable_stargz"`
+	EnableReferrerDetect bool `toml:"enable_referrer_detect"`
 }
 
 // Configure how to start and recover nydusd daemons
