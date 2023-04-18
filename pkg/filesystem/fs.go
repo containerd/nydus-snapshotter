@@ -383,7 +383,12 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 	}
 
 	rafs := daemon.RafsSet.Get(snapshotID)
-	return rafs.GetMountpoint(), nil
+
+	if rafs != nil {
+		return rafs.GetMountpoint(), nil
+	}
+
+	return "", errdefs.ErrNotFound
 }
 
 func (fs *Filesystem) BootstrapFile(id string) (string, error) {

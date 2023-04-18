@@ -11,12 +11,13 @@ import (
 	"net"
 	"syscall"
 
+	"github.com/containerd/containerd/errdefs"
 	"github.com/pkg/errors"
 )
 
 var (
-	ErrAlreadyExists   = errors.New("already exists")
-	ErrNotFound        = errors.New("not found")
+	ErrAlreadyExists   = errdefs.ErrAlreadyExists
+	ErrNotFound        = errdefs.ErrNotFound
 	ErrInvalidArgument = errors.New("invalid argument")
 	ErrUnavailable     = errors.New("unavailable")
 	ErrNotImplemented  = errors.New("not implemented") // represents not supported and unimplemented

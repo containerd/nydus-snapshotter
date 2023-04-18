@@ -19,7 +19,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
@@ -293,7 +293,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	if label.IsNydusMetaLayer(info.Labels) {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
-			return nil, errors.Wrapf(err, "snapshot %s is not ready, err: %v", id, err)
+			return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
 		}
 		needRemoteMounts = true
 		metaSnapshotID = id
@@ -309,7 +309,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		if label.IsNydusMetaLayer(info.Labels) {
 			err = o.fs.WaitUntilReady(pID)
 			if err != nil {
-				return nil, errors.Wrapf(err, "snapshot %s is not ready, err: %v", pID, err)
+				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 			}
 			metaSnapshotID = pID
 			needRemoteMounts = true
@@ -380,13 +380,53 @@ func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, sn
 	})
 }
 
+// The work on supporting View operation for nydus-snapshotter is divided into 2 parts:
+// 1. View on the topmost layer of nydus images or zran images
+// 2. View on the any layer of nydus images or zran images
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
+	pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parent)
+	if err != nil {
+		return nil, errors.Wrapf(err, "get snapshot %s info", parent)
+	}
+
+	var (
+		needRemoteMounts = false
+		metaSnapshotID   string
+	)
+
+	if label.IsNydusMetaLayer(pInfo.Labels) {
+		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
+		if err = o.fs.WaitUntilReady(pID); err != nil {
+			if errors.Is(err, errdefs.ErrNotFound) {
+				if err := o.fs.Mount(pID, pInfo.Labels); err != nil {
+					return nil, errors.Wrapf(err, "mount rafs, instance id %s", pID)
+				}
+
+				if err := o.fs.WaitUntilReady(pID); err != nil {
+					return nil, errors.Wrapf(err, "wait for instance id %s", pID)
+				}
+			} else {
+				return nil, errors.Wrapf(err, "daemon is not running %s", pID)
+			}
+		}
+
+		needRemoteMounts = true
+		metaSnapshotID = pID
+	} else if label.IsNydusDataLayer(pInfo.Labels) {
+		return nil, errors.New("only can view nydus topmost layer")
+	}
+	// Otherwise, it is OCI snapshots
+
 	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
+
+	if needRemoteMounts {
+		return o.remoteMounts(ctx, s, metaSnapshotID)
+	}
 
 	return o.mounts(ctx, base.Labels, s)
 }
@@ -411,7 +451,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Debugf("[Commit] snapshot with key %s snapshot id %s", key, id)
+	log.L.Infof("[Commit] snapshot with key %s snapshot id %s", key, id)
 
 	var usage fs.Usage
 	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
@@ -534,9 +574,12 @@ func (o *snapshotter) upperPath(id string) string {
 	return filepath.Join(o.root, "snapshots", id, "fs")
 }
 
+// Get the rootdir of nydus image file system contents.
 func (o *snapshotter) lowerPath(id string) (mnt string, err error) {
 	if mnt, err = o.fs.MountPoint(id); err == nil {
 		return mnt, nil
+	} else if errors.Is(err, errdefs.ErrNotFound) {
+		return filepath.Join(o.root, "snapshots", id, "fs"), nil
 	}
 
 	return "", err
@@ -592,14 +635,13 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 		return nil, storage.Snapshot{}, errors.Wrap(err, "create snapshot")
 	}
 
+	// Try to keep the whole stack having the same UID and GID
 	if len(s.ParentIDs) > 0 {
-		// FIXME: closest parent should be s.ParentIDs[len(s.ParentIDs)-1]?
 		st, err := os.Stat(o.upperPath(s.ParentIDs[0]))
 		if err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "stat parent")
 		}
 
-		// FIXME: Why only change owner of having parent?
 		if err := lchown(filepath.Join(td, "fs"), st); err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "perform chown")
 		}
@@ -651,8 +693,10 @@ type ExtraOption struct {
 }
 
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
+// `s` and `id` can represent a different layer, it's useful when View an image
 func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
+	lowerPaths := make([]string, 0, 8)
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
@@ -662,12 +706,25 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 		return bindMount(o.upperPath(s.ParentIDs[0])), nil
 	}
 
-	lowerPath, err := o.lowerPath(id)
+	lowerPathNydus, err := o.lowerPath(id)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to locate overlay lowerdir")
 	}
 
-	lowerDirOption := fmt.Sprintf("lowerdir=%s", lowerPath)
+	lowerPaths = append(lowerPaths, lowerPathNydus)
+	var lowerPathNormal string
+	if s.Kind == snapshots.KindView {
+		lowerPathNormal, err = o.lowerPath(s.ID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to locate overlay lowerdir for view snapshot")
+		}
+	}
+
+	if lowerPathNormal != "" {
+		lowerPaths = append(lowerPaths, lowerPathNormal)
+	}
+
+	lowerDirOption := fmt.Sprintf("lowerdir=%s", strings.Join(lowerPaths, ":"))
 	overlayOptions = append(overlayOptions, lowerDirOption)
 
 	// when hasDaemon and not enableNydusOverlayFS, return overlayfs mount slice
