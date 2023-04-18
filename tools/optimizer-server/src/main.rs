@@ -8,13 +8,9 @@ use std::{
     env, ffi, fs, io,
     io::Write,
     mem,
-    os::unix::io::AsRawFd,
+    os::unix::{io::AsRawFd, net::UnixStream},
     path::{Path, PathBuf},
     slice,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
 };
 
 use lazy_static::lazy_static;
@@ -28,6 +24,7 @@ use nix::{
     },
 };
 use serde::Serialize;
+use signal_hook::{consts::SIGTERM, low_level::pipe};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
@@ -164,31 +161,44 @@ fn generate_event_info(path: &Path) -> Result<EventInfo, io::Error> {
     })
 }
 
-fn send_event_info(event_info: &EventInfo) -> Result<(), SendError> {
+fn send_event(event: &EventInfo) -> Result<(), SendError> {
     let mut writer = io::stdout();
-    let event_string = serde_json::to_string(event_info).map_err(SendError::Serde)?;
+    let event_string = serde_json::to_string(event).map_err(SendError::Serde)?;
     writer
         .write_all(format!("{event_string}\n").as_bytes())
         .map_err(SendError::IO)?;
     writer.flush().map_err(SendError::IO)
 }
 
-fn handle_fanotify_event(fd: i32) {
-    let mut fds = [PollFd::new(fd.as_raw_fd(), PollFlags::POLLIN)];
-    let mut event_duplicate = Vec::new();
+fn handle_event(event: &FanotifyEvent, event_duplicate: &mut Vec<String>) -> Result<(), SendError> {
+    let path = get_fd_path(event.fd).map_err(SendError::IO)?;
+    let info = generate_event_info(&path).map_err(SendError::IO)?;
+    if !event_duplicate.contains(&info.path) {
+        send_event(&info)?;
+        event_duplicate.push(info.path);
+    }
+    Ok(())
+}
 
-    let term = Arc::new(AtomicBool::new(false));
-    if let Err(e) = signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term)) {
+fn handle_fanotify_event(fd: i32) {
+    let mut event_duplicate = Vec::new();
+    let (reader, writer) = match UnixStream::pair() {
+        Ok((reader, writer)) => (reader, writer),
+        Err(e) => {
+            eprintln!("failed to create a pair of sockets: {e:?}");
+            return;
+        }
+    };
+    if let Err(e) = pipe::register(SIGTERM, writer) {
         eprintln!("failed to set SIGTERM signal handler {e:?}");
         return;
     }
+    let mut fds = [
+        PollFd::new(fd.as_raw_fd(), PollFlags::POLLIN),
+        PollFd::new(reader.as_raw_fd(), PollFlags::POLLIN),
+    ];
 
     loop {
-        if term.load(Ordering::Relaxed) {
-            eprintln!("received SIGTERM signal, break fanotify event handler");
-            break;
-        }
-
         match poll(&mut fds, -1) {
             Ok(polled_num) => {
                 if polled_num <= 0 {
@@ -200,25 +210,19 @@ fn handle_fanotify_event(fd: i32) {
                     if flag.contains(PollFlags::POLLIN) {
                         let events = read_fanotify(fd);
                         for event in events {
-                            if let Ok(path) = get_fd_path(event.fd) {
-                                if let Err(e) = generate_event_info(&path).map(|info| {
-                                    if !event_duplicate.contains(&info.path) {
-                                        if let Err(e) = send_event_info(&info) {
-                                            eprintln!(
-                                                "failed to send event information {info:?} {e:?}"
-                                            );
-                                        }
-                                        event_duplicate.push(info.path)
-                                    }
-                                }) {
-                                    eprintln!(
-                                        "failed to generate event information for {path:?} {e:?}"
-                                    )
-                                };
-                            }
+                            if let Err(e) = handle_event(&event, &mut event_duplicate) {
+                                eprintln!("failed to handle event {event:?} {e:?}")
+                            };
                             // No matter the target path is valid or not, we should close the fd
                             close_fd(event.fd);
                         }
+                    }
+                }
+
+                if let Some(flag) = fds[1].revents() {
+                    if flag.contains(PollFlags::POLLIN) {
+                        println!("received SIGTERM signal");
+                        break;
                     }
                 }
             }
@@ -233,11 +237,22 @@ fn handle_fanotify_event(fd: i32) {
     }
 }
 
+fn start_fanotify() -> Result<(), io::Error> {
+    let fd = init_fanotify()?;
+    mark_fanotify(fd, get_target().as_str())?;
+    handle_fanotify_event(fd);
+    Ok(())
+}
+
+fn join_namespace(pid: String) -> Result<(), SetnsError> {
+    set_ns(format!("/proc/{pid}/ns/pid"), CloneFlags::CLONE_NEWPID)?;
+    set_ns(format!("/proc/{pid}/ns/mnt"), CloneFlags::CLONE_NEWNS)?;
+    Ok(())
+}
+
 fn main() {
     if let Some(pid) = get_pid() {
-        if let Err(e) = set_ns(format!("/proc/{pid}/ns/pid"), CloneFlags::CLONE_NEWPID)
-            .map(|_| set_ns(format!("/proc/{pid}/ns/mnt"), CloneFlags::CLONE_NEWNS))
-        {
+        if let Err(e) = join_namespace(pid) {
             eprintln!("join namespace failed {e:?}");
             return;
         }
@@ -245,9 +260,7 @@ fn main() {
     let pid = unsafe { fork() };
     match pid.expect("fork failed: unable to create child process") {
         Child => {
-            if let Err(e) = init_fanotify().map(|fd| {
-                mark_fanotify(fd, get_target().as_str()).map(|_| handle_fanotify_event(fd))
-            }) {
+            if let Err(e) = start_fanotify() {
                 eprintln!("failed to start fanotify server {e:?}");
             }
         }
