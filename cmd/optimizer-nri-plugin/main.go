@@ -40,6 +40,7 @@ type PluginConfig struct {
 
 	ServerPath string `toml:"server_path"`
 	PersistDir string `toml:"persist_dir"`
+	Readable   bool   `toml:"readable"`
 	Timeout    int    `toml:"timeout"`
 	Overwrite  bool   `toml:"overwrite"`
 }
@@ -85,6 +86,12 @@ func buildFlags(args *PluginArgs) []cli.Flag {
 			Value:       defaultPersistDir,
 			Usage:       "the directory to persist accessed files list for container",
 			Destination: &args.Config.PersistDir,
+		},
+		&cli.BoolFlag{
+			Name:        "readable",
+			Value:       false,
+			Usage:       "whether to make the csv file human readable",
+			Destination: &args.Config.Readable,
 		},
 		&cli.IntFlag{
 			Name:        "timeout",
@@ -165,7 +172,7 @@ func (p *plugin) StartContainer(_ *api.PodSandbox, container *api.Container) err
 		persistFile = fmt.Sprintf("%s.timeout%ds", persistFile, cfg.Timeout)
 	}
 
-	fanotifyServer := fanotify.NewServer(cfg.ServerPath, container.Pid, imageName, persistFile, cfg.Overwrite, time.Duration(cfg.Timeout)*time.Second, logWriter)
+	fanotifyServer := fanotify.NewServer(cfg.ServerPath, container.Pid, imageName, persistFile, cfg.Readable, cfg.Overwrite, time.Duration(cfg.Timeout)*time.Second, logWriter)
 
 	if err := fanotifyServer.RunServer(); err != nil {
 		return err

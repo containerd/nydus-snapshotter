@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/containerd/nydus-snapshotter/pkg/fanotify/conn"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/display"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -27,6 +28,7 @@ type Server struct {
 	ContainerPid uint32
 	ImageName    string
 	PersistFile  string
+	Readable     bool
 	Overwrite    bool
 	Timeout      time.Duration
 	Client       *conn.Client
@@ -34,12 +36,13 @@ type Server struct {
 	LogWriter    *syslog.Writer
 }
 
-func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) *Server {
+func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, readable bool, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) *Server {
 	return &Server{
 		BinaryPath:   binaryPath,
 		ContainerPid: containerPid,
 		ImageName:    imageName,
 		PersistFile:  persistFile,
+		Readable:     readable,
 		Overwrite:    overwrite,
 		Timeout:      timeout,
 		LogWriter:    logWriter,
@@ -124,7 +127,12 @@ func (fserver *Server) RunReceiver() error {
 		if eventInfo != nil {
 			fmt.Fprintln(f, eventInfo.Path)
 
-			var line = []string{eventInfo.Path, fmt.Sprint(eventInfo.Size), fmt.Sprint(eventInfo.Elapsed)}
+			var line []string
+			if fserver.Readable {
+				line = []string{eventInfo.Path, display.ByteToReadableIEC(eventInfo.Size), display.MicroSecondToReadable(eventInfo.Elapsed)}
+			} else {
+				line = []string{eventInfo.Path, fmt.Sprint(eventInfo.Size), fmt.Sprint(eventInfo.Elapsed)}
+			}
 			if err := csvWriter.Write(line); err != nil {
 				return errors.Wrapf(err, "failed to write csv")
 			}
