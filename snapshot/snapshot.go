@@ -39,6 +39,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
+	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 
@@ -57,6 +58,7 @@ type snapshotter struct {
 	ms                   *storage.MetaStore
 	fs                   *filesystem.Filesystem
 	manager              *manager.Manager
+	tarfsManager         *tarfs.Manager
 	hasDaemon            bool
 	enableNydusOverlayFS bool
 	syncRemove           bool
@@ -203,17 +205,29 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		syncRemove = true
 	}
 
+	var tarfsMgr *tarfs.Manager
+	if cfg.Experimental.EnableTarfs {
+		// FIXME: get the insecure option from nydusd config.
+		_, backendConfig := daemonConfig.StorageBackend()
+		tarfsMgr = tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsAsyncForamt, cfg.DaemonConfig.NydusImagePath)
+	}
+
 	return &snapshotter{
 		root:                 cfg.Root,
 		nydusdPath:           cfg.DaemonConfig.NydusdPath,
 		ms:                   ms,
 		syncRemove:           syncRemove,
 		fs:                   nydusFs,
+		tarfsManager:         tarfsMgr,
 		manager:              manager,
 		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
 	}, nil
+}
+
+func (o *snapshotter) tarfsEnabled() bool {
+	return o.tarfsManager != nil
 }
 
 func (o *snapshotter) Cleanup(ctx context.Context) error {
@@ -280,8 +294,9 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		defer timer.ObserveDuration()
 	}
 	var (
-		needRemoteMounts = false
-		metaSnapshotID   string
+		needRemoteMounts      = false
+		needTarfsRemoteMounts = false
+		metaSnapshotID        string
 	)
 
 	id, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
@@ -319,6 +334,13 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 				metaSnapshotID = pID
 				needRemoteMounts = true
 			}
+
+			if o.tarfsEnabled() {
+				if ok, _ := o.tarfsManager.IsMeragedTarfsLayer(pID); ok {
+					metaSnapshotID = pID
+					needTarfsRemoteMounts = true
+				}
+			}
 		} else {
 			if !errors.Is(err, errdefs.ErrNotFound) {
 				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
@@ -342,6 +364,10 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		return o.remoteMounts(ctx, *snap, metaSnapshotID)
 	}
 
+	if needTarfsRemoteMounts {
+		return o.tarfsManager.RemoteMountTarfs(o.upperPath(snap.ID), o.workPath(snap.ID), metaSnapshotID)
+	}
+
 	return o.mounts(ctx, info.Labels, *snap)
 }
 
@@ -363,7 +389,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 
 	logger.Debugf("[Prepare] snapshot with labels %v", info.Labels)
 
-	processor, target, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func() string { return o.upperPath(s.ID) })
+	processor, target, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func(id string) string { return o.upperPath(id) })
 	if err != nil {
 		return nil, err
 	}
@@ -520,6 +546,12 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	if info.Kind == snapshots.KindCommitted {
 		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
 		go func() {
+			if o.tarfsEnabled() {
+				log.L.Infof("[Remove] detach tarfs snapshot  %s", id)
+				if err := o.tarfsManager.DetachTarfsLayer(id); err != nil {
+					log.L.WithError(err).Errorf("Failed to detach tarfs snapshot %s", id)
+				}
+			}
 			if err := o.fs.RemoveCache(blobDigest); err != nil {
 				log.L.WithError(err).Errorf("Failed to remove cache %s", blobDigest)
 			}
@@ -595,6 +627,10 @@ func (o *snapshotter) lowerPath(id string) (mnt string, err error) {
 	}
 
 	return "", err
+}
+
+func (o *snapshotter) tarfsPath(id string) string {
+	return filepath.Join(o.root, "snapshots", id, "tarfs")
 }
 
 func (o *snapshotter) workPath(id string) string {
