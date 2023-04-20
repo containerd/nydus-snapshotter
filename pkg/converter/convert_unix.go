@@ -479,6 +479,7 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 				PrefetchPatterns: opt.PrefetchPatterns,
 				AlignedChunk:     opt.AlignedChunk,
 				ChunkSize:        opt.ChunkSize,
+				BatchSize:        opt.BatchSize,
 				Compressor:       opt.Compressor,
 				Timeout:          opt.Timeout,
 
