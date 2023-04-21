@@ -313,10 +313,11 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		}
 	}
 
-	// TODO: Skip this ? Directly map OCI layer to nydus layer ?
-	if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
-		needRemoteMounts = true
-		metaSnapshotID = id
+	if o.fs.ReferrerDetectEnabled() {
+		if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
+			needRemoteMounts = true
+			metaSnapshotID = id
+		}
 	}
 
 	snap, err := snapshot.GetSnapshot(ctx, o.ms, key)

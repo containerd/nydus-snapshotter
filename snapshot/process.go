@@ -92,13 +92,15 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			handler = remoteHandler(id, info.Labels)
 		}
 
-		if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
-			logger.Infof("found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
-			metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
-			if err := sn.fs.TryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
-				return nil, "", errors.Wrap(err, "try fetch metadata")
+		if sn.fs.ReferrerDetectEnabled() {
+			if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
+				logger.Infof("found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
+				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
+				if err := sn.fs.TryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
+					return nil, "", errors.Wrap(err, "try fetch metadata")
+				}
+				handler = remoteHandler(id, info.Labels)
 			}
-			handler = remoteHandler(id, info.Labels)
 		}
 
 		if sn.fs.StargzEnabled() {
