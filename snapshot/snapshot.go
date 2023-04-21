@@ -286,7 +286,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 
 	id, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
 	if err != nil {
-		return nil, errors.Wrapf(err, "get snapshot %s info", key)
+		return nil, errors.Wrapf(err, "mounts get snapshot %q info", key)
 	}
 	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
 
@@ -301,21 +301,19 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 
 	if info.Kind == snapshots.KindActive {
 		pKey := info.Parent
-		pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey)
-		if err != nil {
-			return nil, errors.Wrapf(err, "get snapshot %s info", pKey)
-		}
-
-		if label.IsNydusMetaLayer(info.Labels) {
-			err = o.fs.WaitUntilReady(pID)
-			if err != nil {
-				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+		if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
+			if label.IsNydusMetaLayer(info.Labels) {
+				err = o.fs.WaitUntilReady(pID)
+				if err != nil {
+					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+				}
+				metaSnapshotID = pID
+				needRemoteMounts = true
 			}
-			metaSnapshotID = pID
-			needRemoteMounts = true
 		}
 	}
 
+	// TODO: Skip this ? Directly map OCI layer to nydus layer ?
 	if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
 		needRemoteMounts = true
 		metaSnapshotID = id
@@ -349,7 +347,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		return nil, err
 	}
 
-	logger.Debugf("prepare snapshot with labels %v", info.Labels)
+	logger.Debugf("[Prepare] snapshot with labels %v", info.Labels)
 
 	processor, target, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func() string { return o.upperPath(s.ID) })
 	if err != nil {
