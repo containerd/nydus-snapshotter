@@ -294,6 +294,12 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
 			// Skip waiting if clients is unpacking nydus artifacts to `mounts`
+			// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
+			//  1. [Prepare] snapshot for the uppermost layer - bootstrap
+			//  2. [Mounts]
+			//  3. Unpacking by applying the mounts, then we get bootstrap in its path position.
+			// In above steps, no container write layer is called to set up from nydus-snapshotter. So it has no
+			// chance to start nydusd, during which the Rafs instance is created.
 			if !errors.Is(err, errdefs.ErrNotFound) {
 				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
 			}

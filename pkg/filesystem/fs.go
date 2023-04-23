@@ -185,10 +185,17 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 		return nil
 	}
 
+	var imageID string
 	imageID, ok := labels[snpkg.TargetRefLabel]
 	if !ok {
-		return errors.Errorf("failed to find image ref of snapshot %s, labels %v",
-			snapshotID, labels)
+		// FIXME: Buildkit does not pass labels defined in containerd‘s fashion. So
+		// we have to use stargz snapshotter specific labels until Buildkit generalize it the necessary
+		// labels for all remote snapshotters.
+		imageID, ok = labels["containerd.io/snapshot/remote/stargz.reference"]
+		if !ok {
+			return errors.Errorf("failed to find image ref of snapshot %s, labels %v",
+				snapshotID, labels)
+		}
 	}
 
 	r := daemon.RafsSet.Get(snapshotID)
@@ -330,7 +337,7 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapshots.Usage, error) {
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %s, digest=%s",
+		return snapshots.Usage{}, errors.Wrapf(err, "invalid blob digest from label %q, digest=%s",
 			snpkg.TargetLayerDigestLabel, blobDigest)
 	}
 	blobID := digest.Hex()
@@ -340,7 +347,7 @@ func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapsh
 func (fs *Filesystem) RemoveCache(blobDigest string) error {
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return errors.Wrapf(err, "invalid blob digest from label %s. digest=%s",
+		return errors.Wrapf(err, "invalid blob digest from label %q, digest=%s",
 			snpkg.TargetLayerDigestLabel, blobDigest)
 	}
 	blobID := digest.Hex()
