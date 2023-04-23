@@ -293,22 +293,29 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	if label.IsNydusMetaLayer(info.Labels) {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
-			return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+			// Skip waiting if clients is unpacking nydus artifacts to `mounts`
+			if !errors.Is(err, errdefs.ErrNotFound) {
+				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+			}
+		} else {
+			needRemoteMounts = true
+			metaSnapshotID = id
 		}
-		needRemoteMounts = true
-		metaSnapshotID = id
 	}
 
 	if info.Kind == snapshots.KindActive {
 		pKey := info.Parent
 		if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
 			if label.IsNydusMetaLayer(info.Labels) {
-				err = o.fs.WaitUntilReady(pID)
-				if err != nil {
+				if err = o.fs.WaitUntilReady(pID); err != nil {
 					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 				}
 				metaSnapshotID = pID
 				needRemoteMounts = true
+			}
+		} else {
+			if !errors.Is(err, errdefs.ErrNotFound) {
+				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 			}
 		}
 	}
@@ -450,7 +457,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Infof("[Commit] snapshot with key %s snapshot id %s", key, id)
+	log.L.Infof("[Commit] snapshot with key %q snapshot id %s", key, id)
 
 	var usage fs.Usage
 	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
