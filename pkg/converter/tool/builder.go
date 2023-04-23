@@ -39,6 +39,7 @@ type PackOption struct {
 	OCIRef           bool
 	AlignedChunk     bool
 	ChunkSize        string
+	BatchSize        string
 	Timeout          *time.Duration
 
 	Features Features
@@ -131,6 +132,9 @@ func buildPackArgs(option PackOption) []string {
 	}
 	if option.ChunkSize != "" {
 		args = append(args, "--chunk-size", option.ChunkSize)
+	}
+	if option.BatchSize != "" {
+		args = append(args, "--batch-size", option.BatchSize)
 	}
 	args = append(args, option.SourcePath)
 
