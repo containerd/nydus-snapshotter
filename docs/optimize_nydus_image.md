@@ -30,6 +30,8 @@ This command installs the optimizer's default toml configuration file in `/etc/n
 ```toml
 # The directory to persist accessed files list for container.
 persist_dir = "/opt/nri/optimizer/results"
+# Whether to make the csv file human readable.
+readable = false
 # The path of optimizer server binary.
 server_path = "/usr/local/bin/optimizer-server"
 # The timeout to kill optimizer server, 0 to disable it.

@@ -8,8 +8,9 @@ package fanotify
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"log/syslog"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/containerd/nydus-snapshotter/pkg/fanotify/conn"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/display"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -26,6 +28,7 @@ type Server struct {
 	ContainerPid uint32
 	ImageName    string
 	PersistFile  string
+	Readable     bool
 	Overwrite    bool
 	Timeout      time.Duration
 	Client       *conn.Client
@@ -33,12 +36,13 @@ type Server struct {
 	LogWriter    *syslog.Writer
 }
 
-func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) *Server {
+func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, readable bool, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) *Server {
 	return &Server{
 		BinaryPath:   binaryPath,
 		ContainerPid: containerPid,
 		ImageName:    imageName,
 		PersistFile:  persistFile,
+		Readable:     readable,
 		Overwrite:    overwrite,
 		Timeout:      timeout,
 		LogWriter:    logWriter,
@@ -74,6 +78,12 @@ func (fserver *Server) RunServer() error {
 	}
 	fserver.Cmd = cmd
 
+	go func() {
+		if err := fserver.RunReceiver(); err != nil {
+			logrus.WithError(err).Errorf("Failed to receive event information from server")
+		}
+	}()
+
 	if fserver.Timeout > 0 {
 		go func() {
 			time.Sleep(fserver.Timeout)
@@ -84,29 +94,50 @@ func (fserver *Server) RunServer() error {
 	return nil
 }
 
-func (fserver *Server) ReceiveEventInfo() error {
-	eventInfo, err := fserver.Client.GetEventInfo()
-	if err != nil {
-		return fmt.Errorf("failed to get event information: %v", err)
-	}
-
+func (fserver *Server) RunReceiver() error {
 	f, err := os.OpenFile(fserver.PersistFile, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open persist file %q", fserver.PersistFile)
+		return errors.Wrapf(err, "failed to open file %q", fserver.PersistFile)
 	}
 	defer f.Close()
 
-	for _, event := range eventInfo {
-		fmt.Fprintln(f, event.Path)
-	}
-
-	persistJSONFile := fmt.Sprintf("%s.json", fserver.PersistFile)
-	data, err := json.MarshalIndent(eventInfo, "", "      ")
+	persistCsvFile := fmt.Sprintf("%s.csv", fserver.PersistFile)
+	fCsv, err := os.Create(persistCsvFile)
 	if err != nil {
-		return errors.Wrapf(err, "failed to encode event information %v", eventInfo)
+		return errors.Wrapf(err, "failed to create file %q", persistCsvFile)
 	}
-	if err := os.WriteFile(persistJSONFile, data, 0644); err != nil {
-		return errors.Wrapf(err, "failed to write file %s", persistJSONFile)
+	defer fCsv.Close()
+
+	csvWriter := csv.NewWriter(fCsv)
+	if err := csvWriter.Write([]string{"path", "size", "elapsed"}); err != nil {
+		return errors.Wrapf(err, "failed to write csv header")
+	}
+	csvWriter.Flush()
+
+	for {
+		eventInfo, err := fserver.Client.GetEventInfo()
+		if err != nil {
+			if err == io.EOF {
+				logrus.Infoln("Get EOF from fanotify server, break event receiver")
+				break
+			}
+			return fmt.Errorf("failed to get event information: %v", err)
+		}
+
+		if eventInfo != nil {
+			fmt.Fprintln(f, eventInfo.Path)
+
+			var line []string
+			if fserver.Readable {
+				line = []string{eventInfo.Path, display.ByteToReadableIEC(eventInfo.Size), display.MicroSecondToReadable(eventInfo.Elapsed)}
+			} else {
+				line = []string{eventInfo.Path, fmt.Sprint(eventInfo.Size), fmt.Sprint(eventInfo.Elapsed)}
+			}
+			if err := csvWriter.Write(line); err != nil {
+				return errors.Wrapf(err, "failed to write csv")
+			}
+			csvWriter.Flush()
+		}
 	}
 
 	return nil
@@ -117,9 +148,6 @@ func (fserver *Server) StopServer() {
 		logrus.Infof("Send SIGTERM signal to process group %d", fserver.Cmd.Process.Pid)
 		if err := syscall.Kill(-fserver.Cmd.Process.Pid, syscall.SIGTERM); err != nil {
 			logrus.WithError(err).Errorf("Stop process group %d failed!", fserver.Cmd.Process.Pid)
-		}
-		if err := fserver.ReceiveEventInfo(); err != nil {
-			logrus.WithError(err).Errorf("Failed to receive event information")
 		}
 		if _, err := fserver.Cmd.Process.Wait(); err != nil {
 			logrus.WithError(err).Errorf("Failed to wait for fanotify server")

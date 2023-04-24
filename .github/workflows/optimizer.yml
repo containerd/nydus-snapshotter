@@ -86,5 +86,5 @@ jobs:
             echo "failed to generate accessed files list for nginx:1.23.3"
             exit 1
           fi
-          cat /opt/nri/optimizer/results/library/nginx:1.23.3.json
+          cat /opt/nri/optimizer/results/library/nginx:1.23.3.csv
     
