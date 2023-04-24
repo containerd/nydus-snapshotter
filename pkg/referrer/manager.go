@@ -57,7 +57,7 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 			return nil, errors.Wrap(err, "check referrer")
 		}
 
-		// FIXME: how invalidating the LRU cache if referrers update?
+		// FIXME: how to invalidate the LRU cache if referrers update?
 		manager.cache.Add(manifestDigest, *metaLayer)
 
 		return metaLayer, nil

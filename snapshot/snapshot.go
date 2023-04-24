@@ -286,39 +286,51 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 
 	id, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, key)
 	if err != nil {
-		return nil, errors.Wrapf(err, "get snapshot %s info", key)
+		return nil, errors.Wrapf(err, "mounts get snapshot %q info", key)
 	}
 	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
 
 	if label.IsNydusMetaLayer(info.Labels) {
 		err = o.fs.WaitUntilReady(id)
 		if err != nil {
-			return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+			// Skip waiting if clients is unpacking nydus artifacts to `mounts`
+			// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
+			//  1. [Prepare] snapshot for the uppermost layer - bootstrap
+			//  2. [Mounts]
+			//  3. Unpacking by applying the mounts, then we get bootstrap in its path position.
+			// In above steps, no container write layer is called to set up from nydus-snapshotter. So it has no
+			// chance to start nydusd, during which the Rafs instance is created.
+			if !errors.Is(err, errdefs.ErrNotFound) {
+				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+			}
+		} else {
+			needRemoteMounts = true
+			metaSnapshotID = id
 		}
-		needRemoteMounts = true
-		metaSnapshotID = id
 	}
 
 	if info.Kind == snapshots.KindActive {
 		pKey := info.Parent
-		pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey)
-		if err != nil {
-			return nil, errors.Wrapf(err, "get snapshot %s info", pKey)
-		}
-
-		if label.IsNydusMetaLayer(info.Labels) {
-			err = o.fs.WaitUntilReady(pID)
-			if err != nil {
-				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+		if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
+			if label.IsNydusMetaLayer(info.Labels) {
+				if err = o.fs.WaitUntilReady(pID); err != nil {
+					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+				}
+				metaSnapshotID = pID
+				needRemoteMounts = true
 			}
-			metaSnapshotID = pID
-			needRemoteMounts = true
+		} else {
+			if !errors.Is(err, errdefs.ErrNotFound) {
+				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
+			}
 		}
 	}
 
-	if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
-		needRemoteMounts = true
-		metaSnapshotID = id
+	if o.fs.ReferrerDetectEnabled() {
+		if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
+			needRemoteMounts = true
+			metaSnapshotID = id
+		}
 	}
 
 	snap, err := snapshot.GetSnapshot(ctx, o.ms, key)
@@ -349,7 +361,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 		return nil, err
 	}
 
-	logger.Debugf("prepare snapshot with labels %v", info.Labels)
+	logger.Debugf("[Prepare] snapshot with labels %v", info.Labels)
 
 	processor, target, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func() string { return o.upperPath(s.ID) })
 	if err != nil {
@@ -451,7 +463,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Infof("[Commit] snapshot with key %s snapshot id %s", key, id)
+	log.L.Infof("[Commit] snapshot with key %q snapshot id %s", key, id)
 
 	var usage fs.Usage
 	// For OCI compatibility, we calculate disk usage and commit the usage to DB.

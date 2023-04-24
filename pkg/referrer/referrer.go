@@ -34,7 +34,7 @@ func newReferrer(keyChain *auth.PassKeyChain, insecure bool) *referrer {
 	}
 }
 
-// checkReferrer fetches the referrers and parse out the nydus
+// checkReferrer fetches the referrers and parses out the nydus
 // image by specified manifest digest.
 // it's using distribution list referrers API.
 func (r *referrer) checkReferrer(ctx context.Context, ref string, manifestDigest digest.Digest) (*ocispec.Descriptor, error) {

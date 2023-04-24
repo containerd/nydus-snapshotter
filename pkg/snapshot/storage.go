@@ -68,7 +68,7 @@ func IterateParentSnapshots(ctx context.Context, ms *storage.MetaStore, key stri
 
 	defer func() {
 		if err := t.Rollback(); err != nil {
-			log.L.WithError(err).Errorf("Rollback traction %s", key)
+			log.L.WithError(err).Errorf("Rollback transaction %s", key)
 		}
 	}()
 
