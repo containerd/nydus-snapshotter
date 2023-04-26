@@ -18,8 +18,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	"github.com/containerd/containerd/remotes"
-	"github.com/containerd/containerd/remotes/docker"
+	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
+	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker"
 )
 
 // IsErrHTTPResponseToHTTPSClient returns whether err is
