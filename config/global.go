@@ -24,9 +24,9 @@ var (
 	globalConfig GlobalConfig
 )
 
-// Retain the configurations that must be parsed and converted and the
-// configurations that are not easy to access from some modules.
-// Or avoid calculating repeatedly
+// Global cached configuration information to help:
+// - access configuration information without passing a configuration object
+// - avoid frequent generation of information from configuration information
 type GlobalConfig struct {
 	origin           *SnapshotterConfig
 	SnapshotsDir     string
@@ -117,7 +117,7 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	if c.CacheManagerConfig.GCPeriod != "" {
 		d, err := time.ParseDuration(c.CacheManagerConfig.GCPeriod)
 		if err != nil {
-			return errors.Errorf("invalid GC period %s", c.CacheManagerConfig.GCPeriod)
+			return errors.Errorf("invalid GC period '%s'", c.CacheManagerConfig.GCPeriod)
 		}
 		globalConfig.CacheGCPeriod = d
 	}
@@ -128,7 +128,7 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	}
 
 	if c.DaemonConfig.FsDriver == FsDriverFscache && m != DaemonModeShared {
-		log.L.Infof("fscache driver must enforce \"shared\" daemon mode, change it forcefully from %s", m)
+		log.L.Infof("fscache driver only supports 'shared' mode, override daemon mode from '%s' to 'shared'", m)
 		m = DaemonModeShared
 	}
 
@@ -144,7 +144,7 @@ func SetUpEnvironment(c *SnapshotterConfig) error {
 
 	realPath, err := mount.NormalizePath(c.Root)
 	if err != nil {
-		return errors.Wrapf(err, "root path invalid")
+		return errors.Wrapf(err, "invalid root path")
 	}
 	c.Root = realPath
 	return nil

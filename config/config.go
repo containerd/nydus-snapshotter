@@ -102,8 +102,8 @@ type Experimental struct {
 // Configure how to start and recover nydusd daemons
 type DaemonConfig struct {
 	NydusdPath       string `toml:"nydusd_path"`
-	NydusImagePath   string `toml:"nydusimage_path"`
 	NydusdConfigPath string `toml:"nydusd_config"`
+	NydusImagePath   string `toml:"nydusimage_path"`
 	RecoverPolicy    string `toml:"recover_policy"`
 	FsDriver         string `toml:"fs_driver"`
 	ThreadsNumber    int    `toml:"threads_number"`
@@ -207,10 +207,10 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	}
 	tree, err := toml.LoadFile(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "load snapshotter configuration file %q", path)
+		return nil, errors.Wrapf(err, "load toml configuration from file %q", path)
 	}
 	if err = tree.Unmarshal(&config); err != nil {
-		return nil, errors.Wrapf(err, "unmarshal snapshotter configuration file %q", path)
+		return nil, errors.Wrap(err, "unmarshal snapshotter configuration")
 	}
 	return &config, nil
 }
@@ -233,7 +233,7 @@ func ValidateConfig(c *SnapshotterConfig) error {
 		if c.ImageConfig.PublicKeyFile == "" {
 			return errors.New("public key file for signature validation is not provided")
 		} else if _, err := os.Stat(c.ImageConfig.PublicKeyFile); err != nil {
-			return errors.Wrapf(err, "find publicKey file %q", c.ImageConfig.PublicKeyFile)
+			return errors.Wrapf(err, "check publicKey file %q", c.ImageConfig.PublicKeyFile)
 		}
 	}
 
@@ -252,7 +252,7 @@ func ValidateConfig(c *SnapshotterConfig) error {
 			return err
 		}
 		if !dirExisted {
-			return errors.Errorf("mirrors config directory %s is not existed", c.RemoteConfig.MirrorsConfig.Dir)
+			return errors.Errorf("mirrors config directory %s does not exist", c.RemoteConfig.MirrorsConfig.Dir)
 		}
 	}
 

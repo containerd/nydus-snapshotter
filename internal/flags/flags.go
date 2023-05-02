@@ -13,7 +13,6 @@ import (
 
 type Args struct {
 	Address               string
-	LogLevel              string
 	NydusdConfigPath      string
 	SnapshotterConfigPath string
 	RootDir               string
@@ -21,6 +20,7 @@ type Args struct {
 	NydusImagePath        string
 	DaemonMode            string
 	FsDriver              string
+	LogLevel              string
 	LogToStdout           bool
 	LogToStdoutCount      int
 	PrintVersion          bool
@@ -33,45 +33,50 @@ type Flags struct {
 
 func buildFlags(args *Args) []cli.Flag {
 	return []cli.Flag{
-		&cli.BoolFlag{
-			Name:        "version",
-			Usage:       "print version and build information",
-			Destination: &args.PrintVersion,
-		},
 		&cli.StringFlag{
 			Name:        "root",
-			Usage:       "the directory storing snapshotter working states",
+			Usage:       "directory to store snapshotter data and working states",
 			Destination: &args.RootDir,
 		},
 		&cli.StringFlag{
 			Name:        "address",
-			Usage:       "gRPC socket path",
+			Usage:       "remote snapshotter gRPC socket path",
 			Destination: &args.Address,
 		},
 		&cli.StringFlag{
 			Name:        "config",
-			Usage:       "path to the nydus-snapshotter configuration",
+			Usage:       "path to nydus-snapshotter configuration file",
 			Destination: &args.SnapshotterConfigPath,
+		},
+		&cli.StringFlag{
+			Name:        "nydus-image",
+			Usage:       "path to `nydus-image` binary, default to search in $PATH",
+			Destination: &args.NydusImagePath,
+		},
+		&cli.StringFlag{
+			Name:        "nydusd",
+			Usage:       "path to `nydusd` binary, default to search in $PATH",
+			Destination: &args.NydusdPath,
 		},
 		&cli.StringFlag{
 			Name:        "nydusd-config",
 			Aliases:     []string{"config-path"},
-			Usage:       "path to the nydusd configuration",
+			Usage:       "path to nydusd configuration file",
 			Destination: &args.NydusdConfigPath,
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
-			Usage:       "spawning nydusd daemon mode, legal values include \"multiple\", \"shared\" or \"none\"",
+			Usage:       "nydusd daemon working mode, possible values: \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
-			Usage:       "fulfill image service based on what fs driver, possible values include \"fusedev\", \"fscache\"",
+			Usage:       "driver to mount RAFS filesystem, possible values: \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
 		},
 		&cli.StringFlag{
 			Name:        "log-level",
-			Usage:       "logging level, possible values \"trace\", \"debug\", \"info\", \"warn\", \"error\"",
+			Usage:       "logging level, possible values: \"trace\", \"debug\", \"info\", \"warn\", \"error\"",
 			Destination: &args.LogLevel,
 		},
 		&cli.BoolFlag{
@@ -80,15 +85,10 @@ func buildFlags(args *Args) []cli.Flag {
 			Destination: &args.LogToStdout,
 			Count:       &args.LogToStdoutCount,
 		},
-		&cli.StringFlag{
-			Name:        "nydus-image",
-			Usage:       "`nydus-image` binary path, it will be searched from $PATH if this option is not provided",
-			Destination: &args.NydusImagePath,
-		},
-		&cli.StringFlag{
-			Name:        "nydusd",
-			Usage:       "`nydusd` binary path, it will be searched if this option is not provided",
-			Destination: &args.NydusdPath,
+		&cli.BoolFlag{
+			Name:        "version",
+			Usage:       "print version and build information",
+			Destination: &args.PrintVersion,
 		},
 	}
 }
