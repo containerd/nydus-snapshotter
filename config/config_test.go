@@ -26,7 +26,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		Version:    1,
 		Root:       "/var/lib/containerd-nydus",
 		Address:    "/run/containerd-nydus/containerd-nydus-grpc.sock",
-		DaemonMode: "multiple",
+		DaemonMode: "dedicated",
 		Experimental: Experimental{
 			EnableStargz:         false,
 			EnableReferrerDetect: false,

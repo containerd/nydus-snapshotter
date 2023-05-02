@@ -9,10 +9,11 @@
 package constant
 
 const (
-	DaemonModeMultiple string = "multiple"
-	DaemonModeShared   string = "shared"
-	DaemonModeNone     string = "none"
-	DaemonModeInvalid  string = ""
+	DaemonModeMultiple  string = "multiple"
+	DaemonModeDedicated string = "dedicated"
+	DaemonModeShared    string = "shared"
+	DaemonModeNone      string = "none"
+	DaemonModeInvalid   string = ""
 )
 
 const (

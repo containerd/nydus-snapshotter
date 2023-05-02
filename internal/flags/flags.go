@@ -70,7 +70,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
-			Usage:       "nydusd daemon working mode, possible values: \"multiple\", \"shared\" or \"none\"",
+			Usage:       "nydusd daemon working mode, possible values: \"dedicated\", \"multiple\", \"shared\" or \"none\". \"multiple\" is an alias of \"dedicated\" and will be deprecated in v1.0",
 			Destination: &args.DaemonMode,
 			DefaultText: constant.DaemonModeMultiple,
 		},
