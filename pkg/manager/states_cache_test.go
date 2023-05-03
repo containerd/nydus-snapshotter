@@ -17,7 +17,6 @@
 package manager
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
@@ -39,7 +38,10 @@ func TestDaemonStatesCache(t *testing.T) {
 	assert.Equal(t, anotherD1, d1)
 	assert.Equal(t, anotherD2, d2)
 
-	assert.True(t, reflect.DeepEqual(states.List(), []*daemon.Daemon{d1, d2}))
+	daemons := states.List()
+	assert.Equal(t, len(daemons), 2)
+	assert.True(t, daemons[0] == d1 || daemons[1] == d1)
+	assert.True(t, daemons[0] == d2 || daemons[1] == d2)
 
 	assert.Equal(t, states.Size(), 2)
 

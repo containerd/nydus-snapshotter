@@ -29,16 +29,13 @@ import (
 )
 
 type DaemonStates struct {
-	mu              sync.Mutex
-	idxBySnapshotID map[string]*daemon.Daemon // index by snapshot ID
-	idxByDaemonID   map[string]*daemon.Daemon // index by ID
-	daemons         []*daemon.Daemon          // all daemon
+	mu            sync.Mutex
+	idxByDaemonID map[string]*daemon.Daemon // index by ID
 }
 
 func newDaemonStates() *DaemonStates {
 	return &DaemonStates{
-		idxBySnapshotID: make(map[string]*daemon.Daemon),
-		idxByDaemonID:   make(map[string]*daemon.Daemon),
+		idxByDaemonID: make(map[string]*daemon.Daemon),
 	}
 }
 
@@ -49,46 +46,15 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	old, ok := s.idxByDaemonID[daemon.ID()]
-
-	// TODO: No need to retain all daemons in the slice,
-	// just use the map indexed by DaemonID
-	if ok {
-		for i, d := range s.daemons {
-			if d.ID() == daemon.ID() {
-				s.daemons[i] = daemon
-			}
-		}
-	} else {
-		s.daemons = append(s.daemons, daemon)
-	}
-
+	old := s.idxByDaemonID[daemon.ID()]
 	s.idxByDaemonID[daemon.ID()] = daemon
-
-	if ok {
-		return old
-	}
-
-	return nil
+	return old
 }
 
 func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
+	old := s.idxByDaemonID[d.ID()]
 	delete(s.idxByDaemonID, d.ID())
-
-	var deleted *daemon.Daemon
-
-	ds := s.daemons[:0]
-	for _, remained := range s.daemons {
-		if remained == d {
-			deleted = remained
-			continue
-		}
-		ds = append(ds, remained)
-	}
-
-	s.daemons = ds
-
-	return deleted
+	return old
 }
 
 func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
@@ -110,7 +76,6 @@ func (s *DaemonStates) RecoverDaemonState(d *daemon.Daemon) {
 
 	log.L.Infof("Recovering daemon ID %s", d.ID())
 
-	s.daemons = append(s.daemons, d)
 	s.idxByDaemonID[d.ID()] = d
 }
 
@@ -131,12 +96,14 @@ func (s *DaemonStates) List() []*daemon.Daemon {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.daemons) == 0 {
+	if len(s.idxByDaemonID) == 0 {
 		return nil
 	}
 
-	listed := make([]*daemon.Daemon, len(s.daemons))
-	copy(listed, s.daemons)
+	listed := make([]*daemon.Daemon, 0, len(s.idxByDaemonID))
+	for _, d := range s.idxByDaemonID {
+		listed = append(listed, d)
+	}
 
 	return listed
 }
@@ -144,7 +111,7 @@ func (s *DaemonStates) List() []*daemon.Daemon {
 func (s *DaemonStates) Size() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.daemons)
+	return len(s.idxByDaemonID)
 }
 
 // Manage all nydusd daemons. Provide a daemon states cache
