@@ -58,7 +58,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 				KubeconfigPath:           "",
 			},
 			MirrorsConfig: MirrorsConfig{
-				Dir: "/etc/nydus/certs.d",
+				Dir: "",
 			},
 		},
 		ImageConfig: ImageConfig{

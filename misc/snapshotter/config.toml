@@ -21,15 +21,16 @@ daemon_cpu_profile_duration_secs = 5
 pprof_address = ""
 
 [daemon]
+# Specify a configuration file for nydusd
+nydusd_config = "/etc/nydus/nydusd-config.fusedev.json"
 nydusd_path = "/usr/local/bin/nydusd"
 nydusimage_path = "/usr/local/bin/nydus-image"
 # fusedev or fscache
 fs_driver = "fusedev"
 # How to process when daemon dies: "none", "restart" or "failover"
 recover_policy = "restart"
-# Specify a configuration file for nydusd
-nydusd_config = "/etc/nydus/nydusd-config.fusedev.json"
-# The fuse or fscache IO working threads started by nydusd
+# Nydusd worker thread number to handle FUSE or fscache requests, [0-1024].
+# Setting to 0 will use the default configuration of nydusd.
 threads_number = 4
 
 [log]
@@ -56,7 +57,7 @@ convert_vpc_registry = false
 # Snapshotter will overwrite daemon's mirrors configuration
 # if the values loaded from this driectory are not null before starting a daemon.
 # Set to "" or an empty directory to disable it.
-dir = "/etc/nydus/certs.d"
+#dir = "/etc/nydus/certs.d"
 
 [remote.auth]
 # Fetch the private registry auth by listening to K8s API server
@@ -66,7 +67,7 @@ kubeconfig_path = ""
 # Fetch the private registry auth as CRI image service proxy
 enable_cri_keychain = false
 # the target image service when using image proxy
-image_service_address = ""
+#image_service_address = "/run/containerd/containerd.sock"
 
 [snapshot]
 # Let containerd use nydus-overlayfs mount helper
