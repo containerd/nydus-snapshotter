@@ -78,6 +78,7 @@ sync_remove = false
 [cache_manager]
 disable = false
 gc_period = "24h"
+# Directory to host cached files
 cache_dir = ""
 
 [image]

@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/pkg/errors"
 )
@@ -90,6 +91,13 @@ func WithNydusdThreadNum(nydusdThreadNum int) NewDaemonOpt {
 func WithFsDriver(fsDriver string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		d.States.FsDriver = fsDriver
+		return nil
+	}
+}
+
+func WithDaemonMode(daemonMode config.DaemonMode) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.States.DaemonMode = daemonMode
 		return nil
 	}
 }

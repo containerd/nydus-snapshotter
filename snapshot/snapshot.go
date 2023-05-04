@@ -87,7 +87,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	manager, err := manager.NewManager(manager.Opt{
 		NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
 		Database:         db,
-		DaemonMode:       config.GetDaemonMode(),
 		CacheDir:         cfg.CacheManagerConfig.CacheDir,
 		RootDir:          cfg.Root,
 		RecoverPolicy:    rp,
@@ -754,7 +753,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	daemon := o.fs.Manager.GetByDaemonID(instance.DaemonID)
 
 	var c daemonconfig.DaemonConfig
-	if o.fs.Manager.IsSharedDaemon() {
+	if daemon.IsSharedDaemon() {
 		c, err = daemonconfig.NewDaemonConfig(daemon.States.FsDriver, daemon.ConfigFile(instance.SnapshotID))
 		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to load instance configuration %s",

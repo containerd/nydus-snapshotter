@@ -116,20 +116,19 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		cmdOpts = append(cmdOpts,
 			command.WithMode("singleton"),
 			command.WithFscacheDriver(m.cacheDir))
-
 		if nydusdThreadNum != 0 {
 			cmdOpts = append(cmdOpts, command.WithFscacheThreads(nydusdThreadNum))
 		}
-
 	} else {
-		cmdOpts = append(cmdOpts, command.WithMode("fuse"))
-
+		cmdOpts = append(cmdOpts, command.WithMode("fuse"), command.WithMountpoint(d.HostMountpoint()))
 		if nydusdThreadNum != 0 {
 			cmdOpts = append(cmdOpts, command.WithThreadNum(nydusdThreadNum))
 		}
 
 		switch {
-		case !m.IsSharedDaemon():
+		case d.IsSharedDaemon():
+			break
+		case !d.IsSharedDaemon():
 			rafs := d.Instances.Head()
 			if rafs == nil {
 				return nil, errors.Wrapf(errdefs.ErrNotFound, "daemon %s no rafs instance associated", d.ID())
@@ -142,12 +141,9 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 			cmdOpts = append(cmdOpts,
 				command.WithConfig(d.ConfigFile("")),
 				command.WithBootstrap(bootstrap),
-				command.WithMountpoint(d.HostMountpoint()))
-
-		case m.IsSharedDaemon():
-			cmdOpts = append(cmdOpts, command.WithMountpoint(d.HostMountpoint()))
+			)
 		default:
-			return nil, errors.Errorf("invalid daemon mode %s ", m.daemonMode)
+			return nil, errors.Errorf("invalid daemon mode %s ", d.States.DaemonMode)
 		}
 	}
 
