@@ -33,11 +33,13 @@ const (
 //		- instances
 
 var (
-	v1RootBucket  = []byte("v1")
+	v1RootBucket = []byte("v1")
+	// Nydusd daemon instances.
+	// A daemon may host one (dedicated mode) or more (shared mode) RAFS filesystem instances.
 	versionKey    = []byte("version")
-	daemonsBucket = []byte("daemons") // Contains daemon info <daemon_id>=<daemon>
-
-	// Usually representing rafs instances which are attached to daemons or not.
+	daemonsBucket = []byte("daemons")
+	// RAFS filesystem instances.
+	// A RAFS filesystem may have associated daemon or not.
 	instancesBucket = []byte("instances")
 )
 
@@ -190,7 +192,7 @@ func (db *Database) initDatabase() error {
 func (db *Database) Close() error {
 	err := db.db.Close()
 	if err != nil {
-		return errors.Wrapf(err, "Close boltdb failed")
+		return errors.Wrapf(err, "failed to close boltdb")
 	}
 
 	return nil

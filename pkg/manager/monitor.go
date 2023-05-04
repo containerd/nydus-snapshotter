@@ -101,8 +101,8 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 
 		return nil
 	},
-		retry.Attempts(20), // totally wait for 2 seconds, should be enough
 		retry.LastErrorOnly(true),
+		retry.Attempts(20), // totally wait for 2 seconds, should be enough
 		retry.Delay(100*time.Millisecond))
 
 	if err != nil {

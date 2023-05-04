@@ -148,6 +148,21 @@ func NewSystemController(fs *filesystem.Filesystem, manager *manager.Manager, so
 	return &sc, nil
 }
 
+func (sc *Controller) Run() error {
+	log.L.Infof("Start system controller API server on %s", sc.addr)
+	listener, err := net.ListenUnix("unix", sc.addr)
+	if err != nil {
+		return errors.Wrapf(err, "listen to socket %s ", sc.addr)
+	}
+
+	err = http.Serve(listener, sc.router)
+	if err != nil {
+		return errors.Wrapf(err, "system management serving")
+	}
+
+	return nil
+}
+
 func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
 	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPut)
@@ -276,21 +291,6 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (sc *Controller) Run() error {
-	log.L.Infof("Start system controller API server on %s", sc.addr)
-	listener, err := net.ListenUnix("unix", sc.addr)
-	if err != nil {
-		return errors.Wrapf(err, "listen to socket %s ", sc.addr)
-	}
-
-	err = http.Serve(listener, sc.router)
-	if err != nil {
-		return errors.Wrapf(err, "system management serving")
-	}
-
-	return nil
-}
-
 // Provide minimal parameters since most of it can be recovered by nydusd states.
 // Create a new daemon in Manger to take over the service.
 func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
@@ -360,7 +360,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) err
 
 	log.L.Infof("Started service of upgraded daemon on socket %s", new.GetAPISock())
 
-	if err := manager.UpdateDaemonNoLock(&new); err != nil {
+	if err := manager.UpdateDaemonLocked(&new); err != nil {
 		return err
 	}
 

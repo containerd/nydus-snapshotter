@@ -42,10 +42,6 @@ func (s *DaemonStore) WalkDaemons(ctx context.Context, cb func(d *daemon.States)
 	return s.db.WalkDaemons(ctx, cb)
 }
 
-func (s *DaemonStore) WalkInstances(ctx context.Context, cb func(*daemon.Rafs) error) error {
-	return s.db.WalkInstances(ctx, cb)
-}
-
 func (s *DaemonStore) CleanupDaemons(ctx context.Context) error {
 	return s.db.CleanupDaemons(ctx)
 }
@@ -60,4 +56,8 @@ func (s *DaemonStore) DeleteInstance(snapshotID string) error {
 
 func (s *DaemonStore) NextInstanceSeq() (uint64, error) {
 	return s.db.NextInstanceSeq()
+}
+
+func (s *DaemonStore) WalkInstances(ctx context.Context, cb func(*daemon.Rafs) error) error {
+	return s.db.WalkInstances(ctx, cb)
 }

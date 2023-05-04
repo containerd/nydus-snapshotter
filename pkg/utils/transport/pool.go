@@ -20,6 +20,7 @@ var _ Resolve = &Pool{}
 
 const HTTPClientTimeOut = time.Second * 60
 
+// LRU cache for authenticated network connections.
 type Pool struct {
 	trPoolMu  sync.Mutex
 	trPool    *lru.Cache

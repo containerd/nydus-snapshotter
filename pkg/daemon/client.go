@@ -29,21 +29,27 @@ import (
 )
 
 const (
+	// Get information about nydus daemon
 	endpointDaemonInfo = "/api/v1/daemon"
-	endpointMount      = "/api/v1/mount"
-	endpointMetrics    = "/api/v1/metrics"
+	// Mount or umount filesystems.
+	endpointMount = "/api/v1/mount"
+	// Fetch generic filesystem metrics.
+	endpointMetrics = "/api/v1/metrics"
 	// Fetch metrics relevant to caches usage.
-	endpointCacheMetrics    = "/api/v1/metrics/blobcache"
+	endpointCacheMetrics = "/api/v1/metrics/blobcache"
+	// Fetch metrics about inflighting operations.
 	endpointInflightMetrics = "/api/v1/metrics/inflight"
-	// Command nydusd to retrieve its runtime states, which is used during failover
+	// Request nydus daemon to retrieve its runtime states from the supervisor, recovering states for failover.
 	endpointTakeOver = "/api/v1/daemon/fuse/takeover"
-	// Command nydusd to send out its runtime states, which prepares failover.
+	// Request nydus daemon to send its runtime states to the supervisor, preparing for failover.
 	endpointSendFd = "/api/v1/daemon/fuse/sendfd"
-	// Command nydusd to begin file system service.
+	// Request nydus daemon to start filesystem service.
 	endpointStart = "/api/v1/daemon/start"
-	endpointExit  = "/api/v1/daemon/exit"
+	// Request nydus daemon to exit
+	endpointExit = "/api/v1/daemon/exit"
 
 	// --- V2 API begins
+	// Add/remove blobs managed by the blob cache manager.
 	endpointBlobs = "/api/v2/blobs"
 
 	defaultHTTPClientTimeout = 30 * time.Second
@@ -183,7 +189,7 @@ func WaitUntilSocketExisted(sock string, pid int) error {
 			if err != nil {
 				return false
 			}
-			// Check process state if is Zombie
+			// Stop retry if nydus daemon process is already in Zombie state.
 			if zombie {
 				log.L.Errorf("Process %d has been a zombie", pid)
 				return true
@@ -221,10 +227,49 @@ func (c *nydusdClient) GetDaemonInfo() (*types.DaemonInfo, error) {
 	return &info, nil
 }
 
+func (c *nydusdClient) Mount(mp, bootstrap, mountConfig string) error {
+	cmd, err := json.Marshal(types.NewMountRequest(bootstrap, mountConfig))
+	if err != nil {
+		return errors.Wrap(err, "construct mount request")
+	}
+
+	query := query{}
+	query.Add("mountpoint", mp)
+	url := c.url(endpointMount, query)
+
+	return c.request(http.MethodPost, url, bytes.NewBuffer(cmd), nil)
+}
+
 func (c *nydusdClient) Umount(mp string) error {
 	query := query{}
 	query.Add("mountpoint", mp)
 	url := c.url(endpointMount, query)
+	return c.request(http.MethodDelete, url, nil, nil)
+}
+
+func (c *nydusdClient) BindBlob(daemonConfig string) error {
+	url := c.url(endpointBlobs, query{})
+	return c.request(http.MethodPut, url, bytes.NewBuffer([]byte(daemonConfig)), nil)
+}
+
+// Delete /api/v2/blobs implements different functions according to different parameters
+//  1. domainID , delete all blob entries in the domain.
+//  2. domainID + blobID, delete the blob entry, if the blob is bootstrap
+//     also delete blob entries belong to it.
+//  3. blobID, try to find and cull blob cache files by blobID in all domains.
+func (c *nydusdClient) UnbindBlob(domainID, blobID string) error {
+	query := query{}
+	if domainID != "" {
+		query.Add("domain_id", domainID)
+		if domainID != blobID {
+			query.Add("blob_id", blobID)
+		}
+	} else {
+		query.Add("blob_id", blobID)
+	}
+
+	url := c.url(endpointBlobs, query)
+
 	return c.request(http.MethodDelete, url, nil, nil)
 }
 
@@ -275,46 +320,6 @@ func (c *nydusdClient) GetCacheMetrics(sid string) (*types.CacheMetrics, error) 
 	}
 
 	return &m, nil
-}
-
-// `daemonConfig` a json string represents daemon configuration.
-func (c *nydusdClient) Mount(mp, bootstrap, daemonConfig string) error {
-	cmd, err := json.Marshal(types.NewMountRequest(bootstrap, daemonConfig))
-	if err != nil {
-		return errors.Wrap(err, "construct mount request")
-	}
-
-	query := query{}
-	query.Add("mountpoint", mp)
-	url := c.url(endpointMount, query)
-
-	return c.request(http.MethodPost, url, bytes.NewBuffer(cmd), nil)
-}
-
-func (c *nydusdClient) BindBlob(daemonConfig string) error {
-	url := c.url(endpointBlobs, query{})
-	return c.request(http.MethodPut, url, bytes.NewBuffer([]byte(daemonConfig)), nil)
-}
-
-// Delete /api/v2/blobs implements different functions according to different parameters
-//  1. domainID , delete all blob entries in the domain.
-//  2. domainID + blobID, delete the blob entry, if the blob is bootstrap
-//     also delete blob entries belong to it.
-//  3. blobID, try to find and cull blob cache files by blobID in all domains.
-func (c *nydusdClient) UnbindBlob(domainID, blobID string) error {
-	query := query{}
-	if domainID != "" {
-		query.Add("domain_id", domainID)
-		if domainID != blobID {
-			query.Add("blob_id", blobID)
-		}
-	} else {
-		query.Add("blob_id", blobID)
-	}
-
-	url := c.url(endpointBlobs, query)
-
-	return c.request(http.MethodDelete, url, nil, nil)
 }
 
 func (c *nydusdClient) TakeOver() error {
