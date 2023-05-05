@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
+	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
@@ -80,6 +81,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					return false, nil, err
 				}
 
+				log.L.Infof("Nydus remote snapshot %s is ready", id)
 				mounts, err := sn.remoteMounts(ctx, s, id)
 				return false, mounts, err
 			}

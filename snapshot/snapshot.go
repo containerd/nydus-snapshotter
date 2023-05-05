@@ -215,6 +215,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 }
 
 func (o *snapshotter) Cleanup(ctx context.Context) error {
+	log.L.Debugf("[Cleanup] snapshots")
 	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodCleanup); timer != nil {
 		defer timer.ObserveDuration()
 	}
@@ -274,6 +275,7 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 }
 
 func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
+	log.L.Debugf("[Mounts] snapshot %s", key)
 	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodMount); timer != nil {
 		defer timer.ObserveDuration()
 	}
@@ -348,9 +350,10 @@ func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	// `timer` can't be nil
-	timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare)
-	defer timer.ObserveDuration()
+	log.L.Debugf("[Prepare] snapshot with key %s, parent %s", key, parent)
+	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare); timer != nil {
+		defer timer.ObserveDuration()
+	}
 
 	logger := log.L.WithField("key", key).WithField("parent", parent)
 
@@ -394,6 +397,8 @@ func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, sn
 // 1. View on the topmost layer of nydus images or zran images
 // 2. View on the any layer of nydus images or zran images
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
+	log.L.Debugf("[View] snapshot with key %s, parent %s", key, parent)
+
 	pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parent)
 	if err != nil {
 		return nil, errors.Wrapf(err, "get snapshot %s info", parent)
@@ -442,6 +447,8 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 }
 
 func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
+	log.L.Debugf("[Commit] snapshot with key %s", key)
+
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return err
