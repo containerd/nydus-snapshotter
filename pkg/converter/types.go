@@ -22,8 +22,10 @@ import (
 type Compressor = uint32
 
 const (
-	CompressorNone Compressor = 0x0001
-	CompressorZstd Compressor = 0x0002
+	CompressorNone     Compressor = 0x0000_0001
+	CompressorZstd     Compressor = 0x0000_0002
+	CompressorLz4Block Compressor = 0x0000_0004
+	CompressorMask     Compressor = 0x0000_000f
 )
 
 var (
@@ -139,11 +141,13 @@ type TOCEntry struct {
 }
 
 func (entry *TOCEntry) GetCompressor() (Compressor, error) {
-	switch {
-	case entry.Flags&CompressorNone == CompressorNone:
+	switch entry.Flags & CompressorMask {
+	case CompressorNone:
 		return CompressorNone, nil
-	case entry.Flags&CompressorZstd == CompressorZstd:
+	case CompressorZstd:
 		return CompressorZstd, nil
+	case CompressorLz4Block:
+		return CompressorLz4Block, nil
 	}
 	return 0, fmt.Errorf("unsupported compressor, entry flags %x", entry.Flags)
 }

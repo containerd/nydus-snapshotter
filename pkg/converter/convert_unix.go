@@ -147,7 +147,7 @@ func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt, unpackBlob bo
 	return nil
 }
 
-func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.Reader, *tar.Header) error) error {
+func seekFileByTarHeader(ra content.ReaderAt, targetName string, maxSize *int64, handle func(io.Reader, *tar.Header) error) error {
 	const headerSize = 512
 
 	if headerSize > ra.Size() {
@@ -178,6 +178,10 @@ func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.
 		}
 
 		if hdr.Name == targetName {
+			if maxSize != nil && hdr.Size > *maxSize {
+				return fmt.Errorf("invalid nydus tar size %d", ra.Size())
+			}
+
 			// Try to seek the part of tar data.
 			_, err = reader.Seek(cur-hdr.Size, io.SeekStart)
 			if err != nil {
@@ -203,9 +207,10 @@ func seekFileByTarHeader(ra content.ReaderAt, targetName string, handle func(io.
 
 func seekFileByTOC(ra content.ReaderAt, targetName string, handle func(io.Reader, *tar.Header) error) (*TOCEntry, error) {
 	entrySize := 128
+	maxSize := int64(1 << 20)
 	var tocEntry *TOCEntry
 
-	err := seekFileByTarHeader(ra, EntryTOC, func(tocEntryDataReader io.Reader, _ *tar.Header) error {
+	err := seekFileByTarHeader(ra, EntryTOC, &maxSize, func(tocEntryDataReader io.Reader, _ *tar.Header) error {
 		entryData, err := io.ReadAll(tocEntryDataReader)
 		if err != nil {
 			return errors.Wrap(err, "read toc entries")
@@ -291,7 +296,7 @@ func seekFile(ra content.ReaderAt, targetName string, handle func(io.Reader, *ta
 	}
 
 	// Seek target data by tar header, ensure compatible with old rafs blob format.
-	return nil, seekFileByTarHeader(ra, targetName, handle)
+	return nil, seekFileByTarHeader(ra, targetName, nil, handle)
 }
 
 // Pack converts an OCI tar stream to nydus formatted stream with a tar-like
@@ -324,6 +329,10 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 		return packFromTar(ctx, dest, opt)
 	}
 
+	return packFromDirectory(ctx, dest, opt, builderPath)
+}
+
+func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, builderPath string) (io.WriteCloser, error) {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure work directory")
@@ -498,8 +507,9 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 }
 
 func calcBlobTOCDigest(ra content.ReaderAt) (*digest.Digest, error) {
+	maxSize := int64(1 << 20)
 	digester := digest.Canonical.Digester()
-	if err := seekFileByTarHeader(ra, EntryTOC, func(tocData io.Reader, _ *tar.Header) error {
+	if err := seekFileByTarHeader(ra, EntryTOC, &maxSize, func(tocData io.Reader, _ *tar.Header) error {
 		if _, err := io.Copy(digester.Hash(), tocData); err != nil {
 			return errors.Wrap(err, "calc toc data and header digest")
 		}
@@ -538,13 +548,13 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	for idx := range layers {
 		sourceBootstrapPaths = append(sourceBootstrapPaths, getBootstrapPath(idx))
 		if layers[idx].OriginalDigest != nil {
-			rafsBlobDigests = append(rafsBlobDigests, layers[idx].Digest.Hex())
-			rafsBlobSizes = append(rafsBlobSizes, layers[idx].ReaderAt.Size())
 			rafsBlobTOCDigest, err := calcBlobTOCDigest(layers[idx].ReaderAt)
 			if err != nil {
 				return nil, errors.Wrapf(err, "calc blob toc digest for layer %s", layers[idx].Digest)
 			}
 			rafsBlobTOCDigests = append(rafsBlobTOCDigests, rafsBlobTOCDigest.Hex())
+			rafsBlobDigests = append(rafsBlobDigests, layers[idx].Digest.Hex())
+			rafsBlobSizes = append(rafsBlobSizes, layers[idx].ReaderAt.Size())
 		}
 		eg.Go(func(idx int) func() error {
 			return func() error {
@@ -709,6 +719,19 @@ func IsNydusBootstrap(desc ocispec.Descriptor) bool {
 
 	_, hasAnno := desc.Annotations[LayerAnnotationNydusBootstrap]
 	return hasAnno
+}
+
+// isNydusImage checks if the last layer is nydus bootstrap,
+// so that we can ensure it is a nydus image.
+func isNydusImage(manifest *ocispec.Manifest) bool {
+	layers := manifest.Layers
+	if len(layers) != 0 {
+		desc := layers[len(layers)-1]
+		if IsNydusBootstrap(desc) {
+			return true
+		}
+	}
+	return false
 }
 
 // LayerConvertFunc returns a function which converts an OCI image layer to
@@ -883,19 +906,6 @@ func convertIndex(ctx context.Context, cs content.Store, orgDesc ocispec.Descrip
 		return nil, errors.Wrap(err, "write index json")
 	}
 	return newIndexDesc, nil
-}
-
-// isNydusImage checks if the last layer is nydus bootstrap,
-// so that we can ensure it is a nydus image.
-func isNydusImage(manifest *ocispec.Manifest) bool {
-	layers := manifest.Layers
-	if len(layers) != 0 {
-		desc := layers[len(layers)-1]
-		if IsNydusBootstrap(desc) {
-			return true
-		}
-	}
-	return false
 }
 
 // convertManifest merges all the nydus blob layers into a
