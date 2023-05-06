@@ -27,27 +27,48 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	sn *snapshotter, s storage.Snapshot,
 	key, parent string, labels map[string]string, storageLocater func() string) (_ func() (bool, []mount.Mount, error), target string, err error) {
 
-	handler := func() (bool, []mount.Mount, error) {
-		// Prepare a space for containerd to make snapshot from container image.
+	var handler func() (bool, []mount.Mount, error)
+
+	// Handler to prepare a directory for containerd to download and unpacking layer.
+	defaultHandler := func() (bool, []mount.Mount, error) {
 		mounts, err := sn.mounts(ctx, labels, s)
 		return false, mounts, err
 	}
 
-	target, remote := labels[label.TargetSnapshotRef]
-
+	// Handler to stop containerd from downloading and unpacking layer.
 	skipHandler := func() (bool, []mount.Mount, error) {
-		// The handler tells containerd do not download and unpack layer.
 		return true, nil, nil
 	}
+
+	remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
+		return func() (bool, []mount.Mount, error) {
+			logger.Debugf("Found nydus meta layer id %s", id)
+			if err := sn.prepareRemoteSnapshot(id, labels); err != nil {
+				return false, nil, err
+			}
+
+			// Let Prepare operation show the rootfs content.
+			if err := sn.fs.WaitUntilReady(id); err != nil {
+				return false, nil, err
+			}
+
+			log.L.Infof("Nydus remote snapshot %s is ready", id)
+			mounts, err := sn.remoteMounts(ctx, s, id)
+			return false, mounts, err
+		}
+	}
+
+	target, remote := labels[label.TargetSnapshotRef]
 
 	if remote {
 		// Containerd won't consume mount slice for below snapshots
 		switch {
+		case label.IsNydusMetaLayer(labels):
+			logger.Debugf("found nydus meta layer")
+			handler = defaultHandler
 		case label.IsNydusDataLayer(labels):
 			logger.Debugf("found nydus data layer")
 			handler = skipHandler
-		case label.IsNydusMetaLayer(labels):
-			// Containerd has to download and unpack nydus meta layer for nydusd
 		case sn.fs.CheckReferrer(ctx, labels):
 			logger.Debugf("found referenced nydus manifest")
 			handler = skipHandler
@@ -65,27 +86,10 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 		default:
 			// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
+			handler = defaultHandler
 		}
 	} else {
 		// Container writable layer comes into this branch. It can't be committed within this Prepare
-
-		remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
-			return func() (bool, []mount.Mount, error) {
-				logger.Debugf("Found nydus meta layer id %s", id)
-				if err := sn.prepareRemoteSnapshot(id, labels); err != nil {
-					return false, nil, err
-				}
-
-				// Let Prepare operation show the rootfs content.
-				if err := sn.fs.WaitUntilReady(id); err != nil {
-					return false, nil, err
-				}
-
-				log.L.Infof("Nydus remote snapshot %s is ready", id)
-				mounts, err := sn.remoteMounts(ctx, s, id)
-				return false, mounts, err
-			}
-		}
 
 		// Hope to find bootstrap layer and prepares to start nydusd
 		// TODO: Trying find nydus meta layer will slow down setting up rootfs to OCI images
@@ -94,7 +98,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			handler = remoteHandler(id, info.Labels)
 		}
 
-		if sn.fs.ReferrerDetectEnabled() {
+		if handler == nil && sn.fs.ReferrerDetectEnabled() {
 			if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
 				logger.Infof("found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
 				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
@@ -105,7 +109,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 		}
 
-		if sn.fs.StargzEnabled() {
+		if handler == nil && sn.fs.StargzEnabled() {
 			// `pInfo` must be the uppermost parent layer
 			_, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
 			if err != nil {
@@ -118,6 +122,10 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				}
 			}
 		}
+	}
+
+	if handler == nil {
+		handler = defaultHandler
 	}
 
 	return handler, target, err
