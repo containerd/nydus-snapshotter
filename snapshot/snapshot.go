@@ -187,6 +187,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	if err != nil {
 		return nil, err
 	}
+
 	if err := os.Mkdir(filepath.Join(cfg.Root, "snapshots"), 0700); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
@@ -245,9 +246,8 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 		return snapshots.Usage{}, err
 	}
 
-	upperPath := o.upperPath(id)
-
 	if info.Kind == snapshots.KindActive {
+		upperPath := o.upperPath(id)
 		du, err := fs.DiskUsage(ctx, upperPath)
 		if err != nil {
 			return snapshots.Usage{}, err
@@ -304,20 +304,18 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		}
 	}
 
-	if info.Kind == snapshots.KindActive {
+	if info.Kind == snapshots.KindActive && info.Parent != "" {
 		pKey := info.Parent
 		if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
 			if label.IsNydusMetaLayer(info.Labels) {
 				if err = o.fs.WaitUntilReady(pID); err != nil {
 					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 				}
-				metaSnapshotID = pID
 				needRemoteMounts = true
+				metaSnapshotID = pID
 			}
 		} else {
-			if !errors.Is(err, errdefs.ErrNotFound) {
-				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
-			}
+			return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 		}
 	}
 
