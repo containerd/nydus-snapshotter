@@ -52,8 +52,8 @@ const defaultErrorCode string = "Unknown"
 // 3. Rolling update
 // 4. Daemons failures record as metrics
 type Controller struct {
-	fs      *filesystem.Filesystem
-	manager *manager.Manager
+	fs       *filesystem.Filesystem
+	managers []*manager.Manager
 	// httpSever *http.Server
 	addr   *net.UnixAddr
 	router *mux.Router
@@ -120,7 +120,7 @@ type rafsInstanceInfo struct {
 	ImageID     string `json:"image_id"`
 }
 
-func NewSystemController(fs *filesystem.Filesystem, manager *manager.Manager, sock string) (*Controller, error) {
+func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager, sock string) (*Controller, error) {
 	if err := os.MkdirAll(filepath.Dir(sock), os.ModePerm); err != nil {
 		return nil, err
 	}
@@ -137,10 +137,10 @@ func NewSystemController(fs *filesystem.Filesystem, manager *manager.Manager, so
 	}
 
 	sc := Controller{
-		fs:      fs,
-		manager: manager,
-		addr:    addr,
-		router:  mux.NewRouter(),
+		fs:       fs,
+		managers: managers,
+		addr:     addr,
+		router:   mux.NewRouter(),
 	}
 
 	sc.registerRouter()
@@ -171,46 +171,48 @@ func (sc *Controller) registerRouter() {
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		daemons := sc.manager.ListDaemons()
-
 		info := make([]daemonInfo, 0, 10)
 
-		for _, d := range daemons {
-			instances := make(map[string]rafsInstanceInfo)
-			for _, i := range d.Instances.List() {
-				instances[i.SnapshotID] = rafsInstanceInfo{
-					SnapshotID:  i.SnapshotID,
-					SnapshotDir: i.SnapshotDir,
-					Mountpoint:  i.GetMountpoint(),
-					ImageID:     i.ImageID,
+		for _, manager := range sc.managers {
+			daemons := manager.ListDaemons()
+
+			for _, d := range daemons {
+				instances := make(map[string]rafsInstanceInfo)
+				for _, i := range d.Instances.List() {
+					instances[i.SnapshotID] = rafsInstanceInfo{
+						SnapshotID:  i.SnapshotID,
+						SnapshotDir: i.SnapshotDir,
+						Mountpoint:  i.GetMountpoint(),
+						ImageID:     i.ImageID,
+					}
 				}
-			}
 
-			memRSS, err := metrics.GetProcessMemoryRSSKiloBytes(d.Pid())
-			if err != nil {
-				log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
-			}
+				memRSS, err := metrics.GetProcessMemoryRSSKiloBytes(d.Pid())
+				if err != nil {
+					log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
+				}
 
-			var readData float32
-			fsMetrics, err := d.GetFsMetrics("")
-			if err != nil {
-				log.L.Warnf("Failed to get file system metrics")
-			} else {
-				readData = float32(fsMetrics.DataRead) / 1024
-			}
+				var readData float32
+				fsMetrics, err := d.GetFsMetrics("")
+				if err != nil {
+					log.L.Warnf("Failed to get file system metrics")
+				} else {
+					readData = float32(fsMetrics.DataRead) / 1024
+				}
 
-			i := daemonInfo{
-				ID:                    d.ID(),
-				Pid:                   d.Pid(),
-				HostMountpoint:        d.HostMountpoint(),
-				Reference:             int(d.GetRef()),
-				Instances:             instances,
-				StartupCPUUtilization: d.StartupCPUUtilization,
-				MemoryRSS:             memRSS,
-				ReadData:              readData,
-			}
+				i := daemonInfo{
+					ID:                    d.ID(),
+					Pid:                   d.Pid(),
+					HostMountpoint:        d.HostMountpoint(),
+					Reference:             int(d.GetRef()),
+					Instances:             instances,
+					StartupCPUUtilization: d.StartupCPUUtilization,
+					MemoryRSS:             memRSS,
+					ReadData:              readData,
+				}
 
-			info = append(info, i)
+				info = append(info, i)
+			}
 		}
 
 		jsonResponse(w, &info)
@@ -245,11 +247,6 @@ func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Req
 // 6. Delete the old nydusd executive
 func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sc.manager.Lock()
-		defer sc.manager.Unlock()
-
-		daemons := sc.manager.ListDaemons()
-
 		var c upgradeRequest
 		var err error
 		var statusCode int
@@ -268,35 +265,42 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
-		// TODO: Keep the nydusd executive path in Daemon state and persis it since nydusd
-		// can run on both versions.
-		// Create a dedicated directory storing nydusd of various versions?
-		// TODO: daemon client has a method to query daemon version and information.
-		for _, d := range daemons {
-			err = sc.upgradeNydusDaemon(d, c)
+		for _, manager := range sc.managers {
+			manager.Lock()
+			defer manager.Unlock()
+
+			daemons := manager.ListDaemons()
+
+			// TODO: Keep the nydusd executive path in Daemon state and persis it since nydusd
+			// can run on both versions.
+			// Create a dedicated directory storing nydusd of various versions?
+			// TODO: daemon client has a method to query daemon version and information.
+			for _, d := range daemons {
+				err = sc.upgradeNydusDaemon(d, c, manager)
+				if err != nil {
+					log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
+					statusCode = http.StatusInternalServerError
+					return
+				}
+			}
+
+			// TODO: why renaming?
+			err = os.Rename(c.NydusdPath, manager.NydusdBinaryPath)
 			if err != nil {
-				log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
+				log.L.Errorf("Rename nydusd binary from %s to  %s failed, %v",
+					c.NydusdPath, manager.NydusdBinaryPath, err)
 				statusCode = http.StatusInternalServerError
 				return
 			}
-		}
-
-		err = os.Rename(c.NydusdPath, sc.manager.NydusdBinaryPath)
-		if err != nil {
-			log.L.Errorf("Rename nydusd binary from %s to  %s failed, %v",
-				c.NydusdPath, sc.manager.NydusdBinaryPath, err)
-			statusCode = http.StatusInternalServerError
-			return
 		}
 	}
 }
 
 // Provide minimal parameters since most of it can be recovered by nydusd states.
 // Create a new daemon in Manger to take over the service.
-func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest) error {
+func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, manager *manager.Manager) error {
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
 
-	manager := sc.manager
 	fs := sc.fs
 
 	var new daemon.Daemon
