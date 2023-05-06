@@ -14,6 +14,7 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/containerd/nydus-snapshotter/internal/flags"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/file"
@@ -31,14 +32,14 @@ type DaemonMode string
 
 const (
 	// One nydusd, one rafs instance
-	DaemonModeMultiple DaemonMode = "multiple"
+	DaemonModeMultiple DaemonMode = DaemonMode(constant.DaemonModeMultiple)
 	// One nydusd serves multiple rafs instances
-	DaemonModeShared DaemonMode = "shared"
+	DaemonModeShared DaemonMode = DaemonMode(constant.DaemonModeShared)
 	// No nydusd daemon is needed to be started. Snapshotter does not start any nydusd
 	// and only interacts with containerd with mount slice to pass necessary configuration
 	// to container runtime
-	DaemonModeNone    DaemonMode = "none"
-	DaemonModeInvalid DaemonMode = ""
+	DaemonModeNone    DaemonMode = DaemonMode(constant.DaemonModeNone)
+	DaemonModeInvalid DaemonMode = DaemonMode(constant.DaemonModeInvalid)
 )
 
 func parseDaemonMode(m string) (DaemonMode, error) {
@@ -90,8 +91,8 @@ func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
 }
 
 const (
-	FsDriverFusedev string = "fusedev"
-	FsDriverFscache string = "fscache"
+	FsDriverFusedev string = constant.FsDriverFusedev
+	FsDriverFscache string = constant.FsDriverFscache
 )
 
 type Experimental struct {

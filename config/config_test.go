@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/containerd/nydus-snapshotter/internal/flags"
 	"github.com/stretchr/testify/assert"
 )
@@ -178,21 +179,21 @@ func TestMergeConfig(t *testing.T) {
 
 	err = MergeConfig(&snapshotterConfig1, &defaultSnapshotterConfig)
 	A.NoError(err)
-	A.Equal(snapshotterConfig1.Root, defaultRootDir)
+	A.Equal(snapshotterConfig1.Root, constant.DefaultRootDir)
 	A.Equal(snapshotterConfig1.LoggingConfig.LogDir, "")
 	A.Equal(snapshotterConfig1.CacheManagerConfig.CacheDir, "")
 
-	A.Equal(snapshotterConfig1.DaemonMode, defaultDaemonMode)
-	A.Equal(snapshotterConfig1.SystemControllerConfig.Address, defaultSystemControllerAddress)
-	A.Equal(snapshotterConfig1.LoggingConfig.LogLevel, DefaultLogLevel)
-	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxSize, defaultRotateLogMaxSize)
-	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxBackups, defaultRotateLogMaxBackups)
-	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxAge, defaultRotateLogMaxAge)
-	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogCompress, defaultRotateLogCompress)
+	A.Equal(snapshotterConfig1.DaemonMode, constant.DefaultDaemonMode)
+	A.Equal(snapshotterConfig1.SystemControllerConfig.Address, constant.DefaultSystemControllerAddress)
+	A.Equal(snapshotterConfig1.LoggingConfig.LogLevel, constant.DefaultLogLevel)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxSize, constant.DefaultRotateLogMaxSize)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxBackups, constant.DefaultRotateLogMaxBackups)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogMaxAge, constant.DefaultRotateLogMaxAge)
+	A.Equal(snapshotterConfig1.LoggingConfig.RotateLogCompress, constant.DefaultRotateLogCompress)
 
-	A.Equal(snapshotterConfig1.DaemonConfig.NydusdConfigPath, defaultNydusDaemonConfigPath)
+	A.Equal(snapshotterConfig1.DaemonConfig.NydusdConfigPath, constant.DefaultNydusDaemonConfigPath)
 	A.Equal(snapshotterConfig1.DaemonConfig.RecoverPolicy, RecoverPolicyRestart.String())
-	A.Equal(snapshotterConfig1.CacheManagerConfig.GCPeriod, defaultGCPeriod)
+	A.Equal(snapshotterConfig1.CacheManagerConfig.GCPeriod, constant.DefaultGCPeriod)
 
 	var snapshotterConfig2 SnapshotterConfig
 	snapshotterConfig2.Root = "/snapshotter/root"
