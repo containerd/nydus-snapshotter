@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -57,7 +56,6 @@ type snapshotter struct {
 	ms                   *storage.MetaStore
 	fs                   *filesystem.Filesystem
 	manager              *manager.Manager
-	hasDaemon            bool
 	enableNydusOverlayFS bool
 	syncRemove           bool
 	cleanupOnClose       bool
@@ -124,7 +122,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		filesystem.WithManager(manager),
 		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
 		filesystem.WithVerifier(verifier),
-		filesystem.WithRootMountpoint(path.Join(cfg.Root, "mnt")),
+		filesystem.WithRootMountpoint(config.GetRootMountpoint()),
 		filesystem.WithEnableStargz(cfg.Experimental.EnableStargz),
 	}
 
@@ -147,8 +145,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		referrerMgr := referrer.NewManager(backendConfig.SkipVerify)
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
-
-	hasDaemon := config.GetDaemonMode() != config.DaemonModeNone
 
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
@@ -208,7 +204,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		syncRemove:           syncRemove,
 		fs:                   nydusFs,
 		manager:              manager,
-		hasDaemon:            hasDaemon,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
 	}, nil
@@ -745,7 +740,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	overlayOptions = append(overlayOptions, lowerDirOption)
 
 	// when hasDaemon and not enableNydusOverlayFS, return overlayfs mount slice
-	if !o.enableNydusOverlayFS && o.hasDaemon {
+	if !o.enableNydusOverlayFS && config.GetDaemonMode() != config.DaemonModeNone {
 		log.G(ctx).Infof("remote mount options %v", overlayOptions)
 		return overlayMount(overlayOptions), nil
 	}
