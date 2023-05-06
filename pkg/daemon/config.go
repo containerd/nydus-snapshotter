@@ -12,7 +12,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/pkg/errors"
 )
 
@@ -53,7 +53,7 @@ func WithLogToStdout(logToStdout bool) NewDaemonOpt {
 func WithLogLevel(logLevel string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		if logLevel == "" {
-			d.States.LogLevel = config.DefaultLogLevel
+			d.States.LogLevel = constant.DefaultLogLevel
 		} else {
 			d.States.LogLevel = logLevel
 		}

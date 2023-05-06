@@ -8,68 +8,46 @@ package config
 
 import (
 	"os/exec"
-)
 
-const (
-	defaultDaemonMode string = string(DaemonModeMultiple)
-
-	defaultFsDriver string = FsDriverFusedev
-
-	DefaultLogLevel string = "info"
-	defaultGCPeriod string = "24h"
-
-	defaultNydusDaemonConfigPath string = "/etc/nydus/nydusd-config.json"
-	nydusdBinaryName             string = "nydusd"
-	nydusImageBinaryName         string = "nydus-image"
-
-	defaultRootDir                 = "/var/lib/containerd-nydus"
-	defaultAddress                 = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-	defaultSystemControllerAddress = "/run/containerd-nydus/system.sock"
-
-	// Log rotation
-	defaultRotateLogMaxSize    = 200 // 200 megabytes
-	defaultRotateLogMaxBackups = 10
-	defaultRotateLogMaxAge     = 0 // days
-	defaultRotateLogLocalTime  = true
-	defaultRotateLogCompress   = true
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 )
 
 func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	c.Version = 1
-	c.Root = defaultRootDir
-	c.Address = defaultAddress
+	c.Root = constant.DefaultRootDir
+	c.Address = constant.DefaultAddress
 
 	// essential configuration
 	if c.DaemonMode == "" {
-		c.DaemonMode = defaultDaemonMode
+		c.DaemonMode = constant.DefaultDaemonMode
 	}
 
 	// system controller configuration
-	c.SystemControllerConfig.Address = defaultSystemControllerAddress
+	c.SystemControllerConfig.Address = constant.DefaultSystemControllerAddress
 
 	// logging configuration
 	logConfig := &c.LoggingConfig
 	if logConfig.LogLevel == "" {
-		logConfig.LogLevel = DefaultLogLevel
+		logConfig.LogLevel = constant.DefaultLogLevel
 	}
-	logConfig.RotateLogMaxSize = defaultRotateLogMaxSize
-	logConfig.RotateLogMaxBackups = defaultRotateLogMaxBackups
-	logConfig.RotateLogMaxAge = defaultRotateLogMaxAge
-	logConfig.RotateLogLocalTime = defaultRotateLogLocalTime
-	logConfig.RotateLogCompress = defaultRotateLogCompress
+	logConfig.RotateLogMaxSize = constant.DefaultRotateLogMaxSize
+	logConfig.RotateLogMaxBackups = constant.DefaultRotateLogMaxBackups
+	logConfig.RotateLogMaxAge = constant.DefaultRotateLogMaxAge
+	logConfig.RotateLogLocalTime = constant.DefaultRotateLogLocalTime
+	logConfig.RotateLogCompress = constant.DefaultRotateLogCompress
 
 	// daemon configuration
 	daemonConfig := &c.DaemonConfig
 	if daemonConfig.NydusdConfigPath == "" {
-		daemonConfig.NydusdConfigPath = defaultNydusDaemonConfigPath
+		daemonConfig.NydusdConfigPath = constant.DefaultNydusDaemonConfigPath
 	}
 	daemonConfig.RecoverPolicy = RecoverPolicyRestart.String()
-	daemonConfig.FsDriver = defaultFsDriver
+	daemonConfig.FsDriver = constant.DefaultFsDriver
 
 	// cache configuration
 	cacheConfig := &c.CacheManagerConfig
 	if cacheConfig.GCPeriod == "" {
-		cacheConfig.GCPeriod = defaultGCPeriod
+		cacheConfig.GCPeriod = constant.DefaultGCPeriod
 	}
 
 	return c.SetupNydusBinaryPaths()
@@ -82,12 +60,12 @@ func (c *SnapshotterConfig) SetupNydusBinaryPaths() error {
 	}
 
 	// resolve nydusd path
-	if path, err := exec.LookPath(nydusdBinaryName); err == nil {
+	if path, err := exec.LookPath(constant.NydusdBinaryName); err == nil {
 		c.DaemonConfig.NydusdPath = path
 	}
 
 	// resolve nydus-image path
-	if path, err := exec.LookPath(nydusImageBinaryName); err == nil {
+	if path, err := exec.LookPath(constant.NydusImageBinaryName); err == nil {
 		c.DaemonConfig.NydusImagePath = path
 	}
 
