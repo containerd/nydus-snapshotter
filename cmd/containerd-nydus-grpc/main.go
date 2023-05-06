@@ -94,8 +94,8 @@ func main() {
 				return errors.Wrap(err, "failed to setup logger")
 			}
 
-			log.L.Infof("Start nydus-snapshotter. PID %d Version %s FsDriver %s DaemonMode %s",
-				os.Getpid(), version.Version, config.GetFsDriver(), snapshotterConfig.DaemonMode)
+			log.L.Infof("Start nydus-snapshotter. Version: %s, PID: %d, FsDriver: %s, DaemonMode: %s",
+				version.Version, os.Getpid(), config.GetFsDriver(), snapshotterConfig.DaemonMode)
 
 			return Start(ctx, &snapshotterConfig)
 		},

@@ -8,6 +8,7 @@
 package flags
 
 import (
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/urfave/cli/v2"
 )
 
@@ -37,51 +38,57 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "root",
 			Usage:       "directory to store snapshotter data and working states",
 			Destination: &args.RootDir,
+			DefaultText: constant.DefaultRootDir,
 		},
 		&cli.StringFlag{
 			Name:        "address",
 			Usage:       "remote snapshotter gRPC socket path",
 			Destination: &args.Address,
+			DefaultText: constant.DefaultAddress,
 		},
 		&cli.StringFlag{
 			Name:        "config",
-			Usage:       "path to nydus-snapshotter configuration file",
+			Usage:       "path to nydus-snapshotter configuration (such as: config.toml)",
 			Destination: &args.SnapshotterConfigPath,
 		},
 		&cli.StringFlag{
 			Name:        "nydus-image",
-			Usage:       "path to `nydus-image` binary, default to search in $PATH",
+			Usage:       "path to `nydus-image` binary, default to search in $PATH (such as: /usr/local/bin/nydus-image)",
 			Destination: &args.NydusImagePath,
 		},
 		&cli.StringFlag{
 			Name:        "nydusd",
-			Usage:       "path to `nydusd` binary, default to search in $PATH",
+			Usage:       "path to `nydusd` binary, default to search in $PATH (such as: /usr/local/bin/nydusd)",
 			Destination: &args.NydusdPath,
 		},
 		&cli.StringFlag{
 			Name:        "nydusd-config",
 			Aliases:     []string{"config-path"},
-			Usage:       "path to nydusd configuration file",
+			Usage:       "path to nydusd configuration (such as: nydusd-config.json or nydusd-config-v2.toml)",
 			Destination: &args.NydusdConfigPath,
+			DefaultText: constant.DefaultNydusDaemonConfigPath,
 		},
 		&cli.StringFlag{
 			Name:        "daemon-mode",
 			Usage:       "nydusd daemon working mode, possible values: \"multiple\", \"shared\" or \"none\"",
 			Destination: &args.DaemonMode,
+			DefaultText: constant.DaemonModeMultiple,
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
 			Usage:       "driver to mount RAFS filesystem, possible values: \"fusedev\", \"fscache\"",
 			Destination: &args.FsDriver,
+			DefaultText: constant.FsDriverFusedev,
 		},
 		&cli.StringFlag{
 			Name:        "log-level",
 			Usage:       "logging level, possible values: \"trace\", \"debug\", \"info\", \"warn\", \"error\"",
 			Destination: &args.LogLevel,
+			DefaultText: constant.DefaultLogLevel,
 		},
 		&cli.BoolFlag{
 			Name:        "log-to-stdout",
-			Usage:       "print log messages to STDOUT",
+			Usage:       "print log messages to standard output",
 			Destination: &args.LogToStdout,
 			Count:       &args.LogToStdoutCount,
 		},
