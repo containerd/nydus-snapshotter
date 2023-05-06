@@ -51,7 +51,7 @@ func parseDaemonMode(m string) (DaemonMode, error) {
 	case string(DaemonModeNone):
 		return DaemonModeNone, nil
 	default:
-		return DaemonModeInvalid, errdefs.ErrInvalidArgument
+		return DaemonModeInvalid, errors.Errorf("invalid daemon mode %q", m)
 	}
 }
 
@@ -84,7 +84,7 @@ var recoverPolicyParser map[string]DaemonRecoverPolicy
 func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
 	policy, ok := recoverPolicyParser[p]
 	if !ok {
-		return RecoverPolicyInvalid, errdefs.ErrNotFound
+		return RecoverPolicyInvalid, errors.Errorf("invalid recover policy %q", p)
 	}
 
 	return policy, nil
@@ -213,6 +213,9 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	if err = tree.Unmarshal(&config); err != nil {
 		return nil, errors.Wrap(err, "unmarshal snapshotter configuration")
 	}
+	if config.Version != 1 {
+		return nil, errors.Errorf("unsupported configuration version %d", config.Version)
+	}
 	return &config, nil
 }
 
@@ -240,6 +243,16 @@ func ValidateConfig(c *SnapshotterConfig) error {
 
 	if len(c.Root) == 0 {
 		return errors.New("empty root directory")
+	}
+
+	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev {
+		return errors.Errorf("invalid filesystem driver %q", c.DaemonConfig.FsDriver)
+	}
+	if _, err := ParseRecoverPolicy(c.DaemonConfig.RecoverPolicy); err != nil {
+		return err
+	}
+	if c.DaemonConfig.ThreadsNumber > 1024 {
+		return errors.Errorf("nydusd worker thread number %d is too big, max 1024", c.DaemonConfig.ThreadsNumber)
 	}
 
 	if c.RemoteConfig.AuthConfig.EnableCRIKeychain && c.RemoteConfig.AuthConfig.EnableKubeconfigKeychain {
