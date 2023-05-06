@@ -42,7 +42,7 @@ type Backend interface {
 // Nydus driver majorly works for registry backend, which means blob is stored in
 // registry as per OCI distribution specification. But nydus can also make OSS or
 // other storage services as backend storage. Pass config as byte slice here because
-// we haven't find a way to represent all backend config at the same time.
+// we haven't found a way to represent all backend configs at the same time.
 func NewBackend(_type string, config []byte, forcePush bool) (Backend, error) {
 	switch _type {
 	case BackendTypeOSS:
