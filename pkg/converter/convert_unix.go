@@ -122,7 +122,7 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 // unpackNydusBlob unpacks a Nydus formatted tar stream into a directory.
 // unpackBlob indicates whether to unpack blob data.
 func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt, unpackBlob bool) error {
-	boot, err := os.OpenFile(bootDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	boot, err := os.OpenFile(bootDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
 	if err != nil {
 		return errors.Wrapf(err, "write to bootstrap %s", bootDst)
 	}
@@ -133,7 +133,7 @@ func unpackNydusBlob(bootDst, blobDst string, ra content.ReaderAt, unpackBlob bo
 	}
 
 	if unpackBlob {
-		blob, err := os.OpenFile(blobDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		blob, err := os.OpenFile(blobDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
 		if err != nil {
 			return errors.Wrapf(err, "write to blob %s", blobDst)
 		}
@@ -369,7 +369,7 @@ func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, buil
 		<-unpackDone
 
 		blobPath := filepath.Join(workDir, "blob")
-		blobFifo, err := fifo.OpenFifo(ctx, blobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+		blobFifo, err := fifo.OpenFifo(ctx, blobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
 		if err != nil {
 			return errors.Wrapf(err, "create fifo file")
 		}
@@ -421,13 +421,13 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 	}()
 
 	rafsBlobPath := filepath.Join(workDir, "blob.rafs")
-	rafsBlobFifo, err := fifo.OpenFifo(ctx, rafsBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+	rafsBlobFifo, err := fifo.OpenFifo(ctx, rafsBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create fifo file")
 	}
 
 	tarBlobPath := filepath.Join(workDir, "blob.targz")
-	tarBlobFifo, err := fifo.OpenFifo(ctx, tarBlobPath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0644)
+	tarBlobFifo, err := fifo.OpenFifo(ctx, tarBlobPath, syscall.O_CREAT|syscall.O_WRONLY|syscall.O_NONBLOCK, 0640)
 	if err != nil {
 		defer rafsBlobFifo.Close()
 		return nil, errors.Wrapf(err, "create fifo file")
@@ -637,7 +637,7 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 	}
 
 	tarPath := filepath.Join(workDir, "oci.tar")
-	blobFifo, err := fifo.OpenFifo(ctx, tarPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0644)
+	blobFifo, err := fifo.OpenFifo(ctx, tarPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
 	if err != nil {
 		return errors.Wrapf(err, "create fifo file")
 	}
@@ -661,7 +661,7 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 		// generate backend config file
 		backendConfigStr := fmt.Sprintf(`{"version":2,"backend":{"type":"http-proxy","http-proxy":{"addr":"%s"}}}`, proxy.socketPath)
 		backendConfigPath := filepath.Join(workDir, "backend-config.json")
-		if err := os.WriteFile(backendConfigPath, []byte(backendConfigStr), 0644); err != nil {
+		if err := os.WriteFile(backendConfigPath, []byte(backendConfigStr), 0640); err != nil {
 			return errors.Wrap(err, "write backend config")
 		}
 		unpackOpt.BlobPath = ""
