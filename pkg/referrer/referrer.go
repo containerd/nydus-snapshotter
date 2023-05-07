@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
@@ -22,6 +23,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Containerd restricts the max size of manifest index to 8M, follow it.
+const maxManifestIndexSize = 0x800000
 const metadataNameInLayer = "image/image.boot"
 
 type referrer struct {
@@ -54,7 +57,7 @@ func (r *referrer) checkReferrer(ctx context.Context, ref string, manifestDigest
 
 		// Parse image manifest list from referrers.
 		var index ocispec.Index
-		bytes, err := io.ReadAll(rc)
+		bytes, err := io.ReadAll(io.LimitReader(rc, maxManifestIndexSize))
 		if err != nil {
 			return nil, errors.Wrap(err, "read referrers")
 		}
@@ -65,8 +68,8 @@ func (r *referrer) checkReferrer(ctx context.Context, ref string, manifestDigest
 			return nil, fmt.Errorf("empty referrer list")
 		}
 
-		// Prefer to fetch the last manifest and check
-		// if it is a nydus image.
+		// Prefer to fetch the last manifest and check if it is a nydus image.
+		// TODO: should we search by matching ArtifactType?
 		rc, err = fetcher.Fetch(ctx, index.Manifests[0])
 		if err != nil {
 			return nil, errors.Wrap(err, "fetch referrers")
@@ -118,12 +121,14 @@ func (r *referrer) fetchMetadata(ctx context.Context, ref string, desc ocispec.D
 		defer rc.Close()
 
 		if err := remote.Unpack(rc, metadataNameInLayer, metadataPath); err != nil {
+			os.Remove(metadataPath)
 			return errors.Wrap(err, "unpack metadata from layer")
 		}
 
 		return nil
 	}
 
+	// TODO: check metafile already exists
 	err := handle()
 	if err != nil && r.remote.RetryWithPlainHTTP(ref, err) {
 		return handle()
