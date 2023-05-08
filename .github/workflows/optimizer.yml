@@ -76,15 +76,16 @@ jobs:
           sudo systemctl restart containerd
       - name: Generate accessed files list
         run: |
-          sudo crictl run misc/optimizer/nginx.yaml misc/optimizer/sandbox.yaml
+          sudo crictl run misc/optimizer/ubuntu.yaml misc/optimizer/sandbox.yaml
           sleep 20
           sudo crictl rmp  -f --all
           tree /opt/nri/optimizer/results/
-          count=$(cat /opt/nri/optimizer/results/library/nginx:1.23.3 | wc -l)
+          cat /opt/nri/optimizer/results/library/ubuntu:22.04
+          count=$(cat /opt/nri/optimizer/results/library/ubuntu:22.04 | wc -l)
           echo $count
-          if [ "$count" != 44 ]; then
-            echo "failed to generate accessed files list for nginx:1.23.3"
+          if [ "$count" != 4 ]; then
+            echo "failed to generate accessed files list for ubuntu:22.04"
             exit 1
           fi
-          cat /opt/nri/optimizer/results/library/nginx:1.23.3.csv
+          cat /opt/nri/optimizer/results/library/ubuntu:22.04.csv
     

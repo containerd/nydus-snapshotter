@@ -1,5 +1,5 @@
 metadata:
-  name: nginx-sandbox
+  name: ubuntu-sandbox
   namespace: default
   attempt: 1
   uid: hdishd83djaidwnduwk28bcsb

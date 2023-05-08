@@ -1,0 +1,13 @@
+metadata:
+  name: ubuntu
+
+image:
+  image: ubuntu:22.04
+
+command:
+  - /bin/sh
+  - -c
+  - echo hello
+
+log_path: ubuntu.0.log
+linux: {}
