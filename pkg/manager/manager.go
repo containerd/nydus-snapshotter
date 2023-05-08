@@ -51,7 +51,7 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 	return old
 }
 
-func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
+func (s *DaemonStates) removeLocked(d *daemon.Daemon) *daemon.Daemon {
 	old := s.idxByDaemonID[d.ID()]
 	delete(s.idxByDaemonID, d.ID())
 	return old
@@ -59,14 +59,14 @@ func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
 
 func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
 	s.mu.Lock()
-	old := s.removeUnlocked(d)
+	old := s.removeLocked(d)
 	s.mu.Unlock()
 
 	return old
 }
 
 func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
-	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
+	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeLocked(d) })
 }
 
 // Also recover daemon runtime state here

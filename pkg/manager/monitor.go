@@ -82,7 +82,7 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if s, ok := m.subscribers[id]; ok && s.id == path {
+	if s, ok := m.subscribers[id]; ok && s.path == path {
 		log.L.Warnf("Daemon %s is already subscribed!", id)
 		return errdefs.ErrAlreadyExists
 	}

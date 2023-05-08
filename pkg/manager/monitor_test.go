@@ -70,6 +70,8 @@ func TestLivenessMonitor(t *testing.T) {
 
 	e1 := monitor.Subscribe("daemon_1", s1.Name(), notifier)
 	assert.Nil(t, e1)
+	e1 = monitor.Subscribe("daemon_1", s1.Name(), notifier)
+	assert.NotNil(t, e1)
 	e2 := monitor.Subscribe("daemon_2", s2.Name(), notifier)
 	assert.Nil(t, e2)
 
