@@ -39,6 +39,9 @@ func WithRef(ref int32) NewDaemonOpt {
 
 func WithLogDir(dir string) NewDaemonOpt {
 	return func(d *Daemon) error {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return errors.Wrapf(err, "create logging dir %s", dir)
+		}
 		d.States.LogDir = filepath.Join(dir, d.ID())
 		return nil
 	}

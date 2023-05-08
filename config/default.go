@@ -54,11 +54,6 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 }
 
 func (c *SnapshotterConfig) SetupNydusBinaryPaths() error {
-	// when using DaemonMode = none, nydusd and nydus-image binaries are not required
-	if c.DaemonMode == string(DaemonModeNone) {
-		return nil
-	}
-
 	// resolve nydusd path
 	if path, err := exec.LookPath(constant.NydusdBinaryName); err == nil {
 		c.DaemonConfig.NydusdPath = path
