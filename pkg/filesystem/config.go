@@ -8,6 +8,7 @@
 package filesystem
 
 import (
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
@@ -31,7 +32,14 @@ func WithManager(pm *manager.Manager) NewFSOpt {
 			return errors.New("process manager cannot be nil")
 		}
 
-		fs.Manager = pm
+		if pm.FsDriver == config.FsDriverFusedev {
+			fs.fusedevManager = pm
+		} else if pm.FsDriver == config.FsDriverFscache {
+			fs.fscacheManager = pm
+		}
+
+		fs.enabledManagers = append(fs.enabledManagers, pm)
+
 		return nil
 	}
 }

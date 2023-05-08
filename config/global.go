@@ -39,6 +39,10 @@ type GlobalConfig struct {
 	MirrorsConfig    MirrorsConfig
 }
 
+func IsFusedevSharedModeEnabled() bool {
+	return globalConfig.DaemonMode == DaemonModeShared
+}
+
 func GetDaemonMode() DaemonMode {
 	return globalConfig.DaemonMode
 }
