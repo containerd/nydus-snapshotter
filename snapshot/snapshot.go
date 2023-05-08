@@ -135,7 +135,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			Database: db,
 			Period:   config.GetCacheGCPeriod(),
 			CacheDir: cacheConfig.CacheDir,
-			FsDriver: config.GetFsDriver(),
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "create cache manager")

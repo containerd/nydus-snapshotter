@@ -27,18 +27,17 @@ const (
 	dataFileSuffix = ".blob.data"
 )
 
+// Disk cache manager for fusedev.
 type Manager struct {
 	cacheDir string
 	period   time.Duration
 	eventCh  chan struct{}
-	fsDriver string
 }
 
 type Opt struct {
 	CacheDir string
 	Period   time.Duration
 	Database *store.Database
-	FsDriver string
 }
 
 func NewManager(opt Opt) (*Manager, error) {
@@ -52,7 +51,6 @@ func NewManager(opt Opt) (*Manager, error) {
 		cacheDir: opt.CacheDir,
 		period:   opt.Period,
 		eventCh:  eventCh,
-		fsDriver: opt.FsDriver,
 	}
 
 	return m, nil
