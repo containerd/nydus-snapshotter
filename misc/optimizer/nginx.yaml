@@ -1,8 +1,0 @@
-metadata:
-  name: nginx
-
-image:
-  image: nginx:1.23.3
-
-log_path: nginx.0.log
-linux: {}
