@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
@@ -196,4 +197,49 @@ func (db *Database) tryTranslateRecords() error {
 	}
 
 	return nil
+}
+
+func (db *Database) tryUpgradeRecords(version string) error {
+	log.L.Infof("Trying to update bucket records from %s to v1.1 ...", version)
+
+	if version == "v1.0" {
+		daemons := make([]*daemon.States, 0)
+		err := db.WalkDaemons(context.TODO(), func(cd *daemon.States) error {
+			daemons = append(daemons, cd)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, d := range daemons {
+			if d.DaemonMode == "" {
+				if d.FsDriver == config.FsDriverFscache {
+					d.DaemonMode = config.DaemonModeShared
+				} else if d.FsDriver == config.FsDriverFusedev {
+					if d.Mountpoint == config.GetRootMountpoint() {
+						d.DaemonMode = config.DaemonModeShared
+					} else {
+						d.DaemonMode = config.DaemonModeDedicated
+					}
+				}
+
+				var daemon = daemon.Daemon{States: *d}
+				err := db.UpdateDaemon(context.TODO(), &daemon)
+				if err != nil {
+					return errors.Wrapf(err, "upgrade daemon instance %s", d.ID)
+				}
+			}
+		}
+	}
+
+	err := db.db.Update(func(tx *bolt.Tx) error {
+		bk := tx.Bucket(v1RootBucket)
+		if bk != nil {
+			return bk.Put(versionKey, []byte("v1.1"))
+		}
+		return errors.New("boltdb is not v1")
+	})
+
+	return err
 }

@@ -34,6 +34,7 @@ const (
 
 var (
 	v1RootBucket  = []byte("v1")
+	versionKey    = []byte("version")
 	daemonsBucket = []byte("daemons") // Contains daemon info <daemon_id>=<daemon>
 
 	// Usually representing rafs instances which are attached to daemons or not.
@@ -137,6 +138,7 @@ func getObject(bucket *bolt.Bucket, key string, obj interface{}) error {
 
 func (db *Database) initDatabase() error {
 	var notV1 = false
+	var version string
 	err := db.db.Update(func(tx *bolt.Tx) error {
 
 		bk := tx.Bucket(v1RootBucket)
@@ -158,6 +160,12 @@ func (db *Database) initDatabase() error {
 			return errors.Wrapf(err, "bucket %s", instancesBucket)
 		}
 
+		if val := bk.Get(versionKey); val == nil {
+			version = "v1.0"
+		} else {
+			version = string(val)
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -166,6 +174,12 @@ func (db *Database) initDatabase() error {
 
 	if notV1 {
 		if err := db.tryTranslateRecords(); err != nil && !errors.Is(err, errdefs.ErrNotFound) {
+			return errors.Wrapf(err, "convert old database")
+		}
+	}
+
+	if version == "v1.0" {
+		if err := db.tryUpgradeRecords(version); err != nil && !errors.Is(err, errdefs.ErrNotFound) {
 			return errors.Wrapf(err, "convert old database")
 		}
 	}
