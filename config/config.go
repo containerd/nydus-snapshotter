@@ -31,13 +31,17 @@ func init() {
 type DaemonMode string
 
 const (
-	// One nydusd, one rafs instance
+	// Spawn a dedicated nydusd for each RAFS instance.
 	DaemonModeMultiple DaemonMode = DaemonMode(constant.DaemonModeMultiple)
-	// One nydusd serves multiple rafs instances
+	// Spawn a dedicated nydusd for each RAFS instance.
+	DaemonModeDedicated DaemonMode = DaemonMode(constant.DaemonModeDedicated)
+	// Share a global nydusd to serve all RAFS instances.
 	DaemonModeShared DaemonMode = DaemonMode(constant.DaemonModeShared)
-	// No nydusd daemon is needed to be started. Snapshotter does not start any nydusd
-	// and only interacts with containerd with mount slice to pass necessary configuration
-	// to container runtime
+	// Do not spawn nydusd for RAFS instances.
+	//
+	// For tarfs and rund, there's no need to create nydusd to serve RAFS instances,
+	// the snapshotter just returns mount slices with additional information for runC/runD
+	// to manage those snapshots.
 	DaemonModeNone    DaemonMode = DaemonMode(constant.DaemonModeNone)
 	DaemonModeInvalid DaemonMode = DaemonMode(constant.DaemonModeInvalid)
 )
@@ -45,7 +49,9 @@ const (
 func parseDaemonMode(m string) (DaemonMode, error) {
 	switch m {
 	case string(DaemonModeMultiple):
-		return DaemonModeMultiple, nil
+		return DaemonModeDedicated, nil
+	case string(DaemonModeDedicated):
+		return DaemonModeDedicated, nil
 	case string(DaemonModeShared):
 		return DaemonModeShared, nil
 	case string(DaemonModeNone):

@@ -133,7 +133,7 @@ func (fs *Filesystem) getSharedDaemon() *daemon.Daemon {
 
 func (fs *Filesystem) decideDaemonMountpoint(rafs *daemon.Rafs) (string, error) {
 	var m string
-	if fs.Manager.IsSharedDaemon() {
+	if config.GetDaemonMode() == config.DaemonModeShared {
 		if config.GetFsDriver() == config.FsDriverFscache {
 			return "", nil
 		}
@@ -491,7 +491,9 @@ func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daem
 		daemon.WithLogLevel(config.GetLogLevel()),
 		daemon.WithLogToStdout(config.GetLogToStdout()),
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
-		daemon.WithFsDriver(config.GetFsDriver())}
+		daemon.WithFsDriver(config.GetFsDriver()),
+		daemon.WithDaemonMode(config.GetDaemonMode()),
+	}
 
 	if mountpoint != "" {
 		opts = append(opts, daemon.WithMountpoint(mountpoint))

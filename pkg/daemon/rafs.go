@@ -186,14 +186,16 @@ func (r *Rafs) FscacheWorkDir() string {
 }
 
 func (d *Daemon) UmountAllInstances() error {
-	d.Instances.Lock()
-	defer d.Instances.Unlock()
+	if d.IsSharedDaemon() {
+		d.Instances.Lock()
+		defer d.Instances.Unlock()
 
-	instances := d.Instances.ListUnlocked()
+		instances := d.Instances.ListUnlocked()
 
-	for _, r := range instances {
-		if err := d.SharedUmount(r); err != nil {
-			return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
+		for _, r := range instances {
+			if err := d.SharedUmount(r); err != nil {
+				return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
+			}
 		}
 	}
 
@@ -212,7 +214,7 @@ func (d *Daemon) CloneInstances(src *Daemon) {
 }
 
 func (d *Daemon) UmountInstance(r *Rafs) error {
-	if r.Mountpoint != d.States.Mountpoint {
+	if d.IsSharedDaemon() {
 		if err := d.SharedUmount(r); err != nil {
 			return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
 		}
@@ -223,20 +225,20 @@ func (d *Daemon) UmountInstance(r *Rafs) error {
 
 // Daemon must be started and reach RUNNING state before call this method
 func (d *Daemon) RecoveredMountInstances() error {
-	d.Instances.Lock()
-	defer d.Instances.Unlock()
+	if d.IsSharedDaemon() {
+		d.Instances.Lock()
+		defer d.Instances.Unlock()
 
-	instances := make([]*Rafs, 0, 16)
-	for _, r := range d.Instances.ListUnlocked() {
-		instances = append(instances, r)
-	}
+		instances := make([]*Rafs, 0, 16)
+		for _, r := range d.Instances.ListUnlocked() {
+			instances = append(instances, r)
+		}
 
-	sort.Slice(instances, func(i, j int) bool {
-		return instances[i].Seq < instances[j].Seq
-	})
+		sort.Slice(instances, func(i, j int) bool {
+			return instances[i].Seq < instances[j].Seq
+		})
 
-	for _, i := range instances {
-		if d.HostMountpoint() != i.GetMountpoint() {
+		for _, i := range instances {
 			log.L.Infof("Recovered mount instance %s", i.SnapshotID)
 			if err := d.SharedMount(i); err != nil {
 				return err

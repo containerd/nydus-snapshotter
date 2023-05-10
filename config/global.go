@@ -33,6 +33,7 @@ type GlobalConfig struct {
 	DaemonMode       DaemonMode
 	SocketRoot       string
 	ConfigRoot       string
+	RootMountpoint   string
 	DaemonThreadsNum int
 	CacheGCPeriod    time.Duration
 	MirrorsConfig    MirrorsConfig
@@ -44,6 +45,10 @@ func GetDaemonMode() DaemonMode {
 
 func GetSnapshotsRootDir() string {
 	return globalConfig.SnapshotsDir
+}
+
+func GetRootMountpoint() string {
+	return globalConfig.RootMountpoint
 }
 
 func GetSocketRoot() string {
@@ -111,6 +116,7 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.SnapshotsDir = filepath.Join(c.Root, "snapshots")
 	globalConfig.ConfigRoot = filepath.Join(c.Root, "config")
 	globalConfig.SocketRoot = filepath.Join(c.Root, "socket")
+	globalConfig.RootMountpoint = filepath.Join(c.Root, "mnt")
 
 	globalConfig.MirrorsConfig = c.RemoteConfig.MirrorsConfig
 

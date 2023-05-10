@@ -119,7 +119,6 @@ func (s *DaemonStates) Size() int {
 type Manager struct {
 	store            Store
 	NydusdBinaryPath string
-	daemonMode       config.DaemonMode
 	// Where nydusd stores cache files for fscache driver
 	cacheDir string
 	// Daemon states are inserted when creating snapshots and nydusd and
@@ -148,7 +147,6 @@ type Manager struct {
 type Opt struct {
 	NydusdBinaryPath string
 	Database         *store.Database
-	DaemonMode       config.DaemonMode
 	CacheDir         string
 	RecoverPolicy    config.DaemonRecoverPolicy
 	// Nydus-snapshotter work directory
@@ -275,7 +273,6 @@ func NewManager(opt Opt) (*Manager, error) {
 	mgr := &Manager{
 		store:            s,
 		NydusdBinaryPath: opt.NydusdBinaryPath,
-		daemonMode:       opt.DaemonMode,
 		cacheDir:         opt.CacheDir,
 		daemonStates:     newDaemonStates(),
 		monitor:          monitor,
@@ -400,7 +397,7 @@ func (m *Manager) ListDaemons() []*daemon.Daemon {
 
 func (m *Manager) CleanUpDaemonResources(d *daemon.Daemon) {
 	resource := []string{d.States.ConfigDir, d.States.LogDir}
-	if !m.IsSharedDaemon() {
+	if !d.IsSharedDaemon() {
 		socketDir := path.Dir(d.GetAPISock())
 		resource = append(resource, socketDir)
 	}
