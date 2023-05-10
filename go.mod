@@ -13,6 +13,7 @@ require (
 	github.com/containerd/containerd v1.7.0
 	github.com/containerd/continuity v0.3.0
 	github.com/containerd/fifo v1.1.0
+	github.com/containerd/imgcrypt v1.1.7
 	github.com/containerd/nri v0.3.0
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3
@@ -47,6 +48,14 @@ require (
 )
 
 require (
+	github.com/miekg/pkcs11 v1.1.1 // indirect
+	github.com/stefanberger/go-pkcs11uri v0.0.0-20201008174630-78d3cae3a980 // indirect
+	go.mozilla.org/pkcs7 v0.0.0-20200128120323-432b2356ecb1 // indirect
+	golang.org/x/crypto v0.1.0 // indirect
+	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
+)
+
+require (
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20221215162035-5330a85ea652 // indirect
 	github.com/Microsoft/go-winio v0.6.0 // indirect
 	github.com/Microsoft/hcsshim v0.10.0-rc.7 // indirect
@@ -70,6 +79,7 @@ require (
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/ttrpc v1.2.1 // indirect
 	github.com/containerd/typeurl/v2 v2.1.0 // indirect
+	github.com/containers/ocicrypt v1.1.7
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
