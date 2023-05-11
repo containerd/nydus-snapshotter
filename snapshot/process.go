@@ -40,10 +40,10 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		return true, nil, nil
 	}
 
-	remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
+	remoteHandler := func(id string, labels map[string]string, isTarfs bool) func() (bool, []mount.Mount, error) {
 		return func() (bool, []mount.Mount, error) {
 			logger.Debugf("Found nydus meta layer id %s", id)
-			if err := sn.prepareRemoteSnapshot(id, labels); err != nil {
+			if err := sn.prepareRemoteSnapshot(id, labels, isTarfs); err != nil {
 				return false, nil, err
 			}
 
@@ -84,6 +84,14 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					labels[label.StargzLayer] = "true"
 				}
 			}
+		case sn.fs.TarfsEnabled():
+			err := sn.fs.PrepareTarfsLayer(ctx, labels, s.ID, sn.upperPath(s.ID))
+			if err != nil {
+				logger.Debugf("snapshot ID %s can't prepare as tarfs fallback to containerd, err: %v", s.ID, err)
+				handler = defaultHandler
+			} else {
+				handler = skipHandler
+			}
 		default:
 			// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
 			handler = defaultHandler
@@ -95,7 +103,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		// TODO: Trying find nydus meta layer will slow down setting up rootfs to OCI images
 		if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
 			logger.Infof("Prepares active snapshot %s, nydusd should start afterwards", key)
-			handler = remoteHandler(id, info.Labels)
+			handler = remoteHandler(id, info.Labels, false)
 		}
 
 		if handler == nil && sn.fs.ReferrerDetectEnabled() {
@@ -105,7 +113,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				if err := sn.fs.TryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
 					return nil, "", errors.Wrap(err, "try fetch metadata")
 				}
-				handler = remoteHandler(id, info.Labels)
+				handler = remoteHandler(id, info.Labels, false)
 			}
 		}
 
@@ -120,6 +128,26 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				if err := sn.fs.MergeStargzMetaLayer(ctx, s); err != nil {
 					return nil, "", errors.Wrap(err, "merge stargz meta layers")
 				}
+			}
+		}
+
+		if handler == nil && sn.fs.TarfsEnabled() {
+			// TODO may need check all parrents, in case share layers with other images which already prepared by overlay snapshotter
+
+			// tarfs merged & mounted on the uppermost parent layer
+			id, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
+			if err == nil {
+				if sn.fs.IsTarfsLayer(id) {
+					err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
+					if err != nil {
+						return nil, "", errors.Wrap(err, "merge tarfs layers")
+					}
+					handler = remoteHandler(id, pInfo.Labels, true)
+				} else {
+					logger.Warnf("Tarfs enable but Parent (%s) of snapshot %s is not a tarfs layer, is an untar oci or nydus snapshot?", id, s.ID)
+				}
+			} else {
+				logger.Warnf("Tarfs enable but can't get snapshot %s Parent, is an untar oci or nydus snapshot?", s.ID)
 			}
 		}
 	}

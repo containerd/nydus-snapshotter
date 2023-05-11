@@ -40,6 +40,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
+	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 
@@ -163,6 +164,13 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		_, backendConfig := daemonConfig.StorageBackend()
 		referrerMgr := referrer.NewManager(backendConfig.SkipVerify)
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
+	}
+
+	if cfg.Experimental.EnableTarfs {
+		// FIXME: get the insecure option from nydusd config.
+		_, backendConfig := daemonConfig.StorageBackend()
+		tarfsMgr := tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsHint, cfg.DaemonConfig.NydusImagePath)
+		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
 	}
 
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
@@ -334,6 +342,10 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 				needRemoteMounts = true
 				metaSnapshotID = pID
 			}
+			if o.fs.TarfsEnabled() && o.fs.IsMergedTarfsLayer(pID) {
+				needRemoteMounts = true
+				metaSnapshotID = pID
+			}
 		} else {
 			return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 		}
@@ -410,7 +422,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
 		if err = o.fs.WaitUntilReady(pID); err != nil {
 			if errors.Is(err, errdefs.ErrNotFound) {
-				if err := o.fs.Mount(pID, pInfo.Labels); err != nil {
+				if err := o.fs.Mount(pID, pInfo.Labels, false); err != nil {
 					return nil, errors.Wrapf(err, "mount rafs, instance id %s", pID)
 				}
 
@@ -717,8 +729,8 @@ func overlayMount(options []string) []mount.Mount {
 	}
 }
 
-func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
-	return o.fs.Mount(id, labels)
+func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string, isTarfs bool) error {
+	return o.fs.Mount(id, labels, isTarfs)
 }
 
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
@@ -946,6 +958,12 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	snapshotID := filepath.Base(dir)
 	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
+	}
+
+	if o.fs.TarfsEnabled() {
+		if err := o.fs.DetachTarfsLayer(snapshotID); err != nil && !os.IsNotExist(err) {
+			log.G(ctx).WithError(err).Error("detach tarfs layer")
+		}
 	}
 
 	if err := os.RemoveAll(dir); err != nil {

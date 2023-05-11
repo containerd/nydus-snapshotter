@@ -48,6 +48,10 @@ const (
 	// If this optional label of a snapshot is specified, when mounted to rootdir
 	// this snapshot will include volatile option
 	OverlayfsVolatileOpt = "containerd.io/snapshot/overlay.volatile"
+
+	// A bool flag to mark it is recommended to run this image with tarfs mode, set by image builders.
+	// runtime can decide whether to rely on this annotation
+	TarfsHint = "containerd.io/snapshot/tarfs-hint"
 )
 
 func IsNydusDataLayer(labels map[string]string) bool {
@@ -60,5 +64,13 @@ func IsNydusMetaLayer(labels map[string]string) bool {
 		return false
 	}
 	_, ok := labels[NydusMetaLayer]
+	return ok
+}
+
+func IsTarfsHint(labels map[string]string) bool {
+	if labels == nil {
+		return false
+	}
+	_, ok := labels[TarfsHint]
 	return ok
 }
