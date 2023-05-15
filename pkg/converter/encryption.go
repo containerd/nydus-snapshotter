@@ -1,18 +1,8 @@
 /*
-   Copyright The containerd Authors.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
+ * Copyright (c) 2023. Nydus Developers. All rights reserved.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 package converter
 
@@ -25,45 +15,17 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/imgcrypt/images/encryption/parsehelpers"
 
 	"github.com/containers/ocicrypt"
 	encconfig "github.com/containers/ocicrypt/config"
+	enchelpers "github.com/containers/ocicrypt/helpers"
 	encocispec "github.com/containers/ocicrypt/spec"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type cryptoOp int
-
-const (
-	cryptoOpEncrypt    cryptoOp = iota
-	cryptoOpDecrypt             = iota
-	cryptoOpUnwrapOnly          = iota
-)
-
-// LayerFilter allows to select Layers by certain criteria
-type LayerFilter func(desc ocispec.Descriptor) bool
-
-// IsEncryptedDiff returns true if mediaType is a known encrypted media type.
-func IsEncryptedDiff(ctx context.Context, mediaType string) bool {
-	switch mediaType {
-	case encocispec.MediaTypeLayerZstdEnc, encocispec.MediaTypeLayerGzipEnc, encocispec.MediaTypeLayerEnc:
-		return true
-	}
-	return false
-}
-
-// HasEncryptedLayer returns true if any LayerInfo indicates that the layer is encrypted
-func HasEncryptedLayer(ctx context.Context, layerInfos []ocispec.Descriptor) bool {
-	for i := 0; i < len(layerInfos); i++ {
-		if IsEncryptedDiff(ctx, layerInfos[i].MediaType) {
-			return true
-		}
-	}
-	return false
-}
-
+// Copied from containerd/imgcrypt project, copyright The imgcrypt Authors.
+// https://github.com/containerd/imgcrypt/blob/e7500301cabcc9f3cab3daee3f541079b509e95f/images/encryption/encryption.go#LL82C5-L82C5
 // encryptLayer encrypts the layer using the CryptoConfig and creates a new OCI Descriptor.
 // A call to this function may also only manipulate the wrapped keys list.
 // The caller is expected to store the returned encrypted data and OCI Descriptor
@@ -121,32 +83,8 @@ func encryptLayer(cc *encconfig.CryptoConfig, dataReader content.ReaderAt, desc 
 	return newDesc, encLayerReader, encLayerFinalizer, nil
 }
 
-// DecryptLayer decrypts the layer using the DecryptConfig and creates a new OCI Descriptor.
-// The caller is expected to store the returned plain data and OCI Descriptor
-func DecryptLayer(dc *encconfig.DecryptConfig, dataReader io.Reader, desc ocispec.Descriptor, unwrapOnly bool) (ocispec.Descriptor, io.Reader, digest.Digest, error) {
-	resultReader, layerDigest, err := ocicrypt.DecryptLayer(dc, dataReader, desc, unwrapOnly)
-	if err != nil || unwrapOnly {
-		return ocispec.Descriptor{}, nil, "", err
-	}
-
-	newDesc := ocispec.Descriptor{
-		Size:     0,
-		Platform: desc.Platform,
-	}
-
-	switch desc.MediaType {
-	case encocispec.MediaTypeLayerGzipEnc:
-		newDesc.MediaType = images.MediaTypeDockerSchema2LayerGzip
-	case encocispec.MediaTypeLayerZstdEnc:
-		newDesc.MediaType = ocispec.MediaTypeImageLayerZstd
-	case encocispec.MediaTypeLayerEnc:
-		newDesc.MediaType = images.MediaTypeDockerSchema2Layer
-	default:
-		return ocispec.Descriptor{}, nil, "", fmt.Errorf("unsupporter layer MediaType: %s", desc.MediaType)
-	}
-	return newDesc, resultReader, layerDigest, nil
-}
-
+// Copied from containerd/imgcrypt project, copyright The imgcrypt Authors.
+// https://github.com/containerd/imgcrypt/blob/e7500301cabcc9f3cab3daee3f541079b509e95f/images/encryption/encryption.go#LL164C11-L164C11
 // decryptLayer decrypts the layer using the CryptoConfig and creates a new OCI Descriptor.
 // The caller is expected to store the returned plain data and OCI Descriptor
 func decryptLayer(cc *encconfig.CryptoConfig, dataReader content.ReaderAt, desc ocispec.Descriptor, unwrapOnly bool) (ocispec.Descriptor, io.Reader, error) {
@@ -174,13 +112,39 @@ func decryptLayer(cc *encconfig.CryptoConfig, dataReader content.ReaderAt, desc 
 	return newDesc, resultReader, nil
 }
 
-// cryptLayer handles the changes due to encryption or decryption of a layer
-func cryptLayer(ctx context.Context, cs content.Store, desc ocispec.Descriptor, opt MergeOption, cryptoOp cryptoOp) (ocispec.Descriptor, error) {
+// Copied from containerd/imgcrypt project, copyright The imgcrypt Authors.
+// https://github.com/containerd/imgcrypt/blob/e7500301cabcc9f3cab3daee3f541079b509e95f/images/encryption/encryption.go#LL250C5-L250C5
+func ingestReader(ctx context.Context, cs content.Ingester, ref string, r io.Reader) (digest.Digest, int64, error) {
+	cw, err := content.OpenWriter(ctx, cs, content.WithRef(ref))
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to open writer: %w", err)
+	}
+	defer cw.Close()
+
+	if _, err := content.CopyReader(cw, r); err != nil {
+		return "", 0, fmt.Errorf("copy failed: %w", err)
+	}
+
+	st, err := cw.Status()
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to get state: %w", err)
+	}
+
+	if err := cw.Commit(ctx, st.Offset, ""); err != nil {
+		if !errdefs.IsAlreadyExists(err) {
+			return "", 0, fmt.Errorf("failed commit on ref %q: %w", ref, err)
+		}
+	}
+
+	return cw.Digest(), st.Offset, nil
+}
+
+// Encrypt Nydus bootstrap layer
+func EncryptNydusBootstrap(ctx context.Context, cs content.Store, desc ocispec.Descriptor, encryptRecipients []string) (ocispec.Descriptor, error) {
 	var (
 		resultReader      io.Reader
 		newDesc           ocispec.Descriptor
 		encLayerFinalizer ocicrypt.EncryptLayerFinalizer
-		arg               parsehelpers.EncArgs
 	)
 
 	dataReader, err := cs.ReaderAt(ctx, desc)
@@ -189,21 +153,14 @@ func cryptLayer(ctx context.Context, cs content.Store, desc ocispec.Descriptor, 
 	}
 	defer dataReader.Close()
 
-	arg.Recipient = []string{opt.EncryptRecipient}
-	cc, err := parsehelpers.CreateCryptoConfig(arg, []ocispec.Descriptor{desc})
+	cc, err := enchelpers.CreateCryptoConfig(encryptRecipients, []string{})
 	if err != nil {
-		return ocispec.Descriptor{}, err
+		return ocispec.Descriptor{}, fmt.Errorf("create encrypt config failed: %w", err)
 	}
-
-	if cryptoOp == cryptoOpEncrypt {
-		newDesc, resultReader, encLayerFinalizer, err = encryptLayer(&cc, dataReader, desc)
-	} else {
-		newDesc, resultReader, err = decryptLayer(&cc, dataReader, desc, cryptoOp == cryptoOpUnwrapOnly)
+	newDesc, resultReader, encLayerFinalizer, err = encryptLayer(&cc, dataReader, desc)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("failed to encrypt bootstrap layer: %w", err)
 	}
-	if err != nil || cryptoOp == cryptoOpUnwrapOnly {
-		return ocispec.Descriptor{}, err
-	}
-
 	newDesc.Annotations = ocicrypt.FilterOutAnnotations(desc.Annotations)
 
 	// some operations, such as changing recipients, may not touch the layer at all
@@ -212,12 +169,13 @@ func cryptLayer(ctx context.Context, cs content.Store, desc ocispec.Descriptor, 
 		// If we have the digest, write blob with checks
 		haveDigest := newDesc.Digest.String() != ""
 		if haveDigest {
-			ref = fmt.Sprintf("bootstrap-encrypted-%s", newDesc.Digest.String())
+			ref = fmt.Sprintf("encrypted-bootstrap-%s", newDesc.Digest.String())
 		} else {
-			ref = fmt.Sprintf("bootstrap-encrypted-%d-%d", rand.Int(), rand.Int())
+			ref = fmt.Sprintf("encrypted-bootstrap-%d-%d", rand.Int(), rand.Int())
 		}
 
 		if haveDigest {
+			// Write blob if digest is known beforehand
 			if err := content.WriteBlob(ctx, cs, ref, resultReader, newDesc); err != nil {
 				return ocispec.Descriptor{}, fmt.Errorf("failed to write config: %w", err)
 			}
@@ -242,27 +200,54 @@ func cryptLayer(ctx context.Context, cs content.Store, desc ocispec.Descriptor, 
 	return newDesc, err
 }
 
-func ingestReader(ctx context.Context, cs content.Ingester, ref string, r io.Reader) (digest.Digest, int64, error) {
-	cw, err := content.OpenWriter(ctx, cs, content.WithRef(ref))
+// Decrypt the Nydus boostrap layer.
+// If unwrapOnly is set we will only try to decrypt the layer encryption key and return,
+// the layer itself won't be decrypted actually.
+func DeryptNydusBootstrap(ctx context.Context, cs content.Store, desc ocispec.Descriptor, decryptKeys []string, unwrapOnly bool) (ocispec.Descriptor, error) {
+	var (
+		resultReader io.Reader
+		newDesc      ocispec.Descriptor
+	)
+
+	dataReader, err := cs.ReaderAt(ctx, desc)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to open writer: %w", err)
+		return ocispec.Descriptor{}, err
 	}
-	defer cw.Close()
+	defer dataReader.Close()
 
-	if _, err := content.CopyReader(cw, r); err != nil {
-		return "", 0, fmt.Errorf("copy failed: %w", err)
-	}
-
-	st, err := cw.Status()
+	cc, err := enchelpers.CreateCryptoConfig([]string{}, decryptKeys)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get state: %w", err)
+		return ocispec.Descriptor{}, fmt.Errorf("create decrypt config failed: %w", err)
+	}
+	newDesc, resultReader, err = decryptLayer(&cc, dataReader, desc, unwrapOnly)
+	if err != nil || unwrapOnly {
+		return ocispec.Descriptor{}, fmt.Errorf("failed to decrypt bootstrap layer: %w", err)
 	}
 
-	if err := cw.Commit(ctx, st.Offset, ""); err != nil {
-		if !errdefs.IsAlreadyExists(err) {
-			return "", 0, fmt.Errorf("failed commit on ref %q: %w", ref, err)
+	newDesc.Annotations = ocicrypt.FilterOutAnnotations(desc.Annotations)
+
+	// some operations, such as changing recipients, may not touch the layer at all
+	if resultReader != nil {
+		var ref string
+		// If we have the digest, write blob with checks
+		haveDigest := newDesc.Digest.String() != ""
+		if haveDigest {
+			ref = fmt.Sprintf("decrypted-bootstrap-%s", newDesc.Digest.String())
+		} else {
+			ref = fmt.Sprintf("decrypted-bootstrap-%d-%d", rand.Int(), rand.Int())
+		}
+
+		if haveDigest {
+			// Write blob if digest is known beforehand
+			if err := content.WriteBlob(ctx, cs, ref, resultReader, newDesc); err != nil {
+				return ocispec.Descriptor{}, fmt.Errorf("failed to write config: %w", err)
+			}
+		} else {
+			newDesc.Digest, newDesc.Size, err = ingestReader(ctx, cs, ref, resultReader)
+			if err != nil {
+				return ocispec.Descriptor{}, err
+			}
 		}
 	}
-
-	return cw.Digest(), st.Offset, nil
+	return newDesc, err
 }
