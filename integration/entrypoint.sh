@@ -23,7 +23,7 @@ WORDPRESS_IMAGE=${WORDPRESS_IMAGE:-ghcr.io/dragonflyoss/image-service/wordpress:
 TOMCAT_IMAGE=${TOMCAT_IMAGE:-ghcr.io/dragonflyoss/image-service/tomcat:nydus-nightly-v5}
 STARGZ_IMAGE=${STARGZ_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
 REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-ghcr.io/stargz-containers/redis:6.2.6-org}
-WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-org}
+WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-ghcr.io/dragonflyoss/image-service/wordpress:latest}
 
 PLUGIN=nydus
 
@@ -117,13 +117,21 @@ function validate_mnt_number {
     fi
 }
 
+function set_config_option {
+    KEY="${1}"
+    VALUE="${2}"
+
+    sed -i "s/\($KEY *= *\).*/\1$VALUE/" "${SNAPSHOTTER_CONFIG}"
+}
+
 function set_recover_policy {
     policy="${1}"
 
-    TARGET_KEY="recover_policy"
-    REPLACEMENT_VALUE=\"${policy}\"
+    set_config_option "recover_policy" \"${policy}\"
+}
 
-    sed -i "s/\($TARGET_KEY *= *\).*/\1$REPLACEMENT_VALUE/" "${SNAPSHOTTER_CONFIG}"
+function set_enable_referrer_detect {
+    set_config_option "enable_referrer_detect" "true"
 }
 
 function reboot_containerd {
@@ -281,6 +289,17 @@ function start_container_on_oci {
     # Deleteing with flag --async as a fuzzer
     nerdctl image rm --async --force "${REDIS_OCI_IMAGE}"
     nerdctl image rm --force "${WORDPRESS_OCI_IMAGE}"
+}
+
+function start_container_with_referrer_detect {
+    echo "testing $FUNCNAME"
+    nerdctl_prune_images
+    reboot_containerd multiple
+
+    set_enable_referrer_detect
+    nerdctl --snapshotter nydus run -d --net none "${WORDPRESS_OCI_IMAGE}"
+
+    detect_go_race
 }
 
 function pull_remove_one_image {
@@ -577,3 +596,5 @@ if [[ $(can_erofs_ondemand_read) == 0 ]]; then
 fi
 
 start_container_on_oci
+
+start_container_with_referrer_detect
