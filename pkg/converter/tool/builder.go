@@ -133,7 +133,7 @@ func buildPackArgs(option PackOption) []string {
 	if option.ChunkSize != "" {
 		args = append(args, "--chunk-size", option.ChunkSize)
 	}
-	if option.BatchSize != "" {
+	if option.BatchSize != "" && option.BatchSize != "0" {
 		args = append(args, "--batch-size", option.BatchSize)
 	}
 	args = append(args, option.SourcePath)
