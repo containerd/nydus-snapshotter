@@ -29,20 +29,23 @@ import (
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/lru"
 )
 
 type Manager struct {
-	snapshotMap    map[string]*snapshotStatus // tarfs snapshots status, indexed by snapshot ID
-	mutex          sync.Mutex
-	insecure       bool
-	checkTarfsHint bool       // whether to rely on tarfs hint annotation
-	tarfsHintCache *lru.Cache // cache oci image raf and tarfs hint annotation
-	nydusImagePath string
-	diffIDCache    *lru.Cache // cache oci blob digest and diffID
-	sg             singleflight.Group
+	snapshotMap          map[string]*snapshotStatus // tarfs snapshots status, indexed by snapshot ID
+	mutex                sync.Mutex
+	nydusImagePath       string
+	insecure             bool
+	checkTarfsHint       bool // whether to rely on tarfs hint annotation
+	maxConcurrentProcess int64
+	tarfsHintCache       *lru.Cache // cache image ref and tarfs hint annotation
+	diffIDCache          *lru.Cache // cache oci blob digest and diffID
+	processLimiterCache  *lru.Cache // cache image ref and concurrent limiter for blob processes
+	sg                   singleflight.Group
 }
 
 const (
@@ -70,15 +73,17 @@ type snapshotStatus struct {
 	cancel          context.CancelFunc
 }
 
-func NewManager(insecure, checkTarfsHint bool, nydusImagePath string) *Manager {
+func NewManager(insecure, checkTarfsHint bool, nydusImagePath string, maxConcurrentProcess int64) *Manager {
 	return &Manager{
-		snapshotMap:    map[string]*snapshotStatus{},
-		nydusImagePath: nydusImagePath,
-		insecure:       insecure,
-		checkTarfsHint: checkTarfsHint,
-		tarfsHintCache: lru.New(50),
-		diffIDCache:    lru.New(1000),
-		sg:             singleflight.Group{},
+		snapshotMap:          map[string]*snapshotStatus{},
+		nydusImagePath:       nydusImagePath,
+		insecure:             insecure,
+		checkTarfsHint:       checkTarfsHint,
+		maxConcurrentProcess: maxConcurrentProcess,
+		tarfsHintCache:       lru.New(50),
+		processLimiterCache:  lru.New(50),
+		diffIDCache:          lru.New(1000),
+		sg:                   singleflight.Group{},
 	}
 }
 
@@ -535,4 +540,18 @@ func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, mani
 		return handle()
 	}
 	return tarfsHint, err
+}
+
+func (t *Manager) GetConcurrentLimiter(ref string) *semaphore.Weighted {
+	if t.maxConcurrentProcess == 0 {
+		return nil
+	}
+
+	if limiter, ok := t.processLimiterCache.Get(ref); ok {
+		return limiter.(*semaphore.Weighted)
+	}
+
+	limiter := semaphore.NewWeighted(t.maxConcurrentProcess)
+	t.processLimiterCache.Add(ref, limiter)
+	return limiter
 }

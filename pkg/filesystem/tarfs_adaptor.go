@@ -42,10 +42,19 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 		return errors.Errorf("this image is not recommended for tarfs")
 	}
 
+	limiter := fs.tarfsMgr.GetConcurrentLimiter(ref)
+	if limiter != nil {
+		if err := limiter.Acquire(context.Background(), 1); err != nil {
+			return errors.Wrapf(err, "concurrent limiter acquire")
+		}
+	}
+
 	go func() {
-		// TODO concurrency control
 		if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifest, layerDigest, storagePath); err != nil {
 			log.L.WithError(err).Errorf("async prepare Tarfs layer of snapshot ID %s", snapshotID)
+		}
+		if limiter != nil {
+			limiter.Release(1)
 		}
 	}()
 	return nil

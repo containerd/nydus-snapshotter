@@ -169,7 +169,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	if cfg.Experimental.EnableTarfs {
 		// FIXME: get the insecure option from nydusd config.
 		_, backendConfig := daemonConfig.StorageBackend()
-		tarfsMgr := tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsHint, cfg.DaemonConfig.NydusImagePath)
+		tarfsMgr := tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsHint, cfg.DaemonConfig.NydusImagePath, int64(cfg.Experimental.TarfsMaxConcurrentProc))
 		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
 	}
 
