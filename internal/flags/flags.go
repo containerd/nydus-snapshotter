@@ -8,12 +8,12 @@
 package flags
 
 import (
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/urfave/cli/v2"
 )
 
 type Args struct {
 	Address               string
-	LogLevel              string
 	NydusdConfigPath      string
 	SnapshotterConfigPath string
 	RootDir               string
@@ -21,6 +21,7 @@ type Args struct {
 	NydusImagePath        string
 	DaemonMode            string
 	FsDriver              string
+	LogLevel              string
 	LogToStdout           bool
 	LogToStdoutCount      int
 	PrintVersion          bool
@@ -33,62 +34,68 @@ type Flags struct {
 
 func buildFlags(args *Args) []cli.Flag {
 	return []cli.Flag{
-		&cli.BoolFlag{
-			Name:        "version",
-			Usage:       "print version and build information",
-			Destination: &args.PrintVersion,
-		},
 		&cli.StringFlag{
 			Name:        "root",
-			Usage:       "the directory storing snapshotter working states",
+			Usage:       "directory to store snapshotter data and working states",
 			Destination: &args.RootDir,
+			DefaultText: constant.DefaultRootDir,
 		},
 		&cli.StringFlag{
 			Name:        "address",
-			Usage:       "gRPC socket path",
+			Usage:       "remote snapshotter gRPC socket path",
 			Destination: &args.Address,
+			DefaultText: constant.DefaultAddress,
 		},
 		&cli.StringFlag{
 			Name:        "config",
-			Usage:       "path to the nydus-snapshotter configuration",
+			Usage:       "path to nydus-snapshotter configuration (such as: config.toml)",
 			Destination: &args.SnapshotterConfigPath,
 		},
 		&cli.StringFlag{
-			Name:        "nydusd-config",
-			Aliases:     []string{"config-path"},
-			Usage:       "path to the nydusd configuration",
-			Destination: &args.NydusdConfigPath,
-		},
-		&cli.StringFlag{
-			Name:        "daemon-mode",
-			Usage:       "spawning nydusd daemon mode, legal values include \"multiple\", \"shared\" or \"none\"",
-			Destination: &args.DaemonMode,
-		},
-		&cli.StringFlag{
-			Name:        "fs-driver",
-			Usage:       "fulfill image service based on what fs driver, possible values include \"fusedev\", \"fscache\"",
-			Destination: &args.FsDriver,
-		},
-		&cli.StringFlag{
-			Name:        "log-level",
-			Usage:       "logging level, possible values \"trace\", \"debug\", \"info\", \"warn\", \"error\"",
-			Destination: &args.LogLevel,
-		},
-		&cli.BoolFlag{
-			Name:        "log-to-stdout",
-			Usage:       "print log messages to STDOUT",
-			Destination: &args.LogToStdout,
-			Count:       &args.LogToStdoutCount,
-		},
-		&cli.StringFlag{
 			Name:        "nydus-image",
-			Usage:       "`nydus-image` binary path, it will be searched from $PATH if this option is not provided",
+			Usage:       "path to `nydus-image` binary, default to search in $PATH (such as: /usr/local/bin/nydus-image)",
 			Destination: &args.NydusImagePath,
 		},
 		&cli.StringFlag{
 			Name:        "nydusd",
-			Usage:       "`nydusd` binary path, it will be searched if this option is not provided",
+			Usage:       "path to `nydusd` binary, default to search in $PATH (such as: /usr/local/bin/nydusd)",
 			Destination: &args.NydusdPath,
+		},
+		&cli.StringFlag{
+			Name:        "nydusd-config",
+			Aliases:     []string{"config-path"},
+			Usage:       "path to nydusd configuration (such as: nydusd-config.json or nydusd-config-v2.toml)",
+			Destination: &args.NydusdConfigPath,
+			DefaultText: constant.DefaultNydusDaemonConfigPath,
+		},
+		&cli.StringFlag{
+			Name:        "daemon-mode",
+			Usage:       "nydusd daemon working mode, possible values: \"multiple\", \"shared\" or \"none\"",
+			Destination: &args.DaemonMode,
+			DefaultText: constant.DaemonModeMultiple,
+		},
+		&cli.StringFlag{
+			Name:        "fs-driver",
+			Usage:       "driver to mount RAFS filesystem, possible values: \"fusedev\", \"fscache\"",
+			Destination: &args.FsDriver,
+			DefaultText: constant.FsDriverFusedev,
+		},
+		&cli.StringFlag{
+			Name:        "log-level",
+			Usage:       "logging level, possible values: \"trace\", \"debug\", \"info\", \"warn\", \"error\"",
+			Destination: &args.LogLevel,
+			DefaultText: constant.DefaultLogLevel,
+		},
+		&cli.BoolFlag{
+			Name:        "log-to-stdout",
+			Usage:       "print log messages to standard output",
+			Destination: &args.LogToStdout,
+			Count:       &args.LogToStdoutCount,
+		},
+		&cli.BoolFlag{
+			Name:        "version",
+			Usage:       "print version and build information",
+			Destination: &args.PrintVersion,
 		},
 	}
 }

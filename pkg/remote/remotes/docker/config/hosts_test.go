@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/log/logtest"
-	"github.com/containerd/containerd/remotes/docker"
+	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker"
 )
 
 const allCaps = docker.HostCapabilityPull | docker.HostCapabilityResolve | docker.HostCapabilityPush

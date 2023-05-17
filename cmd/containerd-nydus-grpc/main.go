@@ -44,7 +44,7 @@ func main() {
 			var snapshotterConfig config.SnapshotterConfig
 
 			if err := defaultSnapshotterConfig.FillUpWithDefaults(); err != nil {
-				return errors.New("failed to fill up nydus configuration with defaults")
+				return errors.New("failed to generate nydus default configuration")
 			}
 
 			// Once snapshotter's configuration file is provided, parse it and let command line parameters override it.
@@ -52,32 +52,32 @@ func main() {
 				if c, err := config.LoadSnapshotterConfig(snapshotterConfigPath); err == nil {
 					// Command line parameters override the snapshotter's configurations for backwards compatibility
 					if err := config.ParseParameters(flags.Args, c); err != nil {
-						return errors.Wrap(err, "parse parameters")
+						return errors.Wrap(err, "failed to parse commandline options")
 					}
 					snapshotterConfig = *c
 				} else {
-					return errors.Wrapf(err, "Failed to load snapshotter's configuration at %q", snapshotterConfigPath)
+					return errors.Wrapf(err, "failed to load snapshotter configuration from %q", snapshotterConfigPath)
 				}
 			} else {
 				if err := config.ParseParameters(flags.Args, &snapshotterConfig); err != nil {
-					return errors.Wrap(err, "parse parameters")
+					return errors.Wrap(err, "failed to parse commandline options")
 				}
 			}
 
 			if err := config.MergeConfig(&snapshotterConfig, &defaultSnapshotterConfig); err != nil {
-				return errors.Wrap(err, "merge configurations")
+				return errors.Wrap(err, "failed to merge configurations")
 			}
 
 			if err := config.ValidateConfig(&snapshotterConfig); err != nil {
-				return errors.Wrapf(err, "validate configurations")
+				return errors.Wrapf(err, "failed to validate configurations")
 			}
 
 			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
-				return errors.Wrap(err, "process configurations")
+				return errors.Wrap(err, "failed to process configurations")
 			}
 
 			if err := config.SetUpEnvironment(&snapshotterConfig); err != nil {
-				return errors.Wrap(err, "setup environment failed")
+				return errors.Wrap(err, "failed to setup environment")
 			}
 
 			ctx := logging.WithContext()
@@ -91,11 +91,11 @@ func main() {
 			}
 
 			if err := logging.SetUp(logConfig.LogLevel, logConfig.LogToStdout, logConfig.LogDir, logRotateArgs); err != nil {
-				return errors.Wrap(err, "set up logger")
+				return errors.Wrap(err, "failed to setup logger")
 			}
 
-			log.L.Infof("Start nydus-snapshotter. PID %d Version %s FsDriver %s DaemonMode %s",
-				os.Getpid(), version.Version, config.GetFsDriver(), snapshotterConfig.DaemonMode)
+			log.L.Infof("Start nydus-snapshotter. Version: %s, PID: %d, FsDriver: %s, DaemonMode: %s",
+				version.Version, os.Getpid(), config.GetFsDriver(), snapshotterConfig.DaemonMode)
 
 			return Start(ctx, &snapshotterConfig)
 		},

@@ -27,8 +27,8 @@ import (
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
-	"github.com/containerd/containerd/remotes/docker/auth"
-	remoteerrors "github.com/containerd/containerd/remotes/errors"
+	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker/auth"
+	remoteerrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"
 )
 
 type dockerAuthorizer struct {

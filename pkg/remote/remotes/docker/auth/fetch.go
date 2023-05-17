@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/log"
-	remoteserrors "github.com/containerd/containerd/remotes/errors"
 	"github.com/containerd/containerd/version"
+	remoteserrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"
 )
 
 var (

@@ -64,7 +64,7 @@ func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, 
 	}
 	rpc := grpc.NewServer()
 	if rpc == nil {
-		return errors.New("start RPC server")
+		return errors.New("start gRPC server")
 	}
 	api.RegisterSnapshotsServer(rpc, snapshotservice.FromSnapshotter(sn))
 	listener, err := net.Listen("unix", options.ListeningSocketPath)
@@ -86,7 +86,7 @@ func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, 
 		}
 
 		if err := listener.Close(); err != nil {
-			log.L.Errorf("failed to close listener %s, err: %v", options.ListeningSocketPath, err)
+			log.L.Errorf("Failed to close listener %s, err: %v", options.ListeningSocketPath, err)
 		}
 	}()
 
