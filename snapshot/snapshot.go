@@ -440,10 +440,25 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		return nil, errors.New("only can view nydus topmost layer")
 	}
 	// Otherwise, it is OCI snapshots
-
 	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
 	if err != nil {
 		return nil, err
+	}
+
+	if o.fs.TarfsEnabled() {
+		if o.fs.IsTarfsLayer(pID) {
+			if !o.fs.IsMergedTarfsLayer(pID) {
+				if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
+					return nil, errors.Wrapf(err, "tarfs merge fail %s", pID)
+				}
+
+				if err := o.fs.Mount(pID, pInfo.Labels, true); err != nil {
+					return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)
+				}
+			}
+			needRemoteMounts = true
+			metaSnapshotID = pID
+		}
 	}
 
 	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
