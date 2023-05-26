@@ -61,14 +61,12 @@ debug:
 .PHONY: build-optimizer
 build-optimizer:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
-	${CARGO} fmt --manifest-path ${OPTIMIZER_SERVER_TOML} -- --check
-	${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} && cp ${OPTIMIZER_SERVER_BIN} ./bin
-	${CARGO} clippy --manifest-path ${OPTIMIZER_SERVER_TOML} --bins -- -Dwarnings
+	make -C tools/optimizer-server release && cp ${OPTIMIZER_SERVER_BIN} ./bin
 
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
-	RUSTFLAGS="-C target-feature=+crt-static" ${CARGO} build --release --manifest-path ${OPTIMIZER_SERVER_TOML} --target x86_64-unknown-linux-gnu && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
+	make -C tools/optimizer-server static-release && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
 
 # Majorly for cross build for converter package since it is imported by other projects
 converter:
@@ -81,9 +79,8 @@ clean:
 
 .PHONY: clean-optimizer
 clean-optimizer:
-	rm -rf bin/optimizer-nri-plugin
-	rm -rf bin/optimizer-server
-	${CARGO} clean --manifest-path ${OPTIMIZER_SERVER_TOML}
+	rm -rf bin/optimizer-nri-plugin bin/optimizer-server
+	make -C tools/optimizer-server clean
 
 .PHONY: install
 install:
