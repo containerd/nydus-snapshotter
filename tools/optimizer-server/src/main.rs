@@ -11,10 +11,9 @@ use std::{
     os::unix::{io::AsRawFd, net::UnixStream},
     path::{Path, PathBuf},
     slice,
+    time::Instant,
 };
 
-use lazy_static::lazy_static;
-use libc::{__s32, __u16, __u32, __u64, __u8};
 use nix::{
     poll::{poll, PollFd, PollFlags},
     sched::{setns, CloneFlags},
@@ -24,19 +23,20 @@ use nix::{
     },
 };
 use serde::Serialize;
+
+use lazy_static::lazy_static;
 use signal_hook::{consts::SIGTERM, low_level::pipe};
-use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct FanotifyEvent {
-    event_len: __u32,
-    vers: __u8,
-    reserved: __u8,
-    metadata_len: __u16,
-    mask: __u64,
-    fd: __s32,
-    pid: __s32,
+    event_len: u32,
+    vers: u8,
+    reserved: u8,
+    metadata_len: u16,
+    mask: u64,
+    fd: i32,
+    pid: i32,
 }
 
 #[derive(Serialize, Debug)]
