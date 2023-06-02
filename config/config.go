@@ -106,6 +106,10 @@ type Experimental struct {
 	EnableReferrerDetect bool `toml:"enable_referrer_detect"`
 }
 
+type CgroupConfig struct {
+	MemoryLimit string `toml:"memory_limit"`
+}
+
 // Configure how to start and recover nydusd daemons
 type DaemonConfig struct {
 	NydusdPath       string `toml:"nydusd_path"`
@@ -203,6 +207,7 @@ type SnapshotterConfig struct {
 	ImageConfig            ImageConfig            `toml:"image"`
 	CacheManagerConfig     CacheManagerConfig     `toml:"cache_manager"`
 	LoggingConfig          LoggingConfig          `toml:"log"`
+	CgroupConfig           CgroupConfig           `toml:"cgroup"`
 	Experimental           Experimental           `toml:"experimental"`
 }
 
