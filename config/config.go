@@ -16,8 +16,11 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/containerd/nydus-snapshotter/internal/flags"
+	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/file"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/parser"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/sysinfo"
 )
 
 func init() {
@@ -340,4 +343,20 @@ func ParseParameters(args *flags.Args, cfg *SnapshotterConfig) error {
 	// empty
 
 	return nil
+}
+
+func ParseCgroupConfig(config CgroupConfig) (cgroup.Config, error) {
+	totalMemory, err := sysinfo.GetTotalMemoryBytes()
+	if err != nil {
+		return cgroup.Config{}, errors.Wrap(err, "Failed  to get total memory bytes")
+	}
+
+	memoryLimitInBytes, err := parser.MemoryConfigToBytes(config.MemoryLimit, totalMemory)
+	if err != nil {
+		return cgroup.Config{}, err
+	}
+
+	return cgroup.Config{
+		MemoryLimitInBytes: memoryLimitInBytes,
+	}, nil
 }
