@@ -83,6 +83,9 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		MetricsConfig: MetricsConfig{
 			Address: ":9110",
 		},
+		CgroupConfig: CgroupConfig{
+			MemoryLimit: "",
+		},
 	}
 
 	A.EqualValues(cfg, &exampleConfig)
