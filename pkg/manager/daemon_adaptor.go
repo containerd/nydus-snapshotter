@@ -95,6 +95,13 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 		collector.NewDaemonEventCollector(types.DaemonStateRunning).Collect()
 
+		if m.CgroupMgr != nil {
+			if err := m.CgroupMgr.AddProc(d.States.ProcessID); err != nil {
+				log.L.WithError(err).Errorf("add daemon %s to cgroup failed", d.ID())
+				return
+			}
+		}
+
 		d.Lock()
 		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 		d.Unlock()
