@@ -563,6 +563,18 @@ function kill_multiple_nydusd_recover_failover {
     detect_go_race
 }
 
+# Refer to https://github.com/moby/moby/blob/088afc99e4bf8adb78e29733396182417d67ada2/hack/dind#L28-L38
+function enable_nesting_for_cgroup_v2() {
+    if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+        mkdir -p /sys/fs/cgroup/init
+        xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+        sed -e 's/ / +/g' -e 's/^/-/' < /sys/fs/cgroup/cgroup.controllers \
+            > /sys/fs/cgroup/cgroup.subtree_control
+    fi
+}
+
+enable_nesting_for_cgroup_v2
+
 reboot_containerd multiple
 
 start_single_container_multiple_daemons
