@@ -46,6 +46,46 @@ import (
 
 const envNydusdPath = "NYDUS_NYDUSD"
 
+var (
+	privateKey = []byte(`-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAw8mbbvEiQ6BSfsjSq8XEz9ZOS5lOzI2Up3zXlKU9mZN/JBc2
+0TGQp0SnSCXYHmzJ9UrXqX2MDU2UFsQpVF0vTrvj+PURYHO5K2NIo8Dqj9uUTq5q
+ylwYLWWcuUQPLHeShOWDOeiVycaSP2dnSKwZOyhiQc/TvRXZ5oooFBHzMOrKhACv
+ZOfVxYNrrhwdsIX5+TRL8isxT4y8bkdzhY0R4J6z3aVhOAQhrp7fKtNtEA1edkIE
+Vd+F7k72qdTCSCNAhjy1Dyom3A9Yii2wNafcEtEr8D3dgnQMnkgpDhPCqLeeecmX
+n2BmELmBOW9Nio/tR8dc/wpW3OqB5ycmgnGu+QIDAQABAoIBAQCaAJUQmP/Yrdz1
++UUs9C0xRmLjuD1xTNRnQh3YwHlJuelCHDh0KEaeK7RhXdM3a18YYLxuh2CIfkND
+/Rx9TacOiWByzWHTunMmm7vhgrd+XLu1gCBj+DjUTJ8QY2aEFbHccyPbgwV/Z4BV
++yIU2bom/Eb9eVoV24BAhN+tmcju6f6PtGDQciV3QJqnzn+YUpl+e1+qjs1UnvSH
+fYRDWdoKIeBr9C4NYMh9qMxuduKErld+01aJvthSdxC6E2GKyQNj726IZm5cYQPL
+tbGc+Om+tR3mI3uK1MJZ00yoThuG216SB2hFqGCqgW4gpXpWGZVyGlh/JiQDDuSL
+sSFiLqYBAoGBAPXUgX+eIOfwh88tUy+VNKkAQvazv/KF+/eosU2aazJQBxvLRIWL
+qm1pjEU0ZzUP3a2rEsnZxHh2SYERGGJQVBVUlITQSaeW+XbEZbGCh5x9dTnY0hvc
+BjRLOk8jGYxAVtvXl88zfhS+c8jNM5M0ECRCP/yFkGE99DzWhXLf/D4ZAoGBAMvj
+HoZZvNaku3ruNgmI/Kp3Gx3aUiMwXIKXjQ0xc3f0A1Ccc5SAgYXLmLvqB+ZNJ+Sd
+Fd/87Zpb8kEy+JC5UE4ZwZo2SnL1wDyMZWRw3cTsf8mhvQ1kCpj5fPWUrGzUs/bh
+ImL6w5sh5IB3BYN5nAtZiRyrqQCHxqW2HK+EJVPhAoGAXLevuABeDNzNfDhuHY46
+9Fri5sVY6hHavMflR42sTKeeZr89stjAiM+8VgWzv3GifHP/fB4kWgLTKljWR45g
+iEMEWStt/EWXBVKBwHeoyj8PTagXZuaPeH2/GkX0xs8lc3lXCpEzRoOmi9/JSgXi
+6KoMFCQUFnkVezS11GPicVECgYEAhacXrniK+qW4JIidMbjz8IbtZq9kIp8kNZNF
+Kn3dNKfnuGMmvRVUUrG5KI3sqcKwQQPcgB1cYFCfyK+yE6T3CIuHxyCJwzxnzQk3
+uhTmu51Q04tL08hdzhPWH2JbeWghpNfGY94AdeRM1w2utpX0fdgusnWw7qESzjRI
+L6JPmeECgYBUkLNcEyrNMc90tk5jdQqCQb/frT6K5k04LjvXe+TlJPHBO3XJun0H
+OYrCC8EcKknH6jkHejHUdDTG/XjHvohzKI43xg61touKtgFOVpoq79vUBRVOuH85
+6vNEksKyKXUKYya19LJS/EpfC2uHUENPSmq/Bh7TDb4y70JWnGTVWA==
+-----END RSA PRIVATE KEY-----`)
+
+	publicKey = []byte(`-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw8mbbvEiQ6BSfsjSq8XE
+z9ZOS5lOzI2Up3zXlKU9mZN/JBc20TGQp0SnSCXYHmzJ9UrXqX2MDU2UFsQpVF0v
+Trvj+PURYHO5K2NIo8Dqj9uUTq5qylwYLWWcuUQPLHeShOWDOeiVycaSP2dnSKwZ
+OyhiQc/TvRXZ5oooFBHzMOrKhACvZOfVxYNrrhwdsIX5+TRL8isxT4y8bkdzhY0R
+4J6z3aVhOAQhrp7fKtNtEA1edkIEVd+F7k72qdTCSCNAhjy1Dyom3A9Yii2wNafc
+EtEr8D3dgnQMnkgpDhPCqLeeecmXn2BmELmBOW9Nio/tR8dc/wpW3OqB5ycmgnGu
++QIDAQAB
+-----END PUBLIC KEY-----`)
+)
+
 func hugeString(mb int) string {
 	var buf strings.Builder
 	size := mb * 1024 * 1024
@@ -597,6 +637,8 @@ type ConvertTestOption struct {
 	fsVersion            string
 	backend              converter.Backend
 	disableCheck         bool
+	encryptRecipients    []string
+	decryptKeys          []string
 	beforeConversionHook func() error
 	afterConversionHook  func() error
 }
@@ -606,6 +648,7 @@ func TestImageConvert(t *testing.T) {
 	for _, fsVersion := range []string{"5", "6"} {
 		testImageConvertNoBackend(t, fsVersion)
 		testImageConvertS3Backend(t, fsVersion)
+		testImageConvertWithCrypt(t, fsVersion)
 	}
 }
 
@@ -678,6 +721,44 @@ func testImageConvertS3Backend(t *testing.T, fsVersion string) {
 	testImageConvertBasic(testOpt)
 }
 
+func testImageConvertWithCrypt(t *testing.T, fsVersion string) {
+	workDir, err := os.MkdirTemp("", fmt.Sprintf("nydus-bootstrap-crypt-test-%d", time.Now().UnixNano()))
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+
+	encryptRecipient, err := os.Create(filepath.Join(workDir, "pubkey.pem"))
+	if err != nil {
+		t.Fatalf("failed to create pubkey.pem: %v", err)
+		return
+	}
+	defer encryptRecipient.Close()
+	_, err = encryptRecipient.WriteString(string(publicKey))
+	if err != nil {
+		t.Fatalf("failed to write into pubkey.pem: %v", err)
+		return
+	}
+	decryptKey, err := os.Create(filepath.Join(workDir, "key.pem"))
+	if err != nil {
+		t.Fatalf("failed to create key.pem: %v", err)
+		return
+	}
+	defer decryptKey.Close()
+	_, err = decryptKey.WriteString(string(privateKey))
+	if err != nil {
+		t.Fatalf("failed to write into key.pem: %v", err)
+		return
+	}
+
+	testImageConvertBasic(&ConvertTestOption{
+		t:         t,
+		fsVersion: fsVersion,
+		// TODO set false when nydusify ready
+		disableCheck:      true,
+		encryptRecipients: []string{fmt.Sprint("jwe:", encryptRecipient.Name())},
+		decryptKeys:       []string{decryptKey.Name()},
+	})
+}
+
 func testImageConvertBasic(testOpt *ConvertTestOption) {
 	const (
 		srcImageRef    = "docker.io/library/nginx:latest"
@@ -730,12 +811,13 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 	convertFunc := converter.LayerConvertFunc(*nydusOpts)
 	convertHooks := containerdconverter.ConvertHooks{
 		PostConvertHook: converter.ConvertHookFunc(converter.MergeOption{
-			WorkDir:          nydusOpts.WorkDir,
-			BuilderPath:      nydusOpts.BuilderPath,
-			FsVersion:        nydusOpts.FsVersion,
-			ChunkDictPath:    nydusOpts.ChunkDictPath,
-			Backend:          testOpt.backend,
-			PrefetchPatterns: nydusOpts.PrefetchPatterns,
+			WorkDir:           nydusOpts.WorkDir,
+			BuilderPath:       nydusOpts.BuilderPath,
+			FsVersion:         nydusOpts.FsVersion,
+			ChunkDictPath:     nydusOpts.ChunkDictPath,
+			Backend:           testOpt.backend,
+			PrefetchPatterns:  nydusOpts.PrefetchPatterns,
+			EncryptRecipients: testOpt.encryptRecipients,
 		}),
 	}
 	convertFuncOpt := containerdconverter.WithIndexConvertFunc(
@@ -768,6 +850,17 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 	}
 	// check whether the converted image is valid
 	if testOpt.disableCheck {
+		return
+	}
+	if len(testOpt.decryptKeys) != 0 {
+		if output, err := exec.Command("nydusify", "check",
+			"--source", srcImageRef,
+			"--target", targetImageRef,
+			"--decrypt-keys", strings.Join(testOpt.decryptKeys, ","),
+			"--target-insecure").CombinedOutput(); err != nil {
+			t.Fatalf("failed to check image %s: %v, \noutput:\n%s", targetImageRef, err, output)
+			return
+		}
 		return
 	}
 	if output, err := exec.Command("nydusify", "check", "--source", srcImageRef, "--target", targetImageRef, "--target-insecure").CombinedOutput(); err != nil {

@@ -919,9 +919,7 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 		return nil, errors.Wrap(err, "read manifest json")
 	}
 
-	// If opt.EncryptRecipients is empty, the Nydus image does not need to be
-	// encrypted after conversion.
-	if len(opt.EncryptRecipients) == 0 && isNydusImage(&manifest) {
+	if isNydusImage(&manifest) {
 		return &manifestDesc, nil
 	}
 
