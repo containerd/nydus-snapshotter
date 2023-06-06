@@ -44,6 +44,7 @@ require (
 	k8s.io/apimachinery v0.26.2
 	k8s.io/client-go v0.26.2
 	k8s.io/cri-api v0.27.0-alpha.3
+	github.com/containers/ocicrypt v1.1.7
 )
 
 require (
@@ -141,6 +142,11 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
+	github.com/miekg/pkcs11 v1.1.1 // indirect
+	github.com/stefanberger/go-pkcs11uri v0.0.0-20201008174630-78d3cae3a980 // indirect
+	go.mozilla.org/pkcs7 v0.0.0-20200128120323-432b2356ecb1 // indirect
+	golang.org/x/crypto v0.1.0 // indirect
+	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 )
 
 retract (

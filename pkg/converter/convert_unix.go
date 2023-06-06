@@ -937,7 +937,7 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 		opt.OCI = true
 	}
 
-	// Append bootstrap layer to manifest.
+	// Append bootstrap layer to manifest, encrypt bootstrap layer if needed.
 	bootstrapDesc, blobDescs, err := MergeLayers(ctx, cs, manifest.Layers, opt)
 	if err != nil {
 		return nil, errors.Wrap(err, "merge nydus layers")
@@ -1143,5 +1143,12 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		},
 	}
 
+	if len(opt.EncryptRecipients) != 0 {
+		// Encrypt the Nydus bootstrap layer.
+		bootstrapDesc, err = EncryptNydusBootstrap(ctx, cs, bootstrapDesc, opt.EncryptRecipients)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "encrypt bootstrap layer")
+		}
+	}
 	return &bootstrapDesc, blobDescs, nil
 }

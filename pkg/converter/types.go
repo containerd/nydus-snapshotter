@@ -109,6 +109,8 @@ type MergeOption struct {
 	Backend Backend
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
+	// Recipients to encrypt bootstrap, do not encrypt if empty.
+	EncryptRecipients []string
 }
 
 type UnpackOption struct {
