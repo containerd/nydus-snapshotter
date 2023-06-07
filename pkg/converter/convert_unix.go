@@ -321,13 +321,27 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	}
 
 	builderPath := getBuilder(opt.BuilderPath)
-	opt.features = tool.DetectFeatures(builderPath, []tool.Feature{tool.FeatureTar2Rafs})
+
+	requiredFeatures := tool.NewFeatures(tool.FeatureTar2Rafs)
+	if opt.BatchSize != "" && opt.BatchSize != "0" {
+		requiredFeatures.Add(tool.FeatureBatchSize)
+	}
+
+	detectedFeatures, err := tool.DetectFeatures(builderPath, requiredFeatures, tool.GetHelp)
+	if err != nil {
+		return nil, err
+	}
+	opt.features = detectedFeatures
 
 	if opt.OCIRef {
 		if opt.FsVersion == "6" {
 			return packFromTar(ctx, dest, opt)
 		}
 		return nil, fmt.Errorf("oci ref can only be supported by fs version 6")
+	}
+
+	if opt.features.Contains(tool.FeatureBatchSize) && opt.FsVersion != "6" {
+		return nil, fmt.Errorf("'--batch-size' can only be supported by fs version 6")
 	}
 
 	if opt.features.Contains(tool.FeatureTar2Rafs) {
