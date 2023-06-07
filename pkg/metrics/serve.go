@@ -29,10 +29,10 @@ type ServerOpt func(*Server) error
 
 type Server struct {
 	rootDir           string
-	pm                *manager.Manager
+	managers          []*manager.Manager
+	snCollectors      []*collector.SnapshotterMetricsCollector
 	fsCollector       *collector.FsMetricsVecCollector
 	inflightCollector *collector.InflightMetricsVecCollector
-	snCollector       *collector.SnapshotterMetricsCollector
 }
 
 func WithRootDir(rootDir string) ServerOpt {
@@ -44,7 +44,7 @@ func WithRootDir(rootDir string) ServerOpt {
 
 func WithProcessManager(pm *manager.Manager) ServerOpt {
 	return func(s *Server) error {
-		s.pm = pm
+		s.managers = append(s.managers, pm)
 		return nil
 	}
 }
@@ -60,87 +60,105 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	s.fsCollector = collector.NewFsMetricsVecCollector()
 	// TODO(tangbin): make hung IO interval configurable
 	s.inflightCollector = collector.NewInflightMetricsVecCollector(defaultHungIOInterval)
-	snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, s.pm.CacheDir(), os.Getpid())
-	if err != nil {
-		return nil, errors.Wrap(err, "new snapshotter metrics collector failed")
+	for _, pm := range s.managers {
+		snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, pm.CacheDir(), os.Getpid())
+		if err != nil {
+			return nil, errors.Wrap(err, "new snapshotter metrics collector failed")
+		}
+		s.snCollectors = append(s.snCollectors, snCollector)
 	}
-	s.snCollector = snCollector
 
 	return &s, nil
 }
 
+func (s *Server) CollectDaemonResourceMetrics(ctx context.Context) {
+	var daemonResource collector.DaemonResourceCollector
+	for _, pm := range s.managers {
+		// Collect daemon resource usage metrics.
+		daemons := pm.ListDaemons()
+		for _, d := range daemons {
+			memRSS, err := tool.GetProcessMemoryRSSKiloBytes(d.Pid())
+			if err != nil {
+				log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
+			}
+
+			daemonResource.DaemonID = d.ID()
+			daemonResource.Value = memRSS
+			daemonResource.Collect()
+		}
+	}
+}
+
 func (s *Server) CollectFsMetrics(ctx context.Context) {
-	// Collect FS metrics from daemons.
-	daemons := s.pm.ListDaemons()
 	var fsMetricsVec []collector.FsMetricsCollector
-	for _, d := range daemons {
-		// Skip daemons that are not serving
-		if d.State() != types.DaemonStateRunning {
+
+	for _, pm := range s.managers {
+		// Collect FS metrics from fusedev daemons.
+		if pm.FsDriver != config.FsDriverFusedev {
 			continue
 		}
 
-		for _, i := range d.Instances.List() {
-			var sid string
-
-			if i.GetMountpoint() == d.HostMountpoint() {
-				sid = ""
-			} else {
-				sid = i.SnapshotID
-			}
-
-			fsMetrics, err := d.GetFsMetrics(sid)
-			if err != nil {
-				log.G(ctx).Errorf("failed to get fs metric: %v", err)
+		daemons := pm.ListDaemons()
+		for _, d := range daemons {
+			// Skip daemons that are not serving
+			if d.State() != types.DaemonStateRunning {
 				continue
 			}
 
-			fsMetricsVec = append(fsMetricsVec, collector.FsMetricsCollector{
-				Metrics:  fsMetrics,
-				ImageRef: i.ImageID,
-			})
+			for _, i := range d.Instances.List() {
+				var sid string
+
+				if d.IsSharedDaemon() {
+					sid = i.SnapshotID
+				} else {
+					sid = ""
+				}
+
+				fsMetrics, err := d.GetFsMetrics(sid)
+				if err != nil {
+					log.G(ctx).Errorf("failed to get fs metric: %v", err)
+					continue
+				}
+
+				fsMetricsVec = append(fsMetricsVec, collector.FsMetricsCollector{
+					Metrics:  fsMetrics,
+					ImageRef: i.ImageID,
+				})
+			}
 		}
 	}
+
 	if fsMetricsVec != nil {
 		s.fsCollector.MetricsVec = fsMetricsVec
 		s.fsCollector.Collect()
 	}
 }
 
-func (s *Server) CollectDaemonResourceMetrics(ctx context.Context) {
-	// Collect daemon resource usage metrics.
-	daemons := s.pm.ListDaemons()
-	var daemonResource collector.DaemonResourceCollector
-	for _, d := range daemons {
-
-		memRSS, err := tool.GetProcessMemoryRSSKiloBytes(d.Pid())
-		if err != nil {
-			log.L.Warnf("Failed to get daemon %s RSS memory", d.ID())
-		}
-
-		daemonResource.DaemonID = d.ID()
-		daemonResource.Value = memRSS
-		daemonResource.Collect()
-	}
-}
-
 func (s *Server) CollectInflightMetrics(ctx context.Context) {
-	// Collect inflight metrics from daemons.
-	daemons := s.pm.ListDaemons()
 	inflightMetricsVec := make([]*types.InflightMetrics, 0, 16)
-	for _, d := range daemons {
-
-		// Only count for daemon that is serving
-		if d.State() != types.DaemonStateRunning {
+	for _, pm := range s.managers {
+		// Collect inflight metrics from fusedev daemons.
+		if pm.FsDriver != config.FsDriverFusedev {
 			continue
 		}
 
-		inflightMetrics, err := d.GetInflightMetrics()
-		if err != nil {
-			log.G(ctx).Errorf("failed to get inflight metric: %v", err)
-			continue
+		daemons := pm.ListDaemons()
+		for _, d := range daemons {
+
+			// Only count for daemon that is serving
+			if d.State() != types.DaemonStateRunning {
+				continue
+			}
+
+			inflightMetrics, err := d.GetInflightMetrics()
+			if err != nil {
+				log.G(ctx).Errorf("failed to get inflight metric: %v", err)
+				continue
+			}
+			inflightMetricsVec = append(inflightMetricsVec, inflightMetrics)
 		}
-		inflightMetricsVec = append(inflightMetricsVec, inflightMetrics)
 	}
+
 	if inflightMetricsVec != nil {
 		s.inflightCollector.MetricsVec = inflightMetricsVec
 		s.inflightCollector.Collect()
@@ -161,18 +179,14 @@ outer:
 	for {
 		select {
 		case <-timer.C:
-			// Collect FS metrics.
-			if config.GetFsDriver() != config.FsDriverFscache {
-				s.CollectFsMetrics(ctx)
-			}
+			s.CollectFsMetrics(ctx)
 			s.CollectDaemonResourceMetrics(ctx)
 			// Collect snapshotter metrics.
-			s.snCollector.Collect()
-		case <-InflightTimer.C:
-			// Collect inflight metrics.
-			if config.GetFsDriver() != config.FsDriverFscache {
-				s.CollectInflightMetrics(ctx)
+			for _, snCollector := range s.snCollectors {
+				snCollector.Collect()
 			}
+		case <-InflightTimer.C:
+			s.CollectInflightMetrics(ctx)
 		case <-ctx.Done():
 			log.G(ctx).Infof("cancel metrics collecting")
 			break outer

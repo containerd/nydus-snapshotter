@@ -32,7 +32,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
-	"github.com/containerd/nydus-snapshotter/pkg/manager"
+	mgr "github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
@@ -55,7 +55,7 @@ type snapshotter struct {
 	// Storing snapshots' state, parentage and other metadata
 	ms                   *storage.MetaStore
 	fs                   *filesystem.Filesystem
-	manager              *manager.Manager
+	manager              *mgr.Manager
 	enableNydusOverlayFS bool
 	syncRemove           bool
 	cleanupOnClose       bool
@@ -82,7 +82,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
 
-	manager, err := manager.NewManager(manager.Opt{
+	manager, err := mgr.NewManager(mgr.Opt{
 		NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
 		Database:         db,
 		CacheDir:         cfg.CacheManagerConfig.CacheDir,
@@ -152,7 +152,8 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	if config.IsSystemControllerEnabled() {
-		systemController, err := system.NewSystemController(nydusFs, manager, config.SystemControllerAddress())
+		managers := []*mgr.Manager{manager}
+		systemController, err := system.NewSystemController(nydusFs, managers, config.SystemControllerAddress())
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
