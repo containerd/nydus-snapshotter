@@ -17,12 +17,6 @@ type BuildTimeInfo struct {
 
 type DaemonState string
 
-type DaemonInfo struct {
-	ID      string        `json:"id"`
-	Version BuildTimeInfo `json:"version"`
-	State   DaemonState   `json:"state"`
-}
-
 const (
 	DaemonStateUnknown   DaemonState = "UNKNOWN"
 	DaemonStateInit      DaemonState = "INIT"
@@ -31,6 +25,12 @@ const (
 	DaemonStateDied      DaemonState = "DIED"
 	DaemonStateDestroyed DaemonState = "DESTROYED"
 )
+
+type DaemonInfo struct {
+	ID      string        `json:"id"`
+	Version BuildTimeInfo `json:"version"`
+	State   DaemonState   `json:"state"`
+}
 
 func (info *DaemonInfo) DaemonState() DaemonState {
 	return info.State

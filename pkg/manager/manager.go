@@ -114,13 +114,11 @@ func (s *DaemonStates) Size() int {
 	return len(s.idxByDaemonID)
 }
 
-// Manage all nydusd daemons. Provide a daemon states cache
-// to avoid frequently operating DB
+// Manage all nydusd daemons. Provide a daemon states cache to avoid frequently operating DB
 type Manager struct {
 	store            Store
 	NydusdBinaryPath string
-	// Where nydusd stores cache files for fscache driver
-	cacheDir string
+	cacheDir         string
 	// Daemon states are inserted when creating snapshots and nydusd and
 	// removed when snapshot is deleted and nydusd is stopped. The persisted
 	// daemon state should be updated respectively. For fetch daemon state, it
@@ -357,10 +355,10 @@ func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	return m.UpdateDaemonNoLock(daemon)
+	return m.UpdateDaemonLocked(daemon)
 }
 
-func (m *Manager) UpdateDaemonNoLock(daemon *daemon.Daemon) error {
+func (m *Manager) UpdateDaemonLocked(daemon *daemon.Daemon) error {
 	if old := m.daemonStates.GetByDaemonID(daemon.ID(), nil); old == nil {
 		return errdefs.ErrNotFound
 	}

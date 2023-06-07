@@ -146,6 +146,12 @@ func WithAPISock(api string) Opt {
 	}
 }
 
+func WithLogFile(l string) Opt {
+	return func(cmd *DaemonCommand) {
+		cmd.LogFile = l
+	}
+}
+
 func WithLogLevel(l string) Opt {
 	return func(cmd *DaemonCommand) {
 		cmd.LogLevel = l
@@ -167,11 +173,5 @@ func WithID(id string) Opt {
 func WithUpgrade() Opt {
 	return func(cmd *DaemonCommand) {
 		cmd.Upgrade = true
-	}
-}
-
-func WithLogFile(l string) Opt {
-	return func(cmd *DaemonCommand) {
-		cmd.LogFile = l
 	}
 }

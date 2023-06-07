@@ -10,6 +10,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -46,8 +47,7 @@ type States struct {
 	LogToStdout bool
 	DaemonMode  config.DaemonMode
 	FsDriver    string
-	// Host kernel mountpoint, only applies to fuse fs driver. The fscache fs driver
-	// doesn't need a host kernel mountpoint.
+	// Fusedev mountpoint on host kernel, the fscache fs driver doesn't need a host kernel mountpoint.
 	Mountpoint string
 	ThreadNum  int
 	// Where the configuration file resides, all rafs instances share the same configuration template
@@ -60,16 +60,17 @@ type Daemon struct {
 	States States
 
 	mu sync.Mutex
-	// FsInstances map[int]*Rafs
-	// should be persisted to DB
-	// maps to at least one rafs instance.
-	// It is possible to be empty after the daemon object is created.
+	// Host all RAFS filesystems managed by this daemon:
+	// fusedev dedicated mode: one and only one RAFS instance
+	// fusedev shared mode: zero, one or more RAFS instances
+	// fscache shared mode: zero, one or more RAFS instances
 	Instances rafsSet
 
-	// client will be rebuilt on Reconnect, skip marshal/unmarshal
-	client NydusdClient
 	// Protect nydusd http client
 	cmu sync.Mutex
+	// client will be rebuilt on Reconnect, skip marshal/unmarshal
+	client NydusdClient
+
 	// Nil means this daemon object has no supervisor
 	Supervisor *supervisor.Supervisor
 	Config     daemonconfig.DaemonConfig
@@ -113,7 +114,6 @@ func (d *Daemon) GetRef() int32 {
 }
 
 func (d *Daemon) HostMountpoint() (mnt string) {
-	// Identify a shared nydusd for multiple rafs instances.
 	mnt = d.States.Mountpoint
 	return
 }
@@ -150,7 +150,7 @@ func (d *Daemon) RemoveInstance(snapshotID string) {
 	d.DecRef()
 }
 
-// Nydusd daemon current working state by requesting to nydusd:
+// Get and cache daemon current working state by querying nydusd:
 // 1. INIT
 // 2. READY: All needed resources are ready.
 // 3. RUNNING
@@ -188,11 +188,7 @@ func (d *Daemon) ResetState() {
 	d.state = types.DaemonStateUnknown
 }
 
-// Waits for some time until daemon reaches the expected state.
-// For example:
-//  1. INIT
-//  2. READY
-//  3. RUNNING
+// Wait for the nydusd daemon to reach specified state with timeout.
 func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 	return retry.Do(func() error {
 		if expected == d.State() {
@@ -226,18 +222,25 @@ func (d *Daemon) IsSharedDaemon() bool {
 }
 
 func (d *Daemon) SharedMount(rafs *Rafs) error {
-	client, err := d.GetClient()
-	if err != nil {
-		return errors.Wrapf(err, "mount instance %s", rafs.SnapshotID)
-	}
-
 	defer d.SendStates()
 
-	if d.States.FsDriver == config.FsDriverFscache {
+	switch d.States.FsDriver {
+	case config.FsDriverFscache:
 		if err := d.sharedErofsMount(rafs); err != nil {
 			return errors.Wrapf(err, "mount erofs")
 		}
 		return nil
+	case config.FsDriverFusedev:
+		return d.sharedFusedevMount(rafs)
+	default:
+		return errors.Errorf("unsupported fs driver %s", d.States.FsDriver)
+	}
+}
+
+func (d *Daemon) sharedFusedevMount(rafs *Rafs) error {
+	client, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "mount instance %s", rafs.SnapshotID)
 	}
 
 	bootstrap, err := rafs.BootstrapFile()
@@ -262,24 +265,6 @@ func (d *Daemon) SharedMount(rafs *Rafs) error {
 	}
 
 	return nil
-}
-
-func (d *Daemon) SharedUmount(rafs *Rafs) error {
-	c, err := d.GetClient()
-	if err != nil {
-		return errors.Wrapf(err, "umount instance %s", rafs.SnapshotID)
-	}
-
-	defer d.SendStates()
-
-	if d.States.FsDriver == config.FsDriverFscache {
-		if err := d.sharedErofsUmount(rafs); err != nil {
-			return errors.Wrapf(err, "failed to erofs mount")
-		}
-		return nil
-	}
-
-	return c.Umount(rafs.RelaMountpoint())
 }
 
 func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
@@ -337,6 +322,26 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 	return nil
 }
 
+func (d *Daemon) SharedUmount(rafs *Rafs) error {
+	defer d.SendStates()
+
+	switch d.States.FsDriver {
+	case config.FsDriverFscache:
+		if err := d.sharedErofsUmount(rafs); err != nil {
+			return errors.Wrapf(err, "failed to erofs mount")
+		}
+		return nil
+	case config.FsDriverFusedev:
+		c, err := d.GetClient()
+		if err != nil {
+			return errors.Wrapf(err, "umount instance %s", rafs.SnapshotID)
+		}
+		return c.Umount(rafs.RelaMountpoint())
+	default:
+		return errors.Errorf("unsupported fs driver %s", d.States.FsDriver)
+	}
+}
+
 func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 	c, err := d.GetClient()
 	if err != nil {
@@ -358,6 +363,33 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 	// erofs generate fscache cache file for bootstrap with fscacheID
 	if err := c.UnbindBlob("", fscacheID); err != nil {
 		log.L.Warnf("delete bootstrap %s err %s", fscacheID, err)
+	}
+
+	return nil
+}
+
+func (d *Daemon) UmountInstance(r *Rafs) error {
+	if d.IsSharedDaemon() {
+		if err := d.SharedUmount(r); err != nil {
+			return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
+		}
+	}
+
+	return nil
+}
+
+func (d *Daemon) UmountAllInstances() error {
+	if d.IsSharedDaemon() {
+		d.Instances.Lock()
+		defer d.Instances.Unlock()
+
+		instances := d.Instances.ListLocked()
+
+		for _, r := range instances {
+			if err := d.SharedUmount(r); err != nil {
+				return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
+			}
+		}
 	}
 
 	return nil
@@ -433,6 +465,15 @@ func (d *Daemon) Exit() error {
 	return nil
 }
 
+func (d *Daemon) GetDaemonInfo() (*types.DaemonInfo, error) {
+	c, err := d.GetClient()
+	if err != nil {
+		return nil, errors.Wrapf(err, "get daemon information")
+	}
+
+	return c.GetDaemonInfo()
+}
+
 func (d *Daemon) GetFsMetrics(sid string) (*types.FsMetrics, error) {
 	c, err := d.GetClient()
 	if err != nil {
@@ -449,15 +490,6 @@ func (d *Daemon) GetInflightMetrics() (*types.InflightMetrics, error) {
 	}
 
 	return c.GetInflightMetrics()
-}
-
-func (d *Daemon) GetDaemonInfo() (*types.DaemonInfo, error) {
-	c, err := d.GetClient()
-	if err != nil {
-		return nil, errors.Wrapf(err, "get daemon information")
-	}
-
-	return c.GetDaemonInfo()
 }
 
 func (d *Daemon) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {
@@ -577,6 +609,45 @@ func (d *Daemon) ClearVestige() {
 	// But the socket file may be residual and will be cleared before starting a new nydusd.
 	// So clear the client by assigning nil
 	d.ResetClient()
+}
+
+func (d *Daemon) CloneInstances(src *Daemon) {
+	src.Instances.Lock()
+	defer src.Instances.Unlock()
+
+	instances := src.Instances.ListLocked()
+
+	d.Lock()
+	defer d.Unlock()
+	d.Instances.instances = instances
+}
+
+// Daemon must be started and reach RUNNING state before call this method
+func (d *Daemon) RecoveredMountInstances() error {
+	if d.IsSharedDaemon() {
+		d.Instances.Lock()
+		defer d.Instances.Unlock()
+
+		instances := make([]*Rafs, 0, 16)
+		for _, r := range d.Instances.ListLocked() {
+			instances = append(instances, r)
+		}
+
+		sort.Slice(instances, func(i, j int) bool {
+			return instances[i].Seq < instances[j].Seq
+		})
+
+		for _, i := range instances {
+			if d.HostMountpoint() != i.GetMountpoint() {
+				log.L.Infof("Recovered mount instance %s", i.SnapshotID)
+				if err := d.SharedMount(i); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // Instantiate a daemon object

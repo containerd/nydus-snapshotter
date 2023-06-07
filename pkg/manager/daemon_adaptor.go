@@ -171,10 +171,10 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 	}
 
 	var nydusdPath string
-	if bin == "" {
-		nydusdPath = m.NydusdBinaryPath
-	} else {
+	if bin != "" {
 		nydusdPath = bin
+	} else {
+		nydusdPath = m.NydusdBinaryPath
 	}
 
 	log.L.Infof("nydusd command: %s %s", nydusdPath, strings.Join(args, " "))

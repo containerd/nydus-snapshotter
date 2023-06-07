@@ -10,14 +10,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"sync"
 
 	"github.com/mohae/deepcopy"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/log"
 
 	"github.com/containerd/nydus-snapshotter/config"
 )
@@ -30,7 +28,8 @@ const (
 type NewRafsOpt func(r *Rafs) error
 
 func init() {
-	// A set of rafs instances associates to a nydusd daemon or not
+	// TODO
+	// A set of RAFS filesystem instances associated with a nydusd daemon.
 	RafsSet = rafsSet{instances: make(map[string]*Rafs)}
 }
 
@@ -95,18 +94,18 @@ func (rs *rafsSet) List() map[string]*Rafs {
 	return instances
 }
 
-func (rs *rafsSet) ListUnlocked() map[string]*Rafs {
+func (rs *rafsSet) ListLocked() map[string]*Rafs {
 	return rs.instances
 }
 
 // The whole struct will be persisted
 type Rafs struct {
 	Seq uint64
-	// Given by containerd
-	SnapshotID string
 	// Usually is the image reference
-	ImageID     string
-	DaemonID    string
+	ImageID  string
+	DaemonID string
+	// Given by containerd
+	SnapshotID  string
 	SnapshotDir string
 	// 1. A host kernel EROFS mountpoint
 	// 2. Absolute path to each rafs instance root directory.
@@ -116,8 +115,9 @@ type Rafs struct {
 
 func NewRafs(snapshotID, imageID string) (*Rafs, error) {
 	snapshotDir := path.Join(config.GetSnapshotsRootDir(), snapshotID)
-	rafs := &Rafs{SnapshotID: snapshotID,
+	rafs := &Rafs{
 		ImageID:     imageID,
+		SnapshotID:  snapshotID,
 		SnapshotDir: snapshotDir,
 		Annotations: make(map[string]string),
 	}
@@ -135,29 +135,35 @@ func (r *Rafs) AddAnnotation(k, v string) {
 	r.Annotations[k] = v
 }
 
-func (r *Rafs) SetMountpoint(mp string) {
-	r.Mountpoint = mp
-}
-
 func (r *Rafs) GetSnapshotDir() string {
 	return r.SnapshotDir
 }
 
-// Mountpoint for nydusd within single kernel mountpoint(FUSE mount). Each mountpoint
-// is create by API based pseudo mount. `RootMountPoint` is real mountpoint
-// where to perform the kernel mount.
-// Nydusd API based mountpoint must start with "/", otherwise nydusd API server returns error.
-func (r *Rafs) RelaMountpoint() string {
-	return filepath.Join("/", r.SnapshotID)
+// Blob caches' chunk bitmap and meta headers are stored here.
+func (r *Rafs) FscacheWorkDir() string {
+	return filepath.Join(r.SnapshotDir, "fs")
 }
 
-// Reflects the path where the a rafs instance root stays. The
-// root path could be a host kernel mountpoint when the instance
-// is attached by API `POST /api/v1/mount?mountpoint=/` or nydusd mounts an instance directly when starting.
-// Generally, we use this method to get the path as overlayfs lowerdir.
-// The path includes container image rootfs.
+func (r *Rafs) SetMountpoint(mp string) {
+	r.Mountpoint = mp
+}
+
+// Get top level mount point for the RAFS instance:
+//   - FUSE with dedicated mode: the FUSE filesystem mount point, the RAFS filesystem is directly
+//     mounted at the mount point.
+//   - FUSE with shared mode: the FUSE filesystem mount point, the RAFS filesystem is mounted
+//     at a subdirectory under the mount point.
+//   - EROFS/fscache: the EROFS filesystem mount point.
 func (r *Rafs) GetMountpoint() string {
 	return r.Mountpoint
+}
+
+// Get the sub-directory under a FUSE mount point to mount a RAFS instance.
+// For a nydusd daemon in shared mode, one or more RAFS filesystem instances can be mounted
+// to sub-directories of the FUSE filesystem. This method returns the subdirectory for a
+// RAFS filesystem instance.
+func (r *Rafs) RelaMountpoint() string {
+	return filepath.Join("/", r.SnapshotID)
 }
 
 func (r *Rafs) BootstrapFile() (string, error) {
@@ -178,73 +184,4 @@ func (r *Rafs) BootstrapFile() (string, error) {
 	}
 
 	return "", errors.Wrapf(errdefs.ErrNotFound, "bootstrap %s", bootstrap)
-}
-
-// Blob caches' chunk bitmap and meta headers are stored here.
-func (r *Rafs) FscacheWorkDir() string {
-	return filepath.Join(r.SnapshotDir, "fs")
-}
-
-func (d *Daemon) UmountAllInstances() error {
-	if d.IsSharedDaemon() {
-		d.Instances.Lock()
-		defer d.Instances.Unlock()
-
-		instances := d.Instances.ListUnlocked()
-
-		for _, r := range instances {
-			if err := d.SharedUmount(r); err != nil {
-				return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (d *Daemon) CloneInstances(src *Daemon) {
-	src.Instances.Lock()
-	defer src.Instances.Unlock()
-
-	instances := src.Instances.ListUnlocked()
-
-	d.Lock()
-	defer d.Unlock()
-	d.Instances.instances = instances
-}
-
-func (d *Daemon) UmountInstance(r *Rafs) error {
-	if d.IsSharedDaemon() {
-		if err := d.SharedUmount(r); err != nil {
-			return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
-		}
-	}
-
-	return nil
-}
-
-// Daemon must be started and reach RUNNING state before call this method
-func (d *Daemon) RecoveredMountInstances() error {
-	if d.IsSharedDaemon() {
-		d.Instances.Lock()
-		defer d.Instances.Unlock()
-
-		instances := make([]*Rafs, 0, 16)
-		for _, r := range d.Instances.ListUnlocked() {
-			instances = append(instances, r)
-		}
-
-		sort.Slice(instances, func(i, j int) bool {
-			return instances[i].Seq < instances[j].Seq
-		})
-
-		for _, i := range instances {
-			log.L.Infof("Recovered mount instance %s", i.SnapshotID)
-			if err := d.SharedMount(i); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
