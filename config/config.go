@@ -110,8 +110,9 @@ type Experimental struct {
 }
 
 type CgroupConfig struct {
-	Enable      bool   `toml:"enable"`
-	MemoryLimit string `toml:"memory_limit"`
+	Enable                     bool   `toml:"enable"`
+	MemoryLimit                string `toml:"memory_limit"`
+	MemoryWatermarkScaleFactor int64  `toml:"memory_watermark_scale_factor"`
 }
 
 // Configure how to start and recover nydusd daemons
