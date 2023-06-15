@@ -359,6 +359,7 @@ func ParseCgroupConfig(config CgroupConfig) (cgroup.Config, error) {
 	}
 
 	return cgroup.Config{
-		MemoryLimitInBytes: memoryLimitInBytes,
+		MemoryLimitInBytes:         memoryLimitInBytes,
+		MemoryWatermarkScaleFactor: config.MemoryWatermarkScaleFactor,
 	}, nil
 }
