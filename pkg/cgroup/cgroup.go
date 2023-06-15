@@ -23,7 +23,8 @@ var (
 )
 
 type Config struct {
-	MemoryLimitInBytes int64
+	MemoryLimitInBytes         int64
+	MemoryWatermarkScaleFactor int64
 }
 
 type DaemonCgroup interface {
@@ -35,10 +36,10 @@ type DaemonCgroup interface {
 
 func createCgroup(name string, config Config) (DaemonCgroup, error) {
 	if cgroups.Mode() == cgroups.Unified {
-		return v2.NewCgroup(defaultSlice, name, config.MemoryLimitInBytes)
+		return v2.NewCgroup(defaultSlice, name, config.MemoryLimitInBytes, config.MemoryWatermarkScaleFactor)
 	}
 
-	return v1.NewCgroup(defaultSlice, name, config.MemoryLimitInBytes)
+	return v1.NewCgroup(defaultSlice, name, config.MemoryLimitInBytes, config.MemoryWatermarkScaleFactor)
 }
 
 func supported() bool {
