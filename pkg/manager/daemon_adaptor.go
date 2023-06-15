@@ -153,6 +153,10 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 			command.WithID(d.ID()))
 	}
 
+	if d.States.PrefetchList != ""{
+		cmdOpts = append(cmdOpts, command.WithPrefetchList(d.States.PrefetchList))
+	}
+
 	cmdOpts = append(cmdOpts,
 		command.WithLogLevel(d.States.LogLevel),
 		command.WithAPISock(d.GetAPISock()))

@@ -53,6 +53,7 @@ type States struct {
 	// Where the configuration file resides, all rafs instances share the same configuration template
 	ConfigDir      string
 	SupervisorPath string
+	PrefetchList string
 }
 
 // TODO: Record queried nydusd state

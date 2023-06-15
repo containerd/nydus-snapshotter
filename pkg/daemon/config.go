@@ -101,3 +101,9 @@ func WithDaemonMode(daemonMode config.DaemonMode) NewDaemonOpt {
 		return nil
 	}
 }
+func WithNydusdPrefetchList(PrefetchList string) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.States.PrefetchList = PrefetchList
+		return nil
+	}
+}

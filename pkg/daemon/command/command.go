@@ -34,6 +34,9 @@ type DaemonCommand struct {
 	LogLevel   string `type:"param" name:"log-level"`
 	Supervisor string `type:"param" name:"supervisor"`
 	LogFile    string `type:"param" name:"log-file"`
+	//add prefetch list
+	PrefetchList string `type:"param" name:"prefetch-files"`
+
 }
 
 // Build exec style command line
@@ -96,6 +99,12 @@ func BuildCommand(opts []Opt) ([]string, error) {
 	}
 
 	return args, nil
+}
+
+func WithPrefetchList(p string) Opt {
+	return func(cmd *DaemonCommand) {
+		cmd.PrefetchList = p
+	}
 }
 
 func WithMode(m string) Opt {

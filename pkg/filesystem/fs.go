@@ -29,6 +29,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/globalvar"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -497,6 +498,10 @@ func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daem
 
 	if mountpoint != "" {
 		opts = append(opts, daemon.WithMountpoint(mountpoint))
+	}
+
+	if globalvar.PlPath != "" {
+		opts = append(opts, daemon.WithNydusdPrefetchList(globalvar.PlPath))
 	}
 
 	d, err = daemon.NewDaemon(opts...)

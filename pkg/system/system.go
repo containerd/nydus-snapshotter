@@ -9,6 +9,7 @@ package system
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
+	"github.com/containerd/nydus-snapshotter/pkg/globalvar"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
@@ -39,6 +41,7 @@ const (
 	// it's very helpful to check daemon's record in database.
 	endpointDaemonRecords  string = "/api/v1/daemons/records"
 	endpointDaemonsUpgrade string = "/api/v1/daemons/upgrade"
+	endpointPL             string = "/api/v1/daemons/prefetch"
 )
 
 const defaultErrorCode string = "Unknown"
@@ -167,6 +170,19 @@ func (sc *Controller) registerRouter() {
 	sc.router.HandleFunc(endpointDaemons, sc.describeDaemons()).Methods(http.MethodGet)
 	sc.router.HandleFunc(endpointDaemonsUpgrade, sc.upgradeDaemons()).Methods(http.MethodPut)
 	sc.router.HandleFunc(endpointDaemonRecords, sc.getDaemonRecords()).Methods(http.MethodGet)
+	sc.router.HandleFunc(endpointPL, sc.prefetchList()).Methods(http.MethodPost)
+}
+func (sc *Controller) prefetchList() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		pl_data := string(body)
+		parts := strings.SplitN(pl_data, ":", 2)
+		Pl_path := strings.TrimSpace(parts[1])
+		globalvar.PlPath = Pl_path
+
+		log.L.Infof("received msg from RunPodSandbox event: %v ", globalvar.PlPath)
+	}
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
