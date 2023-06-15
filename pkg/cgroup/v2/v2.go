@@ -15,6 +15,7 @@ import (
 
 	"github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/cgroup/watermark"
 	"golang.org/x/exp/slices"
 )
 
@@ -38,7 +39,12 @@ func readSubtreeControllers(dir string) ([]string, error) {
 	return strings.Fields(string(b)), nil
 }
 
-func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
+func NewCgroup(slice, name string, memoryLimitInBytes, memoryWatermarkScaleFactor int64) (Cgroup, error) {
+	memoryWatermarkScaleFactorPath := filepath.Join(
+		defaultRoot,
+		slice,
+		name,
+		"memory.watermark_scale_factor")
 	resources := &cgroup2.Resources{
 		Memory: &cgroup2.Memory{},
 	}
@@ -70,6 +76,10 @@ func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
 		return Cgroup{}, err
 	}
 	log.L.Infof("create cgroup (v2) successful, controllers: %v", controllers)
+
+	if err := watermark.UpdateScaleFactor(memoryWatermarkScaleFactorPath, memoryWatermarkScaleFactor); err != nil {
+		return Cgroup{}, err
+	}
 
 	return Cgroup{
 		manager: m,
