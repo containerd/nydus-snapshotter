@@ -12,9 +12,10 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/pkg/errors"
+
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/internal/constant"
-	"github.com/pkg/errors"
 )
 
 // Build runtime nydusd daemon object, which might be persisted later
