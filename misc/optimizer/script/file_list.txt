@@ -1,0 +1,12 @@
+/lib/x86_64-linux-gnu/ld-2.31.so
+/lib/x86_64-linux-gnu/libc-2.31.so
+/lib/x86_64-linux-gnu/libtinfo.so.6.2
+/lib/x86_64-linux-gnu/libdl-2.31.so
+/lib/x86_64-linux-gnu/libnss_files-2.31.so
+/lib/x86_64-linux-gnu/libselinux.so.1
+/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0.10.1
+/lib/x86_64-linux-gnu/libpthread-2.31.so
+/docker-entrypoint.sh
+/docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+/docker-entrypoint.d/20-envsubst-on-templates.sh
+/docker-entrypoint.d/30-tune-worker-processes.sh
