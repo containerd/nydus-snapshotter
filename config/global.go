@@ -15,9 +15,10 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/log"
+	"github.com/pkg/errors"
+
 	"github.com/containerd/nydus-snapshotter/internal/logging"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
-	"github.com/pkg/errors"
 )
 
 var (

@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-
 	"github.com/containerd/containerd/log"
+	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
@@ -23,6 +22,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
+	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
 )
 
 // Fork the nydusd daemon with the process PID decided
@@ -116,6 +116,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 // according to previously setup daemon object.
 func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool) (*exec.Cmd, error) {
 	var cmdOpts []command.Opt
+	var imageReference string
 
 	nydusdThreadNum := d.NydusdThreadNum()
 
@@ -140,6 +141,9 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 			if rafs == nil {
 				return nil, errors.Wrapf(errdefs.ErrNotFound, "daemon %s no rafs instance associated", d.ID())
 			}
+
+			imageReference = rafs.ImageID
+
 			bootstrap, err := rafs.BootstrapFile()
 			if err != nil {
 				return nil, errors.Wrapf(err, "locate bootstrap %s", bootstrap)
@@ -158,6 +162,14 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		cmdOpts = append(cmdOpts,
 			command.WithSupervisor(d.Supervisor.Sock()),
 			command.WithID(d.ID()))
+	}
+
+	if imageReference != "" {
+		prefetchfiles := prefetch.Pm.GetPrefetchInfo(imageReference)
+		if prefetchfiles != "" {
+			cmdOpts = append(cmdOpts, command.WithPrefetchFiles(prefetchfiles))
+			prefetch.Pm.DeleteFromPrefetchMap(imageReference)
+		}
 	}
 
 	cmdOpts = append(cmdOpts,
