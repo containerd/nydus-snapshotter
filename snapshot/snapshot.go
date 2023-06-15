@@ -84,17 +84,21 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
 
-	cgroupConfig, err := config.ParseCgroupConfig(cfg.CgroupConfig)
-	if err != nil {
-		return nil, errors.Wrap(err, "parse cgroup configuration")
-	}
-	log.L.Infof("parsed cgroup config: %#v", cgroupConfig)
-	cgroupMgr, err := cgroup.NewManager(cgroup.Opt{
-		Name:   "nydusd",
-		Config: cgroupConfig,
-	})
-	if err != nil && (err != cgroup.ErrCgroupNotSupported || err != v2.ErrRootMemorySubtreeControllerDisabled) {
-		return nil, errors.Wrap(err, "create cgroup manager")
+	var cgroupMgr *cgroup.Manager
+	if cfg.CgroupConfig.Enable {
+		cgroupConfig, err := config.ParseCgroupConfig(cfg.CgroupConfig)
+		if err != nil {
+			return nil, errors.Wrap(err, "parse cgroup configuration")
+		}
+		log.L.Infof("parsed cgroup config: %#v", cgroupConfig)
+
+		cgroupMgr, err = cgroup.NewManager(cgroup.Opt{
+			Name:   "nydusd",
+			Config: cgroupConfig,
+		})
+		if err != nil && (err != cgroup.ErrCgroupNotSupported || err != v2.ErrRootMemorySubtreeControllerDisabled) {
+			return nil, errors.Wrap(err, "create cgroup manager")
+		}
 	}
 
 	manager, err := mgr.NewManager(mgr.Opt{

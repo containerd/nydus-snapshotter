@@ -110,6 +110,7 @@ type Experimental struct {
 }
 
 type CgroupConfig struct {
+	Enable      bool   `toml:"enable"`
 	MemoryLimit string `toml:"memory_limit"`
 }
 
