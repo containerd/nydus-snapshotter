@@ -74,17 +74,20 @@ jobs:
           sudo make install-optimizer
           sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
           sudo systemctl restart containerd
+          systemctl status containerd  --no-pager -l
       - name: Generate accessed files list
         run: |
+          sed -i "s|host_path: script|host_path: $(pwd)/misc/optimizer/script|g" misc/optimizer/nginx.yaml
           sudo crictl run misc/optimizer/nginx.yaml misc/optimizer/sandbox.yaml
           sleep 20
           sudo crictl rmp  -f --all
           tree /opt/nri/optimizer/results/
           count=$(cat /opt/nri/optimizer/results/library/nginx:1.23.3 | wc -l)
-          echo $count
-          if [ "$count" != 44 ]; then
+          expected=$(cat misc/optimizer/script/file_list.txt | wc -l)
+          echo "count: $count expected minimum value: $expected"
+          if [ $count -lt $expected ]; then
             echo "failed to generate accessed files list for nginx:1.23.3"
+            cat misc/optimizer/script/file_list.txt
             exit 1
           fi
           cat /opt/nri/optimizer/results/library/nginx:1.23.3.csv
-    
