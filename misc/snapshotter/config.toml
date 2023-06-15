@@ -34,6 +34,8 @@ recover_policy = "restart"
 threads_number = 4
 
 [cgroup]
+# Whether to use separate cgroup for nydusd.
+enable = true
 # The memory limit for nydusd cgroup, which contains all nydusd processes.
 # Percentage is supported as well, please ensure it is end with "%".
 # The default unit is bytes. Acceptable values include "209715200", "200MiB", "200Mi" and "10%".

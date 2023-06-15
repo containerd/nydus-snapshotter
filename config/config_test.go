@@ -84,6 +84,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			Address: ":9110",
 		},
 		CgroupConfig: CgroupConfig{
+			Enable:      true,
 			MemoryLimit: "",
 		},
 	}
