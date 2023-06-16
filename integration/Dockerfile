@@ -23,8 +23,6 @@ ARG NERDCTL_VER
 # deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-backports main contrib non-free\n\
 # deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bullseye-security main contrib non-free\n' > /etc/apt/sources.list
 
-ENV GOPROXY=https://goproxy.cn
-
 RUN apt-get update -y && apt-get install -y libbtrfs-dev libseccomp-dev sudo psmisc jq lsof net-tools
 
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
