@@ -29,6 +29,8 @@ import (
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
+	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
+	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
@@ -82,6 +84,23 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "parse recover policy")
 	}
 
+	var cgroupMgr *cgroup.Manager
+	if cfg.CgroupConfig.Enable {
+		cgroupConfig, err := config.ParseCgroupConfig(cfg.CgroupConfig)
+		if err != nil {
+			return nil, errors.Wrap(err, "parse cgroup configuration")
+		}
+		log.L.Infof("parsed cgroup config: %#v", cgroupConfig)
+
+		cgroupMgr, err = cgroup.NewManager(cgroup.Opt{
+			Name:   "nydusd",
+			Config: cgroupConfig,
+		})
+		if err != nil && (err != cgroup.ErrCgroupNotSupported || err != v2.ErrRootMemorySubtreeControllerDisabled) {
+			return nil, errors.Wrap(err, "create cgroup manager")
+		}
+	}
+
 	manager, err := mgr.NewManager(mgr.Opt{
 		NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
 		Database:         db,
@@ -90,6 +109,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		RecoverPolicy:    rp,
 		FsDriver:         config.GetFsDriver(),
 		DaemonConfig:     daemonConfig,
+		CgroupMgr:        cgroupMgr,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create daemons manager")
@@ -561,6 +581,12 @@ func (o *snapshotter) Close() error {
 	}
 
 	o.fs.TryStopSharedDaemon()
+
+	if o.manager.CgroupMgr != nil {
+		if err := o.manager.CgroupMgr.Delete(); err != nil {
+			log.L.Errorf("failed to destroy cgroup, err %v", err)
+		}
+	}
 
 	return o.ms.Close()
 }

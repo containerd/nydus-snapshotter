@@ -33,6 +33,14 @@ recover_policy = "restart"
 # Setting to 0 will use the default configuration of nydusd.
 threads_number = 4
 
+[cgroup]
+# Whether to use separate cgroup for nydusd.
+enable = true
+# The memory limit for nydusd cgroup, which contains all nydusd processes.
+# Percentage is supported as well, please ensure it is end with "%".
+# The default unit is bytes. Acceptable values include "209715200", "200MiB", "200Mi" and "10%".
+memory_limit = ""
+
 [log]
 # Print logs to stdout rather than logging files
 log_to_stdout = false

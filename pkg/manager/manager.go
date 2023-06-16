@@ -20,6 +20,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -135,6 +136,9 @@ type Manager struct {
 	// A basic configuration template loaded from the file
 	DaemonConfig daemonconfig.DaemonConfig
 
+	// Cgroup manager for nydusd
+	CgroupMgr *cgroup.Manager
+
 	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
 	FsDriver string
 
@@ -150,6 +154,7 @@ type Opt struct {
 	// Nydus-snapshotter work directory
 	RootDir      string
 	DaemonConfig daemonconfig.DaemonConfig
+	CgroupMgr    *cgroup.Manager
 	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
 	FsDriver string
 }
@@ -278,6 +283,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		RecoverPolicy:    opt.RecoverPolicy,
 		SupervisorSet:    supervisorSet,
 		DaemonConfig:     opt.DaemonConfig,
+		CgroupMgr:        opt.CgroupMgr,
 		FsDriver:         opt.FsDriver,
 	}
 
@@ -444,7 +450,6 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	if err := d.Wait(); err != nil {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
-
 	collector.NewDaemonEventCollector(types.DaemonStateDestroyed).Collect()
 	d.Lock()
 	collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
@@ -514,6 +519,11 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID())
 		liveDaemons[d.ID()] = d
 
+		if m.CgroupMgr != nil {
+			if err := m.CgroupMgr.AddProc(d.States.ProcessID); err != nil {
+				return errors.Wrapf(err, "add daemon %s to cgroup failed", d.ID())
+			}
+		}
 		d.Lock()
 		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 		d.Unlock()

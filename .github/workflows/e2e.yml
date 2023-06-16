@@ -19,8 +19,37 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  run-e2e:
-    runs-on: ubuntu-latest
+  run-e2e-for-cgroups-v1:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.19.6"
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: cache go mod
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go
+      - name: Log in to container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run e2e test
+        run: |
+          TAG=$GITHUB_REF_NAME
+          [ "$TAG" == "main" ] && TAG="latest"
+          [ "$GITHUB_EVENT_NAME" == "pull_request" ] && TAG="local"
+          make integration
+  
+  run-e2e-for-cgroups-v2:
+    runs-on: ubuntu-22.04
     steps:
       - name: Set up Go
         uses: actions/setup-go@v3
