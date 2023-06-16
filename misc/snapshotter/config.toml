@@ -40,6 +40,10 @@ enable = true
 # Percentage is supported as well, please ensure it is end with "%".
 # The default unit is bytes. Acceptable values include "209715200", "200MiB", "200Mi" and "10%".
 memory_limit = ""
+# The memory watermark scale factor for nydusd.slice. This entry is invalid
+# when the per-memcg reclaim is not supported.
+memory_watermark_scale_factor = 1000
+
 
 [log]
 # Print logs to stdout rather than logging files

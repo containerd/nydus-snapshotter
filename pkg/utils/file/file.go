@@ -18,3 +18,11 @@ func IsDirExisted(path string) (bool, error) {
 	}
 	return s.IsDir(), nil
 }
+
+func WriteFile(path string, value []byte) error {
+	return os.WriteFile(
+		path,
+		value,
+		os.FileMode(0),
+	)
+}

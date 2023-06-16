@@ -7,10 +7,17 @@
 package v1
 
 import (
+	"path/filepath"
+
 	"github.com/containerd/cgroups/v3/cgroup1"
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/cgroup/watermark"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
+)
+
+const (
+	defaultRoot = "/sys/fs/cgroup"
 )
 
 type Cgroup struct {
@@ -21,8 +28,15 @@ func generateHierarchy() cgroup1.Hierarchy {
 	return cgroup1.SingleSubsystem(cgroup1.Default, cgroup1.Memory)
 }
 
-func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
+func NewCgroup(slice, name string, memoryLimitInBytes, memoryWatermarkScaleFactor int64) (Cgroup, error) {
 	hierarchy := generateHierarchy()
+	memoryWatermarkScaleFactorPath := filepath.Join(
+		defaultRoot,
+		string(cgroup1.Memory),
+		slice,
+		name,
+		"memory.watermark_scale_factor")
+
 	specResources := &specs.LinuxResources{
 		Memory: &specs.LinuxMemory{
 			Limit: &memoryLimitInBytes,
@@ -44,6 +58,10 @@ func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
 			if err := controller.Update(specResources); err != nil {
 				return Cgroup{}, err
 			}
+			if err := watermark.UpdateScaleFactor(memoryWatermarkScaleFactorPath, memoryWatermarkScaleFactor); err != nil {
+				return Cgroup{}, err
+			}
+
 			return Cgroup{
 				controller: controller,
 			}, nil
@@ -58,6 +76,10 @@ func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
 		return Cgroup{}, errors.Wrapf(err, "create cgroup")
 	}
 	log.L.Infof("create cgroup (v1) successful, state: %v", controller.State())
+
+	if err := watermark.UpdateScaleFactor(memoryWatermarkScaleFactorPath, memoryWatermarkScaleFactor); err != nil {
+		return Cgroup{}, err
+	}
 
 	return Cgroup{
 		controller: controller,
