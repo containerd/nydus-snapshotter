@@ -1,0 +1,18 @@
+metadata:
+  name: nginx
+
+image:
+  image: nginx:1.23.3
+
+mounts:
+  - host_path: script
+    container_path: /script
+
+command:
+  - /script/entrypoint.sh
+
+args:
+ - /script/file_list.txt
+
+log_path: nginx.0.log
+linux: {}
