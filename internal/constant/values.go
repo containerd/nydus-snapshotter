@@ -17,8 +17,14 @@ const (
 )
 
 const (
+	// Mount RAFS filesystem by using EROFS over block devices.
+	FsDriverBlockdev string = "blockdev"
+	// Mount RAFS filesystem by using FUSE subsystem
 	FsDriverFusedev string = "fusedev"
+	// Mount RAFS filesystem by using fscache/EROFS.
 	FsDriverFscache string = "fscache"
+	// Only prepare/supply meta/data blobs, do not mount RAFS filesystem.
+	FsDriverNodev string = "nodev"
 )
 
 const (

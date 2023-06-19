@@ -776,7 +776,10 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 	}
 
 	instance := daemon.RafsSet.Get(id)
-	daemon := o.fs.Manager.GetByDaemonID(instance.DaemonID)
+	daemon, err := o.fs.GetDaemonByID(instance.DaemonID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "get daemon with ID %s", instance.DaemonID)
+	}
 
 	var c daemonconfig.DaemonConfig
 	if daemon.IsSharedDaemon() {

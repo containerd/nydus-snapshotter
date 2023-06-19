@@ -104,6 +104,7 @@ type Rafs struct {
 	// Usually is the image reference
 	ImageID  string
 	DaemonID string
+	FsDriver string
 	// Given by containerd
 	SnapshotID  string
 	SnapshotDir string
@@ -113,9 +114,10 @@ type Rafs struct {
 	Annotations map[string]string
 }
 
-func NewRafs(snapshotID, imageID string) (*Rafs, error) {
+func NewRafs(snapshotID, imageID, fsDriver string) (*Rafs, error) {
 	snapshotDir := path.Join(config.GetSnapshotsRootDir(), snapshotID)
 	rafs := &Rafs{
+		FsDriver:    fsDriver,
 		ImageID:     imageID,
 		SnapshotID:  snapshotID,
 		SnapshotDir: snapshotDir,
@@ -137,6 +139,14 @@ func (r *Rafs) AddAnnotation(k, v string) {
 
 func (r *Rafs) GetSnapshotDir() string {
 	return r.SnapshotDir
+}
+
+func (r *Rafs) GetFsDriver() string {
+	if r.FsDriver != "" {
+		return r.FsDriver
+	}
+
+	return config.GetFsDriver()
 }
 
 // Blob caches' chunk bitmap and meta headers are stored here.

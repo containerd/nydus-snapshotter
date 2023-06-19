@@ -100,8 +100,10 @@ func ParseRecoverPolicy(p string) (DaemonRecoverPolicy, error) {
 }
 
 const (
-	FsDriverFusedev string = constant.FsDriverFusedev
-	FsDriverFscache string = constant.FsDriverFscache
+	FsDriverBlockdev string = constant.FsDriverBlockdev
+	FsDriverFusedev  string = constant.FsDriverFusedev
+	FsDriverFscache  string = constant.FsDriverFscache
+	FsDriverNodev    string = constant.FsDriverNodev
 )
 
 type Experimental struct {

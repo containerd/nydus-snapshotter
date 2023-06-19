@@ -52,7 +52,7 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 	return old
 }
 
-func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
+func (s *DaemonStates) removeLocked(d *daemon.Daemon) *daemon.Daemon {
 	old := s.idxByDaemonID[d.ID()]
 	delete(s.idxByDaemonID, d.ID())
 	return old
@@ -60,14 +60,14 @@ func (s *DaemonStates) removeUnlocked(d *daemon.Daemon) *daemon.Daemon {
 
 func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
 	s.mu.Lock()
-	old := s.removeUnlocked(d)
+	old := s.removeLocked(d)
 	s.mu.Unlock()
 
 	return old
 }
 
 func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
-	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeUnlocked(d) })
+	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeLocked(d) })
 }
 
 // Also recover daemon runtime state here
@@ -463,24 +463,17 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 // 1. Don't erase ever written record
 // 2. Just recover nydusd daemon states to manager's memory part.
 // 3. Manager in SharedDaemon mode should starts a nydusd when recovering
-func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[string]*daemon.Daemon, error) {
-	// Collected deserialized daemons that need to be recovered.
-	recoveringDaemons := make(map[string]*daemon.Daemon, 0)
-	liveDaemons := make(map[string]*daemon.Daemon, 0)
-
+func (m *Manager) Recover(ctx context.Context,
+	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
 	if err := m.store.WalkDaemons(ctx, func(s *daemon.States) error {
-		log.L.Debugf("found daemon states %#v", s)
+		if s.FsDriver != m.FsDriver {
+			return nil
+		}
 
+		log.L.Debugf("found daemon states %#v", s)
 		opt := make([]daemon.NewDaemonOpt, 0)
 		var d, _ = daemon.NewDaemon(opt...)
 		d.States = *s
-
-		// It can't change snapshotter's fs driver to a different one from a daemon that ever created in the past.
-		if d.States.FsDriver != m.FsDriver {
-			return errors.Wrapf(errdefs.ErrInvalidArgument,
-				"can't recover from the last restart, the specified fs-driver=%s mismatches with the last fs-driver=%s",
-				m.FsDriver, d.States.FsDriver)
-		}
 
 		m.daemonStates.RecoverDaemonState(d)
 
@@ -505,7 +498,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 		state, err := d.GetState()
 		if err != nil {
 			log.L.Warnf("Daemon %s died somehow. Clean up its vestige!, %s", d.ID(), err)
-			recoveringDaemons[d.ID()] = d
+			(*recoveringDaemons)[d.ID()] = d
 			//nolint:nilerr
 			return nil
 		}
@@ -517,7 +510,7 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 
 		// FIXME: Should put the a daemon back file system shared damon field.
 		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID())
-		liveDaemons[d.ID()] = d
+		(*liveDaemons)[d.ID()] = d
 
 		if m.CgroupMgr != nil {
 			if err := m.CgroupMgr.AddProc(d.States.ProcessID); err != nil {
@@ -545,32 +538,31 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 
 		return nil
 	}); err != nil {
-		return nil, nil, errors.Wrapf(err, "walk daemons to reconnect")
+		return errors.Wrapf(err, "walk daemons to reconnect")
 	}
 
 	if err := m.store.WalkInstances(ctx, func(r *daemon.Rafs) error {
-		log.L.Debugf("found instance %#v", r)
-
-		d := recoveringDaemons[r.DaemonID]
-		if d != nil {
-			d.AddInstance(r)
+		if r.GetFsDriver() == m.FsDriver {
+			log.L.Debugf("found instance %#v", r)
+			if r.GetFsDriver() == config.FsDriverFscache || r.GetFsDriver() == config.FsDriverFusedev {
+				d := (*recoveringDaemons)[r.DaemonID]
+				if d != nil {
+					d.AddInstance(r)
+				}
+				d = (*liveDaemons)[r.DaemonID]
+				if d != nil {
+					d.AddInstance(r)
+				}
+				daemon.RafsSet.Add(r)
+			} else if r.GetFsDriver() == config.FsDriverBlockdev {
+				daemon.RafsSet.Add(r)
+				// TODO: check and remount tarfs
+			}
 		}
-
-		d = liveDaemons[r.DaemonID]
-		if d != nil {
-			d.AddInstance(r)
-		}
-
-		daemon.RafsSet.Add(r)
-
 		return nil
 	}); err != nil {
-		return nil, nil, errors.Wrapf(err, "walk instances to reconnect")
+		return errors.Wrapf(err, "walk instances to reconnect")
 	}
 
-	for _, d := range recoveringDaemons {
-		d.ClearVestige()
-	}
-
-	return recoveringDaemons, liveDaemons, nil
+	return nil
 }
