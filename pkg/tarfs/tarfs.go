@@ -40,6 +40,7 @@ type Manager struct {
 	mutex                sync.Mutex
 	nydusImagePath       string
 	insecure             bool
+	validateDiffID       bool // whether to validate digest for uncompressed content
 	checkTarfsHint       bool // whether to rely on tarfs hint annotation
 	maxConcurrentProcess int64
 	processLimiterCache  *lru.Cache // cache image ref and concurrent limiter for blob processes
@@ -79,6 +80,7 @@ func NewManager(insecure, checkTarfsHint bool, nydusImagePath string, maxConcurr
 		snapshotMap:          map[string]*snapshotStatus{},
 		nydusImagePath:       nydusImagePath,
 		insecure:             insecure,
+		validateDiffID:       true,
 		checkTarfsHint:       checkTarfsHint,
 		maxConcurrentProcess: maxConcurrentProcess,
 		tarfsHintCache:       lru.New(50),
@@ -135,11 +137,15 @@ func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref
 	if len(config.RootFS.DiffIDs) != len(manifestOCI.Layers) {
 		return errors.Errorf("number of diff ids unmatch manifest layers")
 	}
-	// cache ref & tarfs hint annotation
-	t.tarfsHintCache.Add(ref, label.IsTarfsHint(manifestOCI.Annotations))
-	// cache OCI blob digest & diff id
-	for i := range manifestOCI.Layers {
-		t.diffIDCache.Add(manifestOCI.Layers[i].Digest, config.RootFS.DiffIDs[i])
+	if t.checkTarfsHint {
+		// cache ref & tarfs hint annotation
+		t.tarfsHintCache.Add(ref, label.IsTarfsHint(manifestOCI.Annotations))
+	}
+	if t.validateDiffID {
+		// cache OCI blob digest & diff id
+		for i := range manifestOCI.Layers {
+			t.diffIDCache.Add(manifestOCI.Layers[i].Digest, config.RootFS.DiffIDs[i])
+		}
 	}
 	return nil
 }
@@ -263,22 +269,30 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manif
 		}
 		defer ds.Close()
 
-		digester := digest.Canonical.Digester()
-		dr := io.TeeReader(ds, digester.Hash())
-		emptyBlob, err := t.generateBootstrap(dr, storagePath, snapshotID)
-		if err != nil {
-			return false, err
+		if t.validateDiffID {
+			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
+			if err != nil {
+				return false, err
+			}
+			digester := digest.Canonical.Digester()
+			dr := io.TeeReader(ds, digester.Hash())
+			emptyBlob, err := t.generateBootstrap(dr, storagePath, snapshotID)
+			if err != nil {
+				return false, err
+			}
+			log.L.Infof("prepare tarfs Layer generateBootstrap done layer %s, digest %s", snapshotID, digester.Digest())
+			if digester.Digest() != diffID {
+				return false, errors.Errorf("diff id %s not match", diffID)
+			}
+			return emptyBlob, nil
+		} else {
+			emptyBlob, err := t.generateBootstrap(ds, storagePath, snapshotID)
+			if err != nil {
+				return false, err
+			}
+			log.L.Infof("prepare tarfs Layer generateBootstrap done layer %s", snapshotID)
+			return emptyBlob, nil
 		}
-		log.L.Infof("prepare tarfs Layer generateBootstrap done layer %s, digest %s", snapshotID, digester.Digest())
-
-		diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
-		if err != nil {
-			return false, err
-		}
-		if digester.Digest() != diffID {
-			return false, errors.Errorf("diff id %s not match", diffID)
-		}
-		return emptyBlob, nil
 	}
 
 	var emptyBlob bool
