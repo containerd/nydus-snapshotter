@@ -34,6 +34,8 @@ const (
 	NydusMetaLayer = "containerd.io/snapshot/nydus-bootstrap"
 	// The referenced blob sha256 in format of `sha256:xxx`, set by image builders.
 	NydusRefLayer = "containerd.io/snapshot/nydus-ref"
+	// A bool flag to mark the layer as a nydus tarfs, set by the snapshotter
+	NydusTarfsLayer = "containerd.io/snapshot/nydus-tarfs"
 	// Annotation containing secret to pull images from registry, set by the snapshotter.
 	NydusImagePullSecret = "containerd.io/snapshot/pullsecret"
 	// Annotation containing username to pull images from registry, set by the snapshotter.
@@ -60,17 +62,16 @@ func IsNydusDataLayer(labels map[string]string) bool {
 }
 
 func IsNydusMetaLayer(labels map[string]string) bool {
-	if labels == nil {
-		return false
-	}
 	_, ok := labels[NydusMetaLayer]
 	return ok
 }
 
-func IsTarfsHint(labels map[string]string) bool {
-	if labels == nil {
-		return false
-	}
+func IsTarfsDataLayer(labels map[string]string) bool {
+	_, ok := labels[NydusTarfsLayer]
+	return ok
+}
+
+func HasTarfsHint(labels map[string]string) bool {
 	_, ok := labels[TarfsHint]
 	return ok
 }

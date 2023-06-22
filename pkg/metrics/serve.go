@@ -36,7 +36,9 @@ type Server struct {
 
 func WithProcessManager(pm *manager.Manager) ServerOpt {
 	return func(s *Server) error {
-		s.managers = append(s.managers, pm)
+		if pm != nil {
+			s.managers = append(s.managers, pm)
+		}
 		return nil
 	}
 }

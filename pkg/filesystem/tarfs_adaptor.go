@@ -20,7 +20,7 @@ func (fs *Filesystem) TarfsEnabled() bool {
 	return fs.tarfsMgr != nil
 }
 
-func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]string, snapshotID, storagePath string) error {
+func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]string, snapshotID, upperDirPath string) error {
 	ref, ok := labels[snpkg.TargetRefLabel]
 	if !ok {
 		return errors.Errorf("not found image reference label")
@@ -50,8 +50,8 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 	}
 
 	go func() {
-		if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifestDigest, layerDigest, storagePath); err != nil {
-			log.L.WithError(err).Errorf("async prepare Tarfs layer of snapshot ID %s", snapshotID)
+		if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifestDigest, layerDigest, upperDirPath); err != nil {
+			log.L.WithError(err).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
 		}
 		if limiter != nil {
 			limiter.Release(1)
@@ -70,9 +70,9 @@ func (fs *Filesystem) DetachTarfsLayer(snapshotID string) error {
 }
 
 func (fs *Filesystem) IsTarfsLayer(snapshotID string) bool {
-	return fs.tarfsMgr.CheckTarfsLayer(snapshotID, false)
+	return fs.tarfsMgr.IsTarfsLayer(snapshotID)
 }
 
-func (fs *Filesystem) IsMergedTarfsLayer(snapshotID string) bool {
-	return fs.tarfsMgr.CheckTarfsLayer(snapshotID, true)
+func (fs *Filesystem) IsMountedTarfsLayer(snapshotID string) bool {
+	return fs.tarfsMgr.IsMountedTarfsLayer(snapshotID)
 }

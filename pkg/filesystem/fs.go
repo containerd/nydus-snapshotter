@@ -15,13 +15,15 @@ import (
 	"os"
 	"path"
 
-	"github.com/containerd/containerd/log"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
-	"github.com/containerd/containerd/snapshots"
 	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/snapshots/storage"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
@@ -29,6 +31,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -220,20 +223,18 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 // Mount will be called when containerd snapshotter prepare remote snapshotter
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 // It must set up all necessary resources during Mount procedure and revoke any step if necessary.
-func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, isTarfs bool) (err error) {
+func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *storage.Snapshot) (err error) {
+	// Do not create RAFS instance in case of nodev.
+	if !fs.DaemonBacked() {
+		return nil
+	}
+
 	fsDriver := config.GetFsDriver()
-	if isTarfs {
+	if label.IsTarfsDataLayer(labels) {
 		fsDriver = config.FsDriverBlockdev
-	} else if !fs.DaemonBacked() {
-		fsDriver = config.FsDriverNodev
 	}
 	isSharedFusedev := fsDriver == config.FsDriverFusedev && config.GetDaemonMode() == config.DaemonModeShared
 	useSharedDaemon := fsDriver == config.FsDriverFscache || isSharedFusedev
-
-	// Do not create RAFS instance in case of nodev.
-	if fsDriver == config.FsDriverNodev {
-		return nil
-	}
 
 	var imageID string
 	imageID, ok := labels[snpkg.TargetRefLabel]
@@ -266,7 +267,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, isTarfs
 	}()
 
 	fsManager, err := fs.getManager(fsDriver)
-	if err != nil && fsDriver != config.FsDriverBlockdev {
+	if err != nil {
 		return errors.Wrapf(err, "get filesystem manager for snapshot %s", snapshotID)
 	}
 
@@ -355,19 +356,17 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, isTarfs
 			return errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
 		}
 	case config.FsDriverBlockdev:
-		mountPoint := path.Join(rafs.GetSnapshotDir(), "tarfs")
-		err = fs.tarfsMgr.MountTarErofs(snapshotID, mountPoint)
+		err = fs.tarfsMgr.MountTarErofs(snapshotID, s, rafs)
 		if err != nil {
 			return errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
 		}
-		rafs.SetMountpoint(mountPoint)
+	default:
+		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
 
 	// Persist it after associate instance after all the states are calculated.
-	if fsDriver == config.FsDriverFscache || fsDriver == config.FsDriverFusedev {
-		if err := fsManager.NewInstance(rafs); err != nil {
-			return errors.Wrapf(err, "create instance %s", snapshotID)
-		}
+	if err := fsManager.NewInstance(rafs); err != nil {
+		return errors.Wrapf(err, "create instance %s", snapshotID)
 	}
 
 	return nil
@@ -381,12 +380,18 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 	}
 
 	fsDriver := instance.GetFsDriver()
+	if fsDriver == config.FsDriverNodev {
+		return nil
+	}
 	fsManager, err := fs.getManager(fsDriver)
-	if err != nil && fsDriver != config.FsDriverBlockdev {
+	if err != nil {
 		return errors.Wrapf(err, "get manager for filesystem instance %s", instance.DaemonID)
 	}
 
-	if fsDriver == config.FsDriverFscache || fsDriver == config.FsDriverFusedev {
+	switch fsDriver {
+	case config.FsDriverFscache:
+		fallthrough
+	case config.FsDriverFusedev:
 		daemon, err := fs.getDaemonByRafs(instance)
 		if err != nil {
 			log.L.Debugf("snapshot %s has no associated nydusd", snapshotID)
@@ -406,10 +411,15 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 				return errors.Wrapf(err, "destroy daemon %s", daemon.ID())
 			}
 		}
-	} else if fsDriver == config.FsDriverBlockdev {
+	case config.FsDriverBlockdev:
 		if err := fs.tarfsMgr.UmountTarErofs(snapshotID); err != nil {
 			return errors.Wrapf(err, "umount tar erofs on snapshot %s", snapshotID)
 		}
+		if err := fsManager.RemoveInstance(snapshotID); err != nil {
+			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
+		}
+	default:
+		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
 	return nil
 }
