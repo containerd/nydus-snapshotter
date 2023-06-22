@@ -56,6 +56,7 @@ const (
 )
 
 const (
+	MaxManifestConfigSize    = 0x100000
 	TarfsBlobName            = "blob.tar"
 	TarfsLayerBootstapName   = "layer_bootstrap"
 	TarfsMeragedBootstapName = "merged_bootstrap"
@@ -91,11 +92,14 @@ func NewManager(insecure, checkTarfsHint bool, nydusImagePath string, maxConcurr
 // FIXME need an update policy
 func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref string, manifestDigest digest.Digest) error {
 	// fetch image manifest content
-	rc, err := t.getBlobStream(ctx, remote, ref, manifestDigest)
+	rc, desc, err := t.getBlobStream(ctx, remote, ref, manifestDigest)
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
+	if desc.Size > MaxManifestConfigSize {
+		return errors.Errorf("image manifest content size %x is too big", desc.Size)
+	}
 	bytes, err := io.ReadAll(rc)
 	if err != nil {
 		return errors.Wrap(err, "read manifest")
@@ -111,11 +115,14 @@ func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref
 	}
 
 	// fetch image config content and extract diffIDs
-	rc, err = t.getBlobStream(ctx, remote, ref, manifestOCI.Config.Digest)
+	rc, desc, err = t.getBlobStream(ctx, remote, ref, manifestOCI.Config.Digest)
 	if err != nil {
 		return errors.Wrap(err, "fetch image config content")
 	}
 	defer rc.Close()
+	if desc.Size > MaxManifestConfigSize {
+		return errors.Errorf("image config content size %x is too big", desc.Size)
+	}
 	bytes, err = io.ReadAll(rc)
 	if err != nil {
 		return errors.Wrap(err, "read image config content")
@@ -156,19 +163,18 @@ func (t *Manager) getBlobDiffID(ctx context.Context, remote *remote.Remote, ref 
 	return "", errors.Errorf("get blob diff id failed")
 }
 
-func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref string, contentDigest digest.Digest) (io.ReadCloser, error) {
+func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref string, contentDigest digest.Digest) (io.ReadCloser, ocispec.Descriptor, error) {
 	fetcher, err := remote.Fetcher(ctx, ref)
 	if err != nil {
-		return nil, errors.Wrap(err, "get remote fetcher")
+		return nil, ocispec.Descriptor{}, errors.Wrap(err, "get remote fetcher")
 	}
 
 	fetcherByDigest, ok := fetcher.(remotes.FetcherByDigest)
 	if !ok {
-		return nil, errors.Errorf("fetcher %T does not implement remotes.FetcherByDigest", fetcher)
+		return nil, ocispec.Descriptor{}, errors.Errorf("fetcher %T does not implement remotes.FetcherByDigest", fetcher)
 	}
 
-	rc, _, err := fetcherByDigest.FetchByDigest(ctx, contentDigest)
-	return rc, err
+	return fetcherByDigest.FetchByDigest(ctx, contentDigest)
 }
 
 // generate tar file and layer bootstrap, return if this blob is an empty blob
@@ -246,7 +252,7 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manif
 	remote := remote.New(keyChain, t.insecure)
 
 	handle := func() (bool, error) {
-		rc, err := t.getBlobStream(ctx, remote, ref, layerDigest)
+		rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
 		if err != nil {
 			return false, err
 		}
