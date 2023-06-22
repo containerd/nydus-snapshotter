@@ -42,9 +42,9 @@ type Manager struct {
 	insecure             bool
 	checkTarfsHint       bool // whether to rely on tarfs hint annotation
 	maxConcurrentProcess int64
-	tarfsHintCache       *lru.Cache // cache image ref and tarfs hint annotation
-	diffIDCache          *lru.Cache // cache oci blob digest and diffID
 	processLimiterCache  *lru.Cache // cache image ref and concurrent limiter for blob processes
+	tarfsHintCache       *lru.Cache // cache oci image ref and tarfs hint annotation
+	diffIDCache          *lru.Cache // cache oci blob digest and diffID
 	sg                   singleflight.Group
 }
 
@@ -87,40 +87,43 @@ func NewManager(insecure, checkTarfsHint bool, nydusImagePath string, maxConcurr
 	}
 }
 
-// fetch image form manifest and config, then cache them in lru
+// Fetch image manifest and config contents, cache frequently used information.
 // FIXME need an update policy
-func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref string, manifest digest.Digest) error {
-	// fetch the manifest find config digest and layers digest
-	rc, err := t.getBlobStream(ctx, remote, ref, manifest)
+func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref string, manifestDigest digest.Digest) error {
+	// fetch image manifest content
+	rc, err := t.getBlobStream(ctx, remote, ref, manifestDigest)
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
-	var manifestOCI ocispec.Manifest
 	bytes, err := io.ReadAll(rc)
 	if err != nil {
 		return errors.Wrap(err, "read manifest")
 	}
+
+	// TODO: support docker images
+	var manifestOCI ocispec.Manifest
 	if err := json.Unmarshal(bytes, &manifestOCI); err != nil {
-		return errors.Wrap(err, "unmarshal manifest")
+		return errors.Wrap(err, "unmarshal OCI manifest")
 	}
 	if len(manifestOCI.Layers) < 1 {
 		return errors.Errorf("invalid manifest")
 	}
 
-	// fetch the config and find diff ids
+	// fetch image config content and extract diffIDs
 	rc, err = t.getBlobStream(ctx, remote, ref, manifestOCI.Config.Digest)
 	if err != nil {
-		return errors.Wrap(err, "fetch referrers")
+		return errors.Wrap(err, "fetch image config content")
 	}
 	defer rc.Close()
-	var config ocispec.Image
 	bytes, err = io.ReadAll(rc)
 	if err != nil {
-		return errors.Wrap(err, "read config")
+		return errors.Wrap(err, "read image config content")
 	}
+
+	var config ocispec.Image
 	if err := json.Unmarshal(bytes, &config); err != nil {
-		return errors.Wrap(err, "unmarshal config")
+		return errors.Wrap(err, "unmarshal image config")
 	}
 	if len(config.RootFS.DiffIDs) != len(manifestOCI.Layers) {
 		return errors.Errorf("number of diff ids unmatch manifest layers")
@@ -134,13 +137,13 @@ func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref
 	return nil
 }
 
-func (t *Manager) getBlobDiffID(ctx context.Context, remote *remote.Remote, ref string, manifest, layerDigest digest.Digest) (digest.Digest, error) {
+func (t *Manager) getBlobDiffID(ctx context.Context, remote *remote.Remote, ref string, manifestDigest, layerDigest digest.Digest) (digest.Digest, error) {
 	if diffid, ok := t.diffIDCache.Get(layerDigest); ok {
 		return diffid.(digest.Digest), nil
 	}
 
 	if _, err, _ := t.sg.Do(ref, func() (interface{}, error) {
-		err := t.fetchImageInfo(ctx, remote, ref, manifest)
+		err := t.fetchImageInfo(ctx, remote, ref, manifestDigest)
 		return nil, err
 	}); err != nil {
 		return "", err
@@ -153,7 +156,7 @@ func (t *Manager) getBlobDiffID(ctx context.Context, remote *remote.Remote, ref 
 	return "", errors.Errorf("get blob diff id failed")
 }
 
-func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref string, layerDigest digest.Digest) (io.ReadCloser, error) {
+func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref string, contentDigest digest.Digest) (io.ReadCloser, error) {
 	fetcher, err := remote.Fetcher(ctx, ref)
 	if err != nil {
 		return nil, errors.Wrap(err, "get remote fetcher")
@@ -164,7 +167,7 @@ func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref 
 		return nil, errors.Errorf("fetcher %T does not implement remotes.FetcherByDigest", fetcher)
 	}
 
-	rc, _, err := fetcherByDigest.FetchByDigest(ctx, layerDigest)
+	rc, _, err := fetcherByDigest.FetchByDigest(ctx, contentDigest)
 	return rc, err
 }
 
@@ -234,8 +237,8 @@ func (t *Manager) attachLoopdev(blob string) (*losetup.Device, error) {
 	return &dev, err
 }
 
-// download & uncompress oci blob, generate tarfs bootstrap
-func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manifest, layerDigest digest.Digest, storagePath string) (*losetup.Device, error) {
+// download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
+func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manifestDigest, layerDigest digest.Digest, storagePath string) (*losetup.Device, error) {
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)
 	if err != nil {
 		return nil, err
@@ -243,17 +246,11 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manif
 	remote := remote.New(keyChain, t.insecure)
 
 	handle := func() (bool, error) {
-		diffID, err := t.getBlobDiffID(ctx, remote, ref, manifest, layerDigest)
-		if err != nil {
-			return false, err
-		}
-
 		rc, err := t.getBlobStream(ctx, remote, ref, layerDigest)
 		if err != nil {
 			return false, err
 		}
 		defer rc.Close()
-
 		ds, err := compression.DecompressStream(rc)
 		if err != nil {
 			return false, errors.Wrap(err, "unpack stream")
@@ -262,12 +259,16 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manif
 
 		digester := digest.Canonical.Digester()
 		dr := io.TeeReader(ds, digester.Hash())
-
 		emptyBlob, err := t.generateBootstrap(dr, storagePath, snapshotID)
 		if err != nil {
 			return false, err
 		}
 		log.L.Infof("prepare tarfs Layer generateBootstrap done layer %s, digest %s", snapshotID, digester.Digest())
+
+		diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
+		if err != nil {
+			return false, err
+		}
 		if digester.Digest() != diffID {
 			return false, errors.Errorf("diff id %s not match", diffID)
 		}
@@ -291,7 +292,7 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manif
 	return t.attachLoopdev(filepath.Join(storagePath, "layer_"+snapshotID+"_"+TarfsBlobName))
 }
 
-func (t *Manager) PrepareLayer(snapshotID, ref string, manifest, layerDigest digest.Digest, storagePath string) error {
+func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest, storagePath string) error {
 	t.mutex.Lock()
 	if _, ok := t.snapshotMap[snapshotID]; ok {
 		t.mutex.Unlock()
@@ -309,7 +310,7 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifest, layerDigest dig
 	}
 	t.mutex.Unlock()
 
-	loopdev, err := t.blobProcess(ctx, snapshotID, ref, manifest, layerDigest, storagePath)
+	loopdev, err := t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, storagePath)
 
 	st, err1 := t.getSnapshotStatus(snapshotID)
 	if err1 != nil {
@@ -505,7 +506,7 @@ func (t *Manager) getSnapshotStatus(snapshotID string) (*snapshotStatus, error) 
 	return nil, errors.Errorf("not found snapshot %s", snapshotID)
 }
 
-func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, manifest digest.Digest) (bool, error) {
+func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, manifestDigest digest.Digest) (bool, error) {
 	if !t.checkTarfsHint {
 		return true, nil
 	}
@@ -522,7 +523,7 @@ func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, mani
 		}
 
 		if _, err, _ := t.sg.Do(ref, func() (interface{}, error) {
-			err := t.fetchImageInfo(ctx, remote, ref, manifest)
+			err := t.fetchImageInfo(ctx, remote, ref, manifestDigest)
 			return nil, err
 		}); err != nil {
 			return false, err
@@ -537,7 +538,7 @@ func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, mani
 
 	tarfsHint, err := handle()
 	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
-		return handle()
+		tarfsHint, err = handle()
 	}
 	return tarfsHint, err
 }

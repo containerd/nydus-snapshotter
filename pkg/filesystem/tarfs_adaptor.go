@@ -23,18 +23,18 @@ func (fs *Filesystem) TarfsEnabled() bool {
 func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]string, snapshotID, storagePath string) error {
 	ref, ok := labels[snpkg.TargetRefLabel]
 	if !ok {
-		return errors.Errorf("not found image reference lable")
+		return errors.Errorf("not found image reference label")
 	}
 	layerDigest := digest.Digest(labels[snpkg.TargetLayerDigestLabel])
 	if layerDigest.Validate() != nil {
-		return errors.Errorf("not found manifest digest lable")
+		return errors.Errorf("not found layer digest label")
 	}
-	manifest := digest.Digest(labels[snpkg.TargetManifestDigestLabel])
-	if manifest.Validate() != nil {
-		return errors.Errorf("not found manifest digest lable")
+	manifestDigest := digest.Digest(labels[snpkg.TargetManifestDigestLabel])
+	if manifestDigest.Validate() != nil {
+		return errors.Errorf("not found manifest digest label")
 	}
 
-	ok, err := fs.tarfsMgr.CheckTarfsHintAnnotation(ctx, ref, manifest)
+	ok, err := fs.tarfsMgr.CheckTarfsHintAnnotation(ctx, ref, manifestDigest)
 	if err != nil {
 		return errors.Wrapf(err, "check tarfs hint annotaion")
 	}
@@ -50,13 +50,14 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 	}
 
 	go func() {
-		if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifest, layerDigest, storagePath); err != nil {
+		if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifestDigest, layerDigest, storagePath); err != nil {
 			log.L.WithError(err).Errorf("async prepare Tarfs layer of snapshot ID %s", snapshotID)
 		}
 		if limiter != nil {
 			limiter.Release(1)
 		}
 	}()
+
 	return nil
 }
 
