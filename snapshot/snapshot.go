@@ -324,25 +324,25 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 		return snapshots.Usage{}, err
 	}
 
-	if info.Kind == snapshots.KindActive {
+	switch info.Kind {
+	case snapshots.KindActive:
 		upperPath := o.upperPath(id)
 		du, err := fs.DiskUsage(ctx, upperPath)
 		if err != nil {
 			return snapshots.Usage{}, err
 		}
 		usage = snapshots.Usage(du)
-	}
-
-	// Caculate disk space usage under cacheDir of committed snapshots.
-	if info.Kind == snapshots.KindCommitted &&
-		(label.IsNydusDataLayer(info.Labels) || label.IsTarfsDataLayer(info.Labels)) {
-		if blobDigest, ok := info.Labels[snpkg.TargetLayerDigestLabel]; ok {
-			// Try to get nydus meta layer/snapshot disk usage
-			cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
-			if err != nil {
-				return snapshots.Usage{}, errors.Wrapf(err, "try to get snapshot %s nydus disk usage", id)
+	case snapshots.KindCommitted:
+		// Caculate disk space usage under cacheDir of committed snapshots.
+		if label.IsNydusDataLayer(info.Labels) || label.IsTarfsDataLayer(info.Labels) {
+			if blobDigest, ok := info.Labels[snpkg.TargetLayerDigestLabel]; ok {
+				// Try to get nydus meta layer/snapshot disk usage
+				cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
+				if err != nil {
+					return snapshots.Usage{}, errors.Wrapf(err, "try to get snapshot %s nydus disk usage", id)
+				}
+				usage.Add(cacheUsage)
 			}
-			usage.Add(cacheUsage)
 		}
 	}
 
@@ -365,43 +365,46 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
 
-	if label.IsNydusMetaLayer(info.Labels) {
-		err = o.fs.WaitUntilReady(id)
-		if err != nil {
-			// Skip waiting if clients is unpacking nydus artifacts to `mounts`
-			// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
-			//  1. [Prepare] snapshot for the uppermost layer - bootstrap
-			//  2. [Mounts]
-			//  3. Unpacking by applying the mounts, then we get bootstrap in its path position.
-			// In above steps, no container write layer is called to set up from nydus-snapshotter. So it has no
-			// chance to start nydusd, during which the Rafs instance is created.
-			if !errors.Is(err, errdefs.ErrNotFound) {
-				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+	switch info.Kind {
+	case snapshots.KindView:
+		if label.IsNydusMetaLayer(info.Labels) {
+			err = o.fs.WaitUntilReady(id)
+			if err != nil {
+				// Skip waiting if clients is unpacking nydus artifacts to `mounts`
+				// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
+				//  1. [Prepare] snapshot for the uppermost layer - bootstrap
+				//  2. [Mounts]
+				//  3. Unpacking by applying the mounts, then we get bootstrap in its path position.
+				// In above steps, no container write layer is called to set up from nydus-snapshotter. So it has no
+				// chance to start nydusd, during which the Rafs instance is created.
+				if !errors.Is(err, errdefs.ErrNotFound) {
+					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+				}
+			} else {
+				needRemoteMounts = true
+				metaSnapshotID = id
 			}
-		} else {
+		} else if label.IsTarfsDataLayer(info.Labels) {
 			needRemoteMounts = true
 			metaSnapshotID = id
 		}
-	} else if label.IsTarfsDataLayer(info.Labels) {
-		needRemoteMounts = true
-		metaSnapshotID = id
-	}
-
-	if info.Kind == snapshots.KindActive && info.Parent != "" {
-		pKey := info.Parent
-		if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
-			if label.IsNydusMetaLayer(info.Labels) {
-				if err = o.fs.WaitUntilReady(pID); err != nil {
-					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+	case snapshots.KindActive:
+		if info.Parent != "" {
+			pKey := info.Parent
+			if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
+				if label.IsNydusMetaLayer(info.Labels) {
+					if err = o.fs.WaitUntilReady(pID); err != nil {
+						return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+					}
+					needRemoteMounts = true
+					metaSnapshotID = pID
+				} else if o.fs.TarfsEnabled() && o.fs.IsMountedTarfsLayer(pID) {
+					needRemoteMounts = true
+					metaSnapshotID = pID
 				}
-				needRemoteMounts = true
-				metaSnapshotID = pID
-			} else if o.fs.TarfsEnabled() && o.fs.IsMountedTarfsLayer(pID) {
-				needRemoteMounts = true
-				metaSnapshotID = pID
+			} else {
+				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 			}
-		} else {
-			return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 		}
 	}
 
@@ -1027,7 +1030,7 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 
 	if o.fs.TarfsEnabled() {
 		if err := o.fs.DetachTarfsLayer(snapshotID); err != nil && !os.IsNotExist(err) {
-			log.G(ctx).WithError(err).Error("detach tarfs layer")
+			log.G(ctx).WithError(err).Errorf("failed to detach tarfs layer for snapshot %s", snapshotID)
 		}
 	}
 

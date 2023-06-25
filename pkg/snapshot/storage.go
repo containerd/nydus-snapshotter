@@ -83,8 +83,6 @@ func IterateParentSnapshots(ctx context.Context, ms *storage.MetaStore, key stri
 			return id, info, nil
 		}
 
-		log.L.Debugf("continue to check snapshot %s parent", id)
-
 		cKey = info.Parent
 	}
 

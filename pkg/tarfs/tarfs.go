@@ -533,10 +533,12 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 }
 
 func (t *Manager) waitLayerReady(snapshotID string) error {
-	log.L.Debugf("wait tarfs conversion task for snapshot %s", snapshotID)
 	st, err := t.getSnapshotStatus(snapshotID, false)
 	if err != nil {
 		return err
+	}
+	if st.status != TarfsStatusReady {
+		log.L.Debugf("wait tarfs conversion task for snapshot %s", snapshotID)
 	}
 	st.wg.Wait()
 	return nil
@@ -651,7 +653,7 @@ func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, mani
 }
 
 func (t *Manager) GetConcurrentLimiter(ref string) *semaphore.Weighted {
-	if t.maxConcurrentProcess == 0 {
+	if t.maxConcurrentProcess <= 0 {
 		return nil
 	}
 
