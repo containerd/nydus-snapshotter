@@ -799,16 +799,19 @@ func overlayMount(options []string) []mount.Mount {
 // `s` and `id` can represent a different layer, it's useful when View an image
 func (o *snapshotter) remoteMounts(ctx context.Context, labels map[string]string, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
-	lowerPaths := make([]string, 0, 8)
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
+		if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
+			overlayOptions = append(overlayOptions, "volatile")
+		}
 	} else if len(s.ParentIDs) == 1 {
 		return bindMount(o.upperPath(s.ParentIDs[0]), "ro"), nil
 	}
 
+	lowerPaths := make([]string, 0, 8)
 	lowerPathNydus, err := o.lowerPath(id)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to locate overlay lowerdir")
