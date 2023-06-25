@@ -41,7 +41,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
 		return func() (bool, []mount.Mount, error) {
 			logger.Debugf("Prepare remote snapshot %s", id)
-			if err := sn.prepareRemoteSnapshot(id, labels, s); err != nil {
+			if err := sn.fs.Mount(id, labels, &s); err != nil {
 				return false, nil, err
 			}
 
@@ -51,7 +51,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 
 			logger.Infof("Nydus remote snapshot %s is ready", id)
-			mounts, err := sn.remoteMounts(ctx, s, id)
+			mounts, err := sn.remoteMounts(ctx, labels, s, id)
 			return false, mounts, err
 		}
 	}

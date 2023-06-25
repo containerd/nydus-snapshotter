@@ -418,7 +418,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 
 	if needRemoteMounts {
-		return o.remoteMounts(ctx, *snap, metaSnapshotID)
+		return o.remoteMounts(ctx, info.Labels, *snap, metaSnapshotID)
 	}
 
 	return o.mounts(ctx, info.Labels, *snap)
@@ -516,7 +516,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	if needRemoteMounts {
-		return o.remoteMounts(ctx, s, metaSnapshotID)
+		return o.remoteMounts(ctx, base.Labels, s, metaSnapshotID)
 	}
 
 	return o.mounts(ctx, base.Labels, s)
@@ -795,13 +795,9 @@ func overlayMount(options []string) []mount.Mount {
 	}
 }
 
-func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string, s storage.Snapshot) error {
-	return o.fs.Mount(id, labels, &s)
-}
-
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
 // `s` and `id` can represent a different layer, it's useful when View an image
-func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string) ([]mount.Mount, error) {
+func (o *snapshotter) remoteMounts(ctx context.Context, labels map[string]string, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
 	lowerPaths := make([]string, 0, 8)
 	if s.Kind == snapshots.KindActive {
