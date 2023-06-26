@@ -21,8 +21,10 @@ import (
 )
 
 const (
-	chunkMapFileSuffix = ".chunk_map"
-	metaFileSuffix     = ".blob.meta"
+	imageDiskFileSuffix = ".image.disk"
+	layerDiskFileSuffix = ".layer.disk"
+	chunkMapFileSuffix  = ".chunk_map"
+	metaFileSuffix      = ".blob.meta"
 	// Blob cache is suffixed after nydus v2.1
 	dataFileSuffix = ".blob.data"
 )
@@ -72,8 +74,10 @@ func (m *Manager) CacheUsage(ctx context.Context, blobID string) (snapshots.Usag
 	blobCacheSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix)
 	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
 	blobMeta := path.Join(m.cacheDir, blobID+metaFileSuffix)
+	imageDisk := path.Join(m.cacheDir, blobID+imageDiskFileSuffix)
+	layerDisk := path.Join(m.cacheDir, blobID+layerDiskFileSuffix)
 
-	stuffs := []string{blobCachePath, blobCacheSuffixedPath, blobChunkMap, blobMeta}
+	stuffs := []string{blobCachePath, blobCacheSuffixedPath, blobChunkMap, blobMeta, imageDisk, layerDisk}
 
 	for _, f := range stuffs {
 		du, err := fs.DiskUsage(ctx, f)
@@ -95,9 +99,11 @@ func (m *Manager) RemoveBlobCache(blobID string) error {
 	blobCacheSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix)
 	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
 	blobMeta := path.Join(m.cacheDir, blobID+metaFileSuffix)
+	imageDisk := path.Join(m.cacheDir, blobID+imageDiskFileSuffix)
+	layerDisk := path.Join(m.cacheDir, blobID+layerDiskFileSuffix)
 
 	// NOTE: Delete chunk bitmap file before data blob
-	stuffs := []string{blobChunkMap, blobMeta, blobCachePath, blobCacheSuffixedPath}
+	stuffs := []string{blobChunkMap, blobMeta, blobCachePath, blobCacheSuffixedPath, imageDisk, layerDisk}
 
 	for _, f := range stuffs {
 		err := os.Remove(f)

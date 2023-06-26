@@ -49,16 +49,19 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 		}
 	}
 
-	go func() {
-		if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifestDigest, layerDigest, upperDirPath); err != nil {
-			log.L.WithError(err).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
-		}
-		if limiter != nil {
-			limiter.Release(1)
-		}
-	}()
+	if err := fs.tarfsMgr.PrepareLayer(snapshotID, ref, manifestDigest, layerDigest, upperDirPath); err != nil {
+		log.L.WithError(err).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
+	}
+	if limiter != nil {
+		limiter.Release(1)
+	}
 
 	return nil
+}
+
+func (fs *Filesystem) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[string]string,
+	storageLocater func(string) string) ([]string, error) {
+	return fs.tarfsMgr.ExportBlockData(s, perLayer, labels, storageLocater)
 }
 
 func (fs *Filesystem) MergeTarfsLayers(s storage.Snapshot, storageLocater func(string) string) error {

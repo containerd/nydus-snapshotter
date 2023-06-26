@@ -101,18 +101,21 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}
 	}
 
-	blockdevManager, err := mgr.NewManager(mgr.Opt{
-		NydusdBinaryPath: "",
-		Database:         db,
-		CacheDir:         cfg.CacheManagerConfig.CacheDir,
-		RootDir:          cfg.Root,
-		RecoverPolicy:    rp,
-		FsDriver:         config.FsDriverBlockdev,
-		DaemonConfig:     daemonConfig,
-		CgroupMgr:        cgroupMgr,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "create blockdevice manager")
+	var blockdevManager *mgr.Manager
+	if cfg.Experimental.TarfsConfig.EnableTarfs {
+		blockdevManager, err = mgr.NewManager(mgr.Opt{
+			NydusdBinaryPath: "",
+			Database:         db,
+			CacheDir:         cfg.CacheManagerConfig.CacheDir,
+			RootDir:          cfg.Root,
+			RecoverPolicy:    rp,
+			FsDriver:         config.FsDriverBlockdev,
+			DaemonConfig:     daemonConfig,
+			CgroupMgr:        cgroupMgr,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "create blockdevice manager")
+		}
 	}
 
 	var fscacheManager *mgr.Manager
@@ -205,12 +208,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
 
-	if cfg.Experimental.EnableTarfs {
+	if cfg.Experimental.TarfsConfig.EnableTarfs {
 		// FIXME: get the insecure option from nydusd config.
 		_, backendConfig := daemonConfig.StorageBackend()
-		tarfsMgr := tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsHint,
+		tarfsMgr := tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsConfig.TarfsHint,
 			cacheConfig.CacheDir, cfg.DaemonConfig.NydusImagePath,
-			int64(cfg.Experimental.TarfsMaxConcurrentProc))
+			int64(cfg.Experimental.TarfsConfig.MaxConcurrentProc))
 		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
 	}
 
@@ -344,6 +347,8 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 				usage.Add(cacheUsage)
 			}
 		}
+	case snapshots.KindUnknown:
+	case snapshots.KindView:
 	}
 
 	return usage, nil
@@ -406,6 +411,8 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 			}
 		}
+	case snapshots.KindCommitted:
+	case snapshots.KindUnknown:
 	}
 
 	if o.fs.ReferrerDetectEnabled() && !needRemoteMounts {
@@ -507,6 +514,18 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		if !o.fs.IsMountedTarfsLayer(pID) {
 			if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
 				return nil, errors.Wrapf(err, "tarfs merge fail %s", pID)
+			}
+			if config.GetTarfsExportEnabled() {
+				updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
+				if err != nil {
+					return nil, errors.Wrap(err, "export tarfs as block image")
+				}
+				if len(updateFields) > 0 {
+					_, err = o.Update(ctx, pInfo, updateFields...)
+					if err != nil {
+						return nil, errors.Wrapf(err, "update snapshot label information")
+					}
+				}
 			}
 			if err := o.fs.Mount(pID, pInfo.Labels, &s); err != nil {
 				return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)

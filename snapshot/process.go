@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/containerd/mount"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
 )
@@ -93,6 +94,12 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					logger.Warnf("snapshot ID %s can't be converted into tarfs, fallback to containerd, err: %v", s.ID, err)
 				} else {
 					logger.Debugf("convert OCIv1 layer to tarfs")
+					if config.GetTarfsExportEnabled() {
+						_, err = sn.fs.ExportBlockData(s, true, labels, func(id string) string { return sn.upperPath(id) })
+						if err != nil {
+							return nil, "", errors.Wrap(err, "export layer as tarfs block device")
+						}
+					}
 					labels[label.NydusTarfsLayer] = "true"
 					handler = skipHandler
 				}
@@ -150,6 +157,12 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
 				if err != nil {
 					return nil, "", errors.Wrap(err, "merge tarfs layers")
+				}
+				if config.GetTarfsExportEnabled() {
+					_, err = sn.fs.ExportBlockData(s, false, labels, func(id string) string { return sn.upperPath(id) })
+					if err != nil {
+						return nil, "", errors.Wrap(err, "export image as tarfs block device")
+					}
 				}
 				handler = remoteHandler(id, pInfo.Labels)
 			}
