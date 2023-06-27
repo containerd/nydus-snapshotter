@@ -151,10 +151,15 @@ func (r dockerFetcher) Fetch(ctx context.Context, desc ocispec.Descriptor) (io.R
 	})
 }
 
-func (r dockerFetcher) createGetReq(ctx context.Context, host RegistryHost, ps ...string) (*request, int64, error) {
+func (r dockerFetcher) createGetReq(ctx context.Context, host RegistryHost, mediatype string, ps ...string) (*request, int64, error) {
 	headReq := r.request(host, http.MethodHead, ps...)
 	if err := headReq.addNamespace(r.refspec.Hostname()); err != nil {
 		return nil, 0, err
+	}
+	if mediatype == "" {
+		headReq.header.Set("Accept", "*/*")
+	} else {
+		headReq.header.Set("Accept", strings.Join([]string{mediatype, `*/*`}, ", "))
 	}
 
 	headResp, err := headReq.doWithRetries(ctx, nil)
@@ -190,13 +195,14 @@ func (r dockerFetcher) FetchByDigest(ctx context.Context, dgst digest.Digest) (i
 	}
 
 	var (
-		getReq   *request
-		sz       int64
-		firstErr error
+		getReq    *request
+		sz        int64
+		firstErr  error
+		mediaType string
 	)
 
 	for _, host := range r.hosts {
-		getReq, sz, err = r.createGetReq(ctx, host, "blobs", dgst.String())
+		getReq, sz, err = r.createGetReq(ctx, host, mediaType, "blobs", dgst.String())
 		if err == nil {
 			break
 		}
@@ -208,8 +214,15 @@ func (r dockerFetcher) FetchByDigest(ctx context.Context, dgst digest.Digest) (i
 
 	if getReq == nil {
 		// Fall back to the "manifests" endpoint
+		// TODO: this change should be upstreamed to containerd.
+		mediaType = strings.Join([]string{
+			images.MediaTypeDockerSchema2Manifest,
+			images.MediaTypeDockerSchema2ManifestList,
+			ocispec.MediaTypeImageManifest,
+			ocispec.MediaTypeImageIndex,
+		}, ", ")
 		for _, host := range r.hosts {
-			getReq, sz, err = r.createGetReq(ctx, host, "manifests", dgst.String())
+			getReq, sz, err = r.createGetReq(ctx, host, mediaType, "manifests", dgst.String())
 			if err == nil {
 				break
 			}
@@ -231,7 +244,7 @@ func (r dockerFetcher) FetchByDigest(ctx context.Context, dgst digest.Digest) (i
 	}
 
 	seeker, err := newHTTPReadSeeker(sz, func(offset int64) (rc io.ReadCloser, err error) {
-		rc, _, err = r.open(ctx, getReq, "", offset)
+		rc, _, err = r.open(ctx, getReq, mediaType, offset)
 		return
 	})
 	if err != nil {
