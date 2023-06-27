@@ -74,7 +74,7 @@ jobs:
           sudo make install-optimizer
           sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
           sudo systemctl restart containerd
-          systemctl status containerd  --no-pager -l
+          systemctl status containerd --no-pager -l
       - name: Generate accessed files list
         run: |
           sed -i "s|host_path: script|host_path: $(pwd)/misc/optimizer/script|g" misc/optimizer/nginx.yaml
@@ -91,3 +91,10 @@ jobs:
             exit 1
           fi
           cat /opt/nri/optimizer/results/library/nginx:1.23.3.csv
+      - name: Dump logs
+        if: failure()
+        continue-on-error: true
+        run: |
+          systemctl status containerd --no-pager -l
+          journalctl -xeu containerd --no-pager
+          
