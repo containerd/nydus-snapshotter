@@ -17,45 +17,41 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/containerd/nydus-snapshotter/pkg/fanotify/conn"
+	"github.com/containerd/nydus-snapshotter/pkg/optimizer/fanotify/conn"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/display"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 type Server struct {
-	BinaryPath   string
-	ContainerPid uint32
-	ImageName    string
-	PersistFile  string
-	Readable     bool
-	Overwrite    bool
-	Timeout      time.Duration
-	Client       *conn.Client
-	Cmd          *exec.Cmd
-	LogWriter    *syslog.Writer
+	BinaryPath     string
+	ContainerPid   uint32
+	ImageName      string
+	PersistFile    *os.File
+	PersistCSVFile *os.File
+	Readable       bool
+	Overwrite      bool
+	Timeout        time.Duration
+	Client         *conn.Client
+	Cmd            *exec.Cmd
+	LogWriter      *syslog.Writer
 }
 
-func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, readable bool, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) *Server {
-	return &Server{
-		BinaryPath:   binaryPath,
-		ContainerPid: containerPid,
-		ImageName:    imageName,
-		PersistFile:  persistFile,
-		Readable:     readable,
-		Overwrite:    overwrite,
-		Timeout:      timeout,
-		LogWriter:    logWriter,
+func NewServer(binaryPath string, containerPid uint32, imageName string, file *os.File, csvFile *os.File, readable bool, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) Server {
+	return Server{
+		BinaryPath:     binaryPath,
+		ContainerPid:   containerPid,
+		ImageName:      imageName,
+		PersistFile:    file,
+		PersistCSVFile: csvFile,
+		Readable:       readable,
+		Overwrite:      overwrite,
+		Timeout:        timeout,
+		LogWriter:      logWriter,
 	}
 }
 
-func (fserver *Server) RunServer() error {
-	if !fserver.Overwrite {
-		if file, err := os.Stat(fserver.PersistFile); err == nil && !file.IsDir() {
-			return nil
-		}
-	}
-
+func (fserver Server) Start() error {
 	cmd := exec.Command(fserver.BinaryPath)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWNS,
@@ -79,7 +75,7 @@ func (fserver *Server) RunServer() error {
 	fserver.Cmd = cmd
 
 	go func() {
-		if err := fserver.RunReceiver(); err != nil {
+		if err := fserver.Receive(); err != nil {
 			logrus.WithError(err).Errorf("Failed to receive event information from server")
 		}
 	}()
@@ -87,28 +83,18 @@ func (fserver *Server) RunServer() error {
 	if fserver.Timeout > 0 {
 		go func() {
 			time.Sleep(fserver.Timeout)
-			fserver.StopServer()
+			fserver.Stop()
 		}()
 	}
 
 	return nil
 }
 
-func (fserver *Server) RunReceiver() error {
-	f, err := os.OpenFile(fserver.PersistFile, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return errors.Wrapf(err, "failed to open file %q", fserver.PersistFile)
-	}
-	defer f.Close()
+func (fserver Server) Receive() error {
+	defer fserver.PersistFile.Close()
+	defer fserver.PersistCSVFile.Close()
 
-	persistCsvFile := fmt.Sprintf("%s.csv", fserver.PersistFile)
-	fCsv, err := os.Create(persistCsvFile)
-	if err != nil {
-		return errors.Wrapf(err, "failed to create file %q", persistCsvFile)
-	}
-	defer fCsv.Close()
-
-	csvWriter := csv.NewWriter(fCsv)
+	csvWriter := csv.NewWriter(fserver.PersistCSVFile)
 	if err := csvWriter.Write([]string{"path", "size", "elapsed"}); err != nil {
 		return errors.Wrapf(err, "failed to write csv header")
 	}
@@ -125,7 +111,7 @@ func (fserver *Server) RunReceiver() error {
 		}
 
 		if eventInfo != nil {
-			fmt.Fprintln(f, eventInfo.Path)
+			fmt.Fprintln(fserver.PersistFile, eventInfo.Path)
 
 			var line []string
 			if fserver.Readable {
@@ -143,7 +129,7 @@ func (fserver *Server) RunReceiver() error {
 	return nil
 }
 
-func (fserver *Server) StopServer() {
+func (fserver Server) Stop() {
 	if fserver.Cmd != nil {
 		logrus.Infof("Send SIGTERM signal to process group %d", fserver.Cmd.Process.Pid)
 		if err := syscall.Kill(-fserver.Cmd.Process.Pid, syscall.SIGTERM); err != nil {
