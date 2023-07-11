@@ -26,14 +26,15 @@ type DaemonCommand struct {
 	Upgrade        bool   `type:"flag" name:"upgrade" default:""`
 	ThreadNum      string `type:"param" name:"thread-num"`
 	// `--id` is required by `--supervisor` when starting nydusd
-	ID         string `type:"param" name:"id"`
-	Config     string `type:"param" name:"config"`
-	Bootstrap  string `type:"param" name:"bootstrap"`
-	Mountpoint string `type:"param" name:"mountpoint"`
-	APISock    string `type:"param" name:"apisock"`
-	LogLevel   string `type:"param" name:"log-level"`
-	Supervisor string `type:"param" name:"supervisor"`
-	LogFile    string `type:"param" name:"log-file"`
+	ID              string `type:"param" name:"id"`
+	Config          string `type:"param" name:"config"`
+	Bootstrap       string `type:"param" name:"bootstrap"`
+	Mountpoint      string `type:"param" name:"mountpoint"`
+	APISock         string `type:"param" name:"apisock"`
+	LogLevel        string `type:"param" name:"log-level"`
+	LogRotationSize int    `type:"param" name:"log-rotation-size"`
+	Supervisor      string `type:"param" name:"supervisor"`
+	LogFile         string `type:"param" name:"log-file"`
 }
 
 // Build exec style command line
@@ -155,6 +156,12 @@ func WithLogFile(l string) Opt {
 func WithLogLevel(l string) Opt {
 	return func(cmd *DaemonCommand) {
 		cmd.LogLevel = l
+	}
+}
+
+func WithLogRotationSize(l int) Opt {
+	return func(cmd *DaemonCommand) {
+		cmd.LogRotationSize = l
 	}
 }
 

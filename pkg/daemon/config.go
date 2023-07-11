@@ -65,6 +65,13 @@ func WithLogLevel(logLevel string) NewDaemonOpt {
 	}
 }
 
+func WithLogRotationSize(logRotationSize int) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.States.LogRotationSize = logRotationSize
+		return nil
+	}
+}
+
 func WithConfigDir(dir string) NewDaemonOpt {
 	return func(d *Daemon) error {
 		s := filepath.Join(dir, d.ID())

@@ -124,6 +124,7 @@ type DaemonConfig struct {
 	RecoverPolicy    string `toml:"recover_policy"`
 	FsDriver         string `toml:"fs_driver"`
 	ThreadsNumber    int    `toml:"threads_number"`
+	LogRotationSize  int    `toml:"log_rotation_size"`
 }
 
 type LoggingConfig struct {
@@ -227,6 +228,7 @@ func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "load toml configuration from file %q", path)
 	}
+
 	if err = tree.Unmarshal(&config); err != nil {
 		return nil, errors.Wrap(err, "unmarshal snapshotter configuration")
 	}
