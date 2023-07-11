@@ -79,6 +79,10 @@ func GetLogLevel() string {
 	return globalConfig.origin.LoggingConfig.LogLevel
 }
 
+func GetDaemonLogRotationSize() int {
+	return globalConfig.origin.DaemonConfig.LogRotationSize
+}
+
 func GetDaemonThreadsNumber() int {
 	return globalConfig.origin.DaemonConfig.ThreadsNumber
 }
