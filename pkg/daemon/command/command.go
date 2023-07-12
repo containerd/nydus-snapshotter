@@ -62,7 +62,7 @@ func BuildCommand(opts []Opt) ([]string, error) {
 
 			value := v.Field(i).Interface()
 
-			pair := []string{fmt.Sprintf("--%s", tag.Get("name")), fmt.Sprintf("%s", value)}
+			pair := []string{fmt.Sprintf("--%s", tag.Get("name")), fmt.Sprintf("%v", value)}
 			args = append(args, pair...)
 		case "subcommand":
 			// Zero value will be skipped appending to command line
