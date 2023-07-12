@@ -47,6 +47,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			RecoverPolicy:    "restart",
 			NydusdConfigPath: "/etc/nydus/nydusd-config.fusedev.json",
 			ThreadsNumber:    4,
+			LogRotationSize:  100,
 		},
 		SnapshotsConfig: SnapshotConfig{
 			EnableNydusOverlayFS: false,
@@ -77,7 +78,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			RotateLogLocalTime:  true,
 			RotateLogMaxAge:     7,
 			RotateLogMaxBackups: 5,
-			RotateLogMaxSize:    1,
+			RotateLogMaxSize:    100,
 			LogToStdout:         false,
 		},
 		MetricsConfig: MetricsConfig{
