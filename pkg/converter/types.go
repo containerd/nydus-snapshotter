@@ -79,6 +79,8 @@ type PackOption struct {
 	Backend Backend
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
+	// Whether the generated Nydus blobs should be encrypted.
+	Encrypt bool
 
 	// Features keeps a feature list supported by newer version of builder,
 	// It is detected automatically, so don't export it.
