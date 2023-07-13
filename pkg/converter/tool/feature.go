@@ -32,6 +32,9 @@ const (
 	// into a big batch chunk, which can reduce the the size of the image
 	// and accelerate the runtime file loading.
 	FeatureBatchSize Feature = "--batch-size"
+	// The option `--encrypt` enables converting directories, tar files
+	// or OCI images into encrypted nydus blob.
+	FeatureEncrypt Feature = "--encrypt"
 )
 
 var requiredFeatures Features

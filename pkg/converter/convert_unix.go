@@ -326,6 +326,9 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 	if opt.BatchSize != "" && opt.BatchSize != "0" {
 		requiredFeatures.Add(tool.FeatureBatchSize)
 	}
+	if opt.Encrypt {
+		requiredFeatures.Add(tool.FeatureEncrypt)
+	}
 
 	detectedFeatures, err := tool.DetectFeatures(builderPath, requiredFeatures, tool.GetHelp)
 	if err != nil {
@@ -407,6 +410,7 @@ func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, buil
 				ChunkSize:        opt.ChunkSize,
 				Compressor:       opt.Compressor,
 				Timeout:          opt.Timeout,
+				Encrypt:          opt.Encrypt,
 
 				Features: opt.features,
 			})
@@ -510,6 +514,7 @@ func packFromTar(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteC
 				BatchSize:        opt.BatchSize,
 				Compressor:       opt.Compressor,
 				Timeout:          opt.Timeout,
+				Encrypt:          opt.Encrypt,
 
 				Features: opt.features,
 			})
@@ -852,6 +857,10 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 			newDesc.Annotations[label.NydusRefLayer] = desc.Digest.String()
 		}
 
+		if opt.Encrypt {
+			newDesc.Annotations[LayerAnnotationNydusEncryptedBlob] = "true"
+		}
+
 		if opt.Backend != nil {
 			if err := opt.Backend.Push(ctx, cs, newDesc); err != nil {
 				return nil, errors.Wrap(err, "push to storage backend")
@@ -1134,6 +1143,11 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		if opt.OCIRef {
 			blobDesc.Annotations[label.NydusRefLayer] = layers[idx].OriginalDigest.String()
 		}
+
+		if len(opt.EncryptRecipients) != 0 {
+			blobDesc.Annotations[LayerAnnotationNydusEncryptedBlob] = "true"
+		}
+
 		blobDescs = append(blobDescs, blobDesc)
 	}
 

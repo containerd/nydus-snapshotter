@@ -375,6 +375,71 @@ func TestDetectFeature(t *testing.T) {
 					  Print help information
 			`),
 		},
+		{
+			name:    "'--encrypt' is supported in v2.2.0-261-g22ad0e2c",
+			feature: FeatureEncrypt,
+			expect:  true,
+			helpMsg: []byte(`
+			Create RAFS filesystems from directories, tar files or OCI images
+
+			Usage: nydus-image create [OPTIONS] <SOURCE>
+
+			Arguments:
+			<SOURCE>  source from which to build the RAFS filesystem
+
+			Options:
+			-L, --log-file <log-file>
+					Log file path
+			-t, --type <type>
+					Conversion type: [default: dir-rafs] [possible values: directory, dir-rafs, estargz-rafs, estargz-ref, estargztoc-ref, tar-rafs, tar-tarfs, targz-rafs, targz-ref, stargz_index]
+			-B, --bootstrap <bootstrap>
+					File path to save the generated RAFS metadata blob
+			-l, --log-level <log-level>
+					Log level: [default: info] [possible values: trace, debug, info, warn, error]
+			-D, --blob-dir <blob-dir>
+					Directory path to save generated RAFS metadata and data blobs
+			-b, --blob <blob>
+					File path to save the generated RAFS data blob
+				--blob-inline-meta
+					Inline RAFS metadata and blob metadata into the data blob
+				--blob-id <blob-id>
+					OSS object id for the generated RAFS data blob
+				--blob-data-size <blob-data-size>
+					Set data blob size for 'estargztoc-ref' conversion
+				--chunk-size <chunk-size>
+					Set the size of data chunks, must be power of two and between 0x1000-0x1000000:
+				--batch-size <batch-size>
+					Set the batch size to merge small chunks, must be power of two, between 0x1000-0x1000000 or be zero: [default: 0]
+				--compressor <compressor>
+					Algorithm to compress data chunks: [default: zstd] [possible values: none, lz4_block, zstd]
+				--digester <digester>
+					Algorithm to digest data chunks: [default: blake3] [possible values: blake3, sha256]
+			-C, --config <config>
+					Configuration file for storage backend, cache and RAFS FUSE filesystem.
+			-v, --fs-version <fs-version>
+					Set RAFS format version number: [default: 6] [possible values: 5, 6]
+				--features <features>
+					Enable/disable features [possible values: blob-toc]
+				--chunk-dict <chunk-dict>
+					File path of chunk dictionary for data deduplication
+				--parent-bootstrap <parent-bootstrap>
+					File path of the parent/referenced RAFS metadata blob (optional)
+				--aligned-chunk
+					Align uncompressed data chunks to 4K, only for RAFS V5
+				--repeatable
+					Generate reproducible RAFS metadata
+				--whiteout-spec <whiteout-spec>
+					Set the type of whiteout specification: [default: oci] [possible values: oci, overlayfs, none]
+				--prefetch-policy <prefetch-policy>
+					Set data prefetch policy [default: none] [possible values: fs, blob, none]
+			-J, --output-json <output-json>
+					File path to save operation result in JSON format
+			-E, --encrypt
+					Encrypt the generated RAFS metadata and data blobs
+			-h, --help
+					Print help information
+			`),
+		},
 
 		{
 			name:    "'--type tar-rafs' is not supported in v2.1.4",
@@ -553,6 +618,69 @@ func TestDetectFeature(t *testing.T) {
 			`),
 		},
 		{
+			name:    "'--encrypt' is not supported in v2.2.0",
+			feature: FeatureEncrypt,
+			expect:  false,
+			helpMsg: []byte(`
+			Create RAFS filesystems from directories, tar files or OCI images
+
+			Usage: nydus-image create [OPTIONS] <SOURCE>
+
+			Arguments:
+			<SOURCE>  source from which to build the RAFS filesystem
+
+			Options:
+			-L, --log-file <log-file>
+					Log file path
+			-t, --type <type>
+					Conversion type: [default: dir-rafs] [possible values: directory, dir-rafs, estargz-rafs, estargz-ref, estargztoc-ref, tar-rafs, tar-tarfs, targz-rafs, targz-ref, stargz_index]
+			-B, --bootstrap <bootstrap>
+					File path to save the generated RAFS metadata blob
+			-l, --log-level <log-level>
+					Log level: [default: info] [possible values: trace, debug, info, warn, error]
+			-D, --blob-dir <blob-dir>
+					Directory path to save generated RAFS metadata and data blobs
+			-b, --blob <blob>
+					File path to save the generated RAFS data blob
+				--blob-inline-meta
+					Inline RAFS metadata and blob metadata into the data blob
+				--blob-id <blob-id>
+					OSS object id for the generated RAFS data blob
+				--blob-data-size <blob-data-size>
+					Set data blob size for 'estargztoc-ref' conversion
+				--chunk-size <chunk-size>
+					Set the size of data chunks, must be power of two and between 0x1000-0x1000000:
+				--batch-size <batch-size>
+					Set the batch size to merge small chunks, must be power of two, between 0x1000-0x1000000 or be zero: [default: 0]
+				--compressor <compressor>
+					Algorithm to compress data chunks: [default: zstd] [possible values: none, lz4_block, zstd]
+				--digester <digester>
+					Algorithm to digest data chunks: [default: blake3] [possible values: blake3, sha256]
+			-C, --config <config>
+					Configuration file for storage backend, cache and RAFS FUSE filesystem.
+			-v, --fs-version <fs-version>
+					Set RAFS format version number: [default: 6] [possible values: 5, 6]
+				--features <features>
+					Enable/disable features [possible values: blob-toc]
+				--chunk-dict <chunk-dict>
+					File path of chunk dictionary for data deduplication
+				--parent-bootstrap <parent-bootstrap>
+					File path of the parent/referenced RAFS metadata blob (optional)
+				--aligned-chunk
+					Align uncompressed data chunks to 4K, only for RAFS V5
+				--repeatable
+					Generate reproducible RAFS metadata
+				--whiteout-spec <whiteout-spec>
+					Set the type of whiteout specification: [default: oci] [possible values: oci, overlayfs, none]
+				--prefetch-policy <prefetch-policy>
+					Set data prefetch policy [default: none] [possible values: fs, blob, none]
+			-J, --output-json <output-json>
+					File path to save operation result in JSON format
+			-h, --help
+					Print help information
+			`),
+		},
+		{
 			name:    "detectFeature should support empty input",
 			feature: "",
 			expect:  false,
@@ -597,7 +725,7 @@ func TestDetectFeatures(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:            "should not support '--batch-size' and '--type tar-rafs' in v2.1.4",
+			name:            "should not support '--encrypt', '--batch-size' or '--type tar-rafs' in v2.1.4",
 			resetGlobal:     true,
 			disableTar2Rafs: true,
 			helpText: []byte(`
@@ -662,7 +790,7 @@ func TestDetectFeatures(t *testing.T) {
 			ARGS:
 				<SOURCE>...    source path to build the nydus image from
 			`),
-			required:  Features{FeatureTar2Rafs: {}, FeatureBatchSize: {}},
+			required:  Features{FeatureTar2Rafs: {}, FeatureBatchSize: {}, FeatureEncrypt: {}},
 			detected:  Features{},
 			expectErr: false,
 		},

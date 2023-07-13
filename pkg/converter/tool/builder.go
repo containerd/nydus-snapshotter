@@ -40,6 +40,7 @@ type PackOption struct {
 	AlignedChunk     bool
 	ChunkSize        string
 	BatchSize        string
+	Encrypt          bool
 	Timeout          *time.Duration
 
 	Features Features
@@ -135,6 +136,9 @@ func buildPackArgs(option PackOption) []string {
 	}
 	if option.Features.Contains(FeatureBatchSize) {
 		args = append(args, "--batch-size", option.BatchSize)
+	}
+	if option.Encrypt {
+		args = append(args, "--encrypt")
 	}
 	args = append(args, option.SourcePath)
 
