@@ -28,18 +28,10 @@ const defaultHungIOInterval = 10 * time.Second
 type ServerOpt func(*Server) error
 
 type Server struct {
-	rootDir           string
 	managers          []*manager.Manager
 	snCollectors      []*collector.SnapshotterMetricsCollector
 	fsCollector       *collector.FsMetricsVecCollector
 	inflightCollector *collector.InflightMetricsVecCollector
-}
-
-func WithRootDir(rootDir string) ServerOpt {
-	return func(s *Server) error {
-		s.rootDir = rootDir
-		return nil
-	}
 }
 
 func WithProcessManager(pm *manager.Manager) ServerOpt {
