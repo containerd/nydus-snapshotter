@@ -582,6 +582,7 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 		daemon.WithConfigDir(config.GetConfigRoot()),
 		daemon.WithLogDir(config.GetLogDir()),
 		daemon.WithLogLevel(config.GetLogLevel()),
+		daemon.WithLogRotationSize(config.GetDaemonLogRotationSize()),
 		daemon.WithLogToStdout(config.GetLogToStdout()),
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(fsManager.FsDriver),

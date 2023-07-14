@@ -32,6 +32,9 @@ recover_policy = "restart"
 # Nydusd worker thread number to handle FUSE or fscache requests, [0-1024].
 # Setting to 0 will use the default configuration of nydusd.
 threads_number = 4
+# Log rotation size for nydusd, in unit MB(megabytes)
+log_rotation_size = 100
+
 
 [cgroup]
 # Whether to use separate cgroup for nydusd.
@@ -52,7 +55,7 @@ log_rotation_local_time = true
 log_rotation_max_age = 7
 log_rotation_max_backups = 5
 # In unit MB(megabytes)
-log_rotation_max_size = 1
+log_rotation_max_size = 100
 
 [metrics]
 # Enable by assigning an address, empty indicates metrics server is disabled
