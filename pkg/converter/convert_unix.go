@@ -1009,10 +1009,12 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 	// Update the config gc label
 	manifestLabels[configGCLabelKey] = newConfigDesc.Digest.String()
 
-	// Associate a reference to the original OCI manifest.
-	// See the `subject` field description in
-	// https://github.com/opencontainers/image-spec/blob/main/manifest.md#image-manifest-property-descriptions
-	manifest.Subject = &oldDesc
+	if opt.WithReferrer {
+		// Associate a reference to the original OCI manifest.
+		// See the `subject` field description in
+		// https://github.com/opencontainers/image-spec/blob/main/manifest.md#image-manifest-property-descriptions
+		manifest.Subject = &oldDesc
+	}
 
 	// Update image manifest in content store.
 	newManifestDesc, err := writeJSON(ctx, cs, manifest, manifestDesc, manifestLabels)
