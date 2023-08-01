@@ -60,7 +60,6 @@ func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
 type MirrorConfig struct {
 	Host                string            `json:"host,omitempty"`
 	Headers             map[string]string `json:"headers,omitempty"`
-	AuthThrough         bool              `json:"auth_through,omitempty"`
 	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
 	FailureLimit        uint8             `json:"failure_limit,omitempty"`
 	PingURL             string            `json:"ping_url,omitempty"`

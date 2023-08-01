@@ -43,7 +43,6 @@ func TestLoadMirrorConfig(t *testing.T) {
 	buf1 := []byte(`server = "https://default-docker.hub.com"
 	[host]
 	  [host."http://default-p2p-mirror1:65001"]
-		auth_through = true
 		[host."http://default-p2p-mirror1:65001".header]
 		  X-Dragonfly-Registry = ["https://default-docker.hub.com"]
 	`)
@@ -53,7 +52,6 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(mirrors), 1)
 	require.Equal(t, mirrors[0].Host, "http://default-p2p-mirror1:65001")
-	require.Equal(t, mirrors[0].AuthThrough, true)
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://default-docker.hub.com")
 
 	err = os.MkdirAll(registryHostConfigDir, os.ModePerm)
@@ -71,7 +69,6 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(mirrors), 1)
 	require.Equal(t, mirrors[0].Host, "http://p2p-mirror1:65001")
-	require.Equal(t, mirrors[0].AuthThrough, false)
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
 
 	buf3 := []byte(`
@@ -85,6 +82,5 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(mirrors), 1)
 	require.Equal(t, mirrors[0].Host, "http://p2p-mirror2:65001")
-	require.Equal(t, mirrors[0].AuthThrough, false)
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
 }

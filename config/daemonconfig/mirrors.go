@@ -30,7 +30,6 @@ type HostFileConfig struct {
 	OverridePath bool                   `toml:"override_path"`
 
 	// The following configuration items are specific to nydus.
-	AuthThrough         bool   `toml:"auth_through,omitempty"`
 	HealthCheckInterval int    `toml:"health_check_interval,omitempty"`
 	FailureLimit        uint8  `toml:"failure_limit,omitempty"`
 	PingURL             string `toml:"ping_url,omitempty"`
@@ -41,7 +40,6 @@ type hostConfig struct {
 	Host   string
 	Header http.Header
 
-	AuthThrough         bool
 	HealthCheckInterval int
 	FailureLimit        uint8
 	PingURL             string
@@ -69,7 +67,6 @@ func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
 
 	for i, host := range hosts {
 		parsedMirrors[i].Host = fmt.Sprintf("%s://%s", host.Scheme, host.Host)
-		parsedMirrors[i].AuthThrough = host.AuthThrough
 		parsedMirrors[i].HealthCheckInterval = host.HealthCheckInterval
 		parsedMirrors[i].FailureLimit = host.FailureLimit
 		parsedMirrors[i].PingURL = host.PingURL
@@ -176,7 +173,6 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 		result.Header = header
 	}
 
-	result.AuthThrough = config.AuthThrough
 	result.HealthCheckInterval = config.HealthCheckInterval
 	result.FailureLimit = config.FailureLimit
 	result.PingURL = config.PingURL
