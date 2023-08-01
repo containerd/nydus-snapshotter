@@ -168,6 +168,7 @@ type AuthConfig struct {
 	// CRI proxy mode
 	EnableCRIKeychain   bool   `toml:"enable_cri_keychain"`
 	ImageServiceAddress string `toml:"image_service_address"`
+	EnableKeyring       bool   `toml:"enable_keyring"`
 }
 
 // Configure remote storage like container registry
