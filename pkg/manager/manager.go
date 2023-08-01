@@ -20,6 +20,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
@@ -139,6 +140,9 @@ type Manager struct {
 	// Cgroup manager for nydusd
 	CgroupMgr *cgroup.Manager
 
+	// Cache for registry authorization
+	AuthCache *auth.Cache
+
 	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
 	FsDriver string
 
@@ -222,7 +226,7 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 			break
 		}
 
-		if err := d.SharedMount(r); err != nil {
+		if err := d.SharedMount(r, m.AuthCache); err != nil {
 			log.L.Warnf("Failed to mount rafs instance, %v", err)
 		}
 	}
@@ -284,6 +288,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		SupervisorSet:    supervisorSet,
 		DaemonConfig:     opt.DaemonConfig,
 		CgroupMgr:        opt.CgroupMgr,
+		AuthCache:        auth.NewCache(),
 		FsDriver:         opt.FsDriver,
 	}
 

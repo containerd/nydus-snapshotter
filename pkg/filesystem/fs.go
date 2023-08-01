@@ -25,6 +25,7 @@ import (
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
@@ -132,7 +133,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			return nil, errors.Wrapf(err, "wait for daemon %s", d.ID())
 		}
-		if err := d.RecoveredMountInstances(); err != nil {
+		if err := d.RecoveredMountInstances(fsManager.AuthCache); err != nil {
 			return nil, errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
 		}
 		fs.TryRetainSharedDaemon(d)
@@ -298,7 +299,9 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string) (err er
 			daemonconfig.CacheDir:  cacheDir,
 		}
 		cfg := deepcopy.Copy(fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
-		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
+		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params, func(imageHost string, keyChain *auth.PassKeyChain) error {
+			return fsManager.AuthCache.UpdateAuth(imageHost, keyChain.ToBase64())
+		})
 		if err != nil {
 			return errors.Wrap(err, "supplement configuration")
 		}
@@ -490,7 +493,7 @@ func (fs *Filesystem) mountRemote(fsManager *manager.Manager, useSharedDaemon bo
 		} else {
 			r.SetMountpoint(path.Join(r.GetSnapshotDir(), "mnt"))
 		}
-		if err := d.SharedMount(r); err != nil {
+		if err := d.SharedMount(r, fsManager.AuthCache); err != nil {
 			return errors.Wrapf(err, "failed to mount")
 		}
 	} else {
