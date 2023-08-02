@@ -157,14 +157,11 @@ Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the con
   "mirrors": [
     {
       "host": "http://127.0.0.1:65001",
-      "headers": "https://index.docker.io/v1/",
-      "auth_through": false
+      "headers": "https://index.docker.io/v1/"
     }
   ]
 }
 ```
-
-`auth_through=false` means nydusd's authentication request will directly go to original registry rather than relayed by Dragonfly.
 
 ### Hot updating mirror configurations
 
@@ -180,7 +177,6 @@ Configuration file is compatible with containerd's configuration file in toml fo
 ```toml
 [host]
   [host."http://127.0.0.1:65001"]
-    auth_through = false
     [host."http://127.0.0.1:65001".header]
       # NOTE: For Dragonfly, the HTTP scheme must be explicitly specified.
       X-Dragonfly-Registry = ["https://p2p-nydus.com"]
