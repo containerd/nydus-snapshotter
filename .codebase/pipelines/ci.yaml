@@ -1,0 +1,41 @@
+name: CI
+trigger:
+  change:
+
+jobs:
+  build:
+    name: Build and Lint
+    image: hub.byted.org/codebase/ci_go_latest
+    steps:
+      - name: Install golangci-lint
+        commands:
+          - go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
+      - name: Build
+        commands:
+          - export PATH=$PATH:$(go env GOPATH)/bin
+          - make
+      # - name: Test
+      #   commands:
+      #     - make test
+      - name: Check
+        commands:
+          - make check
+
+  scm_build:
+    name: SCM Build
+    image: hub.byted.org/codebase/ci_go_latest
+    steps:
+      - name: Setup rust
+        commands:
+          - export RUSTUP_DIST_SERVER="https://rsproxy.cn"
+          - export RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
+          - curl --proto '=https' --tlsv1.2 -sSf https://rsproxy.cn/rustup-init.sh | sh -s -- -y
+      - name: Build
+        commands:
+          - export PATH=$HOME/.cargo/bin:$PATH
+          - ./build.sh
+      - name: Upload Artifact
+        uses: actions/upload-artifact
+        inputs:
+          name: nydus-snapshotter-x86_64.tgz
+          path: output
