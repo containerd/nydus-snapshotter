@@ -7,6 +7,7 @@
 package auth
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ var (
 type KeyRing struct {
 	sessKeyID int
 	keyLock   sync.RWMutex
-	avaliable bool
+	available bool
 }
 
 func GetSessionID() (int, error) {
@@ -51,17 +52,26 @@ func GetSessionID() (int, error) {
 			log.L.Infof("added search permission for session keyring %s", defaultSessionName)
 
 			globalKeyRing.sessKeyID = sessKeyID
-			globalKeyRing.avaliable = true
+			globalKeyRing.available = true
 		},
 	)
-	if joinSessionErr != nil {
-		return 0, errors.Wrapf(joinSessionErr, "join session keyring %s.", defaultSessionName)
-	}
-	if !globalKeyRing.avaliable {
+	if !globalKeyRing.available || joinSessionErr != nil {
 		return 0, unix.EINVAL
 	}
 
 	return globalKeyRing.sessKeyID, nil
+}
+
+func ClearKeyring() error {
+	sessKeyID, err := GetSessionID()
+	if err != nil {
+		return err
+	}
+	log.L.Infof("[abin] clear keyring session ID: %d", sessKeyID)
+
+	_, err = unix.KeyctlInt(unix.KEYCTL_CLEAR, sessKeyID, 0, 0, 0)
+
+	return err
 }
 
 func AddKeyring(id, value string) (int, error) {
@@ -69,11 +79,44 @@ func AddKeyring(id, value string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	log.L.Infof("[abin]session ID: %d", sessKeyID)
 
 	globalKeyRing.keyLock.Lock()
 	defer globalKeyRing.keyLock.Unlock()
 
+	permFull, _, err := checkPermission(sessKeyID, 0)
+	if err != nil {
+		return 0, errors.Wrap(err, "check permission before adding key")
+	}
+	log.L.Infof("[abin] keyring permission: %b, uid: %d, gid: %d", permFull, os.Getuid(), os.Getgid())
+
 	keyID, err := unix.AddKey("user", id, []byte(value), sessKeyID)
+	if err != nil {
+		if errors.Is(err, unix.EACCES) {
+			log.L.Infof("[abin] error unix.EACCES: %d", err)
+			return 0, unix.EINVAL
+		}
+		return 0, errors.Wrapf(err, "add key %s", id)
+	}
+
+	permFull, _, err = checkPermission(keyID, 0)
+	if err != nil {
+		return 0, errors.Wrap(err, "check permission before adding key")
+	}
+	log.L.Infof("[abin] key %d permission: %b", keyID, permFull)
+
+	if err := addSearchPermission(keyID); err != nil {
+		log.L.Infof("[abin] add permission to key: %d, err: %v", keyID, err)
+		return keyID, unix.EINVAL
+	}
+
+	permFull, _, err = checkPermission(keyID, 0)
+	if err != nil {
+		return 0, errors.Wrap(err, "check permission before adding key")
+	}
+	log.L.Infof("[abin] key %d after add permission: %b", keyID, permFull)
+
+	_, err = unix.KeyctlInt(unix.KEYCTL_LINK, keyID, sessKeyID, 0, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -105,7 +148,7 @@ func checkPermission(ringID int, targetMask uint32) (uint32, bool, error) {
 
 	permFull := uint32(perm64) & mask
 
-	return permFull, (permFull & targetMask) != 0, nil
+	return permFull, (permFull&targetMask)^targetMask == 0, nil
 }
 
 func addSearchPermission(ringID int) error {
@@ -130,10 +173,10 @@ func addSearchPermission(ringID int) error {
 	 *
 	 * Refer to https://man7.org/linux/man-pages/man7/keyrings.7.html
 	 */
-	var searchPermissionBits uint32 = 0x80000
+	var allUserPermissionBits uint32 = 0x3f0000
 
 	// Check if the search right for user already exists.
-	permFull, hasPermission, err := checkPermission(ringID, searchPermissionBits)
+	permFull, hasPermission, err := checkPermission(ringID, allUserPermissionBits)
 	if err != nil {
 		return errors.Wrap(err, "check permission")
 	}
@@ -142,17 +185,21 @@ func addSearchPermission(ringID int) error {
 	}
 
 	// Add search right for user.
-	if err := unix.KeyctlSetperm(ringID, permFull|searchPermissionBits); err != nil {
+	if err := unix.KeyctlSetperm(ringID, permFull|allUserPermissionBits); err != nil {
+		log.L.Infof("[abin] set perm error: %v, ringID: %d, bits: %b", err, ringID, permFull|allUserPermissionBits)
 		return errors.Wrap(err, "set permission")
 	}
 
-	permFull, hasPermission, err = checkPermission(ringID, searchPermissionBits)
+	permFull, hasPermission, err = checkPermission(ringID, allUserPermissionBits)
 	if err != nil {
 		return errors.Wrap(err, "check permission after add search permission")
 	}
 	if !hasPermission {
-		return errors.Errorf("add search permission failed, current permission: %b", permFull)
+		return unix.EINVAL
 	}
+
+	log.L.Infof("[abin] keyring permission: %b", permFull)
+
 	return nil
 }
 
@@ -177,6 +224,10 @@ func getData(key int) (string, error) {
 	for {
 		sizeRead, err := unix.KeyctlBuffer(unix.KEYCTL_READ, key, buffer, size)
 		if err != nil {
+			log.L.Infof("[abin] KEYCTL_READ %d error:%v : %d", key, err, err)
+			if errors.Is(err, unix.EACCES) {
+				return "", unix.EINVAL
+			}
 			return "", err
 		}
 

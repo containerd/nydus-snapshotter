@@ -63,10 +63,10 @@ func (c *Cache) GetAuth(imageHost string) (string, error) {
 	return data, err
 }
 
-func (c *Cache) GetKeyChain(ImageID string) (*PassKeyChain, error) {
-	image, err := registry.ParseImage(ImageID)
+func (c *Cache) GetKeyChain(imageID string) (*PassKeyChain, error) {
+	image, err := registry.ParseImage(imageID)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parse image %s", ImageID)
+		return nil, errors.Wrapf(err, "parse image %s", imageID)
 	}
 
 	cachedAuth, err := c.GetAuth(image.Host)
