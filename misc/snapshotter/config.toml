@@ -79,6 +79,8 @@ kubeconfig_path = ""
 enable_cri_keychain = false
 # the target image service when using image proxy
 #image_service_address = "/run/containerd/containerd.sock"
+# Save auth to keyring and avoid dumping it to nydusd config file.
+enable_keyring = false
 
 [snapshot]
 # Let containerd use nydus-overlayfs mount helper

@@ -43,6 +43,10 @@ func IsFusedevSharedModeEnabled() bool {
 	return globalConfig.DaemonMode == DaemonModeShared
 }
 
+func IsKeyringEnabled() bool {
+	return globalConfig.origin.RemoteConfig.AuthConfig.EnableKeyring
+}
+
 func GetDaemonMode() DaemonMode {
 	return globalConfig.DaemonMode
 }
