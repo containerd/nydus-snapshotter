@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
@@ -282,31 +283,67 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 			statusCode = http.StatusBadRequest
 			return
 		}
-
-		for _, manager := range sc.managers {
+		upgradeManager := func(manager *manager.Manager, c upgradeRequest) error {
 			manager.Lock()
 			defer manager.Unlock()
 
-			daemons := manager.ListDaemons()
+			// store the new nydusd path in manager
+			manager.NydusdBinaryPath = c.NydusdPath
 
-			// TODO: Keep the nydusd executive path in Daemon state and persis it since nydusd
-			// can run on both versions.
-			// Create a dedicated directory storing nydusd of various versions?
-			// TODO: daemon client has a method to query daemon version and information.
-			for _, d := range daemons {
-				err = sc.upgradeNydusDaemon(d, c, manager)
-				if err != nil {
-					log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
-					statusCode = http.StatusInternalServerError
-					return
+			for {
+				upgraded := false
+
+				upgradeChan := make(chan struct{}, 3)
+				eg, _ := errgroup.WithContext(r.Context())
+
+				daemons := manager.ListDaemons()
+				for _, d := range daemons {
+					if d.Version.PackageVer == c.Version {
+						continue
+					}
+					d := d
+					upgraded = true
+					upgradeChan <- struct{}{}
+					eg.Go(func() error {
+						defer func() {
+							<-upgradeChan
+						}()
+						err := sc.upgradeNydusDaemon(d, c, manager)
+						if err != nil {
+							log.L.Errorf("Upgrade daemon %s failed, %s", d.ID(), err)
+							return err
+						}
+						return nil
+					})
+				}
+				if err := eg.Wait(); err != nil {
+					return err
+				}
+				close(upgradeChan)
+
+				if !upgraded {
+					break
 				}
 			}
 
-			// TODO: why renaming?
-			err = os.Rename(c.NydusdPath, manager.NydusdBinaryPath)
+			return err
+		}
+
+		errCh := make(chan error)
+		go func() {
+			for _, manager := range sc.managers {
+				errCh <- upgradeManager(manager, c)
+			}
+		}()
+
+		select {
+		case <-r.Context().Done():
+			log.L.Infof("Upgrade daemons canceled")
+			statusCode = http.StatusAccepted
+			return
+		case err = <-errCh:
 			if err != nil {
-				log.L.Errorf("Rename nydusd binary from %s to  %s failed, %v",
-					c.NydusdPath, manager.NydusdBinaryPath, err)
+				log.L.Errorf("Upgrade daemons failed, %s", err)
 				statusCode = http.StatusInternalServerError
 				return
 			}
@@ -318,6 +355,23 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 // Create a new daemon in Manger to take over the service.
 func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, manager *manager.Manager) error {
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
+
+	// check the state of old nydusd
+	oldDaemonInfo, err := d.GetDaemonInfo()
+	if err != nil {
+		return err
+	}
+	if oldDaemonInfo.Version.PackageVer == c.Version {
+		log.L.Infof("Nydusd %s is already up to date", d.ID())
+		return nil
+	}
+	if oldDaemonInfo.State != types.DaemonStateRunning {
+		log.L.Infof("Nydusd %s is not running, skip upgrade", d.ID())
+		return nil
+	}
+
+	// receive the old daemon state
+	d.SendStates()
 
 	fs := sc.fs
 
@@ -354,6 +408,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 	}
 
 	if err := new.TakeOver(); err != nil {
+		// TODO(loheagn) kill the new
 		return errors.Wrap(err, "take over resources")
 	}
 
@@ -367,6 +422,11 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 
 	// Let the older daemon exit without umount
 	if err := d.Exit(); err != nil {
+		log.L.Errorf("Failed to kill old daemon %s when upgrading", d.ID())
+		// try to kill the new daemon
+		if err := new.Exit(); err != nil {
+			log.L.Warnf("Failed to kill new daemon %s", new.ID())
+		}
 		return errors.Wrap(err, "old daemon exits")
 	}
 

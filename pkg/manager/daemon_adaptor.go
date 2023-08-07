@@ -32,8 +32,16 @@ import (
 //   - `d.State()` may return any validate state, please call `d.WaitUntilState()` to
 //     ensure the daemon has reached specified state.
 //   - `d` may have not been inserted into daemonStates and store yet.
-func (m *Manager) StartDaemon(d *daemon.Daemon) error {
-	cmd, err := m.BuildDaemonCommand(d, "", false)
+//
+// The param `upgrade` decides whether to start the new daemon with `--upgrade` parameter.
+// The daemon with `--upgrade` will not mount the backend filesystem
+// and go to "Ready" state automatically,
+// but gives the snapshotter a chance to use `taskOver` command
+// to re-mount the backend filesystem whose metadata
+// is saved in the snapshotter memory by the previous daemon.
+// The "upgrade mode" is useful to do failover and "hot upgrade".
+func (m *Manager) StartDaemon(d *daemon.Daemon, upgrade bool) error {
+	cmd, err := m.BuildDaemonCommand(d, "", upgrade)
 	if err != nil {
 		return errors.Wrapf(err, "create command for daemon %s", d.ID())
 	}

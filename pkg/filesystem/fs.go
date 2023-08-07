@@ -130,7 +130,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			if err != nil {
 				return errors.Wrapf(err, "get filesystem manager for daemon %s", d.States.ID)
 			}
-			if err := fsManager.StartDaemon(d); err != nil {
+			if err := fsManager.StartDaemon(d, false); err != nil {
 				return errors.Wrapf(err, "start daemon %s", d.ID())
 			}
 			if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
@@ -531,7 +531,7 @@ func (fs *Filesystem) mountRemote(fsManager *manager.Manager, useSharedDaemon bo
 		}
 	} else {
 		r.SetMountpoint(path.Join(d.HostMountpoint()))
-		err := fsManager.StartDaemon(d)
+		err := fsManager.StartDaemon(d, false)
 		if err != nil {
 			return errors.Wrapf(err, "start daemon")
 		}
@@ -601,7 +601,7 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile(""))
 	}
 
-	if err := fsManager.StartDaemon(d); err != nil {
+	if err := fsManager.StartDaemon(d, false); err != nil {
 		return errors.Wrap(err, "start shared daemon")
 	}
 

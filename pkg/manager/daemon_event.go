@@ -80,7 +80,7 @@ func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
 
 	// Failover nydusd still depends on the old supervisor
 
-	if err := m.StartDaemon(d); err != nil {
+	if err := m.StartDaemon(d, true); err != nil {
 		log.L.Errorf("fail to start daemon %s when recovering", d.ID())
 		return
 	}
@@ -112,7 +112,7 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	}
 
 	d.ClearVestige()
-	if err := m.StartDaemon(d); err != nil {
+	if err := m.StartDaemon(d, true); err != nil {
 		log.L.Errorf("fails to start daemon %s when recovering", d.ID())
 		return
 	}
