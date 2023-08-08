@@ -489,6 +489,7 @@ func (fs *Filesystem) createDaemon(mountpoint string, ref int32) (d *daemon.Daem
 		daemon.WithConfigDir(config.GetConfigRoot()),
 		daemon.WithLogDir(config.GetLogDir()),
 		daemon.WithLogLevel(config.GetLogLevel()),
+		daemon.WithLogRotationSize(config.GetDaemonLogRotationSize()),
 		daemon.WithLogToStdout(config.GetLogToStdout()),
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(config.GetFsDriver()),

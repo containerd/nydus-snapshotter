@@ -38,9 +38,10 @@ const (
 	DefaultSystemControllerAddress = "/run/containerd-nydus/system.sock"
 
 	// Log rotation
-	DefaultRotateLogMaxSize    = 200 // 200 megabytes
-	DefaultRotateLogMaxBackups = 10
-	DefaultRotateLogMaxAge     = 0 // days
-	DefaultRotateLogLocalTime  = true
-	DefaultRotateLogCompress   = true
+	DefaultDaemonRotateLogMaxSize = 100 // 100 megabytes
+	DefaultRotateLogMaxSize       = 200 // 200 megabytes
+	DefaultRotateLogMaxBackups    = 5
+	DefaultRotateLogMaxAge        = 0 // days
+	DefaultRotateLogLocalTime     = true
+	DefaultRotateLogCompress      = true
 )

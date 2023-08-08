@@ -164,6 +164,10 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		command.WithLogLevel(d.States.LogLevel),
 		command.WithAPISock(d.GetAPISock()))
 
+	if d.States.LogRotationSize > 0 {
+		cmdOpts = append(cmdOpts, command.WithLogRotationSize(d.States.LogRotationSize))
+	}
+
 	if upgrade {
 		cmdOpts = append(cmdOpts, command.WithUpgrade())
 	}

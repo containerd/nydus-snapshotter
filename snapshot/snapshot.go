@@ -117,7 +117,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 
 	metricServer, err := metrics.NewServer(
 		ctx,
-		metrics.WithRootDir(cfg.Root),
 		metrics.WithProcessManager(manager),
 	)
 	if err != nil {
