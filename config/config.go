@@ -109,6 +109,7 @@ const (
 type Experimental struct {
 	EnableStargz         bool `toml:"enable_stargz"`
 	EnableReferrerDetect bool `toml:"enable_referrer_detect"`
+	EnablePassImageURL   bool `toml:"enable_pass_image_url"`
 }
 
 type CgroupConfig struct {
