@@ -10,15 +10,15 @@ import (
 	"context"
 	"path"
 
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 // `storageLocater` provides a local storage for each handler to save their intermediates.
@@ -84,13 +84,20 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					labels[label.StargzLayer] = "true"
 				}
 			}
+		case config.GetPassImageURLEnabled():
+			handler = skipHandler
 		default:
 			// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
 			handler = defaultHandler
 		}
 	} else {
 		// Container writable layer comes into this branch. It can't be committed within this Prepare
-
+		if config.GetPassImageURLEnabled() {
+			handler = func() (bool, []mount.Mount, error) {
+				return false, nil, nil
+			}
+			return handler, target, nil
+		}
 		// Hope to find bootstrap layer and prepares to start nydusd
 		// TODO: Trying find nydus meta layer will slow down setting up rootfs to OCI images
 		if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
