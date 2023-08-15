@@ -350,7 +350,9 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	if err != nil {
 		return nil, errors.Wrapf(err, "get snapshot %s", key)
 	}
-
+	if o.enableNydusOverlayFS && config.GetPassImageURLEnabled() {
+		return o.passImageNameMounts(ctx, info.Parent)
+	}
 	if needRemoteMounts {
 		return o.remoteMounts(ctx, *snap, metaSnapshotID)
 	}
@@ -716,7 +718,31 @@ func overlayMount(options []string) []mount.Mount {
 		},
 	}
 }
+func (o *snapshotter) passImageNameMounts(ctx context.Context, parent string) ([]mount.Mount, error) {
+	_, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parent)
+	if err != nil {
+		return nil, errors.Wrapf(err, "passImageNameMounts get snapshot %q info failed", parent)
+	}
+	imageURL, ok := pInfo.Labels["containerd.io/snapshot/cri.image-ref"]
 
+	if !ok {
+		return nil, errors.Errorf("passImageNameMounts failed to find image ref of snapshot %s, labels %v",
+			parent, pInfo.Labels)
+	}
+	passImageOption := fmt.Sprintf("imageurl=%s", base64.StdEncoding.EncodeToString([]byte(imageURL)))
+
+	var overlayOptions []string
+	overlayOptions = append(overlayOptions, passImageOption)
+
+	return []mount.Mount{
+		{
+			Type:    "fuse.nydus-overlayfs",
+			Source:  "overlay",
+			Options: overlayOptions,
+		},
+	}, nil
+
+}
 func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
 	return o.fs.Mount(id, labels)
 }
