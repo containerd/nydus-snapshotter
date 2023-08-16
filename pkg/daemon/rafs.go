@@ -8,14 +8,17 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/mohae/deepcopy"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/log"
 
 	"github.com/containerd/nydus-snapshotter/config"
 )
@@ -194,4 +197,39 @@ func (r *Rafs) BootstrapFile() (string, error) {
 	}
 
 	return "", errors.Wrapf(errdefs.ErrNotFound, "bootstrap %s", bootstrap)
+}
+
+func buildDeduplicationCommand(bootstrapPath, configPath, nydusImagePath string) *exec.Cmd {
+	args := []string{
+		"dedup",
+		"--bootstrap", bootstrapPath,
+		"--config", configPath,
+	}
+
+	log.L.Infof("start bootstrap deduplication: %s %s", nydusImagePath, strings.Join(args, " "))
+
+	cmd := exec.Command(nydusImagePath, args...)
+
+	return cmd
+
+}
+
+func (r *Rafs) DeduplicateBootstrap(bootstrapPath, configPath string) (string, error) {
+	nydusImagePath, err := exec.LookPath("nydus-image")
+	if err != nil {
+		return "", err
+	}
+
+	cmd := buildDeduplicationCommand(bootstrapPath, configPath, nydusImagePath)
+	_, err = cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	_, err = os.Stat(bootstrapPath + ".dedup")
+	if err != nil {
+		return "", err
+	}
+	bootstrapPath += ".dedup"
+	return bootstrapPath, err
 }

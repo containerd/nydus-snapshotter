@@ -476,7 +476,7 @@ func (m *Manager) Recover(ctx context.Context,
 		d.States = *s
 
 		m.daemonStates.RecoverDaemonState(d)
-
+		enableDeduplication := config.GetEnableChunkDeduplication()
 		if m.SupervisorSet != nil {
 			su := m.SupervisorSet.NewSupervisor(d.ID())
 			if su == nil {
@@ -486,7 +486,7 @@ func (m *Manager) Recover(ctx context.Context,
 		}
 
 		if d.States.FsDriver == config.FsDriverFusedev {
-			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
+			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""), enableDeduplication)
 			if err != nil {
 				log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
 				return err

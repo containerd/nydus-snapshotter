@@ -69,7 +69,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "initialize image verifier")
 	}
 
-	daemonConfig, err := daemonconfig.NewDaemonConfig(config.GetFsDriver(), cfg.DaemonConfig.NydusdConfigPath)
+	daemonConfig, err := daemonconfig.NewDaemonConfig(config.GetFsDriver(), cfg.DaemonConfig.NydusdConfigPath, cfg.DaemonConfig.EnableChunkDeduplication)
 	if err != nil {
 		return nil, errors.Wrap(err, "load daemon configuration")
 	}
@@ -781,8 +781,9 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 	}
 
 	var c daemonconfig.DaemonConfig
+	enableDeduplication := config.GetEnableChunkDeduplication()
 	if daemon.IsSharedDaemon() {
-		c, err = daemonconfig.NewDaemonConfig(daemon.States.FsDriver, daemon.ConfigFile(instance.SnapshotID))
+		c, err = daemonconfig.NewDaemonConfig(daemon.States.FsDriver, daemon.ConfigFile(instance.SnapshotID), enableDeduplication)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to load instance configuration %s",
 				daemon.ConfigFile(instance.SnapshotID))
@@ -811,6 +812,13 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 		return nil, errors.Wrapf(err, "remoteMounts: failed to detect filesystem version")
 	}
 
+	if enableDeduplication {
+		configPath := daemon.ConfigFile(instance.SnapshotID)
+		source, err = instance.DeduplicateBootstrap(source, configPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "remoteMounts: failed to dedup rafs bootstrap")
+		}
+	}
 	// when enable nydus-overlayfs, return unified mount slice for runc and kata
 	extraOption := &ExtraOption{
 		Source:      source,

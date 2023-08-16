@@ -38,19 +38,21 @@ type DaemonConfig interface {
 }
 
 // Daemon configurations factory
-func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
+func NewDaemonConfig(fsDriver, path string, enableDeduplication bool) (DaemonConfig, error) {
 	switch fsDriver {
 	case config.FsDriverFscache:
 		cfg, err := LoadFscacheConfig(path)
 		if err != nil {
 			return nil, err
 		}
+		cfg.Config.DeduplicationConfig.Enable = enableDeduplication
 		return cfg, nil
 	case config.FsDriverFusedev:
 		cfg, err := LoadFuseConfig(path)
 		if err != nil {
 			return nil, err
 		}
+		cfg.Device.Deduplication.Enable = enableDeduplication
 		return cfg, nil
 	default:
 		return nil, errors.Errorf("unsupported, fs driver %q", fsDriver)
@@ -118,6 +120,10 @@ type DeviceConfig struct {
 			DisableIndexedMap bool   `json:"disable_indexed_map"`
 		} `json:"config"`
 	} `json:"cache"`
+	Deduplication struct {
+		Enable  bool   `json:"enable"`
+		WorkDir string `json:"work_dir"`
+	} `json:"deduplication"`
 }
 
 // For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
