@@ -18,6 +18,7 @@ import (
 	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
@@ -120,22 +121,30 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	}
 
 	// Try to bring all persisted and stopped nydusd up and remount Rafs
+	eg, _ := errgroup.WithContext(context.Background())
 	for _, d := range recoveringDaemons {
-		d.ClearVestige()
-		fsManager, err := fs.getManager(d.States.FsDriver)
-		if err != nil {
-			return nil, errors.Wrapf(err, "get filesystem manager for daemon %s", d.States.ID)
-		}
-		if err := fsManager.StartDaemon(d); err != nil {
-			return nil, errors.Wrapf(err, "start daemon %s", d.ID())
-		}
-		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
-			return nil, errors.Wrapf(err, "wait for daemon %s", d.ID())
-		}
-		if err := d.RecoveredMountInstances(); err != nil {
-			return nil, errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
-		}
-		fs.TryRetainSharedDaemon(d)
+		d := d
+		eg.Go(func() error {
+			d.ClearVestige()
+			fsManager, err := fs.getManager(d.States.FsDriver)
+			if err != nil {
+				return errors.Wrapf(err, "get filesystem manager for daemon %s", d.States.ID)
+			}
+			if err := fsManager.StartDaemon(d); err != nil {
+				return errors.Wrapf(err, "start daemon %s", d.ID())
+			}
+			if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+				return errors.Wrapf(err, "wait for daemon %s", d.ID())
+			}
+			if err := d.RecoveredMountInstances(); err != nil {
+				return errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
+			}
+			fs.TryRetainSharedDaemon(d)
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 
 	for _, d := range liveDaemons {
