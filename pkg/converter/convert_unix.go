@@ -771,6 +771,28 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 			return nil, nil
 		}
 
+		// Use remote cache to avoid unnecessary conversion
+		info, err := cs.Info(ctx, desc.Digest)
+		if err != nil {
+			return nil, errors.Wrapf(err, "get blob info %s", desc.Digest)
+		}
+		if info.Labels[LayerAnnotationNydusTargetDigest] != "" {
+			targetInfo, err := cs.Info(ctx, digest.Digest(info.Labels[LayerAnnotationNydusTargetDigest]))
+			if err != nil {
+				return nil, errors.Wrapf(err, "get blob info %s", desc.Digest)
+			}
+			targetDesc := ocispec.Descriptor{
+				Digest:    targetInfo.Digest,
+				Size:      targetInfo.Size,
+				MediaType: MediaTypeNydusBlob,
+				Annotations: map[string]string{
+					LayerAnnotationUncompressed: targetInfo.Digest.String(),
+					LayerAnnotationNydusBlob:    "true",
+				},
+			}
+			return &targetDesc, nil
+		}
+
 		ra, err := cs.ReaderAt(ctx, desc)
 		if err != nil {
 			return nil, errors.Wrap(err, "get source blob reader")
@@ -825,7 +847,7 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 		}
 
 		blobDigest := digester.Digest()
-		info, err := cs.Info(ctx, blobDigest)
+		info, err = cs.Info(ctx, blobDigest)
 		if err != nil {
 			return nil, errors.Wrapf(err, "get blob info %s", blobDigest)
 		}
