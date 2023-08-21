@@ -56,7 +56,7 @@ EOF
 
 ```
 
-Containerd will load all NRI plugins in the `plugin_path` directory on startup. If you want to start an NRI plugin manually, please add the following configuration to allow other NRI plugins to connect via `socket_path`.
+Containerd will load all NRI plugins in the `plugin_path` directory on startup. If you want to start a NRI plugin manually, please add the following configuration to allow other NRI plugins to connect via `socket_path`.
 
 ```console
 sudo tee /etc/nri/nri.conf <<- EOF

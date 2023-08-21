@@ -1,10 +1,10 @@
 # Configure Nydus-snapshotter
 
-Nydus-snapshotter can receive a toml file as its configurations to start providing image service through CLI parameter `--config`. A example configuration file can be found [here](../misc/snapshotter/config.toml). Besides nydus-snapshotter's configuration, `nydusd`'s configuration has to be provided to nydus-snapshotter too. Nydusd is started by nydus-snapshotter and it is configured by the provided json configuration file. A minimal configuration file can be found [here](../misc/snapshotter/nydusd-config.fusedev.json)
+Nydus-snapshotter can receive a toml file as its configurations to start providing image service through CLI parameter `--config`. An example configuration file can be found [here](../misc/snapshotter/config.toml). Besides nydus-snapshotter's configuration, `nydusd`'s configuration has to be provided to nydus-snapshotter too. Nydusd is started by nydus-snapshotter and it is configured by the provided json configuration file. A minimal configuration file can be found [here](../misc/snapshotter/nydusd-config.fusedev.json)
 
 ## Authentication
 
-As [contianerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports 3 main ways to access registries with custom configurations. You can use configuration file to enable them.
+As [containerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports 3 main ways to access registries with custom configurations. You can use configuration file to enable them.
 
 The snapshotter will try to get image pull keychain in the following order if such way is enabled:
 
@@ -136,4 +136,4 @@ runtime and snapshot related events are exported in Prometheus format as well.
 ## Diagnose
 
 A system controller can be ran insides nydus-snapshotter.
-By setting `system.enable` to `true`,  nydus-snapshotter will start a simple HTTP serve on unix domain socket `system.address` path and exports some internal working status to users. The address defaults to `/var/run/containerd-nydus/system.sock`
+By setting `system.enable` to `true`,  nydus-snapshotter will start a simple HTTP server on unix domain socket `system.address` path and exports some internal working status to users. The address defaults to `/var/run/containerd-nydus/system.sock`
