@@ -1,10 +1,12 @@
 all: clean build
 optimizer: clean-optimizer build-optimizer
+container-optimizer: clean-optimizer container-build-optimizer
 
 PKG = github.com/containerd/nydus-snapshotter
 PACKAGES ?= $(shell go list ./... | grep -v /tests)
 SUDO = $(shell which sudo)
 GO_EXECUTABLE_PATH ?= $(shell which go)
+CONTAINER_ENGINE ?= $(if $(shell which docker),docker,nerdctl)
 NYDUS_BUILDER ?= /usr/bin/nydus-image
 NYDUS_NYDUSD ?= /usr/bin/nydusd
 GOOS ?= linux
@@ -51,6 +53,10 @@ OPTIMIZER_SERVER_TOML = ${OPTIMIZER_SERVER}/Cargo.toml
 OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/release/optimizer-server
 STATIC_OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/x86_64-unknown-linux-gnu/release/optimizer-server
 
+CONTAINER_FLAGS += -v .:/work
+CONTAINER_RUN = ${SUDO} ${CONTAINER_ENGINE} run --rm -t ${CONTAINER_FLAGS} ghcr.io/sctb512/gobcc-builder:20.04 --
+
+
 .PHONY: build
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
@@ -63,10 +69,16 @@ build-optimizer:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
 	make -C tools/optimizer-server release && cp ${OPTIMIZER_SERVER_BIN} ./bin
 
+container-build-optimizer:
+	${CONTAINER_RUN} "make build-optimizer"
+
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
 	make -C tools/optimizer-server static-release && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
+
+container-static-release:
+	${CONTAINER_RUN} "make static-release"
 
 # Majorly for cross build for converter package since it is imported by other projects
 converter:
@@ -106,31 +118,44 @@ install-optimizer:
 
 .PHONY: vet
 vet:
-	go vet $(PACKAGES) ./tests
+	go vet ${PACKAGES} ./tests
+
+container-vet:
+	${CONTAINER_RUN} "go vet ${PACKAGES} ./tests"
 
 .PHONY: check
 check: vet
 	golangci-lint run
 
+container-check: container-vet
+	${CONTAINER_RUN} "golangci-lint run"
+
 .PHONY: test
 test:
 	go test -race -v -mod=mod -cover ${PACKAGES}
 
+container-test:
+	${CONTAINER_RUN} "go test -race -v -mod=mod -cover ${PACKAGES}"
+
 .PHONY: cover
 cover:
-	go test -v -covermode=atomic -coverprofile=coverage.txt $(PACKAGES)
+	go test -v -covermode=atomic -coverprofile=coverage.txt ${PACKAGES}
 	go tool cover -func=coverage.txt
+
+container-cover:
+	${CONTAINER_RUN} "go test -v -covermode=atomic -coverprofile=coverage.txt ${PACKAGES}"
+	${CONTAINER_RUN} "go tool cover -func=coverage.txt"
 
 # make smoke TESTS=TestPack
 smoke:
 	${GO_EXECUTABLE_PATH} test -o smoke.tests -c -race -v -cover ./tests
-	$(SUDO) -E NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ./smoke.tests -test.v -test.timeout 10m -test.parallel=8 -test.run=$(TESTS)
+	${SUDO} -E NYDUS_BUILDER=${NYDUS_BUILDER} NYDUS_NYDUSD=${NYDUS_NYDUSD} ./smoke.tests -test.v -test.timeout 10m -test.parallel=8 -test.run=$(TESTS)
 
 .PHONY: integration
 integration:
 	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "${PKG}/version.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
-	$(SUDO) DOCKER_BUILDKIT=1 docker build ${BUILD_ARG_E2E_DOWNLOADS_MIRROR} -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
-	$(SUDO) docker run --cap-add SYS_ADMIN --security-opt seccomp=unconfined --cgroup-parent=system.slice --cgroupns private --name nydus-snapshotter_e2e --rm --privileged -v /root/.docker:/root/.docker -v `go env GOMODCACHE`:/go/pkg/mod \
+	${SUDO} DOCKER_BUILDKIT=1 docker build ${BUILD_ARG_E2E_DOWNLOADS_MIRROR} -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
+	${SUDO} docker run --cap-add SYS_ADMIN --security-opt seccomp=unconfined --cgroup-parent=system.slice --cgroupns private --name nydus-snapshotter_e2e --rm --privileged -v /root/.docker:/root/.docker -v `go env GOMODCACHE`:/go/pkg/mod \
 	-v `go env GOCACHE`:/root/.cache/go-build -v `pwd`:/nydus-snapshotter \
 	-v /usr/src/linux-headers-${KERNEL_VER}:/usr/src/linux-headers-${KERNEL_VER} \
 	${ENV_TARGET_IMAGES_FILE}  \
