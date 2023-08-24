@@ -9,7 +9,6 @@ package conn
 import (
 	"bytes"
 	"encoding/binary"
-	"strings"
 	"time"
 
 	bpf "github.com/iovisor/gobpf/bcc"
@@ -18,7 +17,7 @@ import (
 
 import "C"
 
-const templateSource string = `
+const sourceCode string = `
 #include <net/sock.h>
 #include <linux/mount.h>
 #include <linux/mm.h>
@@ -42,6 +41,9 @@ struct buf_s {
     char buf[FILE_PATH_LEN*2];
 };
 
+char container_id[CONTAINER_ID_LEN];
+
+BPF_ARRAY(id_buf, container_id, 1);
 BPF_PERCPU_ARRAY(path_buf, struct buf_s, 1);
 BPF_PERCPU_ARRAY(event_buf, struct request_info, 1);
 BPF_HASH(vfs_read_start_trace, u64, struct request_info);
@@ -57,8 +59,13 @@ static int container_id_filter() {
     struct task_struct *curr_task;
     struct kernfs_node *knode, *pknode;
     char container_id[CONTAINER_ID_LEN];
-    char expected_container_id[CONTAINER_ID_LEN] = "EXCEPTED_CONTAINERD_ID";
     char end = 0;
+    int zero = 0;
+    char *buf_id = container_id.lookup(&zero);
+    if (!buf_id) {
+        return -1;
+    }
+
     curr_task = (struct task_struct *) bpf_get_current_task();
 
     knode = curr_task->cgroups->subsys[0]->cgroup->kn;
@@ -68,7 +75,7 @@ static int container_id_filter() {
     else
         bpf_probe_read(container_id, 1, &end);
 
-    return local_strcmp(container_id, expected_container_id);
+    return local_strcmp(container_id, buf_id);
 }
 
 static void fill_file_path(struct file *file, char *file_path) {
@@ -290,9 +297,7 @@ func kretprobeSyscall(m *bpf.Module, syscall string, kprobeEntry string) error {
 }
 
 func InitKprobeTable(id string) (*bpf.Module, *bpf.Table, error) {
-	source := strings.ReplaceAll(templateSource, "EXCEPTED_CONTAINERD_ID", id)
-
-	m := bpf.NewModule(source, []string{})
+	m := bpf.NewModule(sourceCode, []string{})
 
 	if err := kprobeSyscall(m, "vfs_read", "trace_vfs_read_entry"); err != nil {
 		return nil, nil, err
@@ -313,6 +318,11 @@ func InitKprobeTable(id string) (*bpf.Module, *bpf.Table, error) {
 		return nil, nil, err
 	}
 	if err := kprobeSyscall(m, "__do_fault", "trace_page_fault"); err != nil {
+		return nil, nil, err
+	}
+
+	containerIDTable := bpf.NewTable(m.TableId("id_buf"), m)
+	if err := containerIDTable.Set([]byte{0}, []byte(id)); err != nil {
 		return nil, nil, err
 	}
 
