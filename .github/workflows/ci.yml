@@ -12,7 +12,7 @@ env:
 jobs:
   build:
     name: Build and Lint
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go
@@ -33,17 +33,13 @@ jobs:
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
           export PATH=$PATH:$(go env GOPATH)/bin
           make
-          make test
-          make check
+          make container-test
+          make container-check
   build-optimizer:
     name: Build optimizer
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.20.1"
       - name: Check out code
         uses: actions/checkout@v3
       - name: cache go mod
@@ -55,19 +51,12 @@ jobs:
             ${{ runner.os }}-go
       - name: Build
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
-          export PATH=$PATH:$(go env GOPATH)/bin
-          rustup component add rustfmt clippy
-          make build-optimizer
+          make container-build-optimizer
   smoke:
     name: Smoke
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Check out code
         uses: actions/checkout@v3
       - name: cache go mod
@@ -118,14 +107,10 @@ jobs:
 
   coverage:
     name: Code coverage
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - name: Install Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Checkout code
         uses: actions/checkout@v3
       - name: cache go mod
@@ -136,7 +121,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go
       - name: Run unit tests.
-        run: make cover
+        run: make container-cover
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
