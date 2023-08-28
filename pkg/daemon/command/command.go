@@ -35,6 +35,7 @@ type DaemonCommand struct {
 	LogRotationSize int    `type:"param" name:"log-rotation-size"`
 	Supervisor      string `type:"param" name:"supervisor"`
 	LogFile         string `type:"param" name:"log-file"`
+	PrefetchFiles   string `type:"param" name:"prefetch-files"`
 }
 
 // Build exec style command line
@@ -102,6 +103,12 @@ func BuildCommand(opts []Opt) ([]string, error) {
 func WithMode(m string) Opt {
 	return func(cmd *DaemonCommand) {
 		cmd.Mode = m
+	}
+}
+
+func WithPrefetchFiles(p string) Opt {
+	return func(cmd *DaemonCommand) {
+		cmd.PrefetchFiles = p
 	}
 }
 
