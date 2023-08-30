@@ -58,9 +58,9 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	}
 
 	// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
-	target, remote := labels[label.TargetSnapshotRef]
+	target, is_ro_layer := labels[label.TargetSnapshotRef]
 
-	if remote {
+	if is_ro_layer {
 		// Containerd won't consume mount slice for below snapshots
 		switch {
 		case label.IsNydusMetaLayer(labels):
@@ -88,6 +88,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					}
 				}
 			}
+
 			if handler == nil && sn.fs.TarfsEnabled() {
 				err := sn.fs.PrepareTarfsLayer(ctx, labels, s.ID, sn.upperPath(s.ID))
 				if err != nil {
@@ -144,16 +145,17 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		}
 
 		if handler == nil && sn.fs.TarfsEnabled() {
-			// TODO may need check all parrents, in case share layers with other images which already prepared by overlay snapshotter
-
-			// tarfs merged & mounted on the uppermost parent layer
+			// Merge and mount tarfs on the uppermost parent layer.
 			id, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
 			switch {
 			case err != nil:
-				logger.Warnf("Tarfs enable but can't get snapshot %s Parent, is an untar oci or nydus snapshot?", s.ID)
+				logger.Warnf("Tarfs enabled but can't get parent of snapshot %s", s.ID)
 			case !label.IsTarfsDataLayer(pInfo.Labels):
-				logger.Debugf("Tarfs enable but Parent (%s) of snapshot %s is not a tarfs layer", id, s.ID)
+				logger.Debugf("Tarfs enabled but Parent (%s) of snapshot %s is not a tarfs layer", id, s.ID)
 			default:
+				// TODO may need to check all parrent layers, in case share layers with other images
+				// which have already been prepared by overlay snapshotter
+
 				err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
 				if err != nil {
 					return nil, "", errors.Wrap(err, "merge tarfs layers")

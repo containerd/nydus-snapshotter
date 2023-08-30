@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
@@ -38,6 +39,21 @@ import (
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/lru"
+)
+
+const (
+	TarfsStatusInit    = 0
+	TarfsStatusPrepare = 1
+	TarfsStatusReady   = 2
+	TarfsStatusFailed  = 3
+)
+
+const (
+	MaxManifestConfigSize   = 0x100000
+	TarfsLayerBootstrapName = "layer.boot"
+	TarfsImageBootstrapName = "image.boot"
+	TarfsLayerDiskName      = "layer.disk"
+	TarfsImageDiskName      = "image.disk"
 )
 
 type Manager struct {
@@ -56,27 +72,9 @@ type Manager struct {
 	sg                   singleflight.Group
 }
 
-const (
-	TarfsStatusInit    = 0
-	TarfsStatusPrepare = 1
-	TarfsStatusReady   = 2
-	TarfsStatusFailed  = 3
-)
-
-const (
-	MaxManifestConfigSize   = 0x100000
-	TarfsLayerBootstrapName = "layer.boot"
-	TarfsImageBootstrapName = "image.boot"
-	TarfsLayerDiskName      = "layer.disk"
-	TarfsImageDiskName      = "image.disk"
-)
-
-var ErrEmptyBlob = errors.New("empty blob")
-
 type snapshotStatus struct {
 	mutex           sync.Mutex
 	status          int
-	isEmptyBlob     bool
 	blobID          string
 	blobTarFilePath string
 	erofsMountPoint string
@@ -105,62 +103,78 @@ func NewManager(insecure, checkTarfsHint bool, cacheDirPath, nydusImagePath stri
 // Fetch image manifest and config contents, cache frequently used information.
 // FIXME need an update policy
 func (t *Manager) fetchImageInfo(ctx context.Context, remote *remote.Remote, ref string, manifestDigest digest.Digest) error {
-	// fetch image manifest content
-	rc, desc, err := t.getBlobStream(ctx, remote, ref, manifestDigest)
+	manifest, err := t.fetchImageManifest(ctx, remote, ref, manifestDigest)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
-	if desc.Size > MaxManifestConfigSize {
-		return errors.Errorf("image manifest content size %x is too big", desc.Size)
-	}
-	bytes, err := io.ReadAll(rc)
+	config, err := t.fetchImageConfig(ctx, remote, ref, &manifest)
 	if err != nil {
-		return errors.Wrap(err, "read image manifest content")
-	}
-
-	// TODO: support docker v2 images
-	var manifestOCI ocispec.Manifest
-	if err := json.Unmarshal(bytes, &manifestOCI); err != nil {
-		return errors.Wrap(err, "unmarshal OCI image manifest")
-	}
-	if len(manifestOCI.Layers) < 1 {
-		return errors.Errorf("invalid OCI image manifest without any layer")
-	}
-
-	// fetch image config content and extract diffIDs
-	rc, desc, err = t.getBlobStream(ctx, remote, ref, manifestOCI.Config.Digest)
-	if err != nil {
-		return errors.Wrap(err, "fetch image config content")
-	}
-	defer rc.Close()
-	if desc.Size > MaxManifestConfigSize {
-		return errors.Errorf("image config content size %x is too big", desc.Size)
-	}
-	bytes, err = io.ReadAll(rc)
-	if err != nil {
-		return errors.Wrap(err, "read image config content")
-	}
-
-	var config ocispec.Image
-	if err := json.Unmarshal(bytes, &config); err != nil {
-		return errors.Wrap(err, "unmarshal image config")
-	}
-	if len(config.RootFS.DiffIDs) != len(manifestOCI.Layers) {
-		return errors.Errorf("number of diffIDs does not match manifest layers")
+		return err
 	}
 
 	if t.checkTarfsHint {
 		// cache ref & tarfs hint annotation
-		t.tarfsHintCache.Add(ref, label.HasTarfsHint(manifestOCI.Annotations))
+		t.tarfsHintCache.Add(ref, label.HasTarfsHint(manifest.Annotations))
 	}
 	if t.validateDiffID {
 		// cache OCI blob digest & diff id
-		for i := range manifestOCI.Layers {
-			t.diffIDCache.Add(manifestOCI.Layers[i].Digest, config.RootFS.DiffIDs[i])
+		for i := range manifest.Layers {
+			t.diffIDCache.Add(manifest.Layers[i].Digest, config.RootFS.DiffIDs[i])
 		}
 	}
+
 	return nil
+}
+
+func (t *Manager) fetchImageManifest(ctx context.Context, remote *remote.Remote, ref string, manifestDigest digest.Digest) (ocispec.Manifest, error) {
+	rc, desc, err := t.getBlobStream(ctx, remote, ref, manifestDigest)
+	if err != nil {
+		return ocispec.Manifest{}, err
+	}
+	defer rc.Close()
+	if desc.Size > MaxManifestConfigSize {
+		return ocispec.Manifest{}, errors.Errorf("image manifest content size %x is too big", desc.Size)
+	}
+	bytes, err := io.ReadAll(rc)
+	if err != nil {
+		return ocispec.Manifest{}, errors.Wrap(err, "read image manifest content")
+	}
+
+	var manifestOCI ocispec.Manifest
+	if err := json.Unmarshal(bytes, &manifestOCI); err != nil {
+		return ocispec.Manifest{}, errors.Wrap(err, "unmarshal OCI image manifest")
+	}
+	if len(manifestOCI.Layers) < 1 {
+		return ocispec.Manifest{}, errors.Errorf("invalid OCI image manifest without any layer")
+	}
+
+	return manifestOCI, nil
+}
+
+func (t *Manager) fetchImageConfig(ctx context.Context, remote *remote.Remote, ref string, manifest *ocispec.Manifest) (ocispec.Image, error) {
+	// fetch image config content and extract diffIDs
+	rc, desc, err := t.getBlobStream(ctx, remote, ref, manifest.Config.Digest)
+	if err != nil {
+		return ocispec.Image{}, errors.Wrap(err, "fetch image config content")
+	}
+	defer rc.Close()
+	if desc.Size > MaxManifestConfigSize {
+		return ocispec.Image{}, errors.Errorf("image config content size %x is too big", desc.Size)
+	}
+	bytes, err := io.ReadAll(rc)
+	if err != nil {
+		return ocispec.Image{}, errors.Wrap(err, "read image config content")
+	}
+
+	var config ocispec.Image
+	if err := json.Unmarshal(bytes, &config); err != nil {
+		return ocispec.Image{}, errors.Wrap(err, "unmarshal image config")
+	}
+	if len(config.RootFS.DiffIDs) != len(manifest.Layers) {
+		return ocispec.Image{}, errors.Errorf("number of diffIDs does not match manifest layers")
+	}
+
+	return config, nil
 }
 
 func (t *Manager) getBlobDiffID(ctx context.Context, remote *remote.Remote, ref string, manifestDigest, layerDigest digest.Digest) (digest.Digest, error) {
@@ -197,14 +211,14 @@ func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref 
 }
 
 // generate tar file and layer bootstrap, return if this blob is an empty blob
-func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID, upperDirPath string) (emptyBlob bool, err error) {
+func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID, upperDirPath string) (err error) {
 	snapshotImageDir := filepath.Join(upperDirPath, "image")
 	if err := os.MkdirAll(snapshotImageDir, 0750); err != nil {
-		return false, errors.Wrapf(err, "create data dir %s for tarfs snapshot", snapshotImageDir)
+		return errors.Wrapf(err, "create data dir %s for tarfs snapshot", snapshotImageDir)
 	}
 	layerMetaFile := t.layerMetaFilePath(upperDirPath)
 	if _, err := os.Stat(layerMetaFile); err == nil {
-		return false, errors.Errorf("tarfs bootstrap file %s for snapshot %s already exists", layerMetaFile, snapshotID)
+		return errdefs.ErrAlreadyExists
 	}
 	layerMetaFileTmp := layerMetaFile + ".tarfs.tmp"
 	defer os.Remove(layerMetaFileTmp)
@@ -213,14 +227,14 @@ func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID
 	layerTarFileTmp := layerTarFile + ".tarfs.tmp"
 	tarFile, err := os.Create(layerTarFileTmp)
 	if err != nil {
-		return false, errors.Wrap(err, "create temporary file to store tar stream")
+		return errors.Wrap(err, "create temporary file to store tar stream")
 	}
 	defer tarFile.Close()
 	defer os.Remove(layerTarFileTmp)
 
 	fifoName := filepath.Join(upperDirPath, "layer_"+snapshotID+"_"+"tar.fifo")
 	if err = syscall.Mkfifo(fifoName, 0644); err != nil {
-		return false, err
+		return err
 	}
 	defer os.Remove(fifoName)
 
@@ -252,24 +266,43 @@ func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID
 	err = cmd.Run()
 	if err != nil {
 		log.L.Warnf("nydus image exec failed, %s", errb.String())
-		return false, errors.Wrap(err, "converting OCIv1 layer blob to tarfs")
+		return errors.Wrap(err, "converting OCIv1 layer blob to tarfs")
 	}
 	log.L.Debugf("nydus image output %s", outb.String())
 	log.L.Debugf("nydus image err %s", errb.String())
 
 	if err := os.Rename(layerTarFileTmp, layerTarFile); err != nil {
-		return false, errors.Wrapf(err, "rename file %s to %s", layerTarFileTmp, layerTarFile)
+		return errors.Wrapf(err, "rename file %s to %s", layerTarFileTmp, layerTarFile)
 	}
 	if err := os.Rename(layerMetaFileTmp, layerMetaFile); err != nil {
-		return false, errors.Wrapf(err, "rename file %s to %s", layerMetaFileTmp, layerMetaFile)
+		return errors.Wrapf(err, "rename file %s to %s", layerMetaFileTmp, layerMetaFile)
 	}
 
-	// TODO need a more reliable way to check if this is an empty blob
-	if strings.Contains(outb.String(), "data blob size: 0x0\n") ||
-		strings.Contains(errb.String(), "data blob size: 0x0\n") {
-		return true, nil
+	return nil
+}
+
+func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
+	if _, err := os.Stat(metaFilePath); err != nil {
+		return "", err
 	}
-	return false, nil
+
+	options := []string{
+		"inspect",
+		"-R blobs",
+		metaFilePath,
+	}
+	cmd := exec.Command(t.nydusImagePath, options...)
+	var errb, outb bytes.Buffer
+	cmd.Stderr = &errb
+	cmd.Stdout = &outb
+	log.L.Debugf("nydus image command %v", options)
+	err := cmd.Run()
+	if err != nil {
+		log.L.Warnf("nydus image exec failed, %s", errb.String())
+		return "", errors.Wrap(err, "converting OCIv1 layer blob to tarfs")
+	}
+
+	return string(outb.Bytes()), nil
 }
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
@@ -281,56 +314,51 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manif
 	}
 	remote := remote.New(keyChain, t.insecure)
 
-	handle := func() (bool, error) {
+	handle := func() error {
 		rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
 		if err != nil {
-			return false, err
+			return err
 		}
 		defer rc.Close()
 		ds, err := compression.DecompressStream(rc)
 		if err != nil {
-			return false, errors.Wrap(err, "unpack layer blob stream for tarfs")
+			return errors.Wrap(err, "unpack layer blob stream for tarfs")
 		}
 		defer ds.Close()
 
-		var emptyBlob bool
 		if t.validateDiffID {
 			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
 			if err != nil {
-				return false, errors.Wrap(err, "get image layer diffID")
+				return errors.Wrap(err, "get image layer diffID")
 			}
 			digester := digest.Canonical.Digester()
 			dr := io.TeeReader(ds, digester.Hash())
-			emptyBlob, err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
-			if err != nil {
-				return false, errors.Wrap(err, "generate tarfs data from image layer blob")
+			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
+			if err != nil && !errdefs.IsAlreadyExists(err) {
+				return errors.Wrap(err, "generate tarfs data from image layer blob")
 			}
-			if digester.Digest() != diffID {
-				return false, errors.Errorf("image layer diffID %s for tarfs does not match", diffID)
+			if err == nil {
+				if digester.Digest() != diffID {
+					return errors.Errorf("image layer diffID %s for tarfs does not match", diffID)
+				}
+				log.L.Infof("tarfs data for layer %s is ready, digest %s", snapshotID, digester.Digest())
 			}
-			log.L.Infof("tarfs data for layer %s is ready, digest %s", snapshotID, digester.Digest())
 		} else {
-			emptyBlob, err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
-			if err != nil {
-				return false, errors.Wrap(err, "generate tarfs data from image layer blob")
+			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
+			if err != nil && !errdefs.IsAlreadyExists(err) {
+				return errors.Wrap(err, "generate tarfs data from image layer blob")
 			}
 			log.L.Infof("tarfs data for layer %s is ready", snapshotID)
 		}
-		return emptyBlob, nil
+		return nil
 	}
 
-	var emptyBlob bool
-	emptyBlob, err = handle()
+	err = handle()
 	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
-		emptyBlob, err = handle()
+		err = handle()
 	}
-	if err != nil {
-		return err
-	}
-	if emptyBlob {
-		return ErrEmptyBlob
-	}
-	return nil
+
+	return err
 }
 
 func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest,
@@ -369,18 +397,12 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDige
 		st.blobID = layerBlobID
 		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
 		if err != nil {
-			if errors.Is(err, ErrEmptyBlob) {
-				st.isEmptyBlob = true
-				st.status = TarfsStatusReady
-			} else {
-				log.L.WithError(err).Errorf("failed to convert OCI image to tarfs")
-				st.status = TarfsStatusFailed
-			}
+			log.L.WithError(err).Errorf("failed to convert OCI image to tarfs")
+			st.status = TarfsStatusFailed
 		} else {
-			st.isEmptyBlob = false
 			st.status = TarfsStatusReady
 		}
-		log.L.Debugf("finish converting snapshot %s to tarfs, status %d, empty blob %v", snapshotID, st.status, st.isEmptyBlob)
+		log.L.Debugf("finish converting snapshot %s to tarfs, status %d", snapshotID, st.status)
 	}()
 
 	return nil
@@ -456,7 +478,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		snapshotID = s.ID
 	} else {
 		if len(s.ParentIDs) == 0 {
-			return updateFields, errors.Errorf("snapshot %s has parent", s.ID)
+			return updateFields, errors.Errorf("snapshot %s has no parent", s.ID)
 		}
 		snapshotID = s.ParentIDs[0]
 	}
@@ -536,17 +558,16 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	return updateFields, nil
 }
 
-func (t *Manager) attachLoopdev(blob string) (*losetup.Device, error) {
-	// losetup.Attach() is not thread-safe hold lock here
-	t.mutexLoopDev.Lock()
-	defer t.mutexLoopDev.Unlock()
-	dev, err := losetup.Attach(blob, 0, false)
-	return &dev, err
-}
-
 func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *daemon.Rafs) error {
 	if s == nil {
 		return errors.New("snapshot object for MountTarErofs() is nil")
+	}
+
+	upperDirPath := path.Join(rafs.GetSnapshotDir(), "fs")
+	mergedBootstrap := t.imageMetaFilePath(upperDirPath)
+	blobInfo, err := t.getImageBlobInfo(mergedBootstrap)
+	if err != nil {
+		return errors.Wrapf(err, "get image blob info")
 	}
 
 	var devices []string
@@ -567,7 +588,8 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *da
 			return errors.Errorf("snapshot %s tarfs format error %d", snapshotID, st.status)
 		}
 
-		if !st.isEmptyBlob {
+		var blobMarker = "\"blob_id\":\"" + st.blobID + "\""
+		if strings.Contains(blobInfo, blobMarker) {
 			if st.dataLoopdev == nil {
 				loopdev, err := t.attachLoopdev(st.blobTarFilePath)
 				if err != nil {
@@ -599,8 +621,6 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *da
 	}
 
 	if st.metaLoopdev == nil {
-		upperDirPath := path.Join(rafs.GetSnapshotDir(), "fs")
-		mergedBootstrap := t.imageMetaFilePath(upperDirPath)
 		loopdev, err := t.attachLoopdev(mergedBootstrap)
 		if err != nil {
 			return errors.Wrapf(err, "attach merged bootstrap %s to loopdev", mergedBootstrap)
@@ -637,37 +657,6 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 	}
 	st.erofsMountPoint = ""
 	return nil
-}
-
-func (t *Manager) waitLayerReady(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, false)
-	if err != nil {
-		return err
-	}
-	if st.status != TarfsStatusReady {
-		log.L.Debugf("wait tarfs conversion task for snapshot %s", snapshotID)
-	}
-	st.wg.Wait()
-	if st.status != TarfsStatusReady {
-		return errors.Errorf("snapshot %s is in state %d instead of ready state", snapshotID, st.status)
-	}
-	return nil
-}
-
-func (t *Manager) IsTarfsLayer(snapshotID string) bool {
-	_, err := t.getSnapshotStatus(snapshotID, false)
-	return err == nil
-}
-
-// check if a snapshot is tarfs layer and if mounted a erofs tarfs
-func (t *Manager) IsMountedTarfsLayer(snapshotID string) bool {
-	st, err := t.getSnapshotStatus(snapshotID, true)
-	if err != nil {
-		return false
-	}
-	defer st.mutex.Unlock()
-
-	return len(st.erofsMountPoint) != 0
 }
 
 func (t *Manager) DetachLayer(snapshotID string) error {
@@ -723,6 +712,29 @@ func (t *Manager) getSnapshotStatus(snapshotID string, lock bool) (*snapshotStat
 		return st, nil
 	}
 	return nil, errors.Errorf("not found snapshot %s", snapshotID)
+}
+
+func (t *Manager) waitLayerReady(snapshotID string) error {
+	st, err := t.getSnapshotStatus(snapshotID, false)
+	if err != nil {
+		return err
+	}
+	if st.status != TarfsStatusReady {
+		log.L.Debugf("wait tarfs conversion task for snapshot %s", snapshotID)
+	}
+	st.wg.Wait()
+	if st.status != TarfsStatusReady {
+		return errors.Errorf("snapshot %s is in state %d instead of ready state", snapshotID, st.status)
+	}
+	return nil
+}
+
+func (t *Manager) attachLoopdev(blob string) (*losetup.Device, error) {
+	// losetup.Attach() is not thread-safe hold lock here
+	t.mutexLoopDev.Lock()
+	defer t.mutexLoopDev.Unlock()
+	dev, err := losetup.Attach(blob, 0, false)
+	return &dev, err
 }
 
 func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, manifestDigest digest.Digest) (bool, error) {

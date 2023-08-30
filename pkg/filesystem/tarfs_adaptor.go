@@ -59,11 +59,6 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 	return nil
 }
 
-func (fs *Filesystem) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[string]string,
-	storageLocater func(string) string) ([]string, error) {
-	return fs.tarfsMgr.ExportBlockData(s, perLayer, labels, storageLocater)
-}
-
 func (fs *Filesystem) MergeTarfsLayers(s storage.Snapshot, storageLocater func(string) string) error {
 	return fs.tarfsMgr.MergeLayers(s, storageLocater)
 }
@@ -72,10 +67,7 @@ func (fs *Filesystem) DetachTarfsLayer(snapshotID string) error {
 	return fs.tarfsMgr.DetachLayer(snapshotID)
 }
 
-func (fs *Filesystem) IsTarfsLayer(snapshotID string) bool {
-	return fs.tarfsMgr.IsTarfsLayer(snapshotID)
-}
-
-func (fs *Filesystem) IsMountedTarfsLayer(snapshotID string) bool {
-	return fs.tarfsMgr.IsMountedTarfsLayer(snapshotID)
+func (fs *Filesystem) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[string]string,
+	storageLocater func(string) string) ([]string, error) {
+	return fs.tarfsMgr.ExportBlockData(s, perLayer, labels, storageLocater)
 }

@@ -275,7 +275,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 
 	syncRemove := cfg.SnapshotsConfig.SyncRemove
 	if config.GetFsDriver() == config.FsDriverFscache {
-		log.L.Infof("for fscache mode enable syncRemove")
+		log.L.Infof("enable syncRemove for fscache mode")
 		syncRemove = true
 	}
 
@@ -403,7 +403,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 					}
 					needRemoteMounts = true
 					metaSnapshotID = pID
-				} else if o.fs.TarfsEnabled() && o.fs.IsMountedTarfsLayer(pID) {
+				} else if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(info.Labels) {
 					needRemoteMounts = true
 					metaSnapshotID = pID
 				}
@@ -511,25 +511,23 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 	}
 
 	if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
-		if !o.fs.IsMountedTarfsLayer(pID) {
-			if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
-				return nil, errors.Wrapf(err, "tarfs merge fail %s", pID)
+		if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
+			return nil, errors.Wrapf(err, "tarfs merge fail %s", pID)
+		}
+		if config.GetTarfsExportEnabled() {
+			updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
+			if err != nil {
+				return nil, errors.Wrap(err, "export tarfs as block image")
 			}
-			if config.GetTarfsExportEnabled() {
-				updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
+			if len(updateFields) > 0 {
+				_, err = o.Update(ctx, pInfo, updateFields...)
 				if err != nil {
-					return nil, errors.Wrap(err, "export tarfs as block image")
-				}
-				if len(updateFields) > 0 {
-					_, err = o.Update(ctx, pInfo, updateFields...)
-					if err != nil {
-						return nil, errors.Wrapf(err, "update snapshot label information")
-					}
+					return nil, errors.Wrapf(err, "update snapshot label information")
 				}
 			}
-			if err := o.fs.Mount(pID, pInfo.Labels, &s); err != nil {
-				return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)
-			}
+		}
+		if err := o.fs.Mount(pID, pInfo.Labels, &s); err != nil {
+			return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)
 		}
 		needRemoteMounts = true
 		metaSnapshotID = pID
