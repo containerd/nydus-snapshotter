@@ -58,9 +58,9 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	}
 
 	// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
-	target, is_ro_layer := labels[label.TargetSnapshotRef]
+	target, isRoLayer := labels[label.TargetSnapshotRef]
 
-	if is_ro_layer {
+	if isRoLayer {
 		// Containerd won't consume mount slice for below snapshots
 		switch {
 		case label.IsNydusMetaLayer(labels):

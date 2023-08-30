@@ -302,7 +302,7 @@ func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
 		return "", errors.Wrap(err, "converting OCIv1 layer blob to tarfs")
 	}
 
-	return string(outb.Bytes()), nil
+	return outb.String(), nil
 }
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
