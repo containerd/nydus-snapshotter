@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
+	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 	"github.com/pkg/errors"
 )
 
@@ -28,17 +29,17 @@ func WithNydusImageBinaryPath(p string) NewFSOpt {
 
 func WithManager(pm *manager.Manager) NewFSOpt {
 	return func(fs *Filesystem) error {
-		if pm == nil {
-			return errors.New("process manager cannot be nil")
+		if pm != nil {
+			switch pm.FsDriver {
+			case config.FsDriverBlockdev:
+				fs.blockdevManager = pm
+			case config.FsDriverFscache:
+				fs.fscacheManager = pm
+			case config.FsDriverFusedev:
+				fs.fusedevManager = pm
+			}
+			fs.enabledManagers = append(fs.enabledManagers, pm)
 		}
-
-		if pm.FsDriver == config.FsDriverFusedev {
-			fs.fusedevManager = pm
-		} else if pm.FsDriver == config.FsDriverFscache {
-			fs.fscacheManager = pm
-		}
-
-		fs.enabledManagers = append(fs.enabledManagers, pm)
 
 		return nil
 	}
@@ -62,6 +63,16 @@ func WithReferrerManager(rm *referrer.Manager) NewFSOpt {
 		}
 
 		fs.referrerMgr = rm
+		return nil
+	}
+}
+
+func WithTarfsManager(tm *tarfs.Manager) NewFSOpt {
+	return func(fs *Filesystem) error {
+		if tm == nil {
+			return errors.New("tarfs manager cannot be nil")
+		}
+		fs.tarfsMgr = tm
 		return nil
 	}
 }

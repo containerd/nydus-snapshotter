@@ -9,8 +9,6 @@ package snapshot
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,15 +29,14 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
-	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/layout"
 	mgr "github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
+	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 
@@ -52,12 +49,11 @@ import (
 var _ snapshots.Snapshotter = &snapshotter{}
 
 type snapshotter struct {
-	root       string
-	nydusdPath string
-	// Storing snapshots' state, parentage and other metadata
-	ms                   *storage.MetaStore
+	root                 string
+	nydusdPath           string
+	ms                   *storage.MetaStore // Storing snapshots' state, parentage and other metadata
 	fs                   *filesystem.Filesystem
-	manager              *mgr.Manager
+	cgroupManager        *cgroup.Manager
 	enableNydusOverlayFS bool
 	syncRemove           bool
 	cleanupOnClose       bool
@@ -101,23 +97,64 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}
 	}
 
-	manager, err := mgr.NewManager(mgr.Opt{
-		NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
-		Database:         db,
-		CacheDir:         cfg.CacheManagerConfig.CacheDir,
-		RootDir:          cfg.Root,
-		RecoverPolicy:    rp,
-		FsDriver:         config.GetFsDriver(),
-		DaemonConfig:     daemonConfig,
-		CgroupMgr:        cgroupMgr,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "create daemons manager")
+	var blockdevManager *mgr.Manager
+	if cfg.Experimental.TarfsConfig.EnableTarfs {
+		blockdevManager, err = mgr.NewManager(mgr.Opt{
+			NydusdBinaryPath: "",
+			Database:         db,
+			CacheDir:         cfg.CacheManagerConfig.CacheDir,
+			RootDir:          cfg.Root,
+			RecoverPolicy:    rp,
+			FsDriver:         config.FsDriverBlockdev,
+			DaemonConfig:     daemonConfig,
+			CgroupMgr:        cgroupMgr,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "create blockdevice manager")
+		}
+	}
+
+	var fscacheManager *mgr.Manager
+	if config.GetFsDriver() == config.FsDriverFscache {
+		mgr, err := mgr.NewManager(mgr.Opt{
+			NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
+			Database:         db,
+			CacheDir:         cfg.CacheManagerConfig.CacheDir,
+			RootDir:          cfg.Root,
+			RecoverPolicy:    rp,
+			FsDriver:         config.FsDriverFscache,
+			DaemonConfig:     daemonConfig,
+			CgroupMgr:        cgroupMgr,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "create fscache manager")
+		}
+		fscacheManager = mgr
+	}
+
+	var fusedevManager *mgr.Manager
+	if config.GetFsDriver() == config.FsDriverFusedev {
+		mgr, err := mgr.NewManager(mgr.Opt{
+			NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
+			Database:         db,
+			CacheDir:         cfg.CacheManagerConfig.CacheDir,
+			RootDir:          cfg.Root,
+			RecoverPolicy:    rp,
+			FsDriver:         config.FsDriverFusedev,
+			DaemonConfig:     daemonConfig,
+			CgroupMgr:        cgroupMgr,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "create fusedev manager")
+		}
+		fusedevManager = mgr
 	}
 
 	metricServer, err := metrics.NewServer(
 		ctx,
-		metrics.WithProcessManager(manager),
+		metrics.WithProcessManager(blockdevManager),
+		metrics.WithProcessManager(fscacheManager),
+		metrics.WithProcessManager(fusedevManager),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create metrics server")
@@ -138,7 +175,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	opts := []filesystem.NewFSOpt{
-		filesystem.WithManager(manager),
+		filesystem.WithManager(blockdevManager),
+		filesystem.WithManager(fscacheManager),
+		filesystem.WithManager(fusedevManager),
 		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
 		filesystem.WithVerifier(verifier),
 		filesystem.WithRootMountpoint(config.GetRootMountpoint()),
@@ -165,13 +204,31 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
 
+	if cfg.Experimental.TarfsConfig.EnableTarfs {
+		// FIXME: get the insecure option from nydusd config.
+		_, backendConfig := daemonConfig.StorageBackend()
+		tarfsMgr := tarfs.NewManager(backendConfig.SkipVerify, cfg.Experimental.TarfsConfig.TarfsHint,
+			cacheConfig.CacheDir, cfg.DaemonConfig.NydusImagePath,
+			int64(cfg.Experimental.TarfsConfig.MaxConcurrentProc))
+		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
+	}
+
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "initialize filesystem thin layer")
 	}
 
 	if config.IsSystemControllerEnabled() {
-		managers := []*mgr.Manager{manager}
+		managers := []*mgr.Manager{}
+		if blockdevManager != nil {
+			managers = append(managers, blockdevManager)
+		}
+		if fscacheManager != nil {
+			managers = append(managers, fscacheManager)
+		}
+		if fusedevManager != nil {
+			managers = append(managers, fusedevManager)
+		}
 		systemController, err := system.NewSystemController(nydusFs, managers, config.SystemControllerAddress())
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
@@ -214,7 +271,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 
 	syncRemove := cfg.SnapshotsConfig.SyncRemove
 	if config.GetFsDriver() == config.FsDriverFscache {
-		log.L.Infof("for fscache mode enable syncRemove")
+		log.L.Infof("enable syncRemove for fscache mode")
 		syncRemove = true
 	}
 
@@ -224,7 +281,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		ms:                   ms,
 		syncRemove:           syncRemove,
 		fs:                   nydusFs,
-		manager:              manager,
+		cgroupManager:        cgroupMgr,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		cleanupOnClose:       cfg.CleanupOnClose,
 	}, nil
@@ -266,24 +323,28 @@ func (o *snapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, e
 		return snapshots.Usage{}, err
 	}
 
-	if info.Kind == snapshots.KindActive {
+	switch info.Kind {
+	case snapshots.KindActive:
 		upperPath := o.upperPath(id)
 		du, err := fs.DiskUsage(ctx, upperPath)
 		if err != nil {
 			return snapshots.Usage{}, err
 		}
 		usage = snapshots.Usage(du)
-	}
-
-	// Blob layers are all committed snapshots
-	if info.Kind == snapshots.KindCommitted && label.IsNydusDataLayer(info.Labels) {
-		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
-		// Try to get nydus meta layer/snapshot disk usage
-		cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
-		if err != nil {
-			return snapshots.Usage{}, errors.Wrapf(err, "try to get snapshot %s nydus disk usage", id)
+	case snapshots.KindCommitted:
+		// Caculate disk space usage under cacheDir of committed snapshots.
+		if label.IsNydusDataLayer(info.Labels) || label.IsTarfsDataLayer(info.Labels) {
+			if blobDigest, ok := info.Labels[snpkg.TargetLayerDigestLabel]; ok {
+				// Try to get nydus meta layer/snapshot disk usage
+				cacheUsage, err := o.fs.CacheUsage(ctx, blobDigest)
+				if err != nil {
+					return snapshots.Usage{}, errors.Wrapf(err, "try to get snapshot %s nydus disk usage", id)
+				}
+				usage.Add(cacheUsage)
+			}
 		}
-		usage.Add(cacheUsage)
+	case snapshots.KindUnknown:
+	case snapshots.KindView:
 	}
 
 	return usage, nil
@@ -305,41 +366,52 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 	log.L.Infof("[Mounts] snapshot %s ID %s Kind %s", key, id, info.Kind)
 
-	if label.IsNydusMetaLayer(info.Labels) {
-		err = o.fs.WaitUntilReady(id)
-		if err != nil {
-			// Skip waiting if clients is unpacking nydus artifacts to `mounts`
-			// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
-			//  1. [Prepare] snapshot for the uppermost layer - bootstrap
-			//  2. [Mounts]
-			//  3. Unpacking by applying the mounts, then we get bootstrap in its path position.
-			// In above steps, no container write layer is called to set up from nydus-snapshotter. So it has no
-			// chance to start nydusd, during which the Rafs instance is created.
-			if !errors.Is(err, errdefs.ErrNotFound) {
-				return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+	switch info.Kind {
+	case snapshots.KindView:
+		if label.IsNydusMetaLayer(info.Labels) {
+			err = o.fs.WaitUntilReady(id)
+			if err != nil {
+				// Skip waiting if clients is unpacking nydus artifacts to `mounts`
+				// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
+				//  1. [Prepare] snapshot for the uppermost layer - bootstrap
+				//  2. [Mounts]
+				//  3. Unpacking by applying the mounts, then we get bootstrap in its path position.
+				// In above steps, no container write layer is called to set up from nydus-snapshotter. So it has no
+				// chance to start nydusd, during which the Rafs instance is created.
+				if !errors.Is(err, errdefs.ErrNotFound) {
+					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", id, err)
+				}
+			} else {
+				needRemoteMounts = true
+				metaSnapshotID = id
 			}
-		} else {
+		} else if label.IsTarfsDataLayer(info.Labels) {
 			needRemoteMounts = true
 			metaSnapshotID = id
 		}
-	}
-
-	if info.Kind == snapshots.KindActive && info.Parent != "" {
-		pKey := info.Parent
-		if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
-			if label.IsNydusMetaLayer(info.Labels) {
-				if err = o.fs.WaitUntilReady(pID); err != nil {
-					return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+	case snapshots.KindActive:
+		if info.Parent != "" {
+			pKey := info.Parent
+			if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
+				if label.IsNydusMetaLayer(info.Labels) {
+					if err = o.fs.WaitUntilReady(pID); err != nil {
+						return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
+					}
+					needRemoteMounts = true
+					metaSnapshotID = pID
+				} else if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(info.Labels) {
+					needRemoteMounts = true
+					metaSnapshotID = pID
 				}
-				needRemoteMounts = true
-				metaSnapshotID = pID
+			} else {
+				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 			}
-		} else {
-			return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
 		}
+	case snapshots.KindCommitted:
+	case snapshots.KindUnknown:
 	}
 
-	if o.fs.ReferrerDetectEnabled() {
+	if o.fs.ReferrerDetectEnabled() && !needRemoteMounts {
 		if id, _, err := o.findReferrerLayer(ctx, key); err == nil {
 			needRemoteMounts = true
 			metaSnapshotID = id
@@ -352,7 +424,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 
 	if needRemoteMounts {
-		return o.remoteMounts(ctx, *snap, metaSnapshotID)
+		return o.remoteMounts(ctx, info.Labels, *snap, metaSnapshotID)
 	}
 
 	return o.mounts(ctx, info.Labels, *snap)
@@ -410,7 +482,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
 		if err = o.fs.WaitUntilReady(pID); err != nil {
 			if errors.Is(err, errdefs.ErrNotFound) {
-				if err := o.fs.Mount(pID, pInfo.Labels); err != nil {
+				if err := o.fs.Mount(pID, pInfo.Labels, nil); err != nil {
 					return nil, errors.Wrapf(err, "mount rafs, instance id %s", pID)
 				}
 
@@ -434,10 +506,33 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		return nil, err
 	}
 
+	if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
+		if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
+			return nil, errors.Wrapf(err, "tarfs merge fail %s", pID)
+		}
+		if config.GetTarfsExportEnabled() {
+			updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
+			if err != nil {
+				return nil, errors.Wrap(err, "export tarfs as block image")
+			}
+			if len(updateFields) > 0 {
+				_, err = o.Update(ctx, pInfo, updateFields...)
+				if err != nil {
+					return nil, errors.Wrapf(err, "update snapshot label information")
+				}
+			}
+		}
+		if err := o.fs.Mount(pID, pInfo.Labels, &s); err != nil {
+			return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)
+		}
+		needRemoteMounts = true
+		metaSnapshotID = pID
+	}
+
 	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	if needRemoteMounts {
-		return o.remoteMounts(ctx, s, metaSnapshotID)
+		return o.remoteMounts(ctx, base.Labels, s, metaSnapshotID)
 	}
 
 	return o.mounts(ctx, base.Labels, s)
@@ -460,21 +555,18 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 	}()
 
 	// grab the existing id
-	id, info, _, err := storage.GetInfo(ctx, key)
+	id, _, _, err := storage.GetInfo(ctx, key)
 	if err != nil {
 		return err
 	}
 
 	log.L.Infof("[Commit] snapshot with key %q snapshot id %s", key, id)
 
-	var usage fs.Usage
-	// For OCI compatibility, we calculate disk usage and commit the usage to DB.
-	// Nydus disk usage calculation will be delayed until containerd queries.
-	if !label.IsNydusMetaLayer(info.Labels) && !label.IsNydusDataLayer(info.Labels) {
-		usage, err = fs.DiskUsage(ctx, o.upperPath(id))
-		if err != nil {
-			return err
-		}
+	// For OCI compatibility, we calculate disk usage of the snapshotDir and commit the usage to DB.
+	// Nydus disk usage under the cacheDir will be delayed until containerd queries.
+	usage, err := fs.DiskUsage(ctx, o.upperPath(id))
+	if err != nil {
+		return err
 	}
 
 	if _, err = storage.CommitActive(ctx, key, name, snapshots.Usage(usage), opts...); err != nil {
@@ -517,6 +609,8 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 
 	if label.IsNydusMetaLayer(info.Labels) {
 		log.L.Infof("[Remove] nydus meta snapshot with key %s snapshot id %s", key, id)
+	} else if label.IsTarfsDataLayer(info.Labels) {
+		log.L.Infof("[Remove] nydus tarfs snapshot with key %s snapshot id %s", key, id)
 	}
 
 	if info.Kind == snapshots.KindCommitted {
@@ -581,8 +675,8 @@ func (o *snapshotter) Close() error {
 
 	o.fs.TryStopSharedDaemon()
 
-	if o.manager.CgroupMgr != nil {
-		if err := o.manager.CgroupMgr.Delete(); err != nil {
+	if o.cgroupManager != nil {
+		if err := o.cgroupManager.Delete(); err != nil {
 			log.L.Errorf("failed to destroy cgroup, err %v", err)
 		}
 	}
@@ -717,24 +811,23 @@ func overlayMount(options []string) []mount.Mount {
 	}
 }
 
-func (o *snapshotter) prepareRemoteSnapshot(id string, labels map[string]string) error {
-	return o.fs.Mount(id, labels)
-}
-
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
 // `s` and `id` can represent a different layer, it's useful when View an image
-func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id string) ([]mount.Mount, error) {
+func (o *snapshotter) remoteMounts(ctx context.Context, labels map[string]string, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
-	lowerPaths := make([]string, 0, 8)
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
+		if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
+			overlayOptions = append(overlayOptions, "volatile")
+		}
 	} else if len(s.ParentIDs) == 1 {
 		return bindMount(o.upperPath(s.ParentIDs[0]), "ro"), nil
 	}
 
+	lowerPaths := make([]string, 0, 8)
 	lowerPathNydus, err := o.lowerPath(id)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to locate overlay lowerdir")
@@ -759,82 +852,6 @@ func (o *snapshotter) remoteMounts(ctx context.Context, s storage.Snapshot, id s
 	}
 
 	return overlayMount(overlayOptions), nil
-}
-
-type ExtraOption struct {
-	Source      string `json:"source"`
-	Config      string `json:"config"`
-	Snapshotdir string `json:"snapshotdir"`
-	Version     string `json:"fs_version"`
-}
-
-func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage.Snapshot, id string, overlayOptions []string) ([]mount.Mount, error) {
-	source, err := o.fs.BootstrapFile(id)
-	if err != nil {
-		return nil, err
-	}
-
-	instance := daemon.RafsSet.Get(id)
-	daemon, err := o.fs.GetDaemonByID(instance.DaemonID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "get daemon with ID %s", instance.DaemonID)
-	}
-
-	var c daemonconfig.DaemonConfig
-	if daemon.IsSharedDaemon() {
-		c, err = daemonconfig.NewDaemonConfig(daemon.States.FsDriver, daemon.ConfigFile(instance.SnapshotID))
-		if err != nil {
-			return nil, errors.Wrapf(err, "Failed to load instance configuration %s",
-				daemon.ConfigFile(instance.SnapshotID))
-		}
-	} else {
-		c = daemon.Config
-	}
-	configContent, err := c.DumpString()
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal config")
-	}
-
-	// get version from bootstrap
-	f, err := os.Open(source)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to open bootstrap")
-	}
-	defer f.Close()
-	header := make([]byte, 4096)
-	sz, err := f.Read(header)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: check bootstrap version: failed to read bootstrap")
-	}
-	version, err := layout.DetectFsVersion(header[0:sz])
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to detect filesystem version")
-	}
-
-	// when enable nydus-overlayfs, return unified mount slice for runc and kata
-	extraOption := &ExtraOption{
-		Source:      source,
-		Config:      configContent,
-		Snapshotdir: o.snapshotDir(s.ID),
-		Version:     version,
-	}
-	no, err := json.Marshal(extraOption)
-	if err != nil {
-		return nil, errors.Wrapf(err, "remoteMounts: failed to marshal NydusOption")
-	}
-	// XXX: Log options without extraoptions as it might contain secrets.
-	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
-	// base64 to filter easily in `nydus-overlayfs`
-	opt := fmt.Sprintf("extraoption=%s", base64.StdEncoding.EncodeToString(no))
-	overlayOptions = append(overlayOptions, opt)
-
-	return []mount.Mount{
-		{
-			Type:    "fuse.nydus-overlayfs",
-			Source:  "overlay",
-			Options: overlayOptions,
-		},
-	}, nil
 }
 
 func (o *snapshotter) mounts(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
@@ -946,6 +963,12 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	snapshotID := filepath.Base(dir)
 	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
+	}
+
+	if o.fs.TarfsEnabled() {
+		if err := o.fs.DetachTarfsLayer(snapshotID); err != nil && !os.IsNotExist(err) {
+			log.G(ctx).WithError(err).Errorf("failed to detach tarfs layer for snapshot %s", snapshotID)
+		}
 	}
 
 	if err := os.RemoveAll(dir); err != nil {

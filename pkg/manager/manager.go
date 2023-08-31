@@ -127,9 +127,8 @@ type Manager struct {
 	// supposed to refilled when nydus-snapshotter restarting.
 	daemonStates *DaemonStates
 
-	monitor LivenessMonitor
-	// TODO: Close me
-	LivenessNotifier chan deathEvent
+	monitor          LivenessMonitor
+	LivenessNotifier chan deathEvent // TODO: Close me
 	RecoverPolicy    config.DaemonRecoverPolicy
 	SupervisorSet    *supervisor.SupervisorsSet
 
@@ -151,12 +150,10 @@ type Opt struct {
 	Database         *store.Database
 	CacheDir         string
 	RecoverPolicy    config.DaemonRecoverPolicy
-	// Nydus-snapshotter work directory
-	RootDir      string
-	DaemonConfig daemonconfig.DaemonConfig
-	CgroupMgr    *cgroup.Manager
-	// In order to validate daemon fs driver is consistent with the latest snapshotter boot
-	FsDriver string
+	RootDir          string // Nydus-snapshotter work directory
+	DaemonConfig     daemonconfig.DaemonConfig
+	CgroupMgr        *cgroup.Manager
+	FsDriver         string // In order to validate daemon fs driver is consistent with the latest snapshotter boot
 }
 
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
@@ -328,6 +325,10 @@ func (m *Manager) NewInstance(r *daemon.Rafs) error {
 	return m.store.AddInstance(r)
 }
 
+func (m *Manager) RemoveInstance(snapshotID string) error {
+	return m.store.DeleteInstance(snapshotID)
+}
+
 func (m *Manager) Lock() {
 	m.mu.Lock()
 }
@@ -351,10 +352,6 @@ func (m *Manager) UnsubscribeDaemonEvent(d *daemon.Daemon) error {
 		return errors.Wrapf(err, "unsubscribe daemon %s", d.ID())
 	}
 	return nil
-}
-
-func (m *Manager) RemoveInstance(snapshotID string) error {
-	return m.store.DeleteInstance(snapshotID)
 }
 
 func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {

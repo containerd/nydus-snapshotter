@@ -13,10 +13,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
 )
@@ -24,9 +24,8 @@ import (
 // `storageLocater` provides a local storage for each handler to save their intermediates.
 // Different actions for different layer types
 func chooseProcessor(ctx context.Context, logger *logrus.Entry,
-	sn *snapshotter, s storage.Snapshot,
-	key, parent string, labels map[string]string, storageLocater func() string) (_ func() (bool, []mount.Mount, error), target string, err error) {
-
+	sn *snapshotter, s storage.Snapshot, key, parent string, labels map[string]string,
+	storageLocater func() string) (_ func() (bool, []mount.Mount, error), target string, err error) {
 	var handler func() (bool, []mount.Mount, error)
 
 	// Handler to prepare a directory for containerd to download and unpacking layer.
@@ -42,8 +41,8 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 
 	remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
 		return func() (bool, []mount.Mount, error) {
-			logger.Debugf("Found nydus meta layer id %s", id)
-			if err := sn.prepareRemoteSnapshot(id, labels); err != nil {
+			logger.Debugf("Prepare remote snapshot %s", id)
+			if err := sn.fs.Mount(id, labels, &s); err != nil {
 				return false, nil, err
 			}
 
@@ -52,15 +51,16 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				return false, nil, err
 			}
 
-			log.L.Infof("Nydus remote snapshot %s is ready", id)
-			mounts, err := sn.remoteMounts(ctx, s, id)
+			logger.Infof("Nydus remote snapshot %s is ready", id)
+			mounts, err := sn.remoteMounts(ctx, labels, s, id)
 			return false, mounts, err
 		}
 	}
 
-	target, remote := labels[label.TargetSnapshotRef]
+	// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
+	target, isRoLayer := labels[label.TargetSnapshotRef]
 
-	if remote {
+	if isRoLayer {
 		// Containerd won't consume mount slice for below snapshots
 		switch {
 		case label.IsNydusMetaLayer(labels):
@@ -72,35 +72,54 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		case sn.fs.CheckReferrer(ctx, labels):
 			logger.Debugf("found referenced nydus manifest")
 			handler = skipHandler
-		case sn.fs.StargzEnabled():
-			// Check if the blob is format of estargz
-			if ok, blob := sn.fs.IsStargzDataLayer(labels); ok {
-				err := sn.fs.PrepareStargzMetaLayer(blob, storageLocater(), labels)
-				if err != nil {
-					logger.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
-				} else {
-					// Mark this snapshot as stargz layer since estargz image format does not
-					// has special annotation or media type.
-					labels[label.StargzLayer] = "true"
+		default:
+			if sn.fs.StargzEnabled() {
+				// Check if the blob is format of estargz
+				if ok, blob := sn.fs.IsStargzDataLayer(labels); ok {
+					err := sn.fs.PrepareStargzMetaLayer(blob, storageLocater(), labels)
+					if err != nil {
+						logger.Errorf("prepare stargz layer of snapshot ID %s, err: %v", s.ID, err)
+					} else {
+						logger.Debugf("found estargz data layer")
+						// Mark this snapshot as stargz layer since estargz image format does not
+						// has special annotation or media type.
+						labels[label.StargzLayer] = "true"
+						handler = skipHandler
+					}
 				}
 			}
-		default:
-			// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
-			handler = defaultHandler
+
+			if handler == nil && sn.fs.TarfsEnabled() {
+				err := sn.fs.PrepareTarfsLayer(ctx, labels, s.ID, sn.upperPath(s.ID))
+				if err != nil {
+					logger.Warnf("snapshot ID %s can't be converted into tarfs, fallback to containerd, err: %v", s.ID, err)
+				} else {
+					logger.Debugf("convert OCIv1 layer to tarfs")
+					if config.GetTarfsExportEnabled() {
+						_, err = sn.fs.ExportBlockData(s, true, labels, func(id string) string { return sn.upperPath(id) })
+						if err != nil {
+							return nil, "", errors.Wrap(err, "export layer as tarfs block device")
+						}
+					}
+					labels[label.NydusTarfsLayer] = "true"
+					handler = skipHandler
+				}
+			}
 		}
 	} else {
-		// Container writable layer comes into this branch. It can't be committed within this Prepare
+		// Container writable layer comes into this branch.
+		// It should not be committed during this Prepare() operation.
 
 		// Hope to find bootstrap layer and prepares to start nydusd
 		// TODO: Trying find nydus meta layer will slow down setting up rootfs to OCI images
 		if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
-			logger.Infof("Prepares active snapshot %s, nydusd should start afterwards", key)
+			logger.Infof("Prepare active Nydus snapshot %s", key)
 			handler = remoteHandler(id, info.Labels)
 		}
 
 		if handler == nil && sn.fs.ReferrerDetectEnabled() {
 			if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
-				logger.Infof("found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
+				logger.Infof("Found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
 				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
 				if err := sn.fs.TryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
 					return nil, "", errors.Wrap(err, "try fetch metadata")
@@ -111,7 +130,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 
 		if handler == nil && sn.fs.StargzEnabled() {
 			// `pInfo` must be the uppermost parent layer
-			_, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
+			id, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
 			if err != nil {
 				return nil, "", errors.Wrap(err, "get parent snapshot info")
 			}
@@ -120,6 +139,34 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				if err := sn.fs.MergeStargzMetaLayer(ctx, s); err != nil {
 					return nil, "", errors.Wrap(err, "merge stargz meta layers")
 				}
+				handler = remoteHandler(id, pInfo.Labels)
+				logger.Infof("Generated estargz merged meta for %s", key)
+			}
+		}
+
+		if handler == nil && sn.fs.TarfsEnabled() {
+			// Merge and mount tarfs on the uppermost parent layer.
+			id, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
+			switch {
+			case err != nil:
+				logger.Warnf("Tarfs enabled but can't get parent of snapshot %s", s.ID)
+			case !label.IsTarfsDataLayer(pInfo.Labels):
+				logger.Debugf("Tarfs enabled but Parent (%s) of snapshot %s is not a tarfs layer", id, s.ID)
+			default:
+				// TODO may need to check all parrent layers, in case share layers with other images
+				// which have already been prepared by overlay snapshotter
+
+				err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
+				if err != nil {
+					return nil, "", errors.Wrap(err, "merge tarfs layers")
+				}
+				if config.GetTarfsExportEnabled() {
+					_, err = sn.fs.ExportBlockData(s, false, labels, func(id string) string { return sn.upperPath(id) })
+					if err != nil {
+						return nil, "", errors.Wrap(err, "export image as tarfs block device")
+					}
+				}
+				handler = remoteHandler(id, pInfo.Labels)
 			}
 		}
 	}

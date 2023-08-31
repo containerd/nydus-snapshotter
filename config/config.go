@@ -107,8 +107,16 @@ const (
 )
 
 type Experimental struct {
-	EnableStargz         bool `toml:"enable_stargz"`
-	EnableReferrerDetect bool `toml:"enable_referrer_detect"`
+	EnableStargz         bool        `toml:"enable_stargz"`
+	EnableReferrerDetect bool        `toml:"enable_referrer_detect"`
+	TarfsConfig          TarfsConfig `toml:"tarfs"`
+}
+
+type TarfsConfig struct {
+	EnableTarfs       bool   `toml:"enable_tarfs"`
+	TarfsHint         bool   `toml:"tarfs_hint"`
+	MaxConcurrentProc int    `toml:"max_concurrent_proc"`
+	ExportMode        string `toml:"export_mode"`
 }
 
 type CgroupConfig struct {

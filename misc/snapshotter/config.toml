@@ -104,3 +104,21 @@ enable_stargz = false
 # The option enables trying to fetch the Nydus image associated with the OCI image and run it.
 # Also see https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers
 enable_referrer_detect = false
+[experimental.tarfs]
+# Whether to enable nydus tarfs mode. Tarfs is supported by:
+# - The EROFS filesystem driver since Linux 6.4
+# - Nydus Image Service release v2.3
+enable_tarfs = false
+# Only enable nydus tarfs mode for images with `tarfs hint` label when true
+tarfs_hint = false
+# Maximum of concurrence to converting OCIv1 images to tarfs, 0 means default
+max_concurrent_proc = 0
+# Mode to export tarfs images:
+# - "none" or "": do not export tarfs
+# - "layer_verity_only": only generate disk verity information for a layer blob
+# - "image_verity_only": only generate disk verity information for all blobs of an image
+# - "layer_block": generate a raw block disk image with tarfs for a layer
+# - "image_block": generate a raw block disk image with tarfs for an image
+# - "layer_block_with_verity": generate a raw block disk image with tarfs for a layer with dm-verity info
+# - "image_block_with_verity": generate a raw block disk image with tarfs for an image with dm-verity info
+export_mode = ""

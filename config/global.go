@@ -112,6 +112,49 @@ func GetDaemonProfileCPUDuration() int64 {
 	return globalConfig.origin.SystemControllerConfig.DebugConfig.ProfileDuration
 }
 
+const (
+	TarfsLayerVerityOnly      string = "layer_verity_only"
+	TarfsImageVerityOnly      string = "image_verity_only"
+	TarfsLayerBlockDevice     string = "layer_block"
+	TarfsImageBlockDevice     string = "image_block"
+	TarfsLayerBlockWithVerity string = "layer_block_with_verity"
+	TarfsImageBlockWithVerity string = "image_block_with_verity"
+)
+
+func GetTarfsExportEnabled() bool {
+	switch globalConfig.origin.Experimental.TarfsConfig.ExportMode {
+	case TarfsLayerVerityOnly, TarfsLayerBlockDevice, TarfsLayerBlockWithVerity:
+		return true
+	case TarfsImageVerityOnly, TarfsImageBlockDevice, TarfsImageBlockWithVerity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Returns (wholeImage, generateBlockImage, withVerityInfo)
+// wholeImage: generate tarfs for the whole image instead of of a specific layer.
+// generateBlockImage: generate a block image file.
+// withVerityInfo: generate disk verity information.
+func GetTarfsExportFlags() (bool, bool, bool) {
+	switch globalConfig.origin.Experimental.TarfsConfig.ExportMode {
+	case "layer_verity_only":
+		return false, false, true
+	case "image_verity_only":
+		return true, false, true
+	case "layer_block":
+		return false, true, false
+	case "image_block":
+		return true, true, false
+	case "layer_block_with_verity":
+		return false, true, true
+	case "image_block_with_verity":
+		return true, true, true
+	default:
+		return false, false, false
+	}
+}
+
 func ProcessConfigurations(c *SnapshotterConfig) error {
 	if c.LoggingConfig.LogDir == "" {
 		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
