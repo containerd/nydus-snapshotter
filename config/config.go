@@ -118,13 +118,14 @@ type CgroupConfig struct {
 
 // Configure how to start and recover nydusd daemons
 type DaemonConfig struct {
-	NydusdPath       string `toml:"nydusd_path"`
-	NydusdConfigPath string `toml:"nydusd_config"`
-	NydusImagePath   string `toml:"nydusimage_path"`
-	RecoverPolicy    string `toml:"recover_policy"`
-	FsDriver         string `toml:"fs_driver"`
-	ThreadsNumber    int    `toml:"threads_number"`
-	LogRotationSize  int    `toml:"log_rotation_size"`
+	NydusdPath               string `toml:"nydusd_path"`
+	NydusdConfigPath         string `toml:"nydusd_config"`
+	NydusImagePath           string `toml:"nydusimage_path"`
+	RecoverPolicy            string `toml:"recover_policy"`
+	FsDriver                 string `toml:"fs_driver"`
+	ThreadsNumber            int    `toml:"threads_number"`
+	LogRotationSize          int    `toml:"log_rotation_size"`
+	EnableChunkDeduplication bool   `toml:"enable_chunk_deduplication"`
 }
 
 type LoggingConfig struct {
@@ -324,6 +325,10 @@ func ParseParameters(args *flags.Args, cfg *SnapshotterConfig) error {
 	}
 	if args.FsDriver != "" {
 		daemonConfig.FsDriver = args.FsDriver
+	}
+
+	if args.EnableChunkDeduplicationCount > 0 {
+		daemonConfig.EnableChunkDeduplication = args.EnableChunkDeduplication
 	}
 
 	// --- cache manager configuration

@@ -112,6 +112,10 @@ func GetDaemonProfileCPUDuration() int64 {
 	return globalConfig.origin.SystemControllerConfig.DebugConfig.ProfileDuration
 }
 
+func GetEnableChunkDeduplication() bool {
+	return globalConfig.origin.DaemonConfig.EnableChunkDeduplication
+}
+
 func ProcessConfigurations(c *SnapshotterConfig) error {
 	if c.LoggingConfig.LogDir == "" {
 		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)

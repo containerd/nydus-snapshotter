@@ -13,18 +13,20 @@ import (
 )
 
 type Args struct {
-	Address               string
-	NydusdConfigPath      string
-	SnapshotterConfigPath string
-	RootDir               string
-	NydusdPath            string
-	NydusImagePath        string
-	DaemonMode            string
-	FsDriver              string
-	LogLevel              string
-	LogToStdout           bool
-	LogToStdoutCount      int
-	PrintVersion          bool
+	Address                       string
+	NydusdConfigPath              string
+	SnapshotterConfigPath         string
+	RootDir                       string
+	NydusdPath                    string
+	NydusImagePath                string
+	DaemonMode                    string
+	FsDriver                      string
+	LogLevel                      string
+	LogToStdout                   bool
+	LogToStdoutCount              int
+	PrintVersion                  bool
+	EnableChunkDeduplication      bool
+	EnableChunkDeduplicationCount int
 }
 
 type Flags struct {
@@ -96,6 +98,13 @@ func buildFlags(args *Args) []cli.Flag {
 			Name:        "version",
 			Usage:       "print version and build information",
 			Destination: &args.PrintVersion,
+		},
+		&cli.BoolFlag{
+			Name:        "chunk-deduplication",
+			Value:       false,
+			Usage:       "(experiment) whether to enable local cas chunk deduplication",
+			Destination: &args.EnableChunkDeduplication,
+			Count:       &args.EnableChunkDeduplicationCount,
 		},
 	}
 }

@@ -45,6 +45,10 @@ type FscacheDaemonConfig struct {
 		CacheConfig struct {
 			WorkDir string `json:"work_dir"`
 		} `json:"cache_config"`
+		DeduplicationConfig struct {
+			Enable  bool   `json:"enable"`
+			WorkDir string `json:"work_dir"`
+		} `json:"deduplication_config"`
 		BlobPrefetchConfig BlobPrefetchConfig `json:"prefetch_config"`
 		MetadataPath       string             `json:"metadata_path"`
 	} `json:"config"`
