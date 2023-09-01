@@ -8,23 +8,19 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/syslog"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
-	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
-	"github.com/containerd/nydus-snapshotter/pkg/fanotify"
+	"github.com/containerd/nydus-snapshotter/pkg/optimizer"
 	"github.com/containerd/nydus-snapshotter/version"
 	"github.com/pelletier/go-toml"
 )
@@ -33,23 +29,18 @@ const (
 	defaultEvents     = "StartContainer,StopContainer"
 	defaultServerPath = "/usr/local/bin/optimizer-server"
 	defaultPersistDir = "/opt/nri/optimizer/results"
+	defaultServerType = optimizer.FANOTIFY
 )
 
 type PluginConfig struct {
-	Events []string `toml:"events"`
-
-	ServerPath string `toml:"server_path"`
-	PersistDir string `toml:"persist_dir"`
-	Readable   bool   `toml:"readable"`
-	Timeout    int    `toml:"timeout"`
-	Overwrite  bool   `toml:"overwrite"`
+	Events       []string
+	optimizerCfg optimizer.Config
 }
 
 type PluginArgs struct {
-	PluginName   string
-	PluginIdx    string
-	PluginEvents string
-	Config       PluginConfig
+	PluginName string
+	PluginIdx  string
+	Config     PluginConfig
 }
 
 type Flags struct {
@@ -70,39 +61,39 @@ func buildFlags(args *PluginArgs) []cli.Flag {
 			Destination: &args.PluginIdx,
 		},
 		&cli.StringFlag{
-			Name:        "events",
-			Value:       defaultEvents,
-			Usage:       "the events that containerd subscribes to. DO NOT CHANGE THIS.",
-			Destination: &args.PluginEvents,
+			Name:        "server-type",
+			Value:       defaultServerType,
+			Usage:       "the type of optimizer, available value includes [\"ebpf\", \"fanotify\"]",
+			Destination: &args.Config.optimizerCfg.ServerType,
 		},
 		&cli.StringFlag{
 			Name:        "server-path",
 			Value:       defaultServerPath,
 			Usage:       "the path of optimizer server binary",
-			Destination: &args.Config.ServerPath,
+			Destination: &args.Config.optimizerCfg.ServerPath,
 		},
 		&cli.StringFlag{
 			Name:        "persist-dir",
 			Value:       defaultPersistDir,
 			Usage:       "the directory to persist accessed files list for container",
-			Destination: &args.Config.PersistDir,
+			Destination: &args.Config.optimizerCfg.PersistDir,
 		},
 		&cli.BoolFlag{
 			Name:        "readable",
 			Value:       false,
 			Usage:       "whether to make the csv file human readable",
-			Destination: &args.Config.Readable,
+			Destination: &args.Config.optimizerCfg.Readable,
 		},
 		&cli.IntFlag{
 			Name:        "timeout",
 			Value:       0,
 			Usage:       "the timeout to kill optimizer server, 0 to disable it",
-			Destination: &args.Config.Timeout,
+			Destination: &args.Config.optimizerCfg.Timeout,
 		},
 		&cli.BoolFlag{
 			Name:        "overwrite",
 			Usage:       "whether to overwrite the existed persistent files",
-			Destination: &args.Config.Overwrite,
+			Destination: &args.Config.optimizerCfg.Overwrite,
 		},
 	}
 }
@@ -121,15 +112,11 @@ type plugin struct {
 }
 
 var (
-	cfg                  PluginConfig
-	log                  *logrus.Logger
-	logWriter            *syslog.Writer
-	_                    = stub.ConfigureInterface(&plugin{})
-	globalFanotifyServer = make(map[string]*fanotify.Server)
-)
-
-const (
-	imageNameLabel = "io.kubernetes.cri.image-name"
+	cfg          PluginConfig
+	log          *logrus.Logger
+	logWriter    *syslog.Writer
+	_            = stub.ConfigureInterface(&plugin{})
+	globalServer = make(map[string]optimizer.Server)
 )
 
 func (p *plugin) Configure(config, runtime, version string) (stub.EventMask, error) {
@@ -142,7 +129,7 @@ func (p *plugin) Configure(config, runtime, version string) (stub.EventMask, err
 	if err != nil {
 		return 0, errors.Wrap(err, "parse TOML")
 	}
-	if err := tree.Unmarshal(&cfg); err != nil {
+	if err := tree.Unmarshal(&cfg.optimizerCfg); err != nil {
 		return 0, err
 	}
 
@@ -157,68 +144,41 @@ func (p *plugin) Configure(config, runtime, version string) (stub.EventMask, err
 }
 
 func (p *plugin) StartContainer(_ *api.PodSandbox, container *api.Container) error {
-	dir, imageName, err := GetImageName(container.Annotations)
+	imageName, server, err := optimizer.NewServer(cfg.optimizerCfg, container, logWriter)
 	if err != nil {
 		return err
 	}
 
-	persistDir := filepath.Join(cfg.PersistDir, dir)
-	if err := os.MkdirAll(persistDir, os.ModePerm); err != nil {
+	if server == nil {
+		return nil
+	}
+
+	if err := server.Start(); err != nil {
 		return err
 	}
 
-	persistFile := filepath.Join(persistDir, imageName)
-	if cfg.Timeout > 0 {
-		persistFile = fmt.Sprintf("%s.timeout%ds", persistFile, cfg.Timeout)
-	}
-
-	fanotifyServer := fanotify.NewServer(cfg.ServerPath, container.Pid, imageName, persistFile, cfg.Readable, cfg.Overwrite, time.Duration(cfg.Timeout)*time.Second, logWriter)
-
-	if err := fanotifyServer.RunServer(); err != nil {
-		return err
-	}
-
-	globalFanotifyServer[imageName] = fanotifyServer
+	globalServer[imageName] = server
 
 	return nil
 }
 
 func (p *plugin) StopContainer(_ *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
 	var update = []*api.ContainerUpdate{}
-	_, imageName, err := GetImageName(container.Annotations)
+	_, imageName, err := optimizer.GetImageName(container.Annotations)
 	if err != nil {
 		return update, err
 	}
-	if fanotifyServer, ok := globalFanotifyServer[imageName]; ok {
-		fanotifyServer.StopServer()
-	} else {
-		return nil, errors.New("can not find fanotify server for container image " + imageName)
+	if server, ok := globalServer[imageName]; ok {
+		server.Stop()
 	}
 
 	return update, nil
 }
 
-func GetImageName(annotations map[string]string) (string, string, error) {
-	named, err := docker.ParseDockerRef(annotations[imageNameLabel])
-	if err != nil {
-		return "", "", err
-	}
-	nameTagged := named.(docker.NamedTagged)
-	repo := docker.Path(nameTagged)
-
-	dir := filepath.Dir(repo)
-	image := filepath.Base(repo)
-
-	imageName := image + ":" + nameTagged.Tag()
-
-	return dir, imageName, nil
-}
-
 func (p *plugin) onClose() {
-	for _, fanotifyServer := range globalFanotifyServer {
-		fanotifyServer.StopServer()
+	for _, server := range globalServer {
+		server.Stop()
 	}
-	os.Exit(0)
 }
 
 func main() {
@@ -255,10 +215,10 @@ func main() {
 
 			p := &plugin{}
 
-			if p.mask, err = api.ParseEventMask(flags.Args.PluginEvents); err != nil {
+			if p.mask, err = api.ParseEventMask(defaultEvents); err != nil {
 				log.Fatalf("failed to parse events: %v", err)
 			}
-			cfg.Events = strings.Split(flags.Args.PluginEvents, ",")
+			cfg.Events = strings.Split(defaultEvents, ",")
 
 			if p.stub, err = stub.New(p, append(opts, stub.WithOnClose(p.onClose))...); err != nil {
 				log.Fatalf("failed to create plugin stub: %v", err)

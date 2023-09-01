@@ -19,12 +19,11 @@ env:
 
 jobs:
   run_optimizer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
+    env:
+      GOBCC_BUILDER_IMAGE: 'ghcr.io/sctb512/gobcc-builder:20.04'
+      GOBCC_BUILDER_IMAGE_FILE: '~/.image/gobcc-builder:20.04.tar'
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Checkout repository
         uses: actions/checkout@v3
       - name: cache go mod
@@ -46,6 +45,44 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('tools/optimizer-server/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo
+      - name: cache go bcc image
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${GOBCC_BUILDER_IMAGE_FILE}
+          key: ${{ runner.os }}-bogcc-builder-${{ hashFiles('${GOBCC_BUILDER_IMAGE_FILE}') }}
+          restore-keys: |
+            ${{ runner.os }}-bogcc-builder
+      - name: load go bcc image
+        run: |
+          if [ -f ${GOBCC_BUILDER_IMAGE_FILE} ];then
+            sudo docker load < ${GOBCC_BUILDER_IMAGE_FILE}
+          else
+            sudo docker pull ${GOBCC_BUILDER_IMAGE}
+          fi
+      - name: Build optimizer
+        run: |
+          make container-optimizer
+          pwd
+          ldd bin/*optimizer*
+          ls -lh bin/*optimizer*
+      - name: Setup bcc for eBPF
+        run: |
+          sudo apt-get update
+          sudo apt install -y zip bison build-essential cmake flex git libedit-dev \
+          libllvm12 llvm-12-dev libclang-12-dev python zlib1g-dev libelf-dev libfl-dev python3-setuptools \
+          liblzma-dev arping netperf iperf
+          git clone https://github.com/iovisor/bcc.git; cd bcc
+          git checkout v0.24.0
+          mkdir build; cd build
+          cmake ..
+          make
+          sudo make install
+          cmake -DPYTHON_CMD=python3 ..
+          pushd src/python/
+          make
+          sudo make install
+          popd
       - name: containerd runc and crictl
         run: |
           sudo wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.26.0/crictl-v1.26.0-linux-amd64.tar.gz
@@ -56,6 +93,7 @@ jobs:
           sudo tar -zxf ./containerd-static-1.7.0-linux-amd64.tar.gz -C /usr/
           sudo install -D -m 755 misc/optimizer/containerd-config.toml /etc/containerd/config.toml
           sudo systemctl restart containerd
+          systemctl status containerd --no-pager -l
           sudo wget https://github.com/opencontainers/runc/releases/download/v1.1.5/runc.amd64 -O /usr/bin/runc
           sudo chmod +x /usr/bin/runc
       - name: Setup CNI
@@ -66,11 +104,6 @@ jobs:
           sudo install -D -m 755 misc/example/10-containerd-net.conflist /etc/cni/net.d/10-containerd-net.conflist
       - name: Build and install optimizer
         run: |
-          rustup component add rustfmt clippy
-          make optimizer
-          sudo chown -R $(id -un):$(id -gn) . ~/.cargo/
-          pwd
-          ls -lh bin/*optimizer*
           sudo make install-optimizer
           sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
           sudo systemctl restart containerd
@@ -87,7 +120,7 @@ jobs:
           echo "count: $count expected minimum value: $expected"
           if [ $count -lt $expected ]; then
             echo "failed to generate accessed files list for nginx:1.23.3"
-            cat misc/optimizer/script/file_list.txt
+            cat /opt/nri/optimizer/results/library/nginx:1.23.3
             exit 1
           fi
           cat /opt/nri/optimizer/results/library/nginx:1.23.3.csv
@@ -95,6 +128,7 @@ jobs:
         if: failure()
         continue-on-error: true
         run: |
-          systemctl status containerd --no-pager -l
           journalctl -xeu containerd --no-pager
+          journalctl -xeu docker --no-pager
+          journalctl -t "optimizer-nri-plugin" --no-pager
           
