@@ -540,6 +540,9 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		}
 
 		blockInfo := strconv.FormatUint(dataBlobks, 10) + "," + strconv.FormatUint(hashOffset, 10) + "," + "sha256:" + rootHash
+		if len(labels) == 0 {
+			labels = make(map[string]string)
+		}
 		if wholeImage {
 			labels[label.NydusImageBlockInfo] = blockInfo
 			updateFields = append(updateFields, "labels."+label.NydusImageBlockInfo)
