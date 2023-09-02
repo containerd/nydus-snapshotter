@@ -14,51 +14,51 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 )
 
-type DaemonStore struct {
+type DaemonRafsStore struct {
 	db *Database // save daemons in database
 }
 
-func NewDaemonStore(db *Database) (*DaemonStore, error) {
-	return &DaemonStore{
+func NewDaemonRafsStore(db *Database) (*DaemonRafsStore, error) {
+	return &DaemonRafsStore{
 		db: db,
 	}, nil
 }
 
 // If the daemon is inserted to DB before, return error ErrAlreadyExisted.
-func (s *DaemonStore) AddDaemon(d *daemon.Daemon) error {
+func (s *DaemonRafsStore) AddDaemon(d *daemon.Daemon) error {
 	// Save daemon info in case snapshotter restarts so that we can restore the
 	// daemon states and reconnect the daemons.
 	return s.db.SaveDaemon(context.TODO(), d)
 }
 
-func (s *DaemonStore) UpdateDaemon(d *daemon.Daemon) error {
+func (s *DaemonRafsStore) UpdateDaemon(d *daemon.Daemon) error {
 	return s.db.UpdateDaemon(context.TODO(), d)
 }
 
-func (s *DaemonStore) DeleteDaemon(id string) error {
+func (s *DaemonRafsStore) DeleteDaemon(id string) error {
 	return s.db.DeleteDaemon(context.TODO(), id)
 }
 
-func (s *DaemonStore) WalkDaemons(ctx context.Context, cb func(d *daemon.States) error) error {
+func (s *DaemonRafsStore) WalkDaemons(ctx context.Context, cb func(d *daemon.States) error) error {
 	return s.db.WalkDaemons(ctx, cb)
 }
 
-func (s *DaemonStore) CleanupDaemons(ctx context.Context) error {
+func (s *DaemonRafsStore) CleanupDaemons(ctx context.Context) error {
 	return s.db.CleanupDaemons(ctx)
 }
 
-func (s *DaemonStore) AddInstance(r *rafs.Rafs) error {
-	return s.db.AddInstance(context.TODO(), r)
+func (s *DaemonRafsStore) AddRafsInstance(r *rafs.Rafs) error {
+	return s.db.AddRafsInstance(context.TODO(), r)
 }
 
-func (s *DaemonStore) DeleteInstance(snapshotID string) error {
-	return s.db.DeleteInstance(context.TODO(), snapshotID)
+func (s *DaemonRafsStore) DeleteRafsInstance(snapshotID string) error {
+	return s.db.DeleteRafsInstance(context.TODO(), snapshotID)
 }
 
-func (s *DaemonStore) NextInstanceSeq() (uint64, error) {
+func (s *DaemonRafsStore) WalkRafsInstances(ctx context.Context, cb func(*rafs.Rafs) error) error {
+	return s.db.WalkRafsInstances(ctx, cb)
+}
+
+func (s *DaemonRafsStore) NextInstanceSeq() (uint64, error) {
 	return s.db.NextInstanceSeq()
-}
-
-func (s *DaemonStore) WalkInstances(ctx context.Context, cb func(*rafs.Rafs) error) error {
-	return s.db.WalkInstances(ctx, cb)
 }

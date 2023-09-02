@@ -336,7 +336,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 			}
 		}
 
-		d.AddInstance(rafs)
+		d.AddRafsInstance(rafs)
 
 		// if publicKey is not empty we should verify bootstrap file of image
 		err = fs.verifier.Verify(labels, bootstrap)
@@ -366,7 +366,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 	}
 
 	// Persist it after associate instance after all the states are calculated.
-	if err := fsManager.AddInstance(rafs); err != nil {
+	if err := fsManager.AddRafsInstance(rafs); err != nil {
 		return errors.Wrapf(err, "create instance %s", snapshotID)
 	}
 
@@ -399,8 +399,8 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 			return errors.Wrapf(err, "get daemon with ID %s for snapshot %s", instance.DaemonID, snapshotID)
 		}
 
-		daemon.RemoveInstance(snapshotID)
-		if err := fsManager.RemoveInstance(snapshotID); err != nil {
+		daemon.RemoveRafsInstance(snapshotID)
+		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
 		if err := daemon.UmountInstance(instance); err != nil {
@@ -416,7 +416,7 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 		if err := fs.tarfsMgr.UmountTarErofs(snapshotID); err != nil {
 			return errors.Wrapf(err, "umount tar erofs on snapshot %s", snapshotID)
 		}
-		if err := fsManager.RemoveInstance(snapshotID); err != nil {
+		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
 	default:

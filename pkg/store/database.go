@@ -263,7 +263,7 @@ func (db *Database) WalkDaemons(ctx context.Context, cb func(info *daemon.States
 }
 
 // WalkDaemons iterates all daemon records and invoke callback on each
-func (db *Database) WalkInstances(ctx context.Context, cb func(r *rafs.Rafs) error) error {
+func (db *Database) WalkRafsInstances(ctx context.Context, cb func(r *rafs.Rafs) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 
@@ -279,7 +279,7 @@ func (db *Database) WalkInstances(ctx context.Context, cb func(r *rafs.Rafs) err
 	})
 }
 
-func (db *Database) AddInstance(ctx context.Context, instance *rafs.Rafs) error {
+func (db *Database) AddRafsInstance(ctx context.Context, instance *rafs.Rafs) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 
@@ -287,7 +287,7 @@ func (db *Database) AddInstance(ctx context.Context, instance *rafs.Rafs) error 
 	})
 }
 
-func (db *Database) DeleteInstance(ctx context.Context, snapshotID string) error {
+func (db *Database) DeleteRafsInstance(ctx context.Context, snapshotID string) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 

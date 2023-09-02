@@ -141,13 +141,13 @@ func (d *Daemon) LogFile() string {
 	return filepath.Join(d.States.LogDir, "nydusd.log")
 }
 
-func (d *Daemon) AddInstance(r *rafs.Rafs) {
+func (d *Daemon) AddRafsInstance(r *rafs.Rafs) {
 	d.RafsCache.Add(r)
 	d.IncRef()
 	r.DaemonID = d.ID()
 }
 
-func (d *Daemon) RemoveInstance(snapshotID string) {
+func (d *Daemon) RemoveRafsInstance(snapshotID string) {
 	d.RafsCache.Remove(snapshotID)
 	d.DecRef()
 }

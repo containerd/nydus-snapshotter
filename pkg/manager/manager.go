@@ -63,7 +63,7 @@ type Opt struct {
 }
 
 func NewManager(opt Opt) (*Manager, error) {
-	s, err := store.NewDaemonStore(opt.Database)
+	s, err := store.NewDaemonRafsStore(opt.Database)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (m *Manager) Recover(ctx context.Context,
 	return nil
 }
 
-func (m *Manager) AddInstance(r *rafs.Rafs) error {
+func (m *Manager) AddRafsInstance(r *rafs.Rafs) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -143,16 +143,16 @@ func (m *Manager) AddInstance(r *rafs.Rafs) error {
 
 	r.Seq = seq
 
-	return m.store.AddInstance(r)
+	return m.store.AddRafsInstance(r)
 }
 
-func (m *Manager) RemoveInstance(snapshotID string) error {
-	return m.store.DeleteInstance(snapshotID)
+func (m *Manager) RemoveRafsInstance(snapshotID string) error {
+	return m.store.DeleteRafsInstance(snapshotID)
 }
 
 func (m *Manager) recoverRafsInstances(ctx context.Context,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
-	if err := m.store.WalkInstances(ctx, func(r *rafs.Rafs) error {
+	if err := m.store.WalkRafsInstances(ctx, func(r *rafs.Rafs) error {
 		if r.GetFsDriver() != m.FsDriver {
 			return nil
 		}
@@ -161,11 +161,11 @@ func (m *Manager) recoverRafsInstances(ctx context.Context,
 		if r.GetFsDriver() == config.FsDriverFscache || r.GetFsDriver() == config.FsDriverFusedev {
 			d := (*recoveringDaemons)[r.DaemonID]
 			if d != nil {
-				d.AddInstance(r)
+				d.AddRafsInstance(r)
 			}
 			d = (*liveDaemons)[r.DaemonID]
 			if d != nil {
-				d.AddInstance(r)
+				d.AddRafsInstance(r)
 			}
 			rafs.RafsGlobalCache.Add(r)
 		} else if r.GetFsDriver() == config.FsDriverBlockdev {

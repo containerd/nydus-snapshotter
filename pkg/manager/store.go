@@ -24,11 +24,11 @@ type Store interface {
 	WalkDaemons(ctx context.Context, cb func(*daemon.States) error) error
 	CleanupDaemons(ctx context.Context) error
 
-	AddInstance(r *rafs.Rafs) error
-	DeleteInstance(snapshotID string) error
-	WalkInstances(ctx context.Context, cb func(*rafs.Rafs) error) error
+	AddRafsInstance(r *rafs.Rafs) error
+	DeleteRafsInstance(snapshotID string) error
+	WalkRafsInstances(ctx context.Context, cb func(*rafs.Rafs) error) error
 
 	NextInstanceSeq() (uint64, error)
 }
 
-var _ Store = &store.DaemonStore{}
+var _ Store = &store.DaemonRafsStore{}

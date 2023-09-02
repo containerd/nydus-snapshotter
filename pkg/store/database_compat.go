@@ -191,7 +191,7 @@ func (db *Database) tryTranslateRecords() error {
 		}
 
 		if instance != nil {
-			if err := db.AddInstance(context.TODO(), instance); err != nil {
+			if err := db.AddRafsInstance(context.TODO(), instance); err != nil {
 				return err
 			}
 		}
