@@ -53,7 +53,7 @@ func TestDaemonStatesCache(t *testing.T) {
 
 	assert.Equal(t, states.Size(), 0)
 
-	states.RecoverDaemonState(d2)
+	states.Update(d2)
 
 	assert.Equal(t, states.Size(), 1)
 

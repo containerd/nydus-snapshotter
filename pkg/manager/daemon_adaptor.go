@@ -25,7 +25,13 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
 )
 
-// Fork the nydusd daemon with the process PID decided
+// Spawn a nydusd daemon to serve the daemon instance.
+//
+// When returning from `StartDaemon()` with out error:
+//   - `d.States.ProcessID` will be set to the pid of the nydusd daemon.
+//   - `d.State()` may return any validate state, please call `d.WaitUntilState()` to
+//     ensure the daemon has reached specified state.
+//   - `d` may have not been inserted into daemonStates and store yet.
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.BuildDaemonCommand(d, "", false)
 	if err != nil {
@@ -81,9 +87,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			return
 		}
 
-		// TODO: It's better to subscribe death event when snapshotter
-		// has set daemon's state to RUNNING or READY.
-		if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+		if err = m.SubscribeDaemonEvent(d); err != nil {
 			log.L.Errorf("Nydusd %s probably not started", d.ID())
 			return
 		}
@@ -112,8 +116,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	return nil
 }
 
-// Build a daemon command which will be started to fork a new nydusd process later
-// according to previously setup daemon object.
+// Build commandline according to nydusd daemon configuration.
 func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool) (*exec.Cmd, error) {
 	var cmdOpts []command.Opt
 	var imageReference string

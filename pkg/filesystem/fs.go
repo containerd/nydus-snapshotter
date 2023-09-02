@@ -365,7 +365,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 	}
 
 	// Persist it after associate instance after all the states are calculated.
-	if err := fsManager.NewInstance(rafs); err != nil {
+	if err := fsManager.AddInstance(rafs); err != nil {
 		return errors.Wrapf(err, "create instance %s", snapshotID)
 	}
 
@@ -625,7 +625,7 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 		return nil, errors.Wrapf(err, "new daemon")
 	}
 
-	if err = fsManager.NewDaemon(d); err != nil {
+	if err = fsManager.AddDaemon(d); err != nil {
 		return nil, err
 	}
 
