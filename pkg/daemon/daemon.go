@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
@@ -65,7 +66,7 @@ type Daemon struct {
 	// fusedev dedicated mode: one and only one RAFS instance
 	// fusedev shared mode: zero, one or more RAFS instances
 	// fscache shared mode: zero, one or more RAFS instances
-	Instances rafsSet
+	RafsCache rafs.Cache
 
 	// Protect nydusd http client
 	cmu sync.Mutex
@@ -140,14 +141,14 @@ func (d *Daemon) LogFile() string {
 	return filepath.Join(d.States.LogDir, "nydusd.log")
 }
 
-func (d *Daemon) AddInstance(r *Rafs) {
-	d.Instances.Add(r)
+func (d *Daemon) AddInstance(r *rafs.Rafs) {
+	d.RafsCache.Add(r)
 	d.IncRef()
 	r.DaemonID = d.ID()
 }
 
 func (d *Daemon) RemoveInstance(snapshotID string) {
-	d.Instances.Remove(snapshotID)
+	d.RafsCache.Remove(snapshotID)
 	d.DecRef()
 }
 
@@ -222,7 +223,7 @@ func (d *Daemon) IsSharedDaemon() bool {
 	return d.HostMountpoint() == config.GetRootMountpoint()
 }
 
-func (d *Daemon) SharedMount(rafs *Rafs) error {
+func (d *Daemon) SharedMount(rafs *rafs.Rafs) error {
 	defer d.SendStates()
 
 	switch d.States.FsDriver {
@@ -238,7 +239,7 @@ func (d *Daemon) SharedMount(rafs *Rafs) error {
 	}
 }
 
-func (d *Daemon) sharedFusedevMount(rafs *Rafs) error {
+func (d *Daemon) sharedFusedevMount(rafs *rafs.Rafs) error {
 	client, err := d.GetClient()
 	if err != nil {
 		return errors.Wrapf(err, "mount instance %s", rafs.SnapshotID)
@@ -268,20 +269,20 @@ func (d *Daemon) sharedFusedevMount(rafs *Rafs) error {
 	return nil
 }
 
-func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
+func (d *Daemon) sharedErofsMount(ra *rafs.Rafs) error {
 	client, err := d.GetClient()
 	if err != nil {
 		return errors.Wrapf(err, "bind blob %s", d.ID())
 	}
 
 	// TODO: Why fs cache needing this work dir?
-	if err := os.MkdirAll(rafs.FscacheWorkDir(), 0755); err != nil {
-		return errors.Wrapf(err, "failed to create fscache work dir %s", rafs.FscacheWorkDir())
+	if err := os.MkdirAll(ra.FscacheWorkDir(), 0755); err != nil {
+		return errors.Wrapf(err, "failed to create fscache work dir %s", ra.FscacheWorkDir())
 	}
 
-	c, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
+	c, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(ra.SnapshotID))
 	if err != nil {
-		log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(rafs.SnapshotID), err)
+		log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(ra.SnapshotID), err)
 		return err
 	}
 
@@ -294,20 +295,20 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 		return errors.Wrapf(err, "request to bind fscache blob")
 	}
 
-	mountPoint := rafs.GetMountpoint()
+	mountPoint := ra.GetMountpoint()
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return errors.Wrapf(err, "create mountpoint %s", mountPoint)
 	}
 
-	bootstrapPath, err := rafs.BootstrapFile()
+	bootstrapPath, err := ra.BootstrapFile()
 	if err != nil {
 		return err
 	}
-	fscacheID := erofs.FscacheID(rafs.SnapshotID)
+	fscacheID := erofs.FscacheID(ra.SnapshotID)
 
 	cfg := c.(*daemonconfig.FscacheDaemonConfig)
-	rafs.AddAnnotation(AnnoFsCacheDomainID, cfg.DomainID)
-	rafs.AddAnnotation(AnnoFsCacheID, fscacheID)
+	ra.AddAnnotation(rafs.AnnoFsCacheDomainID, cfg.DomainID)
+	ra.AddAnnotation(rafs.AnnoFsCacheID, fscacheID)
 
 	if err := erofs.Mount(bootstrapPath, cfg.DomainID, fscacheID, mountPoint); err != nil {
 		if !errdefs.IsErofsMounted(err) {
@@ -323,7 +324,7 @@ func (d *Daemon) sharedErofsMount(rafs *Rafs) error {
 	return nil
 }
 
-func (d *Daemon) SharedUmount(rafs *Rafs) error {
+func (d *Daemon) SharedUmount(rafs *rafs.Rafs) error {
 	defer d.SendStates()
 
 	switch d.States.FsDriver {
@@ -343,19 +344,19 @@ func (d *Daemon) SharedUmount(rafs *Rafs) error {
 	}
 }
 
-func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
+func (d *Daemon) sharedErofsUmount(ra *rafs.Rafs) error {
 	c, err := d.GetClient()
 	if err != nil {
 		return errors.Wrapf(err, "unbind blob %s", d.ID())
 	}
-	domainID := rafs.Annotations[AnnoFsCacheDomainID]
-	fscacheID := rafs.Annotations[AnnoFsCacheID]
+	domainID := ra.Annotations[rafs.AnnoFsCacheDomainID]
+	fscacheID := ra.Annotations[rafs.AnnoFsCacheID]
 
 	if err := c.UnbindBlob(domainID, fscacheID); err != nil {
 		return errors.Wrapf(err, "request to unbind fscache blob, domain %s, fscache %s", domainID, fscacheID)
 	}
 
-	mountpoint := rafs.GetMountpoint()
+	mountpoint := ra.GetMountpoint()
 	if err := erofs.Umount(mountpoint); err != nil {
 		return errors.Wrapf(err, "umount erofs %s mountpoint, %s", err, mountpoint)
 	}
@@ -369,7 +370,7 @@ func (d *Daemon) sharedErofsUmount(rafs *Rafs) error {
 	return nil
 }
 
-func (d *Daemon) UmountInstance(r *Rafs) error {
+func (d *Daemon) UmountInstance(r *rafs.Rafs) error {
 	if d.IsSharedDaemon() {
 		if err := d.SharedUmount(r); err != nil {
 			return errors.Wrapf(err, "umount fs instance %s", r.SnapshotID)
@@ -381,10 +382,10 @@ func (d *Daemon) UmountInstance(r *Rafs) error {
 
 func (d *Daemon) UmountAllInstances() error {
 	if d.IsSharedDaemon() {
-		d.Instances.Lock()
-		defer d.Instances.Unlock()
+		d.RafsCache.Lock()
+		defer d.RafsCache.Unlock()
 
-		instances := d.Instances.ListLocked()
+		instances := d.RafsCache.ListLocked()
 
 		for _, r := range instances {
 			if err := d.SharedUmount(r); err != nil {
@@ -587,7 +588,7 @@ func (d *Daemon) Wait() error {
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
 	if d.States.FsDriver == config.FsDriverFscache {
-		instances := d.Instances.List()
+		instances := d.RafsCache.List()
 		for _, i := range instances {
 			if err := mounter.Umount(i.GetMountpoint()); err != nil {
 				log.L.Warnf("Can't umount %s, %v", d.States.Mountpoint, err)
@@ -613,24 +614,20 @@ func (d *Daemon) ClearVestige() {
 }
 
 func (d *Daemon) CloneInstances(src *Daemon) {
-	src.Instances.Lock()
-	defer src.Instances.Unlock()
-
-	instances := src.Instances.ListLocked()
-
-	d.Lock()
-	defer d.Unlock()
-	d.Instances.instances = instances
+	src.RafsCache.Lock()
+	instances := src.RafsCache.ListLocked()
+	src.RafsCache.Unlock()
+	d.RafsCache.SetIntances(instances)
 }
 
 // Daemon must be started and reach RUNNING state before call this method
 func (d *Daemon) RecoveredMountInstances() error {
 	if d.IsSharedDaemon() {
-		d.Instances.Lock()
-		defer d.Instances.Unlock()
+		d.RafsCache.Lock()
+		defer d.RafsCache.Unlock()
 
-		instances := make([]*Rafs, 0, 16)
-		for _, r := range d.Instances.ListLocked() {
+		instances := make([]*rafs.Rafs, 0, 16)
+		for _, r := range d.RafsCache.ListLocked() {
 			instances = append(instances, r)
 		}
 
@@ -656,7 +653,7 @@ func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d := &Daemon{}
 	d.States.ID = newID()
 	d.States.DaemonMode = config.DaemonModeDedicated
-	d.Instances = rafsSet{instances: make(map[string]*Rafs)}
+	d.RafsCache = rafs.NewRafsCache()
 
 	for _, o := range opt {
 		err := o(d)

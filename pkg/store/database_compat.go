@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
 )
@@ -164,9 +165,9 @@ func (db *Database) tryTranslateRecords() error {
 				}}
 		}
 
-		var instance *daemon.Rafs
+		var instance *rafs.Rafs
 		if !sharedMode {
-			instance = &daemon.Rafs{
+			instance = &rafs.Rafs{
 				SnapshotID:  d.SnapshotID,
 				ImageID:     d.ImageID,
 				DaemonID:    d.ID,
@@ -174,7 +175,7 @@ func (db *Database) tryTranslateRecords() error {
 				Mountpoint:  path.Join(d.SnapshotDir, d.SnapshotID, "mnt"),
 			}
 		} else if sharedMode && d.ID != SharedNydusDaemonID {
-			instance = &daemon.Rafs{
+			instance = &rafs.Rafs{
 				SnapshotID:  d.SnapshotID,
 				ImageID:     d.ImageID,
 				DaemonID:    SharedNydusDaemonID,

@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 
 	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
@@ -262,12 +263,12 @@ func (db *Database) WalkDaemons(ctx context.Context, cb func(info *daemon.States
 }
 
 // WalkDaemons iterates all daemon records and invoke callback on each
-func (db *Database) WalkInstances(ctx context.Context, cb func(r *daemon.Rafs) error) error {
+func (db *Database) WalkInstances(ctx context.Context, cb func(r *rafs.Rafs) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 
 		return bucket.ForEach(func(key, value []byte) error {
-			instance := &daemon.Rafs{}
+			instance := &rafs.Rafs{}
 
 			if err := json.Unmarshal(value, instance); err != nil {
 				return errors.Wrapf(err, "unmarshal %s", key)
@@ -278,7 +279,7 @@ func (db *Database) WalkInstances(ctx context.Context, cb func(r *daemon.Rafs) e
 	})
 }
 
-func (db *Database) AddInstance(ctx context.Context, instance *daemon.Rafs) error {
+func (db *Database) AddInstance(ctx context.Context, instance *rafs.Rafs) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 

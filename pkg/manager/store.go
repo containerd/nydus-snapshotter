@@ -11,6 +11,7 @@ import (
 	"context"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 )
 
@@ -23,9 +24,9 @@ type Store interface {
 	WalkDaemons(ctx context.Context, cb func(*daemon.States) error) error
 	CleanupDaemons(ctx context.Context) error
 
-	AddInstance(r *daemon.Rafs) error
+	AddInstance(r *rafs.Rafs) error
 	DeleteInstance(snapshotID string) error
-	WalkInstances(ctx context.Context, cb func(*daemon.Rafs) error) error
+	WalkInstances(ctx context.Context, cb func(*rafs.Rafs) error) error
 
 	NextInstanceSeq() (uint64, error)
 }

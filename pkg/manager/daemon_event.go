@@ -118,7 +118,7 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	}
 
 	// Mount rafs instance by http API
-	instances := d.Instances.List()
+	instances := d.RafsCache.List()
 	for _, r := range instances {
 		// For dedicated nydusd daemon, Rafs has already been mounted during starting nydusd
 		if d.HostMountpoint() == r.GetMountpoint() {

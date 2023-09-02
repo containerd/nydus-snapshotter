@@ -140,7 +140,7 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		case d.IsSharedDaemon():
 			break
 		case !d.IsSharedDaemon():
-			rafs := d.Instances.Head()
+			rafs := d.RafsCache.Head()
 			if rafs == nil {
 				return nil, errors.Wrapf(errdefs.ErrNotFound, "daemon %s no rafs instance associated", d.ID())
 			}

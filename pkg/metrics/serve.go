@@ -99,7 +99,7 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 				continue
 			}
 
-			for _, i := range d.Instances.List() {
+			for _, i := range d.RafsCache.List() {
 				var sid string
 
 				if d.IsSharedDaemon() {

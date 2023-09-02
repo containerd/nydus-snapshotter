@@ -11,6 +11,7 @@ import (
 	"context"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 )
 
 type DaemonStore struct {
@@ -46,7 +47,7 @@ func (s *DaemonStore) CleanupDaemons(ctx context.Context) error {
 	return s.db.CleanupDaemons(ctx)
 }
 
-func (s *DaemonStore) AddInstance(r *daemon.Rafs) error {
+func (s *DaemonStore) AddInstance(r *rafs.Rafs) error {
 	return s.db.AddInstance(context.TODO(), r)
 }
 
@@ -58,6 +59,6 @@ func (s *DaemonStore) NextInstanceSeq() (uint64, error) {
 	return s.db.NextInstanceSeq()
 }
 
-func (s *DaemonStore) WalkInstances(ctx context.Context, cb func(*daemon.Rafs) error) error {
+func (s *DaemonStore) WalkInstances(ctx context.Context, cb func(*rafs.Rafs) error) error {
 	return s.db.WalkInstances(ctx, cb)
 }

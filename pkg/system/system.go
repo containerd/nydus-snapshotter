@@ -196,7 +196,7 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 
 			for _, d := range daemons {
 				instances := make(map[string]rafsInstanceInfo)
-				for _, i := range d.Instances.List() {
+				for _, i := range d.RafsCache.List() {
 					instances[i.SnapshotID] = rafsInstanceInfo{
 						SnapshotID:  i.SnapshotID,
 						SnapshotDir: i.SnapshotDir,

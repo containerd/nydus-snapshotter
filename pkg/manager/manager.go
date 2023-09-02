@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 )
@@ -131,7 +132,7 @@ func (m *Manager) Recover(ctx context.Context,
 	return nil
 }
 
-func (m *Manager) AddInstance(r *daemon.Rafs) error {
+func (m *Manager) AddInstance(r *rafs.Rafs) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -151,7 +152,7 @@ func (m *Manager) RemoveInstance(snapshotID string) error {
 
 func (m *Manager) recoverRafsInstances(ctx context.Context,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
-	if err := m.store.WalkInstances(ctx, func(r *daemon.Rafs) error {
+	if err := m.store.WalkInstances(ctx, func(r *rafs.Rafs) error {
 		if r.GetFsDriver() != m.FsDriver {
 			return nil
 		}
@@ -166,9 +167,9 @@ func (m *Manager) recoverRafsInstances(ctx context.Context,
 			if d != nil {
 				d.AddInstance(r)
 			}
-			daemon.RafsSet.Add(r)
+			rafs.RafsGlobalCache.Add(r)
 		} else if r.GetFsDriver() == config.FsDriverBlockdev {
-			daemon.RafsSet.Add(r)
+			rafs.RafsGlobalCache.Add(r)
 		}
 
 		return nil

@@ -33,6 +33,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
+	racache "github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
@@ -199,7 +200,7 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 		return nil
 	}
 
-	instance := daemon.RafsSet.Get(snapshotID)
+	instance := racache.RafsGlobalCache.Get(snapshotID)
 	if instance == nil {
 		return errors.Wrapf(errdefs.ErrNotFound, "no instance %s", snapshotID)
 	}
@@ -249,20 +250,20 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 		}
 	}
 
-	r := daemon.RafsSet.Get(snapshotID)
+	r := racache.RafsGlobalCache.Get(snapshotID)
 	if r != nil {
 		// Instance already exists, how could this happen? Can containerd handle this case?
 		return nil
 	}
 
-	rafs, err := daemon.NewRafs(snapshotID, imageID, fsDriver)
+	rafs, err := racache.NewRafs(snapshotID, imageID, fsDriver)
 	if err != nil {
 		return errors.Wrapf(err, "create rafs instance %s", snapshotID)
 	}
 
 	defer func() {
 		if err != nil {
-			daemon.RafsSet.Remove(snapshotID)
+			racache.RafsGlobalCache.Remove(snapshotID)
 		}
 	}()
 
@@ -373,7 +374,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 }
 
 func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
-	instance := daemon.RafsSet.Get(snapshotID)
+	instance := racache.RafsGlobalCache.Get(snapshotID)
 	if instance == nil {
 		log.L.Debugf("no RAFS filesystem instance associated with snapshot %s", snapshotID)
 		return nil
@@ -469,7 +470,7 @@ func (fs *Filesystem) Teardown(ctx context.Context) error {
 	for _, fsManager := range fs.enabledManagers {
 		if fsManager.FsDriver == config.FsDriverFscache || fsManager.FsDriver == config.FsDriverFusedev {
 			for _, d := range fsManager.ListDaemons() {
-				for _, instance := range d.Instances.List() {
+				for _, instance := range d.RafsCache.List() {
 					err := fs.Umount(ctx, instance.SnapshotID)
 					if err != nil {
 						log.L.Errorf("Failed to umount snapshot %s, %s", instance.SnapshotID, err)
@@ -493,7 +494,7 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 		return fs.rootMountpoint, nil
 	}
 
-	rafs := daemon.RafsSet.Get(snapshotID)
+	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs != nil {
 		return rafs.GetMountpoint(), nil
 	}
@@ -502,14 +503,14 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 }
 
 func (fs *Filesystem) BootstrapFile(id string) (string, error) {
-	instance := daemon.RafsSet.Get(id)
+	instance := racache.RafsGlobalCache.Get(id)
 	return instance.BootstrapFile()
 }
 
 // daemon mountpoint to rafs mountpoint
 // calculate rafs mountpoint for snapshots mount slice.
 func (fs *Filesystem) mountRemote(fsManager *manager.Manager, useSharedDaemon bool,
-	d *daemon.Daemon, r *daemon.Rafs) error {
+	d *daemon.Daemon, r *racache.Rafs) error {
 
 	if useSharedDaemon {
 		if fsManager.FsDriver == config.FsDriverFusedev {
@@ -531,7 +532,7 @@ func (fs *Filesystem) mountRemote(fsManager *manager.Manager, useSharedDaemon bo
 	return nil
 }
 
-func (fs *Filesystem) decideDaemonMountpoint(fsDriver string, isSharedDaemonMode bool, rafs *daemon.Rafs) (string, error) {
+func (fs *Filesystem) decideDaemonMountpoint(fsDriver string, isSharedDaemonMode bool, rafs *racache.Rafs) (string, error) {
 	m := ""
 
 	if fsDriver == config.FsDriverFscache || fsDriver == config.FsDriverFusedev {
@@ -684,7 +685,7 @@ func (fs *Filesystem) getSharedDaemon(fsDriver string) (*daemon.Daemon, error) {
 	return nil, errors.Errorf("no shared daemon for filesystem driver %s", fsDriver)
 }
 
-func (fs *Filesystem) getDaemonByRafs(rafs *daemon.Rafs) (*daemon.Daemon, error) {
+func (fs *Filesystem) getDaemonByRafs(rafs *racache.Rafs) (*daemon.Daemon, error) {
 	switch rafs.GetFsDriver() {
 	case config.FsDriverBlockdev:
 		if fs.blockdevManager != nil {
