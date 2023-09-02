@@ -39,9 +39,9 @@ type Manager struct {
 
 	// Fields below are used to manage nydusd daemons.
 	//
-	// The `daemonStates` is cache for nydusd daemons stored in `store`.
+	// The `daemonCache` is cache for nydusd daemons stored in `store`.
 	// You should update `store` first before modifying cached state.
-	daemonStates     *DaemonStates
+	daemonCache      *DaemonCache
 	DaemonConfig     daemonconfig.DaemonConfig // Daemon configuration template.
 	CgroupMgr        *cgroup.Manager
 	monitor          LivenessMonitor
@@ -85,7 +85,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		store:            s,
 		NydusdBinaryPath: opt.NydusdBinaryPath,
 		cacheDir:         opt.CacheDir,
-		daemonStates:     newDaemonStates(),
+		daemonCache:      newDaemonCache(),
 		monitor:          monitor,
 		LivenessNotifier: make(chan deathEvent, 32),
 		RecoverPolicy:    opt.RecoverPolicy,
@@ -187,13 +187,13 @@ func (m *Manager) AddDaemon(daemon *daemon.Daemon) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if old := m.daemonStates.GetByDaemonID(daemon.ID(), nil); old != nil {
+	if old := m.daemonCache.GetByDaemonID(daemon.ID(), nil); old != nil {
 		return errdefs.ErrAlreadyExists
 	}
 	if err := m.store.AddDaemon(daemon); err != nil {
 		return errors.Wrapf(err, "add daemon %s", daemon.ID())
 	}
-	m.daemonStates.Add(daemon)
+	m.daemonCache.Add(daemon)
 	return nil
 }
 
@@ -205,13 +205,13 @@ func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
 }
 
 func (m *Manager) UpdateDaemonLocked(daemon *daemon.Daemon) error {
-	if old := m.daemonStates.GetByDaemonID(daemon.ID(), nil); old == nil {
+	if old := m.daemonCache.GetByDaemonID(daemon.ID(), nil); old == nil {
 		return errdefs.ErrNotFound
 	}
 	if err := m.store.UpdateDaemon(daemon); err != nil {
 		return errors.Wrapf(err, "update daemon state for %s", daemon.ID())
 	}
-	m.daemonStates.Add(daemon)
+	m.daemonCache.Add(daemon)
 	return nil
 }
 
@@ -226,16 +226,16 @@ func (m *Manager) DeleteDaemon(daemon *daemon.Daemon) error {
 	if err := m.store.DeleteDaemon(daemon.ID()); err != nil {
 		return errors.Wrapf(err, "delete daemon state for %s", daemon.ID())
 	}
-	m.daemonStates.Remove(daemon)
+	m.daemonCache.Remove(daemon)
 	return nil
 }
 
 func (m *Manager) GetByDaemonID(id string) *daemon.Daemon {
-	return m.daemonStates.GetByDaemonID(id, nil)
+	return m.daemonCache.GetByDaemonID(id, nil)
 }
 
 func (m *Manager) ListDaemons() []*daemon.Daemon {
-	return m.daemonStates.List()
+	return m.daemonCache.List()
 }
 
 // FIXME: should handle the inconsistent status caused by any step
@@ -310,7 +310,7 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		var d, _ = daemon.NewDaemon(opt...)
 		d.States = *s
 
-		m.daemonStates.Update(d)
+		m.daemonCache.Update(d)
 
 		if m.SupervisorSet != nil {
 			su := m.SupervisorSet.NewSupervisor(d.ID())

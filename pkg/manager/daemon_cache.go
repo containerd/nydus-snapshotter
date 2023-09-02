@@ -15,13 +15,13 @@ import (
 )
 
 // Daemon state cache to speed up access.
-type DaemonStates struct {
+type DaemonCache struct {
 	mu            sync.Mutex
 	idxByDaemonID map[string]*daemon.Daemon // index by ID
 }
 
-func newDaemonStates() *DaemonStates {
-	return &DaemonStates{
+func newDaemonCache() *DaemonCache {
+	return &DaemonCache{
 		idxByDaemonID: make(map[string]*daemon.Daemon),
 	}
 }
@@ -29,7 +29,7 @@ func newDaemonStates() *DaemonStates {
 // Return nil if the daemon is never inserted or managed,
 // otherwise returns the previously inserted daemon pointer.
 // Allowing replace an existed daemon since some fields in Daemon can change after restarting nydusd.
-func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
+func (s *DaemonCache) Add(daemon *daemon.Daemon) *daemon.Daemon {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -38,13 +38,13 @@ func (s *DaemonStates) Add(daemon *daemon.Daemon) *daemon.Daemon {
 	return old
 }
 
-func (s *DaemonStates) removeLocked(d *daemon.Daemon) *daemon.Daemon {
+func (s *DaemonCache) removeLocked(d *daemon.Daemon) *daemon.Daemon {
 	old := s.idxByDaemonID[d.ID()]
 	delete(s.idxByDaemonID, d.ID())
 	return old
 }
 
-func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
+func (s *DaemonCache) Remove(d *daemon.Daemon) *daemon.Daemon {
 	s.mu.Lock()
 	old := s.removeLocked(d)
 	s.mu.Unlock()
@@ -52,12 +52,12 @@ func (s *DaemonStates) Remove(d *daemon.Daemon) *daemon.Daemon {
 	return old
 }
 
-func (s *DaemonStates) RemoveByDaemonID(id string) *daemon.Daemon {
+func (s *DaemonCache) RemoveByDaemonID(id string) *daemon.Daemon {
 	return s.GetByDaemonID(id, func(d *daemon.Daemon) { s.removeLocked(d) })
 }
 
 // Also recover daemon runtime state here
-func (s *DaemonStates) Update(d *daemon.Daemon) {
+func (s *DaemonCache) Update(d *daemon.Daemon) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -66,7 +66,7 @@ func (s *DaemonStates) Update(d *daemon.Daemon) {
 	s.idxByDaemonID[d.ID()] = d
 }
 
-func (s *DaemonStates) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daemon.Daemon {
+func (s *DaemonCache) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daemon.Daemon {
 	var daemon *daemon.Daemon
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -79,7 +79,7 @@ func (s *DaemonStates) GetByDaemonID(id string, op func(d *daemon.Daemon)) *daem
 	return daemon
 }
 
-func (s *DaemonStates) List() []*daemon.Daemon {
+func (s *DaemonCache) List() []*daemon.Daemon {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -95,7 +95,7 @@ func (s *DaemonStates) List() []*daemon.Daemon {
 	return listed
 }
 
-func (s *DaemonStates) Size() int {
+func (s *DaemonCache) Size() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.idxByDaemonID)
