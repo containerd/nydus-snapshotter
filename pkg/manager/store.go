@@ -21,7 +21,7 @@ type Store interface {
 	AddDaemon(d *daemon.Daemon) error
 	UpdateDaemon(d *daemon.Daemon) error
 	DeleteDaemon(id string) error
-	WalkDaemons(ctx context.Context, cb func(*daemon.States) error) error
+	WalkDaemons(ctx context.Context, cb func(*daemon.ConfigState) error) error
 	CleanupDaemons(ctx context.Context) error
 
 	AddRafsInstance(r *rafs.Rafs) error

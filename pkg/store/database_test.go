@@ -24,9 +24,9 @@ func Test_daemon(t *testing.T) {
 
 	ctx := context.TODO()
 	// Add daemons
-	d1 := daemon.Daemon{States: daemon.States{ID: "d1"}}
-	d2 := daemon.Daemon{States: daemon.States{ID: "d2"}}
-	d3 := daemon.Daemon{States: daemon.States{ID: "d3"}}
+	d1 := daemon.Daemon{States: daemon.ConfigState{ID: "d1"}}
+	d2 := daemon.Daemon{States: daemon.ConfigState{ID: "d2"}}
+	d3 := daemon.Daemon{States: daemon.ConfigState{ID: "d3"}}
 	err = db.SaveDaemon(ctx, &d1)
 	require.Nil(t, err)
 	err = db.SaveDaemon(ctx, &d2)
@@ -44,7 +44,7 @@ func Test_daemon(t *testing.T) {
 
 	// Check records
 	ids := make(map[string]string)
-	_ = db.WalkDaemons(ctx, func(info *daemon.States) error {
+	_ = db.WalkDaemons(ctx, func(info *daemon.ConfigState) error {
 		ids[info.ID] = ""
 		return nil
 	})
@@ -59,7 +59,7 @@ func Test_daemon(t *testing.T) {
 	err = db.CleanupDaemons(ctx)
 	require.Nil(t, err)
 	ids2 := make([]string, 0)
-	err = db.WalkDaemons(ctx, func(info *daemon.States) error {
+	err = db.WalkDaemons(ctx, func(info *daemon.ConfigState) error {
 		ids2 = append(ids2, info.ID)
 		return nil
 	})

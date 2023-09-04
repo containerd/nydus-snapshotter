@@ -202,7 +202,7 @@ func (db *Database) Close() error {
 func (db *Database) SaveDaemon(ctx context.Context, d *daemon.Daemon) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
-		var existing daemon.States
+		var existing daemon.ConfigState
 		if err := getObject(bucket, d.ID(), &existing); err == nil {
 			return errdefs.ErrAlreadyExists
 		}
@@ -214,7 +214,7 @@ func (db *Database) UpdateDaemon(ctx context.Context, d *daemon.Daemon) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 
-		var existing daemon.States
+		var existing daemon.ConfigState
 		if err := getObject(bucket, d.ID(), &existing); err != nil {
 			return err
 		}
@@ -246,12 +246,12 @@ func (db *Database) CleanupDaemons(ctx context.Context) error {
 	})
 }
 
-func (db *Database) WalkDaemons(ctx context.Context, cb func(info *daemon.States) error) error {
+func (db *Database) WalkDaemons(ctx context.Context, cb func(info *daemon.ConfigState) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 
 		return bucket.ForEach(func(key, value []byte) error {
-			states := &daemon.States{}
+			states := &daemon.ConfigState{}
 
 			if err := json.Unmarshal(value, states); err != nil {
 				return errors.Wrapf(err, "unmarshal %s", key)

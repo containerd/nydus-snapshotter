@@ -39,7 +39,7 @@ func (s *DaemonRafsStore) DeleteDaemon(id string) error {
 	return s.db.DeleteDaemon(context.TODO(), id)
 }
 
-func (s *DaemonRafsStore) WalkDaemons(ctx context.Context, cb func(d *daemon.States) error) error {
+func (s *DaemonRafsStore) WalkDaemons(ctx context.Context, cb func(d *daemon.ConfigState) error) error {
 	return s.db.WalkDaemons(ctx, cb)
 }
 

@@ -204,6 +204,7 @@ func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
 	return m.UpdateDaemonLocked(daemon)
 }
 
+// Notice: updating daemon states cache and DB should be protect by `mu` lock
 func (m *Manager) UpdateDaemonLocked(daemon *daemon.Daemon) error {
 	if old := m.daemonCache.GetByDaemonID(daemon.ID(), nil); old == nil {
 		return errdefs.ErrNotFound
@@ -250,7 +251,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 
 	defer m.cleanUpDaemonResources(d)
 
-	if err := d.UmountAllInstances(); err != nil {
+	if err := d.UmountRafsInstances(); err != nil {
 		log.L.Errorf("Failed to detach all fs instances from daemon %s, %s", d.ID(), err)
 	}
 
@@ -300,7 +301,7 @@ func (m *Manager) cleanUpDaemonResources(d *daemon.Daemon) {
 
 func (m *Manager) recoverDaemons(ctx context.Context,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
-	if err := m.store.WalkDaemons(ctx, func(s *daemon.States) error {
+	if err := m.store.WalkDaemons(ctx, func(s *daemon.ConfigState) error {
 		if s.FsDriver != m.FsDriver {
 			return nil
 		}

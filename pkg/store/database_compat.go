@@ -123,7 +123,7 @@ func (db *Database) tryTranslateRecords() error {
 				newConfig := filepath.Join(filepath.Dir(configDir), SharedNydusDaemonID, "config.json")
 
 				newDaemon = &daemon.Daemon{
-					States: daemon.States{
+					States: daemon.ConfigState{
 						ID:         d.ID,
 						ProcessID:  d.Pid,
 						APISocket:  path.Join(d.SnapshotDir, "api.sock"),
@@ -153,7 +153,7 @@ func (db *Database) tryTranslateRecords() error {
 		} else if !sharedMode {
 			mp = *d.CustomMountPoint
 			newDaemon = &daemon.Daemon{
-				States: daemon.States{
+				States: daemon.ConfigState{
 					ID:         d.ID,
 					ProcessID:  d.Pid,
 					APISocket:  path.Join(d.SocketDir, "api.sock"),
@@ -204,8 +204,8 @@ func (db *Database) tryUpgradeRecords(version string) error {
 	log.L.Infof("Trying to update bucket records from %s to v1.1 ...", version)
 
 	if version == "v1.0" {
-		daemons := make([]*daemon.States, 0)
-		err := db.WalkDaemons(context.TODO(), func(cd *daemon.States) error {
+		daemons := make([]*daemon.ConfigState, 0)
+		err := db.WalkDaemons(context.TODO(), func(cd *daemon.ConfigState) error {
 			daemons = append(daemons, cd)
 			return nil
 		})

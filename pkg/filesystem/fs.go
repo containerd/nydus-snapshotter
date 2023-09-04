@@ -141,7 +141,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 				return errors.Wrapf(err, "wait for daemon %s", d.ID())
 			}
-			if err := d.RecoveredMountInstances(); err != nil {
+			if err := d.RecoverRafsInstances(); err != nil {
 				return errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
 			}
 			fs.TryRetainSharedDaemon(d)
@@ -403,7 +403,7 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
-		if err := daemon.UmountInstance(instance); err != nil {
+		if err := daemon.UmountRafsInstance(instance); err != nil {
 			return errors.Wrapf(err, "umount instance %s", snapshotID)
 		}
 		// Once daemon's reference reaches 0, destroy the whole daemon

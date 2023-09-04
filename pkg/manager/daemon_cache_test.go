@@ -26,8 +26,8 @@ import (
 func TestDaemonStatesCache(t *testing.T) {
 	states := newDaemonCache()
 
-	d1 := &daemon.Daemon{States: daemon.States{ID: "d1"}}
-	d2 := &daemon.Daemon{States: daemon.States{ID: "d2"}}
+	d1 := &daemon.Daemon{States: daemon.ConfigState{ID: "d1"}}
+	d2 := &daemon.Daemon{States: daemon.ConfigState{ID: "d2"}}
 
 	states.Add(d1)
 	states.Add(d2)
