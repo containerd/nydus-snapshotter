@@ -42,9 +42,9 @@ const (
 	NydusImagePullUsername = "containerd.io/snapshot/pullusername"
 	// A bool flag to enable integrity verification of meta data blob
 	NydusSignature = "containerd.io/snapshot/nydus-signature"
-	// Information for image block device
+	// Dm-verity information for image block device
 	NydusImageBlockInfo = "containerd.io/snapshot/nydus-image-block"
-	// Information for layer block device
+	// Dm-verity information for layer block device
 	NydusLayerBlockInfo = "containerd.io/snapshot/nydus-layer-block"
 
 	// A bool flag to mark the blob as a estargz data blob, set by the snapshotter.

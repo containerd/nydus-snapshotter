@@ -71,3 +71,10 @@ func (fs *Filesystem) ExportBlockData(s storage.Snapshot, perLayer bool, labels 
 	storageLocater func(string) string) ([]string, error) {
 	return fs.tarfsMgr.ExportBlockData(s, perLayer, labels, storageLocater)
 }
+
+func (fs *Filesystem) GetTarfsImageDiskFilePath(id string) (string, error) {
+	if fs.tarfsMgr == nil {
+		return "", errors.New("tarfs mode is not enabled")
+	}
+	return fs.tarfsMgr.ImageDiskFilePath(id), nil
+}

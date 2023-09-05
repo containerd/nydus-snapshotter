@@ -358,7 +358,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			err = errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
 		}
 	case config.FsDriverBlockdev:
-		err = fs.tarfsMgr.MountTarErofs(snapshotID, s, rafs)
+		err = fs.tarfsMgr.MountTarErofs(snapshotID, s, labels, rafs)
 		if err != nil {
 			err = errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
 		}

@@ -55,6 +55,7 @@ type snapshotter struct {
 	fs                   *filesystem.Filesystem
 	cgroupManager        *cgroup.Manager
 	enableNydusOverlayFS bool
+	enableKataVolume     bool
 	syncRemove           bool
 	cleanupOnClose       bool
 }
@@ -283,6 +284,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		fs:                   nydusFs,
 		cgroupManager:        cgroupMgr,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
+		enableKataVolume:     cfg.SnapshotsConfig.EnableKataVolume,
 		cleanupOnClose:       cfg.CleanupOnClose,
 	}, nil
 }
@@ -846,11 +848,13 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	overlayOptions = append(overlayOptions, lowerDirOption)
 	log.G(ctx).Infof("remote mount options %v", overlayOptions)
 
+	if o.enableKataVolume {
+		return o.mountWithKataVolume(ctx, s, id, overlayOptions)
+	}
 	// Add `extraoption` if NydusOverlayFS is enable or daemonMode is `None`
 	if o.enableNydusOverlayFS || config.GetDaemonMode() == config.DaemonModeNone {
 		return o.remoteMountWithExtraOptions(ctx, s, id, overlayOptions)
 	}
-
 	return overlayMount(overlayOptions), nil
 }
 

@@ -497,7 +497,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	var metaFileName, diskFileName string
 	if wholeImage {
 		metaFileName = t.imageMetaFilePath(storageLocater(snapshotID))
-		diskFileName = t.imageDiskFilePath(st.blobID)
+		diskFileName = t.ImageDiskFilePath(st.blobID)
 	} else {
 		metaFileName = t.layerMetaFilePath(storageLocater(snapshotID))
 		diskFileName = t.layerDiskFilePath(st.blobID)
@@ -531,6 +531,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	}
 	log.L.Debugf("nydus image export command, stdout: %s, stderr: %s", &outb, &errb)
 
+	blockInfo := ""
 	if withVerity {
 		pattern := "dm-verity options: --no-superblock --format=1 -s \"\" --hash=sha256 --data-block-size=512 --hash-block-size=4096 --data-blocks %d --hash-offset %d %s\n"
 		var dataBlobks, hashOffset uint64
@@ -538,17 +539,16 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		if count, err := fmt.Sscanf(outb.String(), pattern, &dataBlobks, &hashOffset, &rootHash); err != nil || count != 3 {
 			return updateFields, errors.Errorf("failed to parse dm-verity options from nydus image output: %s", outb.String())
 		}
-
-		blockInfo := strconv.FormatUint(dataBlobks, 10) + "," + strconv.FormatUint(hashOffset, 10) + "," + "sha256:" + rootHash
-		if wholeImage {
-			labels[label.NydusImageBlockInfo] = blockInfo
-			updateFields = append(updateFields, "labels."+label.NydusImageBlockInfo)
-		} else {
-			labels[label.NydusLayerBlockInfo] = blockInfo
-			updateFields = append(updateFields, "labels."+label.NydusLayerBlockInfo)
-		}
-		log.L.Warnf("export block labels %v", labels)
+		blockInfo = strconv.FormatUint(dataBlobks, 10) + "," + strconv.FormatUint(hashOffset, 10) + "," + "sha256:" + rootHash
 	}
+	if wholeImage {
+		labels[label.NydusImageBlockInfo] = blockInfo
+		updateFields = append(updateFields, "labels."+label.NydusImageBlockInfo)
+	} else {
+		labels[label.NydusLayerBlockInfo] = blockInfo
+		updateFields = append(updateFields, "labels."+label.NydusLayerBlockInfo)
+	}
+	log.L.Debugf("export block labels %v", labels)
 
 	err = os.Rename(diskFileNameTmp, diskFileName)
 	if err != nil {
@@ -558,12 +558,20 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	return updateFields, nil
 }
 
-func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *rafs.Rafs) error {
+func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels map[string]string, rafs *rafs.Rafs) error {
 	if s == nil {
 		return errors.New("snapshot object for MountTarErofs() is nil")
 	}
 
+	// Copy meta info from snapshot to rafs
+	t.copyTarfsAnnotations(labels, rafs)
+
 	upperDirPath := path.Join(rafs.GetSnapshotDir(), "fs")
+	if !config.GetTarfsMountOnHost() {
+		rafs.SetMountpoint(upperDirPath)
+		return nil
+	}
+
 	mergedBootstrap := t.imageMetaFilePath(upperDirPath)
 	blobInfo, err := t.getImageBlobInfo(mergedBootstrap)
 	if err != nil {
@@ -654,8 +662,9 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 		if err != nil {
 			return errors.Wrapf(err, "umount erofs tarfs %s", st.erofsMountPoint)
 		}
+		st.erofsMountPoint = ""
 	}
-	st.erofsMountPoint = ""
+
 	return nil
 }
 
@@ -671,6 +680,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 			st.mutex.Unlock()
 			return errors.Wrapf(err, "umount erofs tarfs %s", st.erofsMountPoint)
 		}
+		st.erofsMountPoint = ""
 	}
 
 	if st.metaLoopdev != nil {
@@ -788,6 +798,20 @@ func (t *Manager) GetConcurrentLimiter(ref string) *semaphore.Weighted {
 	return limiter
 }
 
+func (t *Manager) copyTarfsAnnotations(labels map[string]string, rafs *rafs.Rafs) {
+	keys := []string{
+		label.NydusTarfsLayer,
+		label.NydusImageBlockInfo,
+		label.NydusLayerBlockInfo,
+	}
+
+	for _, k := range keys {
+		if v, ok := labels[k]; ok {
+			rafs.AddAnnotation(k, v)
+		}
+	}
+}
+
 func (t *Manager) layerTarFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID)
 }
@@ -796,7 +820,7 @@ func (t *Manager) layerDiskFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID+"."+TarfsLayerDiskName)
 }
 
-func (t *Manager) imageDiskFilePath(blobID string) string {
+func (t *Manager) ImageDiskFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID+"."+TarfsImageDiskName)
 }
 

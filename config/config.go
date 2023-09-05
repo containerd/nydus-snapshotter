@@ -114,6 +114,7 @@ type Experimental struct {
 
 type TarfsConfig struct {
 	EnableTarfs       bool   `toml:"enable_tarfs"`
+	MountTarfsOnHost  bool   `toml:"mount_tarfs_on_host"`
 	TarfsHint         bool   `toml:"tarfs_hint"`
 	MaxConcurrentProc int    `toml:"max_concurrent_proc"`
 	ExportMode        string `toml:"export_mode"`
@@ -156,6 +157,7 @@ type ImageConfig struct {
 // requests from containerd
 type SnapshotConfig struct {
 	EnableNydusOverlayFS bool `toml:"enable_nydus_overlayfs"`
+	EnableKataVolume     bool `toml:"enable_kata_volume"`
 	SyncRemove           bool `toml:"sync_remove"`
 }
 
