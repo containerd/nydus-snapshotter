@@ -30,7 +30,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 
 	// Handler to prepare a directory for containerd to download and unpacking layer.
 	defaultHandler := func() (bool, []mount.Mount, error) {
-		mounts, err := sn.mounts(ctx, labels, s)
+		mounts, err := sn.mountNative(ctx, labels, s)
 		return false, mounts, err
 	}
 
@@ -52,7 +52,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 
 			logger.Infof("Nydus remote snapshot %s is ready", id)
-			mounts, err := sn.remoteMounts(ctx, labels, s, id)
+			mounts, err := sn.mountRemote(ctx, labels, s, id)
 			return false, mounts, err
 		}
 	}

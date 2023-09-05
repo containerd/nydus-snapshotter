@@ -42,8 +42,8 @@ func (m *Manager) handleDaemonDeathEvent() {
 
 		d := m.GetByDaemonID(ev.daemonID)
 		if d == nil {
-			log.L.Warnf("Daemon %s was not found", ev.daemonID)
-			return
+			log.L.Warnf("Daemon %s was not found, may have been removed", ev.daemonID)
+			continue
 		}
 
 		d.Lock()
