@@ -42,7 +42,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
 		return func() (bool, []mount.Mount, error) {
 			logger.Debugf("Prepare remote snapshot %s", id)
-			if err := sn.fs.Mount(id, labels, &s); err != nil {
+			if err := sn.fs.Mount(ctx, id, labels, &s); err != nil {
 				return false, nil, err
 			}
 

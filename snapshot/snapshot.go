@@ -482,7 +482,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
 		if err = o.fs.WaitUntilReady(pID); err != nil {
 			if errors.Is(err, errdefs.ErrNotFound) {
-				if err := o.fs.Mount(pID, pInfo.Labels, nil); err != nil {
+				if err := o.fs.Mount(ctx, pID, pInfo.Labels, nil); err != nil {
 					return nil, errors.Wrapf(err, "mount rafs, instance id %s", pID)
 				}
 
@@ -522,7 +522,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 				}
 			}
 		}
-		if err := o.fs.Mount(pID, pInfo.Labels, &s); err != nil {
+		if err := o.fs.Mount(ctx, pID, pInfo.Labels, &s); err != nil {
 			return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)
 		}
 		needRemoteMounts = true
