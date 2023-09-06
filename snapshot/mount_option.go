@@ -108,6 +108,18 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overla
 		return []mount.Mount{}, errors.Errorf("failed to find RAFS instance for snapshot %s", id)
 	}
 
+	// Insert Kata volume for proxy
+	if label.IsNydusProxyMode(rafs.Annotations) {
+		options, err := o.mountWithProxyVolume(*rafs)
+		if err != nil {
+			return []mount.Mount{}, errors.Wrapf(err, "create kata volume for proxy")
+		}
+		if len(options) > 0 {
+			overlayOptions = append(overlayOptions, options...)
+			hasVolume = true
+		}
+	}
+
 	// Insert Kata volume for tarfs
 	if blobID, ok := rafs.Annotations[label.NydusTarfsLayer]; ok {
 		options, err := o.mountWithTarfsVolume(*rafs, blobID)
@@ -122,16 +134,43 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overla
 
 	if hasVolume {
 		log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
-		return []mount.Mount{
+		mounts := []mount.Mount{
 			{
 				Type:    "fuse.nydus-overlayfs",
 				Source:  "overlay",
 				Options: overlayOptions,
 			},
-		}, nil
+		}
+		return mounts, nil
 	}
 
 	return overlayMount(overlayOptions), nil
+}
+
+func (o *snapshotter) mountWithProxyVolume(rafs rafs.Rafs) ([]string, error) {
+	options := []string{}
+	for k, v := range rafs.Annotations {
+		options = append(options, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	volume := &KataVirtualVolume{
+		VolumeType: KataVirtualVolumeImageGuestPullType,
+		Source:     "",
+		FSType:     "",
+		Options:    options,
+		ImagePull:  &ImagePullVolume{Metadata: rafs.Annotations},
+	}
+	if !volume.Validate() {
+		return []string{}, errors.Errorf("got invalid kata volume, %v", volume)
+	}
+
+	info, err := EncodeKataVirtualVolumeToBase64(*volume)
+	if err != nil {
+		return []string{}, errors.Errorf("failed to encoding Kata Volume info %v", volume)
+	}
+	opt := fmt.Sprintf("%s=%s", KataVirtualVolumeOptionName, info)
+
+	return []string{opt}, nil
 }
 
 func (o *snapshotter) mountWithTarfsVolume(rafs rafs.Rafs, blobID string) ([]string, error) {
@@ -366,6 +405,7 @@ func EncodeKataVirtualVolumeToBase64(volume KataVirtualVolume) (string, error) {
 	if err != nil {
 		return "", errors.Wrapf(err, "marshal KataVirtualVolume object")
 	}
+	log.L.Infof("Mount info with kata volume %s", validKataVirtualVolumeJSON)
 	option := base64.StdEncoding.EncodeToString(validKataVirtualVolumeJSON)
 	return option, nil
 }

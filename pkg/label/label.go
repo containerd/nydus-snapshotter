@@ -44,6 +44,8 @@ const (
 	NydusImagePullSecret = "containerd.io/snapshot/pullsecret"
 	// Annotation containing username to pull images from registry, set by the snapshotter.
 	NydusImagePullUsername = "containerd.io/snapshot/pullusername"
+	// Proxy image pull actions to other agents.
+	NydusProxyMode = "containerd.io/snapshot/nydus-proxy-mode"
 	// A bool flag to enable integrity verification of meta data blob
 	NydusSignature = "containerd.io/snapshot/nydus-signature"
 
@@ -72,6 +74,11 @@ func IsNydusMetaLayer(labels map[string]string) bool {
 
 func IsTarfsDataLayer(labels map[string]string) bool {
 	_, ok := labels[NydusTarfsLayer]
+	return ok
+}
+
+func IsNydusProxyMode(labels map[string]string) bool {
+	_, ok := labels[NydusProxyMode]
 	return ok
 }
 

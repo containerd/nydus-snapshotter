@@ -63,6 +63,14 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	if isRoLayer {
 		// Containerd won't consume mount slice for below snapshots
 		switch {
+		case config.GetFsDriver() == config.FsDriverProxy:
+			logger.Debugf("proxy image pull request to other agents")
+			if ref := labels[label.CRILayerDigest]; len(ref) > 0 {
+				labels[label.NydusProxyMode] = "true"
+				handler = skipHandler
+			} else {
+				return nil, "", errors.Errorf("missing CRI reference annotation for snaposhot %s", s.ID)
+			}
 		case label.IsNydusMetaLayer(labels):
 			logger.Debugf("found nydus meta layer")
 			handler = defaultHandler
@@ -109,11 +117,19 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		// Container writable layer comes into this branch.
 		// It should not be committed during this Prepare() operation.
 
+		pID, pInfo, _, pErr := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
+		if pErr == nil && label.IsNydusProxyMode(pInfo.Labels) {
+			logger.Infof("Prepare active snapshot %s in proxy mode", key)
+			handler = remoteHandler(pID, pInfo.Labels)
+		}
+
 		// Hope to find bootstrap layer and prepares to start nydusd
 		// TODO: Trying find nydus meta layer will slow down setting up rootfs to OCI images
-		if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
-			logger.Infof("Prepare active Nydus snapshot %s", key)
-			handler = remoteHandler(id, info.Labels)
+		if handler == nil {
+			if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
+				logger.Infof("Prepare active Nydus snapshot %s", key)
+				handler = remoteHandler(id, info.Labels)
+			}
 		}
 
 		if handler == nil && sn.fs.ReferrerDetectEnabled() {
@@ -127,46 +143,31 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 		}
 
-		if handler == nil && sn.fs.StargzEnabled() {
-			// `pInfo` must be the uppermost parent layer
-			id, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
-			if err != nil {
-				return nil, "", errors.Wrap(err, "get parent snapshot info")
+		if handler == nil && pErr == nil && sn.fs.StargzEnabled() && sn.fs.StargzLayer(pInfo.Labels) {
+			if err := sn.fs.MergeStargzMetaLayer(ctx, s); err != nil {
+				return nil, "", errors.Wrap(err, "merge stargz meta layers")
 			}
-
-			if sn.fs.StargzLayer(pInfo.Labels) {
-				if err := sn.fs.MergeStargzMetaLayer(ctx, s); err != nil {
-					return nil, "", errors.Wrap(err, "merge stargz meta layers")
-				}
-				handler = remoteHandler(id, pInfo.Labels)
-				logger.Infof("Generated estargz merged meta for %s", key)
-			}
+			handler = remoteHandler(pID, pInfo.Labels)
+			logger.Infof("Generated estargz merged meta for %s", key)
 		}
 
-		if handler == nil && sn.fs.TarfsEnabled() {
+		if handler == nil && pErr == nil && sn.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
 			// Merge and mount tarfs on the uppermost parent layer.
-			id, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
-			switch {
-			case err != nil:
-				logger.Warnf("Tarfs enabled but can't get parent of snapshot %s", s.ID)
-			case !label.IsTarfsDataLayer(pInfo.Labels):
-				logger.Debugf("Tarfs enabled but Parent (%s) of snapshot %s is not a tarfs layer", id, s.ID)
-			default:
-				// TODO may need to check all parrent layers, in case share layers with other images
-				// which have already been prepared by overlay snapshotter
+			// TODO may need to check all parrent layers, in case share layers with other images
+			// which have already been prepared by overlay snapshotter
 
-				err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
-				if err != nil {
-					return nil, "", errors.Wrap(err, "merge tarfs layers")
-				}
-				if config.GetTarfsExportEnabled() {
-					_, err = sn.fs.ExportBlockData(s, false, labels, func(id string) string { return sn.upperPath(id) })
-					if err != nil {
-						return nil, "", errors.Wrap(err, "export image as tarfs block device")
-					}
-				}
-				handler = remoteHandler(id, pInfo.Labels)
+			err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
+			if err != nil {
+				return nil, "", errors.Wrap(err, "merge tarfs layers")
 			}
+			if config.GetTarfsExportEnabled() {
+				_, err = sn.fs.ExportBlockData(s, false, labels, func(id string) string { return sn.upperPath(id) })
+				if err != nil {
+					return nil, "", errors.Wrap(err, "export image as tarfs block device")
+				}
+			}
+			logger.Infof("Prepare active Nydus snapshot %s in tarfs mode", key)
+			handler = remoteHandler(pID, pInfo.Labels)
 		}
 	}
 

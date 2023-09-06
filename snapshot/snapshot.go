@@ -160,6 +160,23 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		fsManagers = append(fsManagers, fusedevManager)
 	}
 
+	if config.GetFsDriver() == config.FsDriverProxy {
+		proxyManager, err := mgr.NewManager(mgr.Opt{
+			NydusdBinaryPath: "",
+			Database:         db,
+			CacheDir:         cfg.CacheManagerConfig.CacheDir,
+			RootDir:          cfg.Root,
+			RecoverPolicy:    rp,
+			FsDriver:         config.FsDriverProxy,
+			DaemonConfig:     nil,
+			CgroupMgr:        cgroupMgr,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "create proxy manager")
+		}
+		fsManagers = append(fsManagers, proxyManager)
+	}
+
 	metricServer, err := metrics.NewServer(
 		ctx,
 		metrics.WithProcessManagers(fsManagers),
@@ -378,21 +395,21 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 				needRemoteMounts = true
 				metaSnapshotID = id
 			}
-		} else if label.IsTarfsDataLayer(info.Labels) {
+		} else if (o.fs.TarfsEnabled() && label.IsTarfsDataLayer(info.Labels)) || label.IsNydusProxyMode(info.Labels) {
 			needRemoteMounts = true
 			metaSnapshotID = id
 		}
 	case snapshots.KindActive:
 		if info.Parent != "" {
 			pKey := info.Parent
-			if pID, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
-				if label.IsNydusMetaLayer(info.Labels) {
+			if pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
+				if label.IsNydusMetaLayer(pInfo.Labels) {
 					if err = o.fs.WaitUntilReady(pID); err != nil {
 						return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 					}
 					needRemoteMounts = true
 					metaSnapshotID = pID
-				} else if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(info.Labels) {
+				} else if (o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels)) || label.IsNydusProxyMode(pInfo.Labels) {
 					needRemoteMounts = true
 					metaSnapshotID = pID
 				}

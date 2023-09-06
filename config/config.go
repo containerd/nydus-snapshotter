@@ -104,6 +104,7 @@ const (
 	FsDriverFusedev  string = constant.FsDriverFusedev
 	FsDriverFscache  string = constant.FsDriverFscache
 	FsDriverNodev    string = constant.FsDriverNodev
+	FsDriverProxy    string = constant.FsDriverProxy
 )
 
 type Experimental struct {
@@ -276,7 +277,8 @@ func ValidateConfig(c *SnapshotterConfig) error {
 	}
 
 	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev &&
-		c.DaemonConfig.FsDriver != FsDriverBlockdev && c.DaemonConfig.FsDriver != FsDriverNodev {
+		c.DaemonConfig.FsDriver != FsDriverBlockdev && c.DaemonConfig.FsDriver != FsDriverNodev &&
+		c.DaemonConfig.FsDriver != FsDriverProxy {
 		return errors.Errorf("invalid filesystem driver %q", c.DaemonConfig.FsDriver)
 	}
 	if _, err := ParseRecoverPolicy(c.DaemonConfig.RecoverPolicy); err != nil {

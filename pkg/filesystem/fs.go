@@ -357,6 +357,14 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		}
 	case config.FsDriverNodev:
 		// Nothing to do
+	case config.FsDriverProxy:
+		if label.IsNydusProxyMode(labels) {
+			if v, ok := labels[label.CRILayerDigest]; ok {
+				rafs.AddAnnotation(label.CRILayerDigest, v)
+			}
+			rafs.AddAnnotation(label.NydusProxyMode, "true")
+			rafs.SetMountpoint(path.Join(rafs.GetSnapshotDir(), "fs"))
+		}
 	default:
 		err = errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
@@ -420,6 +428,8 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
+	case config.FsDriverNodev, config.FsDriverProxy:
+		// Nothing to do
 	default:
 		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
