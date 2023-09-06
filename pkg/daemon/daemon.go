@@ -83,6 +83,9 @@ type Daemon struct {
 	ref int32
 	// Cache the nydusd daemon state to avoid frequently querying nydusd by API.
 	state types.DaemonState
+
+	// Status of daemon process.
+	Process DaemonProcess
 }
 
 func (d *Daemon) Lock() {
@@ -670,6 +673,7 @@ func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	d.States.ID = newID()
 	d.States.DaemonMode = config.DaemonModeDedicated
 	d.Instances = rafsSet{instances: make(map[string]*Rafs)}
+	d.Process = DaemonProcess{Status: DaemonProcessStatusUnknown}
 
 	for _, o := range opt {
 		err := o(d)

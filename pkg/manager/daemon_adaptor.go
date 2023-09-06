@@ -9,7 +9,9 @@ package manager
 import (
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -29,22 +31,23 @@ func (m *Manager) IsSubscribedDaemon(id, path string) bool {
 	return m.monitor.IsSubscribed(id, path)
 }
 
-func (m *Manager) StartDaemonUntilSubscribed(d *daemon.Daemon) {
+func (m *Manager) StartDaemonWithRetry(d *daemon.Daemon, timeout time.Duration) error {
+	start := time.Now()
 	for {
 		if err := m.StartDaemon(d); err != nil {
-			log.L.WithError(err).Errorf("fail to start daemon %s when recovering", d.ID())
+			log.L.WithError(err).Errorf("fail to start daemon %s", d.ID())
 		}
 
-		running, err := d.IsProcessRunning()
-		if err != nil {
-			log.L.WithError(err).Errorf("fail to get process state, pid %d", d.Pid())
-		}
-		if m.IsSubscribedDaemon(d.ID(), d.GetAPISock()) && running {
+		if m.IsSubscribedDaemon(d.ID(), d.GetAPISock()) && !d.Process.IsExitedStatus() {
 			break
 		}
 
+		if time.Since(start) > timeout {
+			return errors.Errorf("daemon %s, retry timeout %v exceeded", d.ID(), timeout)
+		}
 		log.L.Warnf("daemon %s, retry...", d.ID())
 	}
+	return nil
 }
 
 // Fork the nydusd daemon with the process PID decided
@@ -57,6 +60,17 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	d.Process.SetStatus(daemon.DaemonProcessStatusRunning)
+
+	sig := make(chan os.Signal, 1)
+	go func() {
+		signal.Notify(sig, syscall.SIGCHLD)
+		<-sig
+
+		d.Process.SetStatus(daemon.DaemonProcessStatusExited)
+
+		cmd.Wait()
+	}()
 
 	d.Lock()
 	defer d.Unlock()
