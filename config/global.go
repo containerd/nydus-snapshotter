@@ -112,6 +112,10 @@ func GetDaemonProfileCPUDuration() int64 {
 	return globalConfig.origin.SystemControllerConfig.DebugConfig.ProfileDuration
 }
 
+func GetSkipSSLVerify() bool {
+	return globalConfig.origin.RemoteConfig.SkipSSLVerify
+}
+
 const (
 	TarfsLayerVerityOnly      string = "layer_verity_only"
 	TarfsImageVerityOnly      string = "image_verity_only"

@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/log"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -55,6 +56,9 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 	if limiter != nil {
 		limiter.Release(1)
 	}
+
+	layerBlobID := layerDigest.Hex()
+	labels[label.NydusTarfsLayer] = layerBlobID
 
 	return nil
 }

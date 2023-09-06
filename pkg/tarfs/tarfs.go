@@ -494,13 +494,18 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		return updateFields, errors.Errorf("tarfs snapshot %s is not ready, %d", snapshotID, st.status)
 	}
 
+	blobID, ok := labels[label.NydusTarfsLayer]
+	if !ok {
+		return updateFields, errors.Errorf("Missing Nydus tarfs layer annotation for snapshot %s", s.ID)
+	}
+
 	var metaFileName, diskFileName string
 	if wholeImage {
 		metaFileName = t.imageMetaFilePath(storageLocater(snapshotID))
-		diskFileName = t.ImageDiskFilePath(st.blobID)
+		diskFileName = t.ImageDiskFilePath(blobID)
 	} else {
 		metaFileName = t.layerMetaFilePath(storageLocater(snapshotID))
-		diskFileName = t.layerDiskFilePath(st.blobID)
+		diskFileName = t.layerDiskFilePath(blobID)
 	}
 
 	// Do not regenerate if the disk image already exists.
@@ -520,7 +525,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	if withVerity {
 		options = append(options, "--verity")
 	}
-	log.L.Warnf("nydus image command %v", options)
+	log.L.Debugf("nydus image command %v", options)
 	cmd := exec.Command(t.nydusImagePath, options...)
 	var errb, outb bytes.Buffer
 	cmd.Stderr = &errb

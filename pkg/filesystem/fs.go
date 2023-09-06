@@ -199,13 +199,12 @@ func (fs *Filesystem) TryStopSharedDaemon() {
 // WaitUntilReady wait until daemon ready by snapshotID, it will wait until nydus domain socket established
 // and the status of nydusd daemon must be ready
 func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
-	// If NoneDaemon mode, there's no need to wait for daemon ready
-	if !fs.DaemonBacked() {
-		return nil
-	}
-
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs == nil {
+		// If NoneDaemon mode, there's no need to wait for daemon ready
+		if config.GetDaemonMode() == config.DaemonModeNone {
+			return nil
+		}
 		return errors.Wrapf(errdefs.ErrNotFound, "no instance %s", snapshotID)
 	}
 
@@ -229,11 +228,6 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 // It must set up all necessary resources during Mount procedure and revoke any step if necessary.
 func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string, s *storage.Snapshot) (err error) {
-	// Do not create RAFS instance in case of nodev.
-	if !fs.DaemonBacked() {
-		return nil
-	}
-
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs != nil {
 		// Instance already exists, how could this happen? Can containerd handle this case?
@@ -309,7 +303,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			daemonconfig.WorkDir:   workDir,
 			daemonconfig.CacheDir:  cacheDir,
 		}
-		cfg := deepcopy.Copy(fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
+		cfg := deepcopy.Copy(*fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
 		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
 		if err != nil {
 			return errors.Wrap(err, "supplement configuration")
@@ -362,6 +356,8 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		if err != nil {
 			err = errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
 		}
+	case config.FsDriverNodev:
+		// Nothing to do
 	default:
 		err = errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
@@ -492,14 +488,6 @@ func (fs *Filesystem) Teardown(ctx context.Context) error {
 }
 
 func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
-	if !fs.DaemonBacked() {
-		// For NoneDaemon mode, return a dummy mountpoint which is very likely not
-		// existed on host. NoneDaemon mode does not start nydusd, so NO fuse mount is
-		// ever performed. Only mount option carries meaningful info to containerd and
-		// finally passes to shim.
-		return fs.rootMountpoint, nil
-	}
-
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs != nil {
 		return rafs.GetMountpoint(), nil
@@ -510,6 +498,9 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 
 func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	rafs := racache.RafsGlobalCache.Get(id)
+	if rafs == nil {
+		return "", errors.Errorf("no RAFS instance for %s", id)
+	}
 	return rafs.BootstrapFile()
 }
 
@@ -593,7 +584,7 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 	// Shared nydusd daemon does not need configuration to start process but
 	// it is loaded when requesting mount api
 	// Dump the configuration file since it is reloaded when recovering the nydusd
-	d.Config = fsManager.DaemonConfig
+	d.Config = *fsManager.DaemonConfig
 	err = d.Config.DumpFile(d.ConfigFile(""))
 	if err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
 		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile(""))
@@ -649,10 +640,6 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 	}
 
 	return d, nil
-}
-
-func (fs *Filesystem) DaemonBacked() bool {
-	return config.GetDaemonMode() != config.DaemonModeNone
 }
 
 func (fs *Filesystem) getManager(fsDriver string) (*manager.Manager, error) {

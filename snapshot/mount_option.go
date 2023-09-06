@@ -101,8 +101,7 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 	}, nil
 }
 
-func (o *snapshotter) mountWithKataVolume(ctx context.Context, s storage.Snapshot, id string,
-	overlayOptions []string) ([]mount.Mount, error) {
+func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overlayOptions []string) ([]mount.Mount, error) {
 	hasVolume := false
 	rafs := rafs.RafsGlobalCache.Get(id)
 	if rafs == nil {
@@ -110,8 +109,8 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, s storage.Snapsho
 	}
 
 	// Insert Kata volume for tarfs
-	if label.IsTarfsDataLayer(rafs.Annotations) {
-		options, err := o.mountWithTarfsVolume(*rafs, id)
+	if blobID, ok := rafs.Annotations[label.NydusTarfsLayer]; ok {
+		options, err := o.mountWithTarfsVolume(*rafs, blobID)
 		if err != nil {
 			return []mount.Mount{}, errors.Wrapf(err, "create kata volume for tarfs")
 		}
@@ -135,11 +134,11 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, s storage.Snapsho
 	return overlayMount(overlayOptions), nil
 }
 
-func (o *snapshotter) mountWithTarfsVolume(rafs rafs.Rafs, id string) ([]string, error) {
+func (o *snapshotter) mountWithTarfsVolume(rafs rafs.Rafs, blobID string) ([]string, error) {
 	var volume *KataVirtualVolume
 
 	if info, ok := rafs.Annotations[label.NydusImageBlockInfo]; ok {
-		path, err := o.fs.GetTarfsImageDiskFilePath(id)
+		path, err := o.fs.GetTarfsImageDiskFilePath(blobID)
 		if err != nil {
 			return []string{}, errors.Wrapf(err, "get tarfs image disk file path")
 		}

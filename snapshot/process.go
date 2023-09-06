@@ -101,7 +101,6 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 							return nil, "", errors.Wrap(err, "export layer as tarfs block device")
 						}
 					}
-					labels[label.NydusTarfsLayer] = "true"
 					handler = skipHandler
 				}
 			}

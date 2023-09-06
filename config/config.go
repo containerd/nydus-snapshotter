@@ -184,6 +184,7 @@ type AuthConfig struct {
 type RemoteConfig struct {
 	AuthConfig         AuthConfig    `toml:"auth"`
 	ConvertVpcRegistry bool          `toml:"convert_vpc_registry"`
+	SkipSSLVerify      bool          `toml:"skip_ssl_verify"`
 	MirrorsConfig      MirrorsConfig `toml:"mirrors_config"`
 }
 
@@ -274,7 +275,8 @@ func ValidateConfig(c *SnapshotterConfig) error {
 		return errors.New("empty root directory")
 	}
 
-	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev {
+	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev &&
+		c.DaemonConfig.FsDriver != FsDriverBlockdev && c.DaemonConfig.FsDriver != FsDriverNodev {
 		return errors.Errorf("invalid filesystem driver %q", c.DaemonConfig.FsDriver)
 	}
 	if _, err := ParseRecoverPolicy(c.DaemonConfig.RecoverPolicy); err != nil {
