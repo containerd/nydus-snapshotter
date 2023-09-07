@@ -48,6 +48,7 @@ jobs:
           name: nydus-snapshotter_artifacts
           path: |
             bin/containerd-nydus-grpc
+            bin/nydus-overlayfs
             bin/optimizer-nri-plugin
             bin/optimizer-server
   upload:
