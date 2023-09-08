@@ -98,11 +98,11 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 
 			if handler == nil && sn.fs.TarfsEnabled() {
+				logger.Debugf("convert OCIv1 layer to tarfs")
 				err := sn.fs.PrepareTarfsLayer(ctx, labels, s.ID, sn.upperPath(s.ID))
 				if err != nil {
 					logger.Warnf("snapshot ID %s can't be converted into tarfs, fallback to containerd, err: %v", s.ID, err)
 				} else {
-					logger.Debugf("convert OCIv1 layer to tarfs")
 					if config.GetTarfsExportEnabled() {
 						_, err = sn.fs.ExportBlockData(s, true, labels, func(id string) string { return sn.upperPath(id) })
 						if err != nil {
@@ -156,17 +156,12 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			// TODO may need to check all parrent layers, in case share layers with other images
 			// which have already been prepared by overlay snapshotter
 
-			err := sn.fs.MergeTarfsLayers(s, func(id string) string { return sn.upperPath(id) })
+			logger.Infof("Prepare active snapshot %s in Nydus tarfs mode", key)
+			err = sn.mergeTarfs(ctx, s, pID, pInfo)
 			if err != nil {
-				return nil, "", errors.Wrap(err, "merge tarfs layers")
+				return nil, "", errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
 			}
-			if config.GetTarfsExportEnabled() {
-				_, err = sn.fs.ExportBlockData(s, false, labels, func(id string) string { return sn.upperPath(id) })
-				if err != nil {
-					return nil, "", errors.Wrap(err, "export image as tarfs block device")
-				}
-			}
-			logger.Infof("Prepare active Nydus snapshot %s in tarfs mode", key)
+			logger.Infof("Prepared active snapshot %s in Nydus tarfs mode", key)
 			handler = remoteHandler(pID, pInfo.Labels)
 		}
 	}

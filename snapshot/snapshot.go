@@ -441,7 +441,8 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	log.L.Debugf("[Prepare] snapshot with key %s, parent %s", key, parent)
+	log.L.Infof("[Prepare] snapshot with key %s parent %s", key, parent)
+
 	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodPrepare); timer != nil {
 		defer timer.ObserveDuration()
 	}
@@ -476,7 +477,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 // 1. View on the topmost layer of nydus images or zran images
 // 2. View on the any layer of nydus images or zran images
 func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
-	log.L.Debugf("[View] snapshot with key %s, parent %s", key, parent)
+	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parent)
 	if err != nil {
@@ -517,34 +518,22 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 	}
 
 	if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
-		if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
-			return nil, errors.Wrapf(err, "tarfs merge fail %s", pID)
-		}
-		if config.GetTarfsExportEnabled() {
-			updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
-			if err != nil {
-				return nil, errors.Wrap(err, "export tarfs as block image")
-			}
-			if len(updateFields) > 0 {
-				_, err = o.Update(ctx, pInfo, updateFields...)
-				if err != nil {
-					return nil, errors.Wrapf(err, "update snapshot label information")
-				}
-			}
+		log.L.Infof("Prepare view snapshot %s in Nydus tarfs mode", pID)
+		err = o.mergeTarfs(ctx, s, pID, pInfo)
+		if err != nil {
+			return nil, errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
 		}
 		if err := o.fs.Mount(ctx, pID, pInfo.Labels, &s); err != nil {
 			return nil, errors.Wrapf(err, "mount tarfs, snapshot id %s", pID)
 		}
+		log.L.Infof("Prepared view snapshot %s in Nydus tarfs mode", pID)
 		needRemoteMounts = true
 		metaSnapshotID = pID
 	}
 
-	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
-
 	if needRemoteMounts {
 		return o.mountRemote(ctx, base.Labels, s, metaSnapshotID)
 	}
-
 	return o.mountNative(ctx, base.Labels, s)
 }
 
@@ -593,6 +582,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 }
 
 func (o *snapshotter) Remove(ctx context.Context, key string) error {
+	log.L.Debugf("[Remove] snapshot with key %s", key)
 	if timer := collector.NewSnapshotMetricsTimer(collector.SnapshotMethodRemove); timer != nil {
 		defer timer.ObserveDuration()
 	}
@@ -614,13 +604,16 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		return errors.Wrapf(err, "get snapshot %s", key)
 	}
 
-	// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
-	log.L.Debugf("[Remove] snapshot with key %s snapshot id %s", key, id)
-
-	if label.IsNydusMetaLayer(info.Labels) {
+	switch {
+	case label.IsNydusMetaLayer(info.Labels):
 		log.L.Infof("[Remove] nydus meta snapshot with key %s snapshot id %s", key, id)
-	} else if label.IsTarfsDataLayer(info.Labels) {
+	case label.IsNydusDataLayer(info.Labels):
+		log.L.Infof("[Remove] nydus data snapshot with key %s snapshot id %s", key, id)
+	case label.IsTarfsDataLayer(info.Labels):
 		log.L.Infof("[Remove] nydus tarfs snapshot with key %s snapshot id %s", key, id)
+	default:
+		// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
+		log.L.Infof("[Remove] snapshot with key %s snapshot id %s", key, id)
 	}
 
 	if info.Kind == snapshots.KindCommitted {
@@ -676,6 +669,8 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 }
 
 func (o *snapshotter) Close() error {
+	log.L.Info("[Close] shutdown snapshotter")
+
 	if o.cleanupOnClose {
 		err := o.fs.Teardown(context.Background())
 		if err != nil {
@@ -745,6 +740,9 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 			return &base, storage.Snapshot{}, err
 		}
 	}
+	if base.Labels == nil {
+		base.Labels = map[string]string{}
+	}
 
 	var td, path string
 	defer func() {
@@ -796,6 +794,26 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	path = ""
 
 	return &base, s, nil
+}
+
+func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID string, pInfo snapshots.Info) error {
+	if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
+		return errors.Wrapf(err, "tarfs merge fail %s", pID)
+	}
+	if config.GetTarfsExportEnabled() {
+		updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
+		if err != nil {
+			return errors.Wrap(err, "export tarfs as block image")
+		}
+		if len(updateFields) > 0 {
+			_, err = o.Update(ctx, pInfo, updateFields...)
+			if err != nil {
+				return errors.Wrapf(err, "update snapshot label information")
+			}
+		}
+	}
+
+	return nil
 }
 
 func bindMount(source, roFlag string) []mount.Mount {

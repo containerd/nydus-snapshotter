@@ -306,63 +306,89 @@ func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
 }
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
-func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manifestDigest, layerDigest digest.Digest,
-	layerBlobID, upperDirPath string) error {
+func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotID, ref string,
+	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
+	layerBlobID := layerDigest.Hex()
+	epilog := func(err error, msg string) {
+		st, err1 := t.getSnapshotStatus(snapshotID, true)
+		if err1 != nil {
+			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
+			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
+			log.L.WithError(err1).Errorf("async prepare tarfs layer for snapshot ID %s", snapshotID)
+			return
+		}
+		defer st.mutex.Unlock()
+
+		st.blobID = layerBlobID
+		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
+		if err != nil {
+			log.L.WithError(err).Errorf(msg)
+			st.status = TarfsStatusFailed
+		} else {
+			st.status = TarfsStatusReady
+		}
+		log.L.Infof(msg)
+	}
+
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)
 	if err != nil {
+		epilog(err, "create key chain for connection")
 		return err
 	}
 	remote := remote.New(keyChain, t.insecure)
+	rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
+	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
+		rc, _, err = t.getBlobStream(ctx, remote, ref, layerDigest)
+	}
+	if err != nil {
+		epilog(err, "get blob stream for layer")
+		return errors.Wrapf(err, "get blob stream by digest")
+	}
 
-	handle := func() error {
-		rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
-		if err != nil {
-			return err
-		}
+	go func() {
+		defer wg.Done()
 		defer rc.Close()
+
 		ds, err := compression.DecompressStream(rc)
 		if err != nil {
-			return errors.Wrap(err, "unpack layer blob stream for tarfs")
+			epilog(err, "unpack layer blob stream for tarfs")
+			return
 		}
 		defer ds.Close()
 
 		if t.validateDiffID {
 			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
 			if err != nil {
-				return errors.Wrap(err, "get image layer diffID")
+				epilog(err, "get layer diffID")
+				return
 			}
 			digester := digest.Canonical.Digester()
 			dr := io.TeeReader(ds, digester.Hash())
 			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
-			if err != nil && !errdefs.IsAlreadyExists(err) {
-				return errors.Wrap(err, "generate tarfs data from image layer blob")
-			}
-			if err == nil {
-				if digester.Digest() != diffID {
-					return errors.Errorf("image layer diffID %s for tarfs does not match", diffID)
-				}
-				log.L.Infof("tarfs data for layer %s is ready, digest %s", snapshotID, digester.Digest())
+			switch {
+			case err != nil && !errdefs.IsAlreadyExists(err):
+				epilog(err, "generate tarfs from image layer blob")
+			case err == nil && digester.Digest() != diffID:
+				epilog(err, "image layer diffID does not match")
+			default:
+				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready, digest %s", snapshotID, digester.Digest())
+				epilog(nil, msg)
 			}
 		} else {
 			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
 			if err != nil && !errdefs.IsAlreadyExists(err) {
-				return errors.Wrap(err, "generate tarfs data from image layer blob")
+				epilog(err, "generate tarfs data from image layer blob")
+			} else {
+				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready", snapshotID)
+				epilog(nil, msg)
 			}
-			log.L.Infof("tarfs data for layer %s is ready", snapshotID)
 		}
-		return nil
-	}
-
-	err = handle()
-	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
-		err = handle()
-	}
+	}()
 
 	return err
 }
 
-func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest,
-	upperDirPath string) error {
+func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
 	t.mutex.Lock()
 	if _, ok := t.snapshotMap[snapshotID]; ok {
 		t.mutex.Unlock()
@@ -379,33 +405,7 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDige
 	}
 	t.mutex.Unlock()
 
-	go func() {
-		defer wg.Done()
-
-		layerBlobID := layerDigest.Hex()
-		err := t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, layerBlobID, upperDirPath)
-
-		st, err1 := t.getSnapshotStatus(snapshotID, true)
-		if err1 != nil {
-			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
-			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
-			log.L.WithError(err1).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
-			return
-		}
-		defer st.mutex.Unlock()
-
-		st.blobID = layerBlobID
-		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
-		if err != nil {
-			log.L.WithError(err).Errorf("failed to convert OCI image to tarfs")
-			st.status = TarfsStatusFailed
-		} else {
-			st.status = TarfsStatusReady
-		}
-		log.L.Debugf("finish converting snapshot %s to tarfs, status %d", snapshotID, st.status)
-	}()
-
-	return nil
+	return t.blobProcess(ctx, wg, snapshotID, ref, manifestDigest, layerDigest, upperDirPath)
 }
 
 func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) string) error {
