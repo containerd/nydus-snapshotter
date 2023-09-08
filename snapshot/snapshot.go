@@ -108,9 +108,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		skipSSLVerify = config.GetSkipSSLVerify()
 	}
 
-	var blockdevManager *mgr.Manager
+	fsManagers := []*mgr.Manager{}
 	if cfg.Experimental.TarfsConfig.EnableTarfs {
-		blockdevManager, err = mgr.NewManager(mgr.Opt{
+		blockdevManager, err := mgr.NewManager(mgr.Opt{
 			NydusdBinaryPath: "",
 			Database:         db,
 			CacheDir:         cfg.CacheManagerConfig.CacheDir,
@@ -123,11 +123,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		if err != nil {
 			return nil, errors.Wrap(err, "create blockdevice manager")
 		}
+		fsManagers = append(fsManagers, blockdevManager)
 	}
 
-	var fscacheManager *mgr.Manager
 	if config.GetFsDriver() == config.FsDriverFscache {
-		mgr, err := mgr.NewManager(mgr.Opt{
+		fscacheManager, err := mgr.NewManager(mgr.Opt{
 			NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
 			Database:         db,
 			CacheDir:         cfg.CacheManagerConfig.CacheDir,
@@ -140,12 +140,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		if err != nil {
 			return nil, errors.Wrap(err, "create fscache manager")
 		}
-		fscacheManager = mgr
+		fsManagers = append(fsManagers, fscacheManager)
 	}
 
-	var fusedevManager *mgr.Manager
 	if config.GetFsDriver() == config.FsDriverFusedev {
-		mgr, err := mgr.NewManager(mgr.Opt{
+		fusedevManager, err := mgr.NewManager(mgr.Opt{
 			NydusdBinaryPath: cfg.DaemonConfig.NydusdPath,
 			Database:         db,
 			CacheDir:         cfg.CacheManagerConfig.CacheDir,
@@ -158,14 +157,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		if err != nil {
 			return nil, errors.Wrap(err, "create fusedev manager")
 		}
-		fusedevManager = mgr
+		fsManagers = append(fsManagers, fusedevManager)
 	}
 
 	metricServer, err := metrics.NewServer(
 		ctx,
-		metrics.WithProcessManager(blockdevManager),
-		metrics.WithProcessManager(fscacheManager),
-		metrics.WithProcessManager(fusedevManager),
+		metrics.WithProcessManagers(fsManagers),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create metrics server")
@@ -186,9 +183,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	opts := []filesystem.NewFSOpt{
-		filesystem.WithManager(blockdevManager),
-		filesystem.WithManager(fscacheManager),
-		filesystem.WithManager(fusedevManager),
+		filesystem.WithManagers(fsManagers),
 		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
 		filesystem.WithVerifier(verifier),
 		filesystem.WithRootMountpoint(config.GetRootMountpoint()),
@@ -226,17 +221,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	if config.IsSystemControllerEnabled() {
-		managers := []*mgr.Manager{}
-		if blockdevManager != nil {
-			managers = append(managers, blockdevManager)
-		}
-		if fscacheManager != nil {
-			managers = append(managers, fscacheManager)
-		}
-		if fusedevManager != nil {
-			managers = append(managers, fusedevManager)
-		}
-		systemController, err := system.NewSystemController(nydusFs, managers, config.SystemControllerAddress())
+		systemController, err := system.NewSystemController(nydusFs, fsManagers, config.SystemControllerAddress())
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
