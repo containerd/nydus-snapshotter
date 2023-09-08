@@ -405,7 +405,7 @@ func EncodeKataVirtualVolumeToBase64(volume KataVirtualVolume) (string, error) {
 	if err != nil {
 		return "", errors.Wrapf(err, "marshal KataVirtualVolume object")
 	}
-	log.L.Infof("Mount info with kata volume %s", validKataVirtualVolumeJSON)
+	log.L.Infof("encode kata volume %s", validKataVirtualVolumeJSON)
 	option := base64.StdEncoding.EncodeToString(validKataVirtualVolumeJSON)
 	return option, nil
 }
