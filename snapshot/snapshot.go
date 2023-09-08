@@ -424,10 +424,10 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 
 	if needRemoteMounts {
-		return o.remoteMounts(ctx, info.Labels, *snap, metaSnapshotID)
+		return o.mountRemote(ctx, info.Labels, *snap, metaSnapshotID)
 	}
 
-	return o.mounts(ctx, info.Labels, *snap)
+	return o.mountNative(ctx, info.Labels, *snap)
 }
 
 func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) ([]mount.Mount, error) {
@@ -532,10 +532,10 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 	log.L.Infof("[View] snapshot with key %s parent %s", key, parent)
 
 	if needRemoteMounts {
-		return o.remoteMounts(ctx, base.Labels, s, metaSnapshotID)
+		return o.mountRemote(ctx, base.Labels, s, metaSnapshotID)
 	}
 
-	return o.mounts(ctx, base.Labels, s)
+	return o.mountNative(ctx, base.Labels, s)
 }
 
 func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snapshots.Opt) error {
@@ -813,7 +813,7 @@ func overlayMount(options []string) []mount.Mount {
 
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
 // `s` and `id` can represent a different layer, it's useful when View an image
-func (o *snapshotter) remoteMounts(ctx context.Context, labels map[string]string, s storage.Snapshot, id string) ([]mount.Mount, error) {
+func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string, s storage.Snapshot, id string) ([]mount.Mount, error) {
 	var overlayOptions []string
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
@@ -854,7 +854,7 @@ func (o *snapshotter) remoteMounts(ctx context.Context, labels map[string]string
 	return overlayMount(overlayOptions), nil
 }
 
-func (o *snapshotter) mounts(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
+func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
 	if len(s.ParentIDs) == 0 {
 		// if we only have one layer/no parents then just return a bind mount as overlay will not work
 		roFlag := "rw"

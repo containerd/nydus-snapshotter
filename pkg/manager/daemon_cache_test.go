@@ -24,10 +24,10 @@ import (
 )
 
 func TestDaemonStatesCache(t *testing.T) {
-	states := newDaemonStates()
+	states := newDaemonCache()
 
-	d1 := &daemon.Daemon{States: daemon.States{ID: "d1"}}
-	d2 := &daemon.Daemon{States: daemon.States{ID: "d2"}}
+	d1 := &daemon.Daemon{States: daemon.ConfigState{ID: "d1"}}
+	d2 := &daemon.Daemon{States: daemon.ConfigState{ID: "d2"}}
 
 	states.Add(d1)
 	states.Add(d2)
@@ -53,7 +53,7 @@ func TestDaemonStatesCache(t *testing.T) {
 
 	assert.Equal(t, states.Size(), 0)
 
-	states.RecoverDaemonState(d2)
+	states.Update(d2)
 
 	assert.Equal(t, states.Size(), 1)
 

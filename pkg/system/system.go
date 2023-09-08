@@ -196,7 +196,7 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 
 			for _, d := range daemons {
 				instances := make(map[string]rafsInstanceInfo)
-				for _, i := range d.Instances.List() {
+				for _, i := range d.RafsCache.List() {
 					instances[i.SnapshotID] = rafsInstanceInfo{
 						SnapshotID:  i.SnapshotID,
 						SnapshotDir: i.SnapshotDir,
@@ -324,7 +324,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 	var new daemon.Daemon
 	new.States = d.States
 	new.Supervisor = d.Supervisor
-	new.CloneInstances(d)
+	new.CloneRafsInstances(d)
 
 	s := path.Base(d.GetAPISock())
 	next, err := buildNextAPISocket(s)

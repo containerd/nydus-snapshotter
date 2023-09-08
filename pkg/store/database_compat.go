@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
 )
@@ -122,7 +123,7 @@ func (db *Database) tryTranslateRecords() error {
 				newConfig := filepath.Join(filepath.Dir(configDir), SharedNydusDaemonID, "config.json")
 
 				newDaemon = &daemon.Daemon{
-					States: daemon.States{
+					States: daemon.ConfigState{
 						ID:         d.ID,
 						ProcessID:  d.Pid,
 						APISocket:  path.Join(d.SnapshotDir, "api.sock"),
@@ -152,7 +153,7 @@ func (db *Database) tryTranslateRecords() error {
 		} else if !sharedMode {
 			mp = *d.CustomMountPoint
 			newDaemon = &daemon.Daemon{
-				States: daemon.States{
+				States: daemon.ConfigState{
 					ID:         d.ID,
 					ProcessID:  d.Pid,
 					APISocket:  path.Join(d.SocketDir, "api.sock"),
@@ -164,9 +165,9 @@ func (db *Database) tryTranslateRecords() error {
 				}}
 		}
 
-		var instance *daemon.Rafs
+		var instance *rafs.Rafs
 		if !sharedMode {
-			instance = &daemon.Rafs{
+			instance = &rafs.Rafs{
 				SnapshotID:  d.SnapshotID,
 				ImageID:     d.ImageID,
 				DaemonID:    d.ID,
@@ -174,7 +175,7 @@ func (db *Database) tryTranslateRecords() error {
 				Mountpoint:  path.Join(d.SnapshotDir, d.SnapshotID, "mnt"),
 			}
 		} else if sharedMode && d.ID != SharedNydusDaemonID {
-			instance = &daemon.Rafs{
+			instance = &rafs.Rafs{
 				SnapshotID:  d.SnapshotID,
 				ImageID:     d.ImageID,
 				DaemonID:    SharedNydusDaemonID,
@@ -190,7 +191,7 @@ func (db *Database) tryTranslateRecords() error {
 		}
 
 		if instance != nil {
-			if err := db.AddInstance(context.TODO(), instance); err != nil {
+			if err := db.AddRafsInstance(context.TODO(), instance); err != nil {
 				return err
 			}
 		}
@@ -203,8 +204,8 @@ func (db *Database) tryUpgradeRecords(version string) error {
 	log.L.Infof("Trying to update bucket records from %s to v1.1 ...", version)
 
 	if version == "v1.0" {
-		daemons := make([]*daemon.States, 0)
-		err := db.WalkDaemons(context.TODO(), func(cd *daemon.States) error {
+		daemons := make([]*daemon.ConfigState, 0)
+		err := db.WalkDaemons(context.TODO(), func(cd *daemon.ConfigState) error {
 			daemons = append(daemons, cd)
 			return nil
 		})

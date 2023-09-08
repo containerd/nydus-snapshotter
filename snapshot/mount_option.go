@@ -17,8 +17,8 @@ import (
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
-	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/pkg/errors"
 )
 
@@ -35,7 +35,7 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 		return nil, err
 	}
 
-	instance := daemon.RafsSet.Get(id)
+	instance := rafs.RafsGlobalCache.Get(id)
 	daemon, err := o.fs.GetDaemonByID(instance.DaemonID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "get daemon with ID %s", instance.DaemonID)

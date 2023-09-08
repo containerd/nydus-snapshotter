@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package daemon
+package rafs
 
 import (
 	"os"
@@ -30,44 +30,49 @@ type NewRafsOpt func(r *Rafs) error
 func init() {
 	// TODO
 	// A set of RAFS filesystem instances associated with a nydusd daemon.
-	RafsSet = rafsSet{instances: make(map[string]*Rafs)}
+	RafsGlobalCache = Cache{instances: make(map[string]*Rafs)}
 }
 
-var RafsSet rafsSet
+// Global cache to hold all RAFS instances.
+var RafsGlobalCache Cache
 
-type rafsSet struct {
+type Cache struct {
 	mu        sync.Mutex
 	instances map[string]*Rafs
 }
 
-func (rs *rafsSet) Lock() {
+func NewRafsCache() Cache {
+	return Cache{instances: make(map[string]*Rafs)}
+}
+
+func (rs *Cache) Lock() {
 	rs.mu.Lock()
 }
 
-func (rs *rafsSet) Unlock() {
+func (rs *Cache) Unlock() {
 	rs.mu.Unlock()
 }
 
-func (rs *rafsSet) Add(r *Rafs) {
+func (rs *Cache) Add(r *Rafs) {
 	rs.mu.Lock()
 	rs.instances[r.SnapshotID] = r
 	rs.mu.Unlock()
 }
 
-func (rs *rafsSet) Remove(snapshotID string) {
+func (rs *Cache) Remove(snapshotID string) {
 	rs.mu.Lock()
 	delete(rs.instances, snapshotID)
 	rs.mu.Unlock()
 }
 
-func (rs *rafsSet) Get(snapshotID string) *Rafs {
+func (rs *Cache) Get(snapshotID string) *Rafs {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
 	return rs.instances[snapshotID]
 }
 
-func (rs *rafsSet) Len() int {
+func (rs *Cache) Len() int {
 	rs.mu.Lock()
 	len := len(rs.instances)
 	rs.mu.Unlock()
@@ -75,7 +80,7 @@ func (rs *rafsSet) Len() int {
 	return len
 }
 
-func (rs *rafsSet) Head() *Rafs {
+func (rs *Cache) Head() *Rafs {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	for _, v := range rs.instances {
@@ -85,7 +90,7 @@ func (rs *rafsSet) Head() *Rafs {
 	return nil
 }
 
-func (rs *rafsSet) List() map[string]*Rafs {
+func (rs *Cache) List() map[string]*Rafs {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
@@ -94,21 +99,25 @@ func (rs *rafsSet) List() map[string]*Rafs {
 	return instances
 }
 
-func (rs *rafsSet) ListLocked() map[string]*Rafs {
+func (rs *Cache) ListLocked() map[string]*Rafs {
 	return rs.instances
+}
+
+func (rs *Cache) SetIntances(instances map[string]*Rafs) {
+	rs.Lock()
+	defer rs.Unlock()
+	rs.instances = instances
 }
 
 // The whole struct will be persisted
 type Rafs struct {
-	Seq uint64
-	// Usually is the image reference
-	ImageID  string
-	DaemonID string
-	FsDriver string
-	// Given by containerd
-	SnapshotID  string
+	Seq         uint64
+	ImageID     string // Usually is the image reference
+	DaemonID    string
+	FsDriver    string
+	SnapshotID  string // Given by containerd
 	SnapshotDir string
-	// 1. A host kernel EROFS mountpoint
+	// 1. A host kernel EROFS/TARFS mountpoint
 	// 2. Absolute path to each rafs instance root directory.
 	Mountpoint  string
 	Annotations map[string]string
@@ -128,7 +137,7 @@ func NewRafs(snapshotID, imageID, fsDriver string) (*Rafs, error) {
 		return nil, err
 	}
 
-	RafsSet.Add(rafs)
+	RafsGlobalCache.Add(rafs)
 
 	return rafs, nil
 }

@@ -26,9 +26,9 @@ import (
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
 	losetup "github.com/freddierice/go-losetup"
@@ -558,7 +558,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	return updateFields, nil
 }
 
-func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *daemon.Rafs) error {
+func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *rafs.Rafs) error {
 	if s == nil {
 		return errors.New("snapshot object for MountTarErofs() is nil")
 	}
