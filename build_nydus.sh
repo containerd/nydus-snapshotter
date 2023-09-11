@@ -1,13 +1,14 @@
 #!/bin/bash
 
-NYDUS_VERSION=""
+VKE_CLUSTER_INSTALLER_BRANCH="release-v2.10"
+
+NYDUS_BUILD_VERSION=""
 LOCAL_NYDUS_FILE_DIR=nydus/files
 
 # pull vke-cluster-installer project
 git clone git@code.byted.org:infcp/vke-cluster-installer.git
 cd vke-cluster-installer
-VKE_CLUSTER_INSTALLER_LATEST_BRANCH=origin/release-v$(git branch -r --list 'origin/release-*' | sed -e 's/origin\/release-v//g' | sed -e '/-/d' | sort -rV | head -n 1 | xargs)
-git checkout $VKE_CLUSTER_INSTALLER_LATEST_BRANCH
+git checkout $VKE_CLUSTER_INSTALLER_BRANCH
 
 # build nydusd
 git clone git@code.byted.org:containerimage/image-service.git
@@ -28,12 +29,12 @@ git checkout $NYDUS_SNAPSHOTTER_TAG
 ./build.sh
 cd ..
 
-if [ -z $NYDUS_VERSION ]; then
-    NYDUS_VERSION=$NYDUS_SNAPSHOTTER_TAG
+if [ -z $NYDUS_BUILD_VERSION ]; then
+    NYDUS_BUILD_VERSION=$NYDUS_SNAPSHOTTER_TAG
 fi
 
 # nydus package name
-NYDUS_FILE="nydus-$NYDUS_VERSION-linux-amd64.tar.gz"
+NYDUS_FILE="nydus-$NYDUS_BUILD_VERSION-linux-amd64.tar.gz"
 
 mkdir -p $LOCAL_NYDUS_FILE_DIR
 mkdir bin
@@ -51,7 +52,7 @@ rm -rf image-service nydus-snapshotter
 echo "[INFO] nydus package files: $(ls $LOCAL_NYDUS_FILE_DIR)"
 
 # build nydus package
-make build-nydus-local PACKAGE_SAVE_PATH=../output LOCAL_DIR=$LOCAL_NYDUS_FILE_DIR
+make build-nydus-local PACKAGE_SAVE_PATH=../output LOCAL_DIR=$LOCAL_NYDUS_FILE_DIR NYDUS_VERSION=$NYDUS_BUILD_VERSION
 
 echo "" >../output/nydus_version
 ./bin/containerd-nydus-grpc --version >>../output/nydus_version
