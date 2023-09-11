@@ -54,9 +54,11 @@ STATIC_OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/x86_64-unknown-linux-gn
 .PHONY: build
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 
 debug:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 
 .PHONY: build-optimizer
 build-optimizer:
@@ -65,6 +67,7 @@ build-optimizer:
 
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
 	make -C tools/optimizer-server static-release && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
 
@@ -86,6 +89,8 @@ clean-optimizer:
 install:
 	@echo "+ $@ bin/containerd-nydus-grpc"
 	@sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
+	@echo "+ $@ bin/nydus-overlayfs"
+	@sudo install -D -m 755 bin/nydus-overlayfs /usr/local/bin/nydus-overlayfs
 
 	@if [ ! -e ${NYDUSD_CONFIG} ]; then echo "+ $@ SOURCE_NYDUSD_CONFIG"; sudo install -D -m 664 ${SOURCE_NYDUSD_CONFIG} ${NYDUSD_CONFIG}; fi
 	@if [ ! -e ${SNAPSHOTTER_CONFIG} ]; then echo "+ $@ ${SOURCE_SNAPSHOTTER_CONFIG}"; sudo install -D -m 664 ${SOURCE_SNAPSHOTTER_CONFIG} ${SNAPSHOTTER_CONFIG}; fi
@@ -129,6 +134,7 @@ smoke:
 .PHONY: integration
 integration:
 	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "${PKG}/version.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=1 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags '-X "${PKG}/version.Version=${VERSION}" -extldflags "-static"' -race -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 	$(SUDO) DOCKER_BUILDKIT=1 docker build ${BUILD_ARG_E2E_DOWNLOADS_MIRROR} -t nydus-snapshotter-e2e:0.1 -f integration/Dockerfile .
 	$(SUDO) docker run --cap-add SYS_ADMIN --security-opt seccomp=unconfined --cgroup-parent=system.slice --cgroupns private --name nydus-snapshotter_e2e --rm --privileged -v /root/.docker:/root/.docker -v `go env GOMODCACHE`:/go/pkg/mod \
 	-v `go env GOCACHE`:/root/.cache/go-build -v `pwd`:/nydus-snapshotter \
