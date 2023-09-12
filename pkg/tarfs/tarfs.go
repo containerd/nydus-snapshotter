@@ -76,7 +76,6 @@ type snapshotStatus struct {
 	mutex           sync.Mutex
 	status          int
 	blobID          string
-	blobTarFilePath string
 	erofsMountPoint string
 	dataLoopdev     *losetup.Device
 	metaLoopdev     *losetup.Device
@@ -310,7 +309,7 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
 	layerBlobID := layerDigest.Hex()
 	epilog := func(err error, msg string) {
-		st, err1 := t.getSnapshotStatus(snapshotID, true)
+		st, err1 := t.getSnapshotStatusWithLock(snapshotID, true)
 		if err1 != nil {
 			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
 			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
@@ -320,7 +319,6 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 		defer st.mutex.Unlock()
 
 		st.blobID = layerBlobID
-		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
 		if err != nil {
 			log.L.WithError(err).Errorf(msg)
 			st.status = TarfsStatusFailed
@@ -424,7 +422,7 @@ func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) st
 			return errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
 		}
 
-		st, err := t.getSnapshotStatus(snapshotID, false)
+		st, err := t.getSnapshotStatusWithLock(snapshotID, false)
 		if err != nil {
 			return err
 		}
@@ -486,7 +484,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	if err != nil {
 		return updateFields, errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
 	}
-	st, err := t.getSnapshotStatus(snapshotID, false)
+	st, err := t.getSnapshotStatusWithLock(snapshotID, false)
 	if err != nil {
 		return updateFields, err
 	}
@@ -592,7 +590,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 			return errors.Wrapf(err, "wait for tarfs conversion task")
 		}
 
-		st, err := t.getSnapshotStatus(snapshotID, true)
+		st, err := t.getSnapshotStatusWithLock(snapshotID, true)
 		if err != nil {
 			return err
 		}
@@ -604,10 +602,11 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 		var blobMarker = "\"blob_id\":\"" + st.blobID + "\""
 		if strings.Contains(blobInfo, blobMarker) {
 			if st.dataLoopdev == nil {
-				loopdev, err := t.attachLoopdev(st.blobTarFilePath)
+				blobTarFilePath := t.layerTarFilePath(st.blobID)
+				loopdev, err := t.attachLoopdev(blobTarFilePath)
 				if err != nil {
 					st.mutex.Unlock()
-					return errors.Wrapf(err, "attach layer tar file %s to loopdev", st.blobTarFilePath)
+					return errors.Wrapf(err, "attach layer tar file %s to loopdev", blobTarFilePath)
 				}
 				st.dataLoopdev = loopdev
 			}
@@ -618,7 +617,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 	}
 	mountOpts := strings.Join(devices, ",")
 
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID, true)
 	if err != nil {
 		return err
 	}
@@ -656,7 +655,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 }
 
 func (t *Manager) UmountTarErofs(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID, true)
 	if err != nil {
 		return errors.Wrapf(err, "umount a tarfs snapshot %s which is already removed", snapshotID)
 	}
@@ -674,7 +673,7 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 }
 
 func (t *Manager) DetachLayer(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID, true)
 	if err != nil {
 		return os.ErrNotExist
 	}
@@ -716,7 +715,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	return nil
 }
 
-func (t *Manager) getSnapshotStatus(snapshotID string, lock bool) (*snapshotStatus, error) {
+func (t *Manager) getSnapshotStatusWithLock(snapshotID string, lock bool) (*snapshotStatus, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	st, ok := t.snapshotMap[snapshotID]
@@ -730,7 +729,7 @@ func (t *Manager) getSnapshotStatus(snapshotID string, lock bool) (*snapshotStat
 }
 
 func (t *Manager) waitLayerReady(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, false)
+	st, err := t.getSnapshotStatusWithLock(snapshotID, false)
 	if err != nil {
 		return err
 	}
