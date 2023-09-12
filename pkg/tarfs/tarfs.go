@@ -305,27 +305,68 @@ func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
 }
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
-func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotID, ref string,
+func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string,
 	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
 	layerBlobID := layerDigest.Hex()
-	epilog := func(err error, msg string) {
+
+	epilog := func(err error, msg string) error {
 		st, err1 := t.getSnapshotStatusWithLock(snapshotID)
 		if err1 != nil {
-			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
-			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
-			log.L.WithError(err1).Errorf("async prepare tarfs layer for snapshot ID %s", snapshotID)
-			return
+			return errors.Wrapf(err, "can not found status object for snapshot %s after prepare", snapshotID)
 		}
-		defer st.mutex.Unlock()
+		defer func() {
+			if st.wg != nil {
+				st.wg.Done()
+				st.wg = nil
+			}
+			st.mutex.Unlock()
+		}()
 
 		st.blobID = layerBlobID
 		if err != nil {
-			log.L.WithError(err).Errorf(msg)
 			st.status = TarfsStatusFailed
 		} else {
 			st.status = TarfsStatusReady
 		}
-		log.L.Infof(msg)
+
+		return errors.Wrapf(err, msg)
+	}
+
+	process := func(rc io.ReadCloser, remote *remote.Remote) error {
+		defer rc.Close()
+
+		ds, err := compression.DecompressStream(rc)
+		if err != nil {
+			return epilog(err, "unpack layer blob stream for tarfs")
+		}
+		defer ds.Close()
+
+		if t.validateDiffID {
+			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
+			if err != nil {
+				return epilog(err, "get layer diffID")
+			}
+			digester := digest.Canonical.Digester()
+			dr := io.TeeReader(ds, digester.Hash())
+			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
+			switch {
+			case err != nil && !errdefs.IsAlreadyExists(err):
+				return epilog(err, "generate tarfs from image layer blob")
+			case err == nil && digester.Digest() != diffID:
+				return epilog(err, "image layer diffID does not match")
+			default:
+				msg := fmt.Sprintf("Nydus tarfs for snapshot %s is ready, digest %s", snapshotID, digester.Digest())
+				return epilog(nil, msg)
+			}
+		} else {
+			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
+			if err != nil && !errdefs.IsAlreadyExists(err) {
+				return epilog(err, "generate tarfs data from image layer blob")
+			} else {
+				msg := fmt.Sprintf("Nydus tarfs for snapshot %s is ready", snapshotID)
+				return epilog(nil, msg)
+			}
+		}
 	}
 
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)
@@ -343,45 +384,7 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 		return errors.Wrapf(err, "get blob stream by digest")
 	}
 
-	go func() {
-		defer wg.Done()
-		defer rc.Close()
-
-		ds, err := compression.DecompressStream(rc)
-		if err != nil {
-			epilog(err, "unpack layer blob stream for tarfs")
-			return
-		}
-		defer ds.Close()
-
-		if t.validateDiffID {
-			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
-			if err != nil {
-				epilog(err, "get layer diffID")
-				return
-			}
-			digester := digest.Canonical.Digester()
-			dr := io.TeeReader(ds, digester.Hash())
-			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
-			switch {
-			case err != nil && !errdefs.IsAlreadyExists(err):
-				epilog(err, "generate tarfs from image layer blob")
-			case err == nil && digester.Digest() != diffID:
-				epilog(err, "image layer diffID does not match")
-			default:
-				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready, digest %s", snapshotID, digester.Digest())
-				epilog(nil, msg)
-			}
-		} else {
-			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
-			if err != nil && !errdefs.IsAlreadyExists(err) {
-				epilog(err, "generate tarfs data from image layer blob")
-			} else {
-				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready", snapshotID)
-				epilog(nil, msg)
-			}
-		}
-	}()
+	go process(rc, remote)
 
 	return err
 }
@@ -403,7 +406,7 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDige
 	}
 	t.mutex.Unlock()
 
-	return t.blobProcess(ctx, wg, snapshotID, ref, manifestDigest, layerDigest, upperDirPath)
+	return t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, upperDirPath)
 }
 
 func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) string) error {
