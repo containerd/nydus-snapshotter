@@ -518,7 +518,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 
 	if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
 		log.L.Infof("Prepare view snapshot %s in Nydus tarfs mode", pID)
-		err = o.mergeTarfs(ctx, s, pID, pInfo)
+		err = o.mergeTarfs(ctx, s, parent, pInfo)
 		if err != nil {
 			return nil, errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
 		}
@@ -558,7 +558,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Infof("[Commit] snapshot with key %q snapshot id %s", key, id)
+	log.L.Infof("[Commit] snapshot with key %q, name %s, snapshot id %s", key, name, id)
 
 	// For OCI compatibility, we calculate disk usage of the snapshotDir and commit the usage to DB.
 	// Nydus disk usage under the cacheDir will be delayed until containerd queries.
@@ -795,9 +795,21 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	return &base, s, nil
 }
 
-func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID string, pInfo snapshots.Info) error {
-	if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
-		return errors.Wrapf(err, "tarfs merge fail %s", pID)
+func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, parent string, pInfo snapshots.Info) error {
+	infoGetter := func(ctx context.Context, id string) (string, snapshots.Info, error) {
+		for {
+			id2, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parent)
+			if err != nil {
+				return "", snapshots.Info{}, err
+			} else if id2 == id {
+				return o.upperPath(id), info, nil
+			}
+			parent = info.Parent
+		}
+	}
+
+	if err := o.fs.MergeTarfsLayers(ctx, s, func(id string) string { return o.upperPath(id) }, infoGetter); err != nil {
+		return err
 	}
 	if config.GetTarfsExportEnabled() {
 		updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })

@@ -23,6 +23,7 @@ import (
 
 	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -42,7 +43,6 @@ import (
 )
 
 const (
-	TarfsStatusInit    = 0
 	TarfsStatusPrepare = 1
 	TarfsStatusReady   = 2
 	TarfsStatusFailed  = 3
@@ -306,7 +306,7 @@ func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
 func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string,
-	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
+	manifestDigest, layerDigest digest.Digest, upperDirPath string, retry bool) error {
 	layerBlobID := layerDigest.Hex()
 
 	epilog := func(err error, msg string) error {
@@ -362,17 +362,15 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string,
 			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
 			if err != nil && !errdefs.IsAlreadyExists(err) {
 				return epilog(err, "generate tarfs data from image layer blob")
-			} else {
-				msg := fmt.Sprintf("Nydus tarfs for snapshot %s is ready", snapshotID)
-				return epilog(nil, msg)
 			}
+			msg := fmt.Sprintf("Nydus tarfs for snapshot %s is ready", snapshotID)
+			return epilog(nil, msg)
 		}
 	}
 
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)
 	if err != nil {
-		epilog(err, "create key chain for connection")
-		return err
+		return epilog(err, "create key chain for connection")
 	}
 	remote := remote.New(keyChain, t.insecure)
 	rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
@@ -380,13 +378,67 @@ func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string,
 		rc, _, err = t.getBlobStream(ctx, remote, ref, layerDigest)
 	}
 	if err != nil {
-		epilog(err, "get blob stream for layer")
-		return errors.Wrapf(err, "get blob stream by digest")
+		return epilog(err, "get blob stream for layer")
 	}
 
-	go process(rc, remote)
+	if retry {
+		// Download and convert layer content in synchronous mode when retry for error recovering
+		err = process(rc, remote)
+	} else {
+		// Download and convert layer content in background.
+		// Will retry when the content is actually needed if the background process failed.
+		go func() {
+			_ = process(rc, remote)
+		}()
+	}
 
 	return err
+}
+
+func (t *Manager) retryPrepareLayer(snapshotID, upperDirPath string, labels map[string]string) error {
+	ref, ok := labels[label.CRIImageRef]
+	if !ok {
+		return errors.Errorf("not found image reference label")
+	}
+	layerDigest := digest.Digest(labels[label.CRILayerDigest])
+	if layerDigest.Validate() != nil {
+		return errors.Errorf("not found layer digest label")
+	}
+	manifestDigest := digest.Digest(labels[label.CRIManifestDigest])
+	if manifestDigest.Validate() != nil {
+		return errors.Errorf("not found manifest digest label")
+	}
+
+	st, err := t.getSnapshotStatus(snapshotID, true)
+	if err != nil {
+		return errors.Wrapf(err, "retry downloading content for snapshot %s", snapshotID)
+	}
+	switch st.status {
+	case TarfsStatusPrepare:
+		log.L.Infof("Another thread is retrying snapshot %s, wait for the result", snapshotID)
+		st.mutex.Unlock()
+		_, err = t.waitLayerReady(snapshotID, false)
+		return err
+	case TarfsStatusReady:
+		log.L.Infof("Another thread has retried snapshot %s and succeed", snapshotID)
+		st.mutex.Unlock()
+		return nil
+	case TarfsStatusFailed:
+		log.L.Infof("Snapshot %s is in FAILED state, retry downloading layer content", snapshotID)
+		if st.wg == nil {
+			st.wg = &sync.WaitGroup{}
+			st.wg.Add(1)
+		}
+		st.status = TarfsStatusPrepare
+		st.mutex.Unlock()
+	}
+
+	ctx := context.Background()
+	if err := t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, upperDirPath, true); err != nil {
+		log.L.WithError(err).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
+	}
+
+	return nil
 }
 
 func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
@@ -406,10 +458,11 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDige
 	}
 	t.mutex.Unlock()
 
-	return t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, upperDirPath)
+	return t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, upperDirPath, false)
 }
 
-func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) string) error {
+func (t *Manager) MergeLayers(ctx context.Context, s storage.Snapshot, storageLocater func(string) string,
+	infoGetter func(ctx context.Context, id string) (string, snapshots.Info, error)) error {
 	mergedBootstrap := t.imageMetaFilePath(storageLocater(s.ParentIDs[0]))
 	if _, err := os.Stat(mergedBootstrap); err == nil {
 		log.L.Debugf("tarfs snapshot %s already has merged bootstrap %s", s.ParentIDs[0], mergedBootstrap)
@@ -421,6 +474,17 @@ func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) st
 	for idx := len(s.ParentIDs) - 1; idx >= 0; idx-- {
 		snapshotID := s.ParentIDs[idx]
 		_, err := t.waitLayerReady(snapshotID, false)
+		if err != nil {
+			upperDir, info, err1 := infoGetter(ctx, snapshotID)
+			if err1 == nil {
+				err1 = t.retryPrepareLayer(snapshotID, upperDir, info.Labels)
+				if err1 != nil {
+					log.L.Errorf("failed to retry downloading content for snapshot %s, %s", snapshotID, err1)
+				} else {
+					err = nil
+				}
+			}
+		}
 		if err != nil {
 			return errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
 		}
@@ -805,6 +869,9 @@ func (t *Manager) GetConcurrentLimiter(ref string) *semaphore.Weighted {
 
 func (t *Manager) copyTarfsAnnotations(labels map[string]string, rafs *rafs.Rafs) {
 	keys := []string{
+		label.CRIImageRef,
+		label.CRILayerDigest,
+		label.CRIManifestDigest,
 		label.NydusTarfsLayer,
 		label.NydusImageBlockInfo,
 		label.NydusLayerBlockInfo,

@@ -11,6 +11,7 @@ import (
 
 	"github.com/containerd/containerd/log"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
+	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/opencontainers/go-digest"
@@ -63,8 +64,9 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 	return nil
 }
 
-func (fs *Filesystem) MergeTarfsLayers(s storage.Snapshot, storageLocater func(string) string) error {
-	return fs.tarfsMgr.MergeLayers(s, storageLocater)
+func (fs *Filesystem) MergeTarfsLayers(ctx context.Context, s storage.Snapshot, storageLocater func(string) string,
+	infoGetter func(ctx context.Context, id string) (string, snapshots.Info, error)) error {
+	return fs.tarfsMgr.MergeLayers(ctx, s, storageLocater, infoGetter)
 }
 
 func (fs *Filesystem) DetachTarfsLayer(snapshotID string) error {
