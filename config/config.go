@@ -104,6 +104,7 @@ const (
 	FsDriverFusedev  string = constant.FsDriverFusedev
 	FsDriverFscache  string = constant.FsDriverFscache
 	FsDriverNodev    string = constant.FsDriverNodev
+	FsDriverProxy    string = constant.FsDriverProxy
 )
 
 type Experimental struct {
@@ -114,6 +115,7 @@ type Experimental struct {
 
 type TarfsConfig struct {
 	EnableTarfs       bool   `toml:"enable_tarfs"`
+	MountTarfsOnHost  bool   `toml:"mount_tarfs_on_host"`
 	TarfsHint         bool   `toml:"tarfs_hint"`
 	MaxConcurrentProc int    `toml:"max_concurrent_proc"`
 	ExportMode        string `toml:"export_mode"`
@@ -156,6 +158,7 @@ type ImageConfig struct {
 // requests from containerd
 type SnapshotConfig struct {
 	EnableNydusOverlayFS bool `toml:"enable_nydus_overlayfs"`
+	EnableKataVolume     bool `toml:"enable_kata_volume"`
 	SyncRemove           bool `toml:"sync_remove"`
 }
 
@@ -182,6 +185,7 @@ type AuthConfig struct {
 type RemoteConfig struct {
 	AuthConfig         AuthConfig    `toml:"auth"`
 	ConvertVpcRegistry bool          `toml:"convert_vpc_registry"`
+	SkipSSLVerify      bool          `toml:"skip_ssl_verify"`
 	MirrorsConfig      MirrorsConfig `toml:"mirrors_config"`
 }
 
@@ -272,7 +276,9 @@ func ValidateConfig(c *SnapshotterConfig) error {
 		return errors.New("empty root directory")
 	}
 
-	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev {
+	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev &&
+		c.DaemonConfig.FsDriver != FsDriverBlockdev && c.DaemonConfig.FsDriver != FsDriverNodev &&
+		c.DaemonConfig.FsDriver != FsDriverProxy {
 		return errors.Errorf("invalid filesystem driver %q", c.DaemonConfig.FsDriver)
 	}
 	if _, err := ParseRecoverPolicy(c.DaemonConfig.RecoverPolicy); err != nil {

@@ -40,15 +40,10 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 )
 
-// TODO: refact `enabledManagers` and `xxxManager` into `ManagerCoordinator`
 type Filesystem struct {
 	fusedevSharedDaemon  *daemon.Daemon
 	fscacheSharedDaemon  *daemon.Daemon
-	blockdevManager      *manager.Manager
-	fusedevManager       *manager.Manager
-	fscacheManager       *manager.Manager
-	nodevManager         *manager.Manager
-	enabledManagers      []*manager.Manager
+	enabledManagers      map[string]*manager.Manager
 	cacheMgr             *cache.Manager
 	referrerMgr          *referrer.Manager
 	stargzResolver       *stargz.Resolver
@@ -104,25 +99,25 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	//		a new nydusd for it.
 	// TODO: We still need to consider shared daemon the time sequence of initializing daemon,
 	// start daemon commit its state to DB and retrieving its state.
-	if fs.fscacheManager == nil {
-		if hasFscacheSharedDaemon {
-			return nil, errors.Errorf("shared fscache daemon is present, but manager is missing")
+	if fscacheManager, ok := fs.enabledManagers[config.FsDriverFscache]; ok {
+		if !hasFscacheSharedDaemon && fs.fscacheSharedDaemon == nil {
+			log.L.Infof("initializing shared nydus daemon for fscache")
+			if err := fs.initSharedDaemon(fscacheManager); err != nil {
+				return nil, errors.Wrap(err, "start shared nydusd daemon for fscache")
+			}
 		}
-	} else if !hasFscacheSharedDaemon && fs.fscacheSharedDaemon == nil {
-		log.L.Infof("initializing shared nydus daemon for fscache")
-		if err := fs.initSharedDaemon(fs.fscacheManager); err != nil {
-			return nil, errors.Wrap(err, "start shared nydusd daemon for fscache")
-		}
+	} else if hasFscacheSharedDaemon {
+		return nil, errors.Errorf("shared fscache daemon is present, but manager is missing")
 	}
-	if fs.fusedevManager == nil {
-		if hasFusedevSharedDaemon {
-			return nil, errors.Errorf("shared fusedev daemon is present, but manager is missing")
+	if fusedevManager, ok := fs.enabledManagers[config.FsDriverFusedev]; ok {
+		if config.IsFusedevSharedModeEnabled() && !hasFusedevSharedDaemon && fs.fusedevSharedDaemon == nil {
+			log.L.Infof("initializing shared nydus daemon for fusedev")
+			if err := fs.initSharedDaemon(fusedevManager); err != nil {
+				return nil, errors.Wrap(err, "start shared nydusd daemon for fusedev")
+			}
 		}
-	} else if config.IsFusedevSharedModeEnabled() && !hasFusedevSharedDaemon && fs.fusedevSharedDaemon == nil {
-		log.L.Infof("initializing shared nydus daemon for fusedev")
-		if err := fs.initSharedDaemon(fs.fusedevManager); err != nil {
-			return nil, errors.Wrap(err, "start shared nydusd daemon for fusedev")
-		}
+	} else if hasFusedevSharedDaemon {
+		return nil, errors.Errorf("shared fusedev daemon is present, but manager is missing")
 	}
 
 	// Try to bring all persisted and stopped nydusd up and remount Rafs
@@ -178,19 +173,23 @@ func (fs *Filesystem) TryRetainSharedDaemon(d *daemon.Daemon) {
 func (fs *Filesystem) TryStopSharedDaemon() {
 	if fs.fusedevSharedDaemon != nil {
 		if fs.fusedevSharedDaemon.GetRef() == 1 {
-			if err := fs.fusedevManager.DestroyDaemon(fs.fusedevSharedDaemon); err != nil {
-				log.L.WithError(err).Errorf("Terminate shared daemon %s failed", fs.fusedevSharedDaemon.ID())
-			} else {
-				fs.fusedevSharedDaemon = nil
+			if fusedevManager, ok := fs.enabledManagers[config.FsDriverFusedev]; ok {
+				if err := fusedevManager.DestroyDaemon(fs.fusedevSharedDaemon); err != nil {
+					log.L.WithError(err).Errorf("Terminate shared daemon %s failed", fs.fusedevSharedDaemon.ID())
+				} else {
+					fs.fusedevSharedDaemon = nil
+				}
 			}
 		}
 	}
 	if fs.fscacheSharedDaemon != nil {
 		if fs.fscacheSharedDaemon.GetRef() == 1 {
-			if err := fs.fscacheManager.DestroyDaemon(fs.fscacheSharedDaemon); err != nil {
-				log.L.WithError(err).Errorf("Terminate shared daemon %s failed", fs.fscacheSharedDaemon.ID())
-			} else {
-				fs.fscacheSharedDaemon = nil
+			if fscacheManager, ok := fs.enabledManagers[config.FsDriverFscache]; ok {
+				if err := fscacheManager.DestroyDaemon(fs.fscacheSharedDaemon); err != nil {
+					log.L.WithError(err).Errorf("Terminate shared daemon %s failed", fs.fscacheSharedDaemon.ID())
+				} else {
+					fs.fscacheSharedDaemon = nil
+				}
 			}
 		}
 	}
@@ -199,13 +198,12 @@ func (fs *Filesystem) TryStopSharedDaemon() {
 // WaitUntilReady wait until daemon ready by snapshotID, it will wait until nydus domain socket established
 // and the status of nydusd daemon must be ready
 func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
-	// If NoneDaemon mode, there's no need to wait for daemon ready
-	if !fs.DaemonBacked() {
-		return nil
-	}
-
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs == nil {
+		// If NoneDaemon mode, there's no need to wait for daemon ready
+		if config.GetDaemonMode() == config.DaemonModeNone {
+			return nil
+		}
 		return errors.Wrapf(errdefs.ErrNotFound, "no instance %s", snapshotID)
 	}
 
@@ -228,9 +226,10 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 // Mount will be called when containerd snapshotter prepare remote snapshotter
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 // It must set up all necessary resources during Mount procedure and revoke any step if necessary.
-func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *storage.Snapshot) (err error) {
-	// Do not create RAFS instance in case of nodev.
-	if !fs.DaemonBacked() {
+func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string, s *storage.Snapshot) (err error) {
+	rafs := racache.RafsGlobalCache.Get(snapshotID)
+	if rafs != nil {
+		// Instance already exists, how could this happen? Can containerd handle this case?
 		return nil
 	}
 
@@ -253,13 +252,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 		}
 	}
 
-	r := racache.RafsGlobalCache.Get(snapshotID)
-	if r != nil {
-		// Instance already exists, how could this happen? Can containerd handle this case?
-		return nil
-	}
-
-	rafs, err := racache.NewRafs(snapshotID, imageID, fsDriver)
+	rafs, err = racache.NewRafs(snapshotID, imageID, fsDriver)
 	if err != nil {
 		return errors.Wrapf(err, "create rafs instance %s", snapshotID)
 	}
@@ -297,8 +290,6 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 			if err != nil && !errdefs.IsAlreadyExists(err) {
 				return err
 			}
-
-			// TODO: reclaim resources on error
 		}
 
 		// Nydusd uses cache manager's directory to store blob caches. So cache
@@ -311,7 +302,7 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 			daemonconfig.WorkDir:   workDir,
 			daemonconfig.CacheDir:  cacheDir,
 		}
-		cfg := deepcopy.Copy(fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
+		cfg := deepcopy.Copy(*fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
 		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
 		if err != nil {
 			return errors.Wrap(err, "supplement configuration")
@@ -352,61 +343,76 @@ func (fs *Filesystem) Mount(snapshotID string, labels map[string]string, s *stor
 	case config.FsDriverFscache:
 		err = fs.mountRemote(fsManager, useSharedDaemon, d, rafs)
 		if err != nil {
-			return errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
+			err = errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
 		}
 	case config.FsDriverFusedev:
 		err = fs.mountRemote(fsManager, useSharedDaemon, d, rafs)
 		if err != nil {
-			return errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
+			err = errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
 		}
 	case config.FsDriverBlockdev:
-		err = fs.tarfsMgr.MountTarErofs(snapshotID, s, rafs)
+		err = fs.tarfsMgr.MountTarErofs(snapshotID, s, labels, rafs)
 		if err != nil {
-			return errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
+			err = errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
+		}
+	case config.FsDriverNodev:
+		// Nothing to do
+	case config.FsDriverProxy:
+		if label.IsNydusProxyMode(labels) {
+			if v, ok := labels[label.CRILayerDigest]; ok {
+				rafs.AddAnnotation(label.CRILayerDigest, v)
+			}
+			rafs.AddAnnotation(label.NydusProxyMode, "true")
+			rafs.SetMountpoint(path.Join(rafs.GetSnapshotDir(), "fs"))
 		}
 	default:
-		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
+		err = errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
 
 	// Persist it after associate instance after all the states are calculated.
-	if err := fsManager.AddRafsInstance(rafs); err != nil {
-		return errors.Wrapf(err, "create instance %s", snapshotID)
+	if err == nil {
+		if err := fsManager.AddRafsInstance(rafs); err != nil {
+			return errors.Wrapf(err, "create instance %s", snapshotID)
+		}
+	}
+
+	if err != nil {
+		_ = fs.Umount(ctx, snapshotID)
+		return err
 	}
 
 	return nil
 }
 
 func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
-	instance := racache.RafsGlobalCache.Get(snapshotID)
-	if instance == nil {
+	rafs := racache.RafsGlobalCache.Get(snapshotID)
+	if rafs == nil {
 		log.L.Debugf("no RAFS filesystem instance associated with snapshot %s", snapshotID)
 		return nil
 	}
 
-	fsDriver := instance.GetFsDriver()
+	fsDriver := rafs.GetFsDriver()
 	if fsDriver == config.FsDriverNodev {
 		return nil
 	}
 	fsManager, err := fs.getManager(fsDriver)
 	if err != nil {
-		return errors.Wrapf(err, "get manager for filesystem instance %s", instance.DaemonID)
+		return errors.Wrapf(err, "get manager for filesystem instance %s", rafs.DaemonID)
 	}
 
 	switch fsDriver {
-	case config.FsDriverFscache:
-		fallthrough
-	case config.FsDriverFusedev:
-		daemon, err := fs.getDaemonByRafs(instance)
+	case config.FsDriverFscache, config.FsDriverFusedev:
+		daemon, err := fs.getDaemonByRafs(rafs)
 		if err != nil {
 			log.L.Debugf("snapshot %s has no associated nydusd", snapshotID)
-			return errors.Wrapf(err, "get daemon with ID %s for snapshot %s", instance.DaemonID, snapshotID)
+			return errors.Wrapf(err, "get daemon with ID %s for snapshot %s", rafs.DaemonID, snapshotID)
 		}
 
 		daemon.RemoveRafsInstance(snapshotID)
 		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
-		if err := daemon.UmountRafsInstance(instance); err != nil {
+		if err := daemon.UmountRafsInstance(rafs); err != nil {
 			return errors.Wrapf(err, "umount instance %s", snapshotID)
 		}
 		// Once daemon's reference reaches 0, destroy the whole daemon
@@ -422,9 +428,12 @@ func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
 		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
+	case config.FsDriverNodev, config.FsDriverProxy:
+		// Nothing to do
 	default:
 		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
+
 	return nil
 }
 
@@ -450,17 +459,19 @@ func (fs *Filesystem) RemoveCache(blobDigest string) error {
 	}
 	blobID := digest.Hex()
 
-	if fs.fscacheManager != nil {
-		c, err := fs.fscacheSharedDaemon.GetClient()
-		if err != nil {
-			return err
+	if fscacheManager, ok := fs.enabledManagers[config.FsDriverFscache]; ok {
+		if fscacheManager != nil {
+			c, err := fs.fscacheSharedDaemon.GetClient()
+			if err != nil {
+				return err
+			}
+			// delete fscache blob cache file
+			// TODO: skip error for blob not existing
+			if err := c.UnbindBlob("", blobID); err != nil {
+				return err
+			}
+			return nil
 		}
-		// delete fscache blob cache file
-		// TODO: skip error for blob not existing
-		if err := c.UnbindBlob("", blobID); err != nil {
-			return err
-		}
-		return nil
 	}
 
 	return fs.cacheMgr.RemoveBlobCache(blobID)
@@ -488,14 +499,6 @@ func (fs *Filesystem) Teardown(ctx context.Context) error {
 }
 
 func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
-	if !fs.DaemonBacked() {
-		// For NoneDaemon mode, return a dummy mountpoint which is very likely not
-		// existed on host. NoneDaemon mode does not start nydusd, so NO fuse mount is
-		// ever performed. Only mount option carries meaningful info to containerd and
-		// finally passes to shim.
-		return fs.rootMountpoint, nil
-	}
-
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs != nil {
 		return rafs.GetMountpoint(), nil
@@ -506,6 +509,9 @@ func (fs *Filesystem) MountPoint(snapshotID string) (string, error) {
 
 func (fs *Filesystem) BootstrapFile(id string) (string, error) {
 	rafs := racache.RafsGlobalCache.Get(id)
+	if rafs == nil {
+		return "", errors.Errorf("no RAFS instance for %s", id)
+	}
 	return rafs.BootstrapFile()
 }
 
@@ -589,7 +595,7 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 	// Shared nydusd daemon does not need configuration to start process but
 	// it is loaded when requesting mount api
 	// Dump the configuration file since it is reloaded when recovering the nydusd
-	d.Config = fsManager.DaemonConfig
+	d.Config = *fsManager.DaemonConfig
 	err = d.Config.DumpFile(d.ConfigFile(""))
 	if err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
 		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile(""))
@@ -647,28 +653,9 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 	return d, nil
 }
 
-func (fs *Filesystem) DaemonBacked() bool {
-	return config.GetDaemonMode() != config.DaemonModeNone
-}
-
 func (fs *Filesystem) getManager(fsDriver string) (*manager.Manager, error) {
-	switch fsDriver {
-	case config.FsDriverBlockdev:
-		if fs.blockdevManager != nil {
-			return fs.blockdevManager, nil
-		}
-	case config.FsDriverFscache:
-		if fs.fscacheManager != nil {
-			return fs.fscacheManager, nil
-		}
-	case config.FsDriverFusedev:
-		if fs.fusedevManager != nil {
-			return fs.fusedevManager, nil
-		}
-	case config.FsDriverNodev:
-		if fs.nodevManager != nil {
-			return fs.nodevManager, nil
-		}
+	if fsManager, ok := fs.enabledManagers[fsDriver]; ok {
+		return fsManager, nil
 	}
 
 	return nil, errors.Errorf("no manager for filesystem driver %s", fsDriver)
@@ -691,15 +678,9 @@ func (fs *Filesystem) getSharedDaemon(fsDriver string) (*daemon.Daemon, error) {
 
 func (fs *Filesystem) getDaemonByRafs(rafs *racache.Rafs) (*daemon.Daemon, error) {
 	switch rafs.GetFsDriver() {
-	case config.FsDriverFscache:
-		if fs.fscacheManager != nil {
-			if d := fs.fscacheManager.GetByDaemonID(rafs.DaemonID); d != nil {
-				return d, nil
-			}
-		}
-	case config.FsDriverFusedev:
-		if fs.fusedevManager != nil {
-			if d := fs.fusedevManager.GetByDaemonID(rafs.DaemonID); d != nil {
+	case config.FsDriverFscache, config.FsDriverFusedev:
+		if fsManager, ok := fs.enabledManagers[rafs.GetFsDriver()]; ok {
+			if d := fsManager.GetByDaemonID(rafs.DaemonID); d != nil {
 				return d, nil
 			}
 		}

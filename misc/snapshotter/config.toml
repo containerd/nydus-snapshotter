@@ -83,6 +83,8 @@ enable_cri_keychain = false
 [snapshot]
 # Let containerd use nydus-overlayfs mount helper
 enable_nydus_overlayfs = false
+# Insert Kata Virtual Volume option to `Mount.Options`
+enable_kata_volume = false
 # Whether to remove resources when a snapshot is removed
 sync_remove = false
 
@@ -109,6 +111,8 @@ enable_referrer_detect = false
 # - The EROFS filesystem driver since Linux 6.4
 # - Nydus Image Service release v2.3
 enable_tarfs = false
+# Mount rafs on host by loopdev and EROFS
+mount_tarfs_on_host = false
 # Only enable nydus tarfs mode for images with `tarfs hint` label when true
 tarfs_hint = false
 # Maximum of concurrence to converting OCIv1 images to tarfs, 0 means default

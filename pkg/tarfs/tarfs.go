@@ -306,63 +306,89 @@ func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
 }
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
-func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string, manifestDigest, layerDigest digest.Digest,
-	layerBlobID, upperDirPath string) error {
+func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotID, ref string,
+	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
+	layerBlobID := layerDigest.Hex()
+	epilog := func(err error, msg string) {
+		st, err1 := t.getSnapshotStatus(snapshotID, true)
+		if err1 != nil {
+			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
+			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
+			log.L.WithError(err1).Errorf("async prepare tarfs layer for snapshot ID %s", snapshotID)
+			return
+		}
+		defer st.mutex.Unlock()
+
+		st.blobID = layerBlobID
+		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
+		if err != nil {
+			log.L.WithError(err).Errorf(msg)
+			st.status = TarfsStatusFailed
+		} else {
+			st.status = TarfsStatusReady
+		}
+		log.L.Infof(msg)
+	}
+
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)
 	if err != nil {
+		epilog(err, "create key chain for connection")
 		return err
 	}
 	remote := remote.New(keyChain, t.insecure)
+	rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
+	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
+		rc, _, err = t.getBlobStream(ctx, remote, ref, layerDigest)
+	}
+	if err != nil {
+		epilog(err, "get blob stream for layer")
+		return errors.Wrapf(err, "get blob stream by digest")
+	}
 
-	handle := func() error {
-		rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
-		if err != nil {
-			return err
-		}
+	go func() {
+		defer wg.Done()
 		defer rc.Close()
+
 		ds, err := compression.DecompressStream(rc)
 		if err != nil {
-			return errors.Wrap(err, "unpack layer blob stream for tarfs")
+			epilog(err, "unpack layer blob stream for tarfs")
+			return
 		}
 		defer ds.Close()
 
 		if t.validateDiffID {
 			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
 			if err != nil {
-				return errors.Wrap(err, "get image layer diffID")
+				epilog(err, "get layer diffID")
+				return
 			}
 			digester := digest.Canonical.Digester()
 			dr := io.TeeReader(ds, digester.Hash())
 			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
-			if err != nil && !errdefs.IsAlreadyExists(err) {
-				return errors.Wrap(err, "generate tarfs data from image layer blob")
-			}
-			if err == nil {
-				if digester.Digest() != diffID {
-					return errors.Errorf("image layer diffID %s for tarfs does not match", diffID)
-				}
-				log.L.Infof("tarfs data for layer %s is ready, digest %s", snapshotID, digester.Digest())
+			switch {
+			case err != nil && !errdefs.IsAlreadyExists(err):
+				epilog(err, "generate tarfs from image layer blob")
+			case err == nil && digester.Digest() != diffID:
+				epilog(err, "image layer diffID does not match")
+			default:
+				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready, digest %s", snapshotID, digester.Digest())
+				epilog(nil, msg)
 			}
 		} else {
 			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
 			if err != nil && !errdefs.IsAlreadyExists(err) {
-				return errors.Wrap(err, "generate tarfs data from image layer blob")
+				epilog(err, "generate tarfs data from image layer blob")
+			} else {
+				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready", snapshotID)
+				epilog(nil, msg)
 			}
-			log.L.Infof("tarfs data for layer %s is ready", snapshotID)
 		}
-		return nil
-	}
-
-	err = handle()
-	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
-		err = handle()
-	}
+	}()
 
 	return err
 }
 
-func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest,
-	upperDirPath string) error {
+func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
 	t.mutex.Lock()
 	if _, ok := t.snapshotMap[snapshotID]; ok {
 		t.mutex.Unlock()
@@ -379,33 +405,7 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDige
 	}
 	t.mutex.Unlock()
 
-	go func() {
-		defer wg.Done()
-
-		layerBlobID := layerDigest.Hex()
-		err := t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, layerBlobID, upperDirPath)
-
-		st, err1 := t.getSnapshotStatus(snapshotID, true)
-		if err1 != nil {
-			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
-			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
-			log.L.WithError(err1).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
-			return
-		}
-		defer st.mutex.Unlock()
-
-		st.blobID = layerBlobID
-		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
-		if err != nil {
-			log.L.WithError(err).Errorf("failed to convert OCI image to tarfs")
-			st.status = TarfsStatusFailed
-		} else {
-			st.status = TarfsStatusReady
-		}
-		log.L.Debugf("finish converting snapshot %s to tarfs, status %d", snapshotID, st.status)
-	}()
-
-	return nil
+	return t.blobProcess(ctx, wg, snapshotID, ref, manifestDigest, layerDigest, upperDirPath)
 }
 
 func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) string) error {
@@ -494,13 +494,18 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		return updateFields, errors.Errorf("tarfs snapshot %s is not ready, %d", snapshotID, st.status)
 	}
 
+	blobID, ok := labels[label.NydusTarfsLayer]
+	if !ok {
+		return updateFields, errors.Errorf("Missing Nydus tarfs layer annotation for snapshot %s", s.ID)
+	}
+
 	var metaFileName, diskFileName string
 	if wholeImage {
 		metaFileName = t.imageMetaFilePath(storageLocater(snapshotID))
-		diskFileName = t.imageDiskFilePath(st.blobID)
+		diskFileName = t.ImageDiskFilePath(blobID)
 	} else {
 		metaFileName = t.layerMetaFilePath(storageLocater(snapshotID))
-		diskFileName = t.layerDiskFilePath(st.blobID)
+		diskFileName = t.layerDiskFilePath(blobID)
 	}
 
 	// Do not regenerate if the disk image already exists.
@@ -520,7 +525,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	if withVerity {
 		options = append(options, "--verity")
 	}
-	log.L.Warnf("nydus image command %v", options)
+	log.L.Debugf("nydus image command %v", options)
 	cmd := exec.Command(t.nydusImagePath, options...)
 	var errb, outb bytes.Buffer
 	cmd.Stderr = &errb
@@ -531,6 +536,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	}
 	log.L.Debugf("nydus image export command, stdout: %s, stderr: %s", &outb, &errb)
 
+	blockInfo := ""
 	if withVerity {
 		pattern := "dm-verity options: --no-superblock --format=1 -s \"\" --hash=sha256 --data-block-size=512 --hash-block-size=4096 --data-blocks %d --hash-offset %d %s\n"
 		var dataBlobks, hashOffset uint64
@@ -538,17 +544,16 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		if count, err := fmt.Sscanf(outb.String(), pattern, &dataBlobks, &hashOffset, &rootHash); err != nil || count != 3 {
 			return updateFields, errors.Errorf("failed to parse dm-verity options from nydus image output: %s", outb.String())
 		}
-
-		blockInfo := strconv.FormatUint(dataBlobks, 10) + "," + strconv.FormatUint(hashOffset, 10) + "," + "sha256:" + rootHash
-		if wholeImage {
-			labels[label.NydusImageBlockInfo] = blockInfo
-			updateFields = append(updateFields, "labels."+label.NydusImageBlockInfo)
-		} else {
-			labels[label.NydusLayerBlockInfo] = blockInfo
-			updateFields = append(updateFields, "labels."+label.NydusLayerBlockInfo)
-		}
-		log.L.Warnf("export block labels %v", labels)
+		blockInfo = strconv.FormatUint(dataBlobks, 10) + "," + strconv.FormatUint(hashOffset, 10) + "," + "sha256:" + rootHash
 	}
+	if wholeImage {
+		labels[label.NydusImageBlockInfo] = blockInfo
+		updateFields = append(updateFields, "labels."+label.NydusImageBlockInfo)
+	} else {
+		labels[label.NydusLayerBlockInfo] = blockInfo
+		updateFields = append(updateFields, "labels."+label.NydusLayerBlockInfo)
+	}
+	log.L.Debugf("export block labels %v", labels)
 
 	err = os.Rename(diskFileNameTmp, diskFileName)
 	if err != nil {
@@ -558,12 +563,20 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	return updateFields, nil
 }
 
-func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, rafs *rafs.Rafs) error {
+func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels map[string]string, rafs *rafs.Rafs) error {
 	if s == nil {
 		return errors.New("snapshot object for MountTarErofs() is nil")
 	}
 
+	// Copy meta info from snapshot to rafs
+	t.copyTarfsAnnotations(labels, rafs)
+
 	upperDirPath := path.Join(rafs.GetSnapshotDir(), "fs")
+	if !config.GetTarfsMountOnHost() {
+		rafs.SetMountpoint(upperDirPath)
+		return nil
+	}
+
 	mergedBootstrap := t.imageMetaFilePath(upperDirPath)
 	blobInfo, err := t.getImageBlobInfo(mergedBootstrap)
 	if err != nil {
@@ -654,8 +667,9 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 		if err != nil {
 			return errors.Wrapf(err, "umount erofs tarfs %s", st.erofsMountPoint)
 		}
+		st.erofsMountPoint = ""
 	}
-	st.erofsMountPoint = ""
+
 	return nil
 }
 
@@ -671,6 +685,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 			st.mutex.Unlock()
 			return errors.Wrapf(err, "umount erofs tarfs %s", st.erofsMountPoint)
 		}
+		st.erofsMountPoint = ""
 	}
 
 	if st.metaLoopdev != nil {
@@ -788,6 +803,20 @@ func (t *Manager) GetConcurrentLimiter(ref string) *semaphore.Weighted {
 	return limiter
 }
 
+func (t *Manager) copyTarfsAnnotations(labels map[string]string, rafs *rafs.Rafs) {
+	keys := []string{
+		label.NydusTarfsLayer,
+		label.NydusImageBlockInfo,
+		label.NydusLayerBlockInfo,
+	}
+
+	for _, k := range keys {
+		if v, ok := labels[k]; ok {
+			rafs.AddAnnotation(k, v)
+		}
+	}
+}
+
 func (t *Manager) layerTarFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID)
 }
@@ -796,7 +825,7 @@ func (t *Manager) layerDiskFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID+"."+TarfsLayerDiskName)
 }
 
-func (t *Manager) imageDiskFilePath(blobID string) string {
+func (t *Manager) ImageDiskFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID+"."+TarfsImageDiskName)
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/log"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -56,6 +57,9 @@ func (fs *Filesystem) PrepareTarfsLayer(ctx context.Context, labels map[string]s
 		limiter.Release(1)
 	}
 
+	layerBlobID := layerDigest.Hex()
+	labels[label.NydusTarfsLayer] = layerBlobID
+
 	return nil
 }
 
@@ -70,4 +74,11 @@ func (fs *Filesystem) DetachTarfsLayer(snapshotID string) error {
 func (fs *Filesystem) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[string]string,
 	storageLocater func(string) string) ([]string, error) {
 	return fs.tarfsMgr.ExportBlockData(s, perLayer, labels, storageLocater)
+}
+
+func (fs *Filesystem) GetTarfsImageDiskFilePath(id string) (string, error) {
+	if fs.tarfsMgr == nil {
+		return "", errors.New("tarfs mode is not enabled")
+	}
+	return fs.tarfsMgr.ImageDiskFilePath(id), nil
 }

@@ -8,7 +8,6 @@
 package filesystem
 
 import (
-	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
@@ -27,20 +26,14 @@ func WithNydusImageBinaryPath(p string) NewFSOpt {
 	}
 }
 
-func WithManager(pm *manager.Manager) NewFSOpt {
+func WithManagers(managers []*manager.Manager) NewFSOpt {
 	return func(fs *Filesystem) error {
-		if pm != nil {
-			switch pm.FsDriver {
-			case config.FsDriverBlockdev:
-				fs.blockdevManager = pm
-			case config.FsDriverFscache:
-				fs.fscacheManager = pm
-			case config.FsDriverFusedev:
-				fs.fusedevManager = pm
-			}
-			fs.enabledManagers = append(fs.enabledManagers, pm)
+		if fs.enabledManagers == nil {
+			fs.enabledManagers = map[string]*manager.Manager{}
 		}
-
+		for _, pm := range managers {
+			fs.enabledManagers[pm.FsDriver] = pm
+		}
 		return nil
 	}
 }

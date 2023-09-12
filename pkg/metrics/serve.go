@@ -34,11 +34,9 @@ type Server struct {
 	inflightCollector *collector.InflightMetricsVecCollector
 }
 
-func WithProcessManager(pm *manager.Manager) ServerOpt {
+func WithProcessManagers(managers []*manager.Manager) ServerOpt {
 	return func(s *Server) error {
-		if pm != nil {
-			s.managers = append(s.managers, pm)
-		}
+		s.managers = append(s.managers, managers...)
 		return nil
 	}
 }

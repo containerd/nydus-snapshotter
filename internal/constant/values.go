@@ -25,6 +25,8 @@ const (
 	FsDriverFscache string = "fscache"
 	// Only prepare/supply meta/data blobs, do not mount RAFS filesystem.
 	FsDriverNodev string = "nodev"
+	// Relay layer content download operation to other agents.
+	FsDriverProxy string = "proxy"
 )
 
 const (

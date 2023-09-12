@@ -112,6 +112,10 @@ func GetDaemonProfileCPUDuration() int64 {
 	return globalConfig.origin.SystemControllerConfig.DebugConfig.ProfileDuration
 }
 
+func GetSkipSSLVerify() bool {
+	return globalConfig.origin.RemoteConfig.SkipSSLVerify
+}
+
 const (
 	TarfsLayerVerityOnly      string = "layer_verity_only"
 	TarfsImageVerityOnly      string = "image_verity_only"
@@ -120,6 +124,10 @@ const (
 	TarfsLayerBlockWithVerity string = "layer_block_with_verity"
 	TarfsImageBlockWithVerity string = "image_block_with_verity"
 )
+
+func GetTarfsMountOnHost() bool {
+	return globalConfig.origin.Experimental.TarfsConfig.MountTarfsOnHost
+}
 
 func GetTarfsExportEnabled() bool {
 	switch globalConfig.origin.Experimental.TarfsConfig.ExportMode {

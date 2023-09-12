@@ -42,7 +42,7 @@ type Manager struct {
 	// The `daemonCache` is cache for nydusd daemons stored in `store`.
 	// You should update `store` first before modifying cached state.
 	daemonCache      *DaemonCache
-	DaemonConfig     daemonconfig.DaemonConfig // Daemon configuration template.
+	DaemonConfig     *daemonconfig.DaemonConfig // Daemon configuration template.
 	CgroupMgr        *cgroup.Manager
 	monitor          LivenessMonitor
 	LivenessNotifier chan deathEvent // TODO: Close me
@@ -54,7 +54,7 @@ type Manager struct {
 type Opt struct {
 	CacheDir         string
 	CgroupMgr        *cgroup.Manager
-	DaemonConfig     daemonconfig.DaemonConfig
+	DaemonConfig     *daemonconfig.DaemonConfig
 	Database         *store.Database
 	FsDriver         string
 	NydusdBinaryPath string
