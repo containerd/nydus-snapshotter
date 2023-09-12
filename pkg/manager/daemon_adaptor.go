@@ -25,28 +25,6 @@ import (
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
-func (m *Manager) IsSubscribedDaemon(id, path string) bool {
-	return m.monitor.IsSubscribed(id, path)
-}
-
-func (m *Manager) StartDaemonUntilSubscribed(d *daemon.Daemon) {
-	for {
-		if err := m.StartDaemon(d); err != nil {
-			log.L.WithError(err).Errorf("fail to start daemon %s when recovering", d.ID())
-		}
-
-		running, err := d.IsProcessRunning()
-		if err != nil {
-			log.L.WithError(err).Errorf("fail to get process state, pid %d", d.Pid())
-		}
-		if m.IsSubscribedDaemon(d.ID(), d.GetAPISock()) && running {
-			break
-		}
-
-		log.L.Warnf("daemon %s, retry...", d.ID())
-	}
-}
-
 // Fork the nydusd daemon with the process PID decided
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	cmd, err := m.BuildDaemonCommand(d, "", false)
@@ -94,22 +72,22 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		log.L.Errorf("Fail to update daemon info (%+v) to DB: %v", d, err)
 	}
 
-	if err := daemon.WaitUntilSocketExisted(d.GetAPISock(), d.States.ProcessID); err != nil {
-		// FIXME: Should clean the daemon record in DB if the nydusd fails starting
-		log.L.Errorf("Nydusd %s probably not started", d.ID())
-		return err
-	}
-
-	// TODO: It's better to subscribe death event when snapshotter
-	// has set daemon's state to RUNNING or READY.
-	if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
-		log.L.Errorf("Nydusd %s probably not started", d.ID())
-		return err
-	}
-
 	// If nydusd fails startup, manager can't subscribe its death event.
 	// So we can ignore the subscribing error.
 	go func() {
+		if err := daemon.WaitUntilSocketExisted(d.GetAPISock(), d.States.ProcessID); err != nil {
+			// FIXME: Should clean the daemon record in DB if the nydusd fails starting
+			log.L.Errorf("Nydusd %s probably not started", d.ID())
+			return
+		}
+
+		// TODO: It's better to subscribe death event when snapshotter
+		// has set daemon's state to RUNNING or READY.
+		if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+			log.L.Errorf("Nydusd %s probably not started", d.ID())
+			return
+		}
+
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
 			return
