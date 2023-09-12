@@ -309,7 +309,7 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
 	layerBlobID := layerDigest.Hex()
 	epilog := func(err error, msg string) {
-		st, err1 := t.getSnapshotStatusWithLock(snapshotID, true)
+		st, err1 := t.getSnapshotStatusWithLock(snapshotID)
 		if err1 != nil {
 			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
 			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
@@ -417,17 +417,9 @@ func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) st
 	// When merging bootstrap, we need to arrange layer bootstrap in order from low to high
 	for idx := len(s.ParentIDs) - 1; idx >= 0; idx-- {
 		snapshotID := s.ParentIDs[idx]
-		err := t.waitLayerReady(snapshotID)
+		_, err := t.waitLayerReady(snapshotID, false)
 		if err != nil {
 			return errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
-		}
-
-		st, err := t.getSnapshotStatusWithLock(snapshotID, false)
-		if err != nil {
-			return err
-		}
-		if st.status != TarfsStatusReady {
-			return errors.Errorf("tarfs snapshot %s is not ready, %d", snapshotID, st.status)
 		}
 
 		metaFilePath := t.layerMetaFilePath(storageLocater(snapshotID))
@@ -480,18 +472,6 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		}
 		snapshotID = s.ParentIDs[0]
 	}
-	err := t.waitLayerReady(snapshotID)
-	if err != nil {
-		return updateFields, errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
-	}
-	st, err := t.getSnapshotStatusWithLock(snapshotID, false)
-	if err != nil {
-		return updateFields, err
-	}
-	if st.status != TarfsStatusReady {
-		return updateFields, errors.Errorf("tarfs snapshot %s is not ready, %d", snapshotID, st.status)
-	}
-
 	blobID, ok := labels[label.NydusTarfsLayer]
 	if !ok {
 		return updateFields, errors.Errorf("Missing Nydus tarfs layer annotation for snapshot %s", s.ID)
@@ -510,6 +490,13 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	if _, err := os.Stat(diskFileName); err == nil {
 		return updateFields, nil
 	}
+
+	st, err := t.waitLayerReady(snapshotID, true)
+	if err != nil {
+		return updateFields, errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
+	}
+	defer st.mutex.Unlock()
+
 	diskFileNameTmp := diskFileName + ".tarfs.tmp"
 	defer os.Remove(diskFileNameTmp)
 
@@ -585,18 +572,9 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 	// When merging bootstrap, we need to arrange layer bootstrap in order from low to high
 	for idx := len(s.ParentIDs) - 1; idx >= 0; idx-- {
 		snapshotID := s.ParentIDs[idx]
-		err := t.waitLayerReady(snapshotID)
+		st, err := t.waitLayerReady(snapshotID, true)
 		if err != nil {
 			return errors.Wrapf(err, "wait for tarfs conversion task")
-		}
-
-		st, err := t.getSnapshotStatusWithLock(snapshotID, true)
-		if err != nil {
-			return err
-		}
-		if st.status != TarfsStatusReady {
-			st.mutex.Unlock()
-			return errors.Errorf("snapshot %s tarfs format error %d", snapshotID, st.status)
 		}
 
 		var blobMarker = "\"blob_id\":\"" + st.blobID + "\""
@@ -617,7 +595,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 	}
 	mountOpts := strings.Join(devices, ",")
 
-	st, err := t.getSnapshotStatusWithLock(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
 		return err
 	}
@@ -655,7 +633,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 }
 
 func (t *Manager) UmountTarErofs(snapshotID string) error {
-	st, err := t.getSnapshotStatusWithLock(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
 		return errors.Wrapf(err, "umount a tarfs snapshot %s which is already removed", snapshotID)
 	}
@@ -673,7 +651,7 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 }
 
 func (t *Manager) DetachLayer(snapshotID string) error {
-	st, err := t.getSnapshotStatusWithLock(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
 		return os.ErrNotExist
 	}
@@ -715,32 +693,52 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	return nil
 }
 
-func (t *Manager) getSnapshotStatusWithLock(snapshotID string, lock bool) (*snapshotStatus, error) {
+func (t *Manager) getSnapshotStatusWithLock(snapshotID string) (*snapshotStatus, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	st, ok := t.snapshotMap[snapshotID]
 	if ok {
-		if lock {
-			st.mutex.Lock()
-		}
+		st.mutex.Lock()
 		return st, nil
 	}
 	return nil, errors.Errorf("not found snapshot %s", snapshotID)
 }
 
-func (t *Manager) waitLayerReady(snapshotID string) error {
-	st, err := t.getSnapshotStatusWithLock(snapshotID, false)
+func (t *Manager) waitLayerReady(snapshotID string, lock bool) (*snapshotStatus, error) {
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if st.status != TarfsStatusReady {
+
+	if st.wg != nil && st.status == TarfsStatusPrepare {
+		wg := st.wg
+		st.mutex.Unlock()
 		log.L.Debugf("wait tarfs conversion task for snapshot %s", snapshotID)
+		wg.Wait()
+		st, err = t.getSnapshotStatusWithLock(snapshotID)
+		if err != nil {
+			return nil, err
+		}
 	}
-	st.wg.Wait()
+
 	if st.status != TarfsStatusReady {
-		return errors.Errorf("snapshot %s is in state %d instead of ready state", snapshotID, st.status)
+		st.mutex.Unlock()
+		var state string
+		switch st.status {
+		case TarfsStatusPrepare:
+			state = "Prepare"
+		case TarfsStatusFailed:
+			state = "Failed"
+		default:
+			state = "Unknown"
+		}
+		return nil, errors.Errorf("snapshot %s is in %s state instead of Ready", snapshotID, state)
 	}
-	return nil
+
+	if !lock {
+		st.mutex.Unlock()
+	}
+	return st, nil
 }
 
 func (t *Manager) attachLoopdev(blob string) (*losetup.Device, error) {
