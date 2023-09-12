@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -32,9 +33,24 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		return errors.Wrapf(err, "create command for daemon %s", d.ID())
 	}
 
+	var muSubscribe sync.Mutex
+	subscribed := false
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.L.WithError(err).Errorf("fail to wait for daemon %s", d.ID())
+		}
+		muSubscribe.Lock()
+		defer muSubscribe.Unlock()
+
+		if !subscribed {
+			m.LivenessNotifier <- deathEvent{daemonID: d.ID(), path: d.GetAPISock()}
+		}
+	}()
 
 	d.Lock()
 	defer d.Unlock()
@@ -81,12 +97,16 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			return
 		}
 
+		muSubscribe.Lock()
 		// TODO: It's better to subscribe death event when snapshotter
 		// has set daemon's state to RUNNING or READY.
 		if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
 			log.L.Errorf("Nydusd %s probably not started", d.ID())
+			muSubscribe.Unlock()
 			return
 		}
+		subscribed = true
+		muSubscribe.Unlock()
 
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
