@@ -176,10 +176,15 @@ func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
 	}
 
 	// Failover nydusd still depends on the old supervisor
-	m.StartDaemonUntilSubscribed(d)
+
+	if err := m.StartDaemon(d); err != nil {
+		log.L.Errorf("fail to start daemon %s when recovering", d.ID())
+		return
+	}
 
 	if err := d.WaitUntilState(types.DaemonStateInit); err != nil {
-		log.L.WithError(err).Errorf("daemon didn't reach state %s", types.DaemonStateInit)
+		log.L.WithError(err).Errorf("daemon didn't reach state %s,", types.DaemonStateInit)
+		return
 	}
 
 	if err := d.TakeOver(); err != nil {
@@ -204,7 +209,10 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 	}
 
 	d.ClearVestige()
-	m.StartDaemonUntilSubscribed(d)
+	if err := m.StartDaemon(d); err != nil {
+		log.L.Errorf("fails to start daemon %s when recovering", d.ID())
+		return
+	}
 
 	// Mount rafs instance by http API
 	instances := d.Instances.List()

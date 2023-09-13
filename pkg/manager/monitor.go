@@ -29,8 +29,6 @@ type LivenessMonitor interface {
 	Subscribe(id string, path string, notifier chan<- deathEvent) error
 	// Unsubscribe death event of a nydusd daemon.
 	Unsubscribe(id string) error
-	// Check subscription status of a nydusd daemon.
-	IsSubscribed(id, path string) bool
 	// Run the monitor, wait for nydusd death event.
 	Run()
 	// Stop the monitor and release all the resources.
@@ -78,16 +76,6 @@ func newMonitor() (_ *livenessMonitor, err error) {
 	}
 
 	return m, nil
-}
-
-func (m *livenessMonitor) IsSubscribed(id, path string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if s, ok := m.subscribers[id]; ok && s.path == path {
-		return true
-	}
-	return false
 }
 
 func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deathEvent) (err error) {

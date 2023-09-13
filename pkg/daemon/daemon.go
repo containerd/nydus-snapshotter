@@ -582,20 +582,6 @@ func (d *Daemon) Wait() error {
 	return nil
 }
 
-func (d *Daemon) IsProcessRunning() (bool, error) {
-	d.Lock()
-	defer d.Unlock()
-
-	if d.Pid() > 0 {
-		if _, err := os.FindProcess(d.Pid()); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-
-	return false, nil
-}
-
 // When daemon dies, clean up its vestige before start a new one.
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
