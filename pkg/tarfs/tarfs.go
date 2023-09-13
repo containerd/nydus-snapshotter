@@ -409,7 +409,7 @@ func (t *Manager) retryPrepareLayer(snapshotID, upperDirPath string, labels map[
 		return errors.Errorf("not found manifest digest label")
 	}
 
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatus(snapshotID)
 	if err != nil {
 		return errors.Wrapf(err, "retry downloading content for snapshot %s", snapshotID)
 	}
@@ -491,6 +491,12 @@ func (t *Manager) MergeLayers(ctx context.Context, s storage.Snapshot, storageLo
 
 		metaFilePath := t.layerMetaFilePath(storageLocater(snapshotID))
 		bootstraps = append(bootstraps, metaFilePath)
+	}
+
+	// Merging image with only one layer is a noop, just copy the layer bootstrap as image bootstrap
+	if len(s.ParentIDs) == 1 {
+		metaFilePath := t.layerMetaFilePath(storageLocater(s.ParentIDs[0]))
+		return errors.Wrapf(os.Link(metaFilePath, mergedBootstrap), "create hard link from image bootstrap to layer bootstrap")
 	}
 
 	mergedBootstrapTmp := mergedBootstrap + ".tarfs.tmp"
