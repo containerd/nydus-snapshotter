@@ -35,7 +35,6 @@ threads_number = 4
 # Log rotation size for nydusd, in unit MB(megabytes)
 log_rotation_size = 100
 
-
 [cgroup]
 # Whether to use separate cgroup for nydusd.
 enable = true
@@ -89,7 +88,9 @@ enable_kata_volume = false
 sync_remove = false
 
 [cache_manager]
+# Disable or enable recyclebin
 disable = false
+# How long to keep deleted files in recyclebin
 gc_period = "24h"
 # Directory to host cached files
 cache_dir = ""

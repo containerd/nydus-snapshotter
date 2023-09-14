@@ -208,17 +208,16 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	cacheConfig := &cfg.CacheManagerConfig
-	if !cacheConfig.Disable {
-		cacheMgr, err := cache.NewManager(cache.Opt{
-			Database: db,
-			Period:   config.GetCacheGCPeriod(),
-			CacheDir: cacheConfig.CacheDir,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "create cache manager")
-		}
-		opts = append(opts, filesystem.WithCacheManager(cacheMgr))
+	cacheMgr, err := cache.NewManager(cache.Opt{
+		Database: db,
+		Period:   config.GetCacheGCPeriod(),
+		CacheDir: cacheConfig.CacheDir,
+		Disabled: cacheConfig.Disable,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "create cache manager")
 	}
+	opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 
 	if cfg.Experimental.EnableReferrerDetect {
 		referrerMgr := referrer.NewManager(skipSSLVerify)

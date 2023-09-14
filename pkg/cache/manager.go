@@ -37,6 +37,7 @@ type Manager struct {
 }
 
 type Opt struct {
+	Disabled bool
 	CacheDir string
 	Period   time.Duration
 	Database *store.Database
