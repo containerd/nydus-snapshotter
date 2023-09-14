@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
+	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 )
 
 // Manage RAFS filesystem instances and nydusd daemons.
@@ -121,12 +122,12 @@ func (m *Manager) CacheDir() string {
 // - Never ever delete any records from DB
 // - Only cache daemon information from DB, do not actually start/create daemons
 // - Only cache RAFS instance information from DB, do not actually recover RAFS runtime state.
-func (m *Manager) Recover(ctx context.Context,
+func (m *Manager) Recover(ctx context.Context, tarfsMgr *tarfs.Manager,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
 	if err := m.recoverDaemons(ctx, recoveringDaemons, liveDaemons); err != nil {
 		return errors.Wrapf(err, "recover nydusd daemons")
 	}
-	if err := m.recoverRafsInstances(ctx, recoveringDaemons, liveDaemons); err != nil {
+	if err := m.recoverRafsInstances(ctx, tarfsMgr, recoveringDaemons, liveDaemons); err != nil {
 		return errors.Wrapf(err, "recover RAFS instances")
 	}
 	return nil
@@ -150,7 +151,7 @@ func (m *Manager) RemoveRafsInstance(snapshotID string) error {
 	return m.store.DeleteRafsInstance(snapshotID)
 }
 
-func (m *Manager) recoverRafsInstances(ctx context.Context,
+func (m *Manager) recoverRafsInstances(ctx context.Context, tarfsMgr *tarfs.Manager,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
 	if err := m.store.WalkRafsInstances(ctx, func(r *rafs.Rafs) error {
 		if r.GetFsDriver() != m.FsDriver {
@@ -169,7 +170,12 @@ func (m *Manager) recoverRafsInstances(ctx context.Context,
 			}
 			rafs.RafsGlobalCache.Add(r)
 		} else if r.GetFsDriver() == config.FsDriverBlockdev {
-			rafs.RafsGlobalCache.Add(r)
+			err1 := tarfsMgr.RecoverRafsInstance(r)
+			if err1 != nil {
+				log.L.Errorf("failed to recover tarfs instance %s, %s", r.SnapshotID, err1)
+			} else {
+				rafs.RafsGlobalCache.Add(r)
+			}
 		}
 
 		return nil

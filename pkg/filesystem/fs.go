@@ -67,7 +67,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	recoveringDaemons := make(map[string]*daemon.Daemon, 0)
 	liveDaemons := make(map[string]*daemon.Daemon, 0)
 	for _, fsManager := range fs.enabledManagers {
-		err := fsManager.Recover(ctx, &recoveringDaemons, &liveDaemons)
+		err := fsManager.Recover(ctx, fs.tarfsMgr, &recoveringDaemons, &liveDaemons)
 		if err != nil {
 			return nil, errors.Wrap(err, "reconnect daemons and recover filesystem instance")
 		}
