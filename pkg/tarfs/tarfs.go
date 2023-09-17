@@ -32,7 +32,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
-	losetup "github.com/freddierice/go-losetup"
 	"github.com/moby/sys/mountinfo"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -78,8 +77,8 @@ type snapshotStatus struct {
 	status          int
 	blobID          string
 	erofsMountPoint string
-	dataLoopdev     *losetup.Device
-	metaLoopdev     *losetup.Device
+	dataLoopdev     *os.File
+	metaLoopdev     *os.File
 	wg              *sync.WaitGroup
 	cancel          context.CancelFunc
 	ctx             context.Context
@@ -664,7 +663,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 				}
 				st.dataLoopdev = loopdev
 			}
-			devices = append(devices, "device="+st.dataLoopdev.Path())
+			devices = append(devices, "device="+st.dataLoopdev.Name())
 		}
 
 		st.mutex.Unlock()
@@ -693,7 +692,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 		}
 		st.metaLoopdev = loopdev
 	}
-	devName := st.metaLoopdev.Path()
+	devName := st.metaLoopdev.Name()
 
 	if err = os.MkdirAll(mountPoint, 0750); err != nil {
 		return errors.Wrapf(err, "create tarfs mount dir %s", mountPoint)
@@ -742,7 +741,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	}
 
 	if st.metaLoopdev != nil {
-		err := st.metaLoopdev.Detach()
+		err := deleteLoop(st.metaLoopdev)
 		if err != nil {
 			st.mutex.Unlock()
 			return errors.Wrapf(err, "detach merged bootstrap loopdev for tarfs snapshot %s", snapshotID)
@@ -751,7 +750,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	}
 
 	if st.dataLoopdev != nil {
-		err := st.dataLoopdev.Detach()
+		err := deleteLoop(st.dataLoopdev)
 		if err != nil {
 			st.mutex.Unlock()
 			return errors.Wrapf(err, "detach layer bootstrap loopdev for tarfs snapshot %s", snapshotID)
@@ -863,12 +862,15 @@ func (t *Manager) waitLayerReady(snapshotID string, lock bool) (*snapshotStatus,
 	return st, nil
 }
 
-func (t *Manager) attachLoopdev(blob string) (*losetup.Device, error) {
+func (t *Manager) attachLoopdev(blob string) (*os.File, error) {
 	// losetup.Attach() is not thread-safe hold lock here
 	t.mutexLoopDev.Lock()
 	defer t.mutexLoopDev.Unlock()
-	dev, err := losetup.Attach(blob, 0, false)
-	return &dev, err
+	param := LoopParams{
+		Readonly:  true,
+		Autoclear: true,
+	}
+	return setupLoop(blob, param)
 }
 
 func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, manifestDigest digest.Digest) (bool, error) {

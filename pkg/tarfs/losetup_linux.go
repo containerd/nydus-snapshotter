@@ -20,13 +20,13 @@
 package tarfs
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
 
@@ -164,6 +164,14 @@ func setupLoop(backingFile string, param LoopParams) (*os.File, error) {
 	}
 
 	return nil, errors.New("timeout creating new loopback device")
+}
+
+func deleteLoop(file *os.File) error {
+	err := unix.IoctlSetInt(int(file.Fd()), unix.LOOP_CLR_FD, 0)
+	if err != nil {
+		return errors.Wrapf(err, "delete loopdev %s", file.Name())
+	}
+	return file.Close()
 }
 
 func removeLoop(loopdev string) error {
