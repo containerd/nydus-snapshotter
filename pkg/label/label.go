@@ -36,6 +36,8 @@ const (
 	NydusRefLayer = "containerd.io/snapshot/nydus-ref"
 	// The blobID of associated layer, also marking the layer as a nydus tarfs, set by the snapshotter
 	NydusTarfsLayer = "containerd.io/snapshot/nydus-tarfs"
+	// List of parent snapshot IDs, saved in `Rafs.Annotation`.
+	NydusTarfsParents = "containerd.io/snapshot/nydus-tarfs-parent-snapshot-list"
 	// Dm-verity information for image block device
 	NydusImageBlockInfo = "containerd.io/snapshot/nydus-image-block"
 	// Dm-verity information for layer block device
