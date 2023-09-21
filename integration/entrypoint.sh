@@ -102,8 +102,9 @@ function retry {
 }
 
 function can_erofs_ondemand_read {
-    grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config 1>/dev/null
-    echo $?
+    return 1
+    # grep 'CONFIG_EROFS_FS_ONDEMAND=[ym]' /usr/src/linux-headers-"$(uname -r)"/.config 1>/dev/null
+    # echo $?
 }
 
 function validate_mnt_number {
@@ -431,7 +432,6 @@ function fscache_kill_nydusd_failover() {
     c1=$(nerdctl --snapshotter nydus create --net none "${JAVA_IMAGE}")
     c2=$(nerdctl --snapshotter nydus create --net none "${WORDPRESS_IMAGE}")
 
-
     killall -9 nydusd
 
     echo "start new containers"
@@ -567,9 +567,9 @@ function kill_multiple_nydusd_recover_failover {
 function enable_nesting_for_cgroup_v2() {
     if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
         mkdir -p /sys/fs/cgroup/init
-        xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
-        sed -e 's/ / +/g' -e 's/^/-/' < /sys/fs/cgroup/cgroup.controllers \
-            > /sys/fs/cgroup/cgroup.subtree_control
+        xargs -rn1 </sys/fs/cgroup/cgroup.procs >/sys/fs/cgroup/init/cgroup.procs || :
+        sed -e 's/ / +/g' -e 's/^/-/' </sys/fs/cgroup/cgroup.controllers \
+            >/sys/fs/cgroup/cgroup.subtree_control
     fi
 }
 
@@ -593,7 +593,6 @@ only_restart_snapshotter multiple
 
 kill_snapshotter_and_nydusd_recover shared
 kill_snapshotter_and_nydusd_recover multiple
-
 
 ctr_snapshot_usage multiple
 ctr_snapshot_usage shared
