@@ -75,6 +75,21 @@ jobs:
           sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
           sudo systemctl restart containerd
           systemctl status containerd --no-pager -l
+      - name: Wait containerd ready
+        run: |
+          unset READY
+          for i in $(seq 30); do
+            if eval "timeout 180 ls /run/containerd/containerd.sock"; then
+                READY=true
+                break
+            fi
+            echo "Fail(${i}). Retrying..."
+            sleep 1
+          done
+          if [ "$READY" != "true" ];then
+            echo "containerd is not ready"
+            exit 1
+          fi
       - name: Generate accessed files list
         run: |
           sed -i "s|host_path: script|host_path: $(pwd)/misc/optimizer/script|g" misc/optimizer/nginx.yaml
