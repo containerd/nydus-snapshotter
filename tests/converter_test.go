@@ -42,6 +42,8 @@ import (
 	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
+	"github.com/containerd/nydus-snapshotter/pkg/encryption"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const envNydusdPath = "NYDUS_NYDUSD"
@@ -809,15 +811,21 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 		Backend:   testOpt.backend,
 	}
 	convertFunc := converter.LayerConvertFunc(*nydusOpts)
+	var encrypter converter.Encrypter
+	if len(testOpt.encryptRecipients) > 0 {
+		encrypter = func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (ocispec.Descriptor, error) {
+			return encryption.EncryptNydusBootstrap(ctx, cs, desc, testOpt.encryptRecipients)
+		}
+	}
 	convertHooks := containerdconverter.ConvertHooks{
 		PostConvertHook: converter.ConvertHookFunc(converter.MergeOption{
-			WorkDir:           nydusOpts.WorkDir,
-			BuilderPath:       nydusOpts.BuilderPath,
-			FsVersion:         nydusOpts.FsVersion,
-			ChunkDictPath:     nydusOpts.ChunkDictPath,
-			Backend:           testOpt.backend,
-			PrefetchPatterns:  nydusOpts.PrefetchPatterns,
-			EncryptRecipients: testOpt.encryptRecipients,
+			WorkDir:          nydusOpts.WorkDir,
+			BuilderPath:      nydusOpts.BuilderPath,
+			FsVersion:        nydusOpts.FsVersion,
+			ChunkDictPath:    nydusOpts.ChunkDictPath,
+			Backend:          testOpt.backend,
+			PrefetchPatterns: nydusOpts.PrefetchPatterns,
+			Encrypt:          encrypter,
 		}),
 	}
 	convertFuncOpt := containerdconverter.WithIndexConvertFunc(
