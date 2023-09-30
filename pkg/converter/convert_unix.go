@@ -1168,7 +1168,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 			blobDesc.Annotations[label.NydusRefLayer] = layers[idx].OriginalDigest.String()
 		}
 
-		if len(opt.EncryptRecipients) != 0 {
+		if opt.Encrypt != nil {
 			blobDesc.Annotations[LayerAnnotationNydusEncryptedBlob] = "true"
 		}
 
@@ -1195,9 +1195,9 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		},
 	}
 
-	if len(opt.EncryptRecipients) != 0 {
+	if opt.Encrypt != nil {
 		// Encrypt the Nydus bootstrap layer.
-		bootstrapDesc, err = EncryptNydusBootstrap(ctx, cs, bootstrapDesc, opt.EncryptRecipients)
+		bootstrapDesc, err = opt.Encrypt(ctx, cs, bootstrapDesc)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "encrypt bootstrap layer")
 		}

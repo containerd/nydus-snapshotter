@@ -21,6 +21,8 @@ import (
 
 type Compressor = uint32
 
+type Encrypter = func(context.Context, content.Store, ocispec.Descriptor) (ocispec.Descriptor, error)
+
 const (
 	CompressorNone     Compressor = 0x0000_0001
 	CompressorZstd     Compressor = 0x0000_0002
@@ -121,8 +123,8 @@ type MergeOption struct {
 	Backend Backend
 	// Timeout cancels execution once exceed the specified time.
 	Timeout *time.Duration
-	// Recipients to encrypt bootstrap, do not encrypt if empty.
-	EncryptRecipients []string
+	// Encrypt encrypts the bootstrap layer if it's specified.
+	Encrypt Encrypter
 }
 
 type UnpackOption struct {
