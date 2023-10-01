@@ -7,6 +7,7 @@
 package manager
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,6 +25,8 @@ import (
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
 )
+
+const endpointGetBackend string = "/api/v1/daemons/%s/backend"
 
 // Spawn a nydusd daemon to serve the daemon instance.
 //
@@ -156,6 +159,12 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 				command.WithConfig(d.ConfigFile("")),
 				command.WithBootstrap(bootstrap),
 			)
+			if config.IsBackendSourceEnabled() {
+				configAPIPath := fmt.Sprintf(endpointGetBackend, d.States.ID)
+				cmdOpts = append(cmdOpts,
+					command.WithBackendSource(config.SystemControllerAddress()+configAPIPath),
+				)
+			}
 		default:
 			return nil, errors.Errorf("invalid daemon mode %s ", d.States.DaemonMode)
 		}

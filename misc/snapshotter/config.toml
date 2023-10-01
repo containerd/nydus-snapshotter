@@ -107,6 +107,9 @@ enable_stargz = false
 # The option enables trying to fetch the Nydus image associated with the OCI image and run it.
 # Also see https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers
 enable_referrer_detect = false
+# Whether to enable authentication support
+# The option enables nydus snapshot to provide backend information to nydusd.
+enable_backend_source = false
 [experimental.tarfs]
 # Whether to enable nydus tarfs mode. Tarfs is supported by:
 # - The EROFS filesystem driver since Linux 6.4

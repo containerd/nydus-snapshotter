@@ -96,6 +96,10 @@ func GetLogToStdout() bool {
 	return globalConfig.origin.LoggingConfig.LogToStdout
 }
 
+func IsBackendSourceEnabled() bool {
+	return globalConfig.origin.Experimental.EnableBackendSource && globalConfig.origin.SystemControllerConfig.Enable
+}
+
 func IsSystemControllerEnabled() bool {
 	return globalConfig.origin.SystemControllerConfig.Enable
 }
