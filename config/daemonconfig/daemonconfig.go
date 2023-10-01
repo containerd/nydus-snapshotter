@@ -10,6 +10,8 @@ package daemonconfig
 import (
 	"encoding/json"
 	"os"
+	"reflect"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -75,16 +77,16 @@ type BackendConfig struct {
 	// Registry backend configs
 	Host               string         `json:"host,omitempty"`
 	Repo               string         `json:"repo,omitempty"`
-	Auth               string         `json:"auth,omitempty"`
-	RegistryToken      string         `json:"registry_token,omitempty"`
+	Auth               string         `json:"auth,omitempty" secret:"true"`
+	RegistryToken      string         `json:"registry_token,omitempty" secret:"true"`
 	BlobURLScheme      string         `json:"blob_url_scheme,omitempty"`
 	BlobRedirectedHost string         `json:"blob_redirected_host,omitempty"`
 	Mirrors            []MirrorConfig `json:"mirrors,omitempty"`
 
 	// OSS backend configs
 	EndPoint        string `json:"endpoint,omitempty"`
-	AccessKeyID     string `json:"access_key_id,omitempty"`
-	AccessKeySecret string `json:"access_key_secret,omitempty"`
+	AccessKeyID     string `json:"access_key_id,omitempty" secret:"true"`
+	AccessKeySecret string `json:"access_key_secret,omitempty" secret:"true"`
 	BucketName      string `json:"bucket_name,omitempty"`
 	ObjectPrefix    string `json:"object_prefix,omitempty"`
 
@@ -124,6 +126,9 @@ type DeviceConfig struct {
 // We don't have to persist configuration file for fscache since its configuration
 // is passed through HTTP API.
 func DumpConfigFile(c interface{}, path string) error {
+	if config.IsBackendSourceEnabled() {
+		c = serializeWithSecretFilter(c)
+	}
 	b, err := json.Marshal(c)
 	if err != nil {
 		return errors.Wrapf(err, "marshal config")
@@ -178,4 +183,53 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	}
 
 	return nil
+}
+
+func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	value := reflect.ValueOf(obj)
+	typeOfObj := reflect.TypeOf(obj)
+
+	if value.Kind() == reflect.Ptr {
+		value = value.Elem()
+		typeOfObj = typeOfObj.Elem()
+	}
+
+	for i := 0; i < value.NumField(); i++ {
+		field := value.Field(i)
+		fieldType := typeOfObj.Field(i)
+		secretTag := fieldType.Tag.Get("secret")
+		jsonTags := strings.Split(fieldType.Tag.Get("json"), ",")
+		omitemptyTag := false
+
+		for _, tag := range jsonTags {
+			if tag == "omitempty" {
+				omitemptyTag = true
+				break
+			}
+		}
+
+		if secretTag == "true" {
+			continue
+		}
+
+		if field.Kind() == reflect.Ptr && field.IsNil() {
+			continue
+		}
+
+		if omitemptyTag && reflect.DeepEqual(reflect.Zero(field.Type()).Interface(), field.Interface()) {
+			continue
+		}
+
+		switch fieldType.Type.Kind() {
+		case reflect.Struct:
+			result[jsonTags[0]] = serializeWithSecretFilter(field.Interface())
+		case reflect.Ptr:
+			result[jsonTags[0]] = serializeWithSecretFilter(field.Elem().Interface())
+		default:
+			result[jsonTags[0]] = field.Interface()
+		}
+	}
+
+	return result
 }
