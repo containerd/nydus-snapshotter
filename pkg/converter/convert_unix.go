@@ -408,6 +408,7 @@ func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, buil
 				PrefetchPatterns: opt.PrefetchPatterns,
 				AlignedChunk:     opt.AlignedChunk,
 				ChunkSize:        opt.ChunkSize,
+				BatchSize:        opt.BatchSize,
 				Compressor:       opt.Compressor,
 				Timeout:          opt.Timeout,
 				Encrypt:          opt.Encrypt,
