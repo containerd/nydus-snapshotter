@@ -1,3 +1,10 @@
+TARGET_ARCH ?= x86_64
+EXTRA_RUSTFLAGS ?=
+
+ifeq ($(TARGET_ARCH), s390x)
+        override EXTRA_RUSTFLAGS += -C linker=s390x-linux-gnu-gcc
+endif
+
 all: build
 
 .PHONY: .release_version .format build release
@@ -16,7 +23,7 @@ release: .format .release_version build
 
 static-release: .format 
 	cargo clippy $(CARGO_BUILD_FLAGS) -- -Dwarnings
-	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu
+	RUSTFLAGS="-C target-feature=+crt-static ${EXTRA_RUSTFLAGS}" cargo build --release --target ${TARGET_ARCH}-unknown-linux-gnu
 
 clean:
 	cargo clean
