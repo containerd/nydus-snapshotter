@@ -103,14 +103,14 @@ The result file for the nginx image is `/opt/nri/optimizer/results/nginx:latest`
 
 ## Build Nydus Image with Optimizer's Suggestions
 
-Nydus provides a [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) CLI tool to convert OCI images from the source registry or local file system to nydus format and push them to the target registry.
+Nydus provides a [nydusify](https://github.com/dragonflyoss/nydus/blob/master/docs/nydusify.md) CLI tool to convert OCI images from the source registry or local file system to nydus format and push them to the target registry.
 
 We can install the `nydusify` cli tool from the nydus package.
 
 ```console
 VERSION=v2.1.5
 
-wget https://github.com/dragonflyoss/image-service/releases/download/$VERSION/nydus-static-$VERSION-linux-amd64.tgz
+wget https://github.com/dragonflyoss/nydus/releases/download/$VERSION/nydus-static-$VERSION-linux-amd64.tgz
 tar -zxvf nydus-static-$VERSION-linux-amd64.tgz
 sudo install -D -m 755 nydus-static/nydusify /usr/local/bin/nydusify
 sudo install -D -m 755 nydus-static/nydus-image /usr/local/bin/nydus-image

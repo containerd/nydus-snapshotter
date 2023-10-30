@@ -4,7 +4,7 @@ ARG NYDUS_VER=v2.1.5
 
 RUN apk add --no-cache curl
 RUN apk add --no-cache --upgrade grep
-RUN wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+RUN wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     echo $NYDUS_VER > /.nydus_version && \
     tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     rm nydus-static-$NYDUS_VER-linux-amd64.tgz
