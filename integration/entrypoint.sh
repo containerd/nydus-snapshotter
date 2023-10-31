@@ -25,6 +25,12 @@ STARGZ_IMAGE=${STARGZ_IMAGE:-ghcr.io/stargz-containers/wordpress:5.9.2-esgz}
 REDIS_OCI_IMAGE=${REDIS_OCI_IMAGE:-ghcr.io/stargz-containers/redis:6.2.6-org}
 WORDPRESS_OCI_IMAGE=${WORDPRESS_OCI_IMAGE:-ghcr.io/dragonflyoss/image-service/wordpress:latest}
 
+WORDPRESS_PREFETCH=${WORDPRESS_PREFETCH:-http://localhost:8090/prefetch/wordpress}
+TOMCAT_PREFETCH=${TOMCAT_PREFETCH:-http://localhost:8090/prefetch/tomcat}
+declare -A IMAGE_PREFETCH
+IMAGE_PREFETCH=([${WORDPRESS_IMAGE}]=${WORDPRESS_PREFETCH} [${TOMCAT_IMAGE}]=${TOMCAT_PREFETCH})
+
+
 PLUGIN=nydus
 
 RETRYNUM=30
@@ -45,6 +51,33 @@ function detect_go_race {
         done
         exit 1
     fi
+}
+
+function stop_all_containers_crictl {
+     containers=$(crictl ps -aq | tr '\n' ' ')
+     if [[ ${containers} == "" ]]; then
+             return 0
+     else
+         echo "Remove containers ${containers}"
+         for C in ${containers}; do
+             crictl stop "${C}" || true
+             crictl rm "${C}" || true
+         done
+         return 1
+     fi
+}
+function stop_all_pods_crictl {
+  pods=$(crictl pods -q | tr '\n' ' ')
+  if [[ ${pods} == "" ]]; then
+    return 0
+  else
+    echo "Remove pods ${pods}"
+    for P in ${pods}; do
+      crictl stopp "${P}" || true
+      crictl rmp "${P}" || true
+    done
+    return 1
+  fi
 }
 
 function stop_all_containers {
@@ -209,6 +242,16 @@ function is_cache_cleared {
         echo "ERROR: Cache is not cleared"
         false
     fi
+}
+
+function crictl_prune_images {
+    # Wait for containers observation.
+    sleep 1
+    func_retry stop_all_containers_crictl
+    crictl rmi --all
+    func_retry stop_all_pods_crictl
+    crictl images
+    is_cache_cleared
 }
 
 function nerdctl_prune_images {
@@ -573,13 +616,152 @@ function enable_nesting_for_cgroup_v2() {
     fi
 }
 
+function set_prefetch {
+    echo "testing $FUNCNAME"
+
+    go run /go/prefetch_server.go &
+}
+
+# Function to create a Pod
+function start_single_container_prefetch {
+    echo "testing $FUNCNAME"
+    crictl_prune_images
+    reboot_containerd multiple
+
+    IFS="/" read -ra parts <<< "${1}"
+    image_name="${parts[-1]}"
+    IFS=':' read -ra parts <<< "$image_name"
+    image_name="${parts[0]}"
+    local pod_yaml="${image_name}-pod.yaml"
+    cat > "$pod_yaml" <<EOF
+    kind: pod
+    metadata:
+      name: "${image_name}-pod"
+      namespace: default
+      attempt: 1
+      uid: hdishd83djaidwnduwk28bcsb
+    log_directory: /tmp
+    annotations:
+      containerd.io/nydus-prefetch: |
+        [
+          {"image": "${1}", "prefetch": "${2}"}
+        ]
+    linux: {}
+EOF
+    local cmd_output=$(crictl runp "$pod_yaml" 2>&1)
+    if [[ "$cmd_output" == *"FATA"* ]] && [[ "$cmd_output" == *"error"* ]]; then
+        echo "Failed to create Pod, pod existed"
+        return 1
+    else
+        local pod_id
+        while read -r line; do
+          pod_id="$line"
+        done <<< "$cmd_output"
+    fi
+    local container_yaml="${image_name}-container.yaml"
+    cat > $container_yaml <<EOF
+    metadata:
+      name: $image_name
+    image:
+      image: ${1}
+    log_path: "${image_name}.0.log"
+    linux: {}
+EOF
+    crictl pull ${1}
+    echo "Running: crictl create ${pod_id} ${container_yaml} ${pod_yaml}"
+    output=$(crictl create ${pod_id} ${container_yaml} ${pod_yaml})
+    local container_id
+    while read -r line; do
+        container_id="$line"
+    done <<< "$output"
+    echo "Running: crictl start ${container_id}"
+    crictl start ${container_id}
+    return 0
+
+    detect_go_race
+}
+
+
+
+function start_multiple_containers_prefetch {
+    echo "testing $FUNCNAME"
+    crictl_prune_images
+    reboot_containerd multiple
+
+    local -n image_prefetch="${1}"
+    for key in "${!image_prefetch[@]}"; do
+        IFS="/" read -ra parts <<< "${key}"
+        image_name="${parts[-1]}"
+        IFS=':' read -ra parts <<< "$image_name"
+        image_name="${parts[0]}"
+        local pod_yaml="${image_name}-pod.yaml"
+        cat > "$pod_yaml" <<EOF
+        kind: pod
+        metadata:
+          name: "${image_name}-pod"
+          namespace: default
+          attempt: 1
+          uid: hdishd83djaidwnduwk28bcsb
+        log_directory: /tmp
+        annotations:
+          containerd.io/nydus-prefetch: |
+            [
+              {"image": "${key}", "prefetch": "${IMAGE_PREFETCH[$key]}"}
+            ]
+        linux: {}
+EOF
+        local cmd_output=$(crictl runp "$pod_yaml" 2>&1)
+        if [[ "$cmd_output" == *"FATA"* ]] && [[ "$cmd_output" == *"error"* ]]; then
+            echo "Failed to create Pod, pod existed"
+            return 1
+        else
+            local pod_id
+            while read -r line; do
+                pod_id="$line"
+            done <<< "$cmd_output"
+        fi
+        local container_yaml="${image_name}-container.yaml"
+        cat > $container_yaml <<EOF
+        metadata:
+          name: $image_name
+        image:
+          image: ${key}
+        log_path: "${image_name}.0.log"
+        linux: {}
+EOF
+        crictl pull ${key}
+        output=$(crictl create ${pod_id} ${container_yaml} ${pod_yaml})
+        local container_id
+        while read -r line; do
+          container_id="$line"
+        done <<< "$output"
+        echo "Running: crictl start ${container_id}"
+        crictl start ${container_id}
+      done
+      return 0
+
+      detect_go_race
+}
+
+
+
+
+
+
 enable_nesting_for_cgroup_v2
 
 reboot_containerd multiple
 
+set_prefetch
+start_single_container_prefetch "${WORDPRESS_IMAGE}" "${WORDPRESS_PREFETCH}"
+start_multiple_containers_prefetch IMAGE_PREFETCH
+crictl_prune_images
+
 start_single_container_multiple_daemons
 start_multiple_containers_multiple_daemons
 start_multiple_containers_shared_daemon
+
+
 
 pull_remove_one_image
 
@@ -609,3 +791,7 @@ fi
 start_container_on_oci
 
 start_container_with_referrer_detect
+
+#nerdctl_prune_images
+
+

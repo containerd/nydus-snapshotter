@@ -19,6 +19,12 @@ oom_score = 0
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
 
+[plugins."io.containerd.nri.v1.nri"]
+  config_file = "/etc/nri/nri.conf"
+  disable = false
+  plugin_path = "/opt/nri/plugins"
+  socket_path = "/var/run/nri.sock"
+
 [proxy_plugins]
   [proxy_plugins.nydus]
       type = "snapshot"
