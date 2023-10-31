@@ -1,3 +1,0 @@
-[file_prefetch]
-# This is used to configure the socket address for the file prefetch.
-socket_address = "/run/containerd-nydus/system.sock"

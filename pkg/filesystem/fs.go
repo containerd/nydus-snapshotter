@@ -15,13 +15,13 @@ import (
 	"os"
 	"path"
 
-	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/containerd/containerd/log"
+	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 
@@ -285,7 +285,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			if err != nil {
 				return err
 			}
-			d, err = fs.createDaemon(fsManager, config.DaemonModeDedicated, mp, 0)
+			d, err = fs.createDaemon(fsManager, config.DaemonModeDedicated, mp, 0, imageID)
 			// if daemon already exists for snapshotID, just return
 			if err != nil && !errdefs.IsAlreadyExists(err) {
 				return err
@@ -578,7 +578,7 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 		return errors.Errorf("got null mountpoint for fsDriver %s", fsManager.FsDriver)
 	}
 
-	d, err := fs.createDaemon(fsManager, daemonMode, mp, 0)
+	d, err := fs.createDaemon(fsManager, daemonMode, mp, 0, "")
 	if err != nil {
 		return errors.Wrap(err, "initialize shared daemon")
 	}
@@ -612,7 +612,7 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 
 // createDaemon create new nydus daemon by snapshotID and imageID
 func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config.DaemonMode,
-	mountpoint string, ref int32) (d *daemon.Daemon, err error) {
+	mountpoint string, ref int32, imageID string) (d *daemon.Daemon, err error) {
 	opts := []daemon.NewDaemonOpt{
 		daemon.WithRef(ref),
 		daemon.WithSocketDir(config.GetSocketRoot()),
@@ -624,6 +624,10 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(fsManager.FsDriver),
 		daemon.WithDaemonMode(daemonMode),
+	}
+
+	if imageID != "" {
+		opts = append(opts, daemon.WithPrefetchDir(config.GetPrefetchRoot(), imageID))
 	}
 
 	// For fscache driver, no need to provide mountpoint to nydusd daemon.

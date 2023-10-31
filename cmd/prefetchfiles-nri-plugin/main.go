@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
@@ -32,14 +31,17 @@ const (
 	endpointPrefetch               = "/api/v1/prefetch"
 	defaultEvents                  = "RunPodSandbox"
 	defaultSystemControllerAddress = "/run/containerd-nydus/system.sock"
-	defaultPrefetchConfigDir       = "/etc/nydus"
 	nydusPrefetchAnnotation        = "containerd.io/nydus-prefetch"
 )
 
+type PluginConfig struct {
+	SocketAddr string `toml:"socket_address"`
+}
+
 type PluginArgs struct {
-	PluginName    string
-	PluginIdx     string
-	SocketAddress string
+	PluginName string
+	PluginIdx  string
+	Config     PluginConfig
 }
 
 type Flags struct {
@@ -62,8 +64,8 @@ func buildFlags(args *PluginArgs) []cli.Flag {
 		&cli.StringFlag{
 			Name:        "socket-addr",
 			Value:       defaultSystemControllerAddress,
-			Usage:       "unix domain socket address. If defined in the configuration file, there is no need to add ",
-			Destination: &args.SocketAddress,
+			Usage:       "UNIX domain socket address for connection to the nydus-snapshotter API.",
+			Destination: &args.Config.SocketAddr,
 		},
 	}
 }
@@ -129,6 +131,30 @@ func (p *plugin) RunPodSandbox(pod *api.PodSandbox) error {
 
 	return nil
 }
+func (p *plugin) Configure(config, runtime, version string) (stub.EventMask, error) {
+	var cfg PluginConfig
+	log.Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
+	if config == "" {
+		return p.mask, nil
+	}
+
+	tree, err := toml.Load(config)
+	if err != nil {
+		return 0, err
+	}
+	if err := tree.Unmarshal(&cfg); err != nil {
+		return 0, err
+	}
+	p.mask, err = api.ParseEventMask(defaultEvents)
+	if err != nil {
+		return 0, errors.Wrap(err, "parse events in configuration")
+	}
+
+	log.Infof("configuration: %#v", cfg)
+	globalSocket = cfg.SocketAddr
+
+	return p.mask, nil
+}
 
 func main() {
 
@@ -148,25 +174,7 @@ func main() {
 
 			log = logrus.StandardLogger()
 
-			configFileName := "prefetchConfig.toml"
-			configDir := defaultPrefetchConfigDir
-			configFilePath := filepath.Join(configDir, configFileName)
-
-			config, err := toml.LoadFile(configFilePath)
-			if err != nil {
-				log.Warnf("failed to read config file: %v", err)
-			}
-
-			configSocketAddrRaw := config.Get("file_prefetch.socket_address")
-			if configSocketAddrRaw != nil {
-				if configSocketAddr, ok := configSocketAddrRaw.(string); ok {
-					globalSocket = configSocketAddr
-				} else {
-					log.Warnf("failed to read config: 'file_prefetch.socket_address' is not a string")
-				}
-			} else {
-				globalSocket = flags.Args.SocketAddress
-			}
+			globalSocket = flags.Args.Config.SocketAddr
 
 			log.SetFormatter(&logrus.TextFormatter{
 				PadLevelText: true,

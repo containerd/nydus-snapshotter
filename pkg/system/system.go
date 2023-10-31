@@ -223,7 +223,7 @@ func (sc *Controller) setPrefetchConfiguration() func(w http.ResponseWriter, r *
 			log.L.Errorf("Failed to read prefetch list: %v", err)
 			return
 		}
-		if err = prefetch.Pm.SetPrefetchFiles(body); err != nil {
+		if err = prefetch.Pm.GetPrefetchMap(body); err != nil {
 			log.L.Errorf("Failed to parse request body: %v", err)
 			return
 		}
