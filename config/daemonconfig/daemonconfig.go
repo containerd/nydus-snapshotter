@@ -221,11 +221,14 @@ func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
 			continue
 		}
 
-		if fieldType.Type.Kind() == reflect.Struct {
+		switch fieldType.Type.Kind() {
+		case reflect.Struct:
 			result[jsonTags[0]] = serializeWithSecretFilter(field.Interface())
-		} else if fieldType.Type.Kind() == reflect.Ptr {
+		case reflect.Ptr:
 			result[jsonTags[0]] = serializeWithSecretFilter(field.Elem().Interface())
-		} else {
+		case reflect.Invalid: 
+			
+		default:
 			result[jsonTags[0]] = field.Interface()
 		}
 	}
