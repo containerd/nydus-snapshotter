@@ -221,61 +221,12 @@ func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
 			continue
 		}
 
+		//nolint:staticcheck
 		switch fieldType.Type.Kind() {
 		case reflect.Struct:
 			result[jsonTags[0]] = serializeWithSecretFilter(field.Interface())
 		case reflect.Ptr:
 			result[jsonTags[0]] = serializeWithSecretFilter(field.Elem().Interface())
-		case reflect.Bool:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Int:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Int8:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Int16:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Int32:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Int64:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Uint:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Uint8:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Uint16:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Uint32:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Uint64:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Uintptr:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Float32:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Float64:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Complex64:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Complex128:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Array:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Chan:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Func:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Interface:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Map:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Slice:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.String:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.UnsafePointer:
-			result[jsonTags[0]] = field.Interface()
-		case reflect.Invalid:
-			
 		default:
 			result[jsonTags[0]] = field.Interface()
 		}
