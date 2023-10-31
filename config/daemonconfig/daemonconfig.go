@@ -221,7 +221,7 @@ func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
 			continue
 		}
 
-		//nolint:staticcheck
+		//nolint:exhaustive
 		switch fieldType.Type.Kind() {
 		case reflect.Struct:
 			result[jsonTags[0]] = serializeWithSecretFilter(field.Interface())
