@@ -27,6 +27,7 @@ type FuseDaemonConfig struct {
 	EnableXattr     bool          `json:"enable_xattr,omitempty"`
 	AccessPattern   bool          `json:"access_pattern,omitempty"`
 	LatestReadFiles bool          `json:"latest_read_files,omitempty"`
+	AmplifyIo       int           `json:"amplify_io,omitempty"`
 	FSPrefetch      `json:"fs_prefetch,omitempty"`
 	// (experimental) The nydus daemon could cache more data to increase hit ratio when enabled the warmup feature.
 	Warmup uint64 `json:"warmup,omitempty"`

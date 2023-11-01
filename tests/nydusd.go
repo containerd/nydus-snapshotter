@@ -67,7 +67,8 @@ var configTpl = `
 		"merging_size": 131072
 	},
 	"digest_validate": {{.DigestValidate}},
-	"enable_xattr": true
+	"enable_xattr": true,
+	"amplify_io": 1048576
 }
 `
 
