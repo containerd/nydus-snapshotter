@@ -16,6 +16,10 @@ BUILD_TIMESTAMP=$(shell date '+%Y-%m-%dT%H:%M:%S')
 VERSION=$(shell git describe --match 'v[0-9]*' --dirty='.m' --always --tags)
 REVISION=$(shell git rev-parse HEAD)$(shell if ! git diff --no-ext-diff --quiet --exit-code; then echo .m; fi)
 
+
+RELEASE=nydus-snapshotter-$(VERSION:v%=%)-${GOOS}-${GOARCH}
+STATIC_RELEASE=nydus-snapshotter-$(VERSION:v%=%)-${GOOS}-static
+
 # Relpace test target images for e2e tests.
 ifdef E2E_TEST_TARGET_IMAGES_FILE
 ENV_TARGET_IMAGES_FILE = --env-file ${E2E_TEST_TARGET_IMAGES_FILE}
@@ -48,9 +52,7 @@ DEBUG_LDFLAGS = -X ${PKG}/version.Version=${VERSION} -X ${PKG}/version.Revision=
 CARGO ?= $(shell which cargo)
 OPTIMIZER_SERVER = tools/optimizer-server
 OPTIMIZER_SERVER_TOML = ${OPTIMIZER_SERVER}/Cargo.toml
-OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/release/optimizer-server
-STATIC_OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/target/x86_64-unknown-linux-gnu/release/optimizer-server
-
+OPTIMIZER_SERVER_BIN = ${OPTIMIZER_SERVER}/bin/optimizer-server
 .PHONY: build
 build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
@@ -63,13 +65,31 @@ debug:
 .PHONY: build-optimizer
 build-optimizer:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
-	make -C tools/optimizer-server release && cp ${OPTIMIZER_SERVER_BIN} ./bin
+	make -C tools/optimizer-server release OS=$(GOOS) ARCH=$(GOARCH) && cp ${OPTIMIZER_SERVER_BIN} ./bin
 
 static-release:
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 	CGO_ENABLED=0 ${PROXY} GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/optimizer-nri-plugin ./cmd/optimizer-nri-plugin
-	make -C tools/optimizer-server static-release && cp ${STATIC_OPTIMIZER_SERVER_BIN} ./bin
+	make -C tools/optimizer-server static-release && cp ${OPTIMIZER_SERVER_BIN} ./bin
+
+package/$(RELEASE).tar.gz: build build-optimizer
+	mkdir -p package
+	rm -rf package/$(RELEASE) package/$(RELEASE).tar.gz
+	tar -czf package/$(RELEASE).tar.gz bin
+	rm -rf package/$(RELEASE)
+
+package/$(STATIC_RELEASE).tar.gz: static-release
+	@mkdir -p package
+	@rm -rf package/$(STATIC_RELEASE) package/$(STATIC_RELEASE).tar.gz
+	@tar -czf package/$(STATIC_RELEASE).tar.gz bin
+	@rm -rf package/$(STATIC_RELEASE)
+
+package: package/$(RELEASE).tar.gz
+	cd package && sha256sum $(RELEASE).tar.gz >$(RELEASE).tar.gz.sha256sum
+
+static-package: package/$(STATIC_RELEASE).tar.gz
+	@cd package && sha256sum $(STATIC_RELEASE).tar.gz >$(STATIC_RELEASE).tar.gz.sha256sum
 
 # Majorly for cross build for converter package since it is imported by other projects
 converter:
