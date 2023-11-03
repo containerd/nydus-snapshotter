@@ -46,6 +46,7 @@ func TestLoadConfig(t *testing.T) {
   "digest_validate": true,
   "iostats_files": true,
   "enable_xattr": true,
+  "amplify_io": 1048576,
   "fs_prefetch": {
     "enable": true,
     "threads_count": 10,

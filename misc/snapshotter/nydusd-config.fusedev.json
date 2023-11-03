@@ -16,6 +16,7 @@
   "digest_validate": false,
   "iostats_files": false,
   "enable_xattr": true,
+  "amplify_io": 1048576,
   "fs_prefetch": {
     "enable": true,
     "threads_count": 8,
