@@ -64,6 +64,35 @@ func TestLoadConfig(t *testing.T) {
 	require.Equal(t, cfg.Device.Backend.Config.Proxy.CheckInterval, 5)
 }
 
+func TestAmplifyIo(t *testing.T) {
+	// Test non-zero value
+	input1 := []byte(`{"amplify_io": 1048576}`)
+	var cfg1 FuseDaemonConfig
+	err1 := json.Unmarshal(input1, &cfg1)
+	require.Nil(t, err1)
+	require.Equal(t, *cfg1.AmplifyIo, 1048576)
+	output1, _ := json.Marshal(cfg1)
+	require.Contains(t, string(output1), `"amplify_io":1048576`)
+
+	// Test zero value
+	input2 := []byte(`{"amplify_io": 0}`)
+	var cfg2 FuseDaemonConfig
+	err2 := json.Unmarshal(input2, &cfg2)
+	require.Nil(t, err2)
+	require.Equal(t, *cfg2.AmplifyIo, 0)
+	output2, _ := json.Marshal(cfg2)
+	require.Contains(t, string(output2), `"amplify_io":0`)
+
+	// Test nil value
+	input3 := []byte(`{}`)
+	var cfg3 FuseDaemonConfig
+	err3 := json.Unmarshal(input3, &cfg3)
+	require.Nil(t, err3)
+	require.Nil(t, cfg3.AmplifyIo)
+	output3, _ := json.Marshal(cfg3)
+	require.NotContains(t, string(output3), `amplify_io`)
+}
+
 func TestSerializeWithSecretFilter(t *testing.T) {
 	buf := []byte(`{
   "device": {
