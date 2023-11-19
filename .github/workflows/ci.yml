@@ -28,6 +28,14 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go
+      - name: Setup Nydus
+        run: |
+          # Download nydus components
+          NYDUS_VER=v$(curl -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+          tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
+          mkdir -p /usr/bin
+          sudo mv nydus-static/nydus-image /usr/bin/
       - name: Build
         run: |
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
@@ -135,6 +143,14 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go
+      - name: Setup Nydus
+        run: |
+          # Download nydus components
+          NYDUS_VER=v$(curl --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+          tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
+          mkdir -p /usr/bin
+          sudo mv nydus-static/nydus-image /usr/bin/
       - name: Run unit tests.
         run: make cover
       - name: Upload coverage to Codecov
