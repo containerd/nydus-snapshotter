@@ -189,6 +189,12 @@ func (d *Daemon) ResetState() {
 	d.state = types.DaemonStateUnknown
 }
 
+func (d *Daemon) SetDiedState() {
+	d.Lock()
+	defer d.Unlock()
+	d.state = types.DaemonStateDied
+}
+
 // Wait for the nydusd daemon to reach specified state with timeout.
 func (d *Daemon) WaitUntilState(expected types.DaemonState) error {
 	return retry.Do(func() error {
