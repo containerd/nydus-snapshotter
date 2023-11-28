@@ -31,8 +31,6 @@ func (m *Mounter) Umount(target string) error {
 		if !mounted {
 			return errors.New("not mounted")
 		}
-	} else {
-		return err
 	}
 
 	// return syscall.Unmount(target, syscall.MNT_FORCE)

@@ -230,17 +230,18 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 
 func (m *Manager) handleDaemonDeathEvent() {
 	for ev := range m.LivenessNotifier {
-		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
+		eventDaemonID := ev.daemonID
+		log.L.Warnf("Daemon %s died! socket path %s", eventDaemonID, ev.path)
 
-		d := m.GetByDaemonID(ev.daemonID)
+		d := m.GetByDaemonID(eventDaemonID)
 		if d == nil {
-			log.L.Warnf("Daemon %s was not found", ev.daemonID)
+			log.L.Warnf("Daemon %s was not found", eventDaemonID)
 			return
 		}
 
-		d.Lock()
-		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
-		d.Unlock()
+		if d.State() == types.DaemonStateRunning {
+			collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
+		}
 
 		d.ResetState()
 
@@ -450,11 +451,10 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 	if err := d.Wait(); err != nil {
 		log.L.Warnf("Failed to wait for daemon, %v", err)
 	}
+	if d.State() == types.DaemonStateRunning {
+		collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
+	}
 	collector.NewDaemonEventCollector(types.DaemonStateDestroyed).Collect()
-	d.Lock()
-	collector.NewDaemonInfoCollector(&d.Version, -1).Collect()
-	d.Unlock()
-
 	return nil
 }
 
@@ -524,9 +524,6 @@ func (m *Manager) Recover(ctx context.Context) (map[string]*daemon.Daemon, map[s
 				return errors.Wrapf(err, "add daemon %s to cgroup failed", d.ID())
 			}
 		}
-		d.Lock()
-		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
-		d.Unlock()
 
 		go func() {
 			if err := daemon.WaitUntilSocketExisted(d.GetAPISock(), d.Pid()); err != nil {
