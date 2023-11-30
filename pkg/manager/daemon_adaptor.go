@@ -35,6 +35,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 
 	var muSubscribe sync.Mutex
 	subscribed := false
+	needSubscribe := true
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -47,7 +48,10 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		muSubscribe.Lock()
 		defer muSubscribe.Unlock()
 
+		needSubscribe = false
+
 		if !subscribed {
+			d.SetDiedState()
 			m.LivenessNotifier <- deathEvent{daemonID: d.ID(), path: d.GetAPISock()}
 		}
 	}()
@@ -97,22 +101,34 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			return
 		}
 
-		muSubscribe.Lock()
-		// TODO: It's better to subscribe death event when snapshotter
-		// has set daemon's state to RUNNING or READY.
-		if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
-			log.L.Errorf("Nydusd %s probably not started", d.ID())
-			muSubscribe.Unlock()
+		subscribeDeathEvent := func() error {
+			muSubscribe.Lock()
+			defer muSubscribe.Unlock()
+
+			if !needSubscribe {
+				return errors.Errorf("daemon %s already dead, no need to subscribe it", d.ID())
+			}
+
+			// TODO: It's better to subscribe death event when snapshotter
+			// has set daemon's state to RUNNING or READY.
+			if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+				return errors.Wrapf(err, "Nydusd %s probably not started", d.ID())
+			}
+			subscribed = true
+			return nil
+		}
+
+		if err := subscribeDeathEvent(); err != nil {
+			log.L.Errorf("subscribe death event: %v", err)
 			return
 		}
-		subscribed = true
-		muSubscribe.Unlock()
 
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
 			return
 		}
 
+		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 		collector.NewDaemonEventCollector(types.DaemonStateRunning).Collect()
 
 		if m.CgroupMgr != nil {
@@ -121,10 +137,6 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 				return
 			}
 		}
-
-		d.Lock()
-		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
-		d.Unlock()
 
 		d.SendStates()
 	}()
