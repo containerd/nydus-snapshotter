@@ -30,6 +30,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
@@ -106,6 +107,9 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
 			return nil, errors.Wrapf(err, "wait for daemon %s", d.ID())
 		}
+
+		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
+
 		if err := d.RecoveredMountInstances(); err != nil {
 			return nil, errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
 		}
@@ -119,6 +123,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	for _, d := range liveDaemons {
 		// Found shared daemon
 		fs.TryRetainSharedDaemon(d)
+		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 	}
 
 	return &fs, nil
@@ -421,6 +426,7 @@ func (fs *Filesystem) mount(d *daemon.Daemon, r *daemon.Rafs) error {
 		if err != nil {
 			return err
 		}
+
 		r.SetMountpoint(path.Join(d.HostMountpoint()))
 		return errors.Wrapf(err, "start daemon")
 	}
