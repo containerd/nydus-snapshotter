@@ -17,11 +17,13 @@ import (
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
+	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
+	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
 	"github.com/pkg/errors"
 )
 
@@ -101,7 +103,7 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 	}, nil
 }
 
-func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overlayOptions []string) ([]mount.Mount, error) {
+func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overlayOptions []string, key string) ([]mount.Mount, error) {
 	hasVolume := false
 	rafs := rafs.RafsGlobalCache.Get(id)
 	if rafs == nil {
@@ -122,7 +124,7 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overla
 
 	// Insert Kata volume for tarfs
 	if blobID, ok := rafs.Annotations[label.NydusTarfsLayer]; ok {
-		options, err := o.mountWithTarfsVolume(*rafs, blobID)
+		options, err := o.mountWithTarfsVolume(ctx, *rafs, blobID, key)
 		if err != nil {
 			return []mount.Mount{}, errors.Wrapf(err, "create kata volume for tarfs")
 		}
@@ -152,63 +154,68 @@ func (o *snapshotter) mountWithProxyVolume(rafs rafs.Rafs) ([]string, error) {
 	for k, v := range rafs.Annotations {
 		options = append(options, fmt.Sprintf("%s=%s", k, v))
 	}
-
-	volume := &KataVirtualVolume{
-		VolumeType: KataVirtualVolumeImageGuestPullType,
-		Source:     "",
-		FSType:     "",
-		Options:    options,
-		ImagePull:  &ImagePullVolume{Metadata: rafs.Annotations},
-	}
-	if !volume.Validate() {
-		return []string{}, errors.Errorf("got invalid kata volume, %v", volume)
-	}
-
-	info, err := EncodeKataVirtualVolumeToBase64(*volume)
+	opt, err := o.prepareKataVirtualVolume(label.NydusProxyMode, "", KataVirtualVolumeImageGuestPullType, "", options, rafs.Annotations)
 	if err != nil {
-		return []string{}, errors.Errorf("failed to encoding Kata Volume info %v", volume)
+		return options, errors.Wrapf(err, "failed to prepare KataVirtualVolume")
 	}
-	opt := fmt.Sprintf("%s=%s", KataVirtualVolumeOptionName, info)
-
 	return []string{opt}, nil
 }
 
-func (o *snapshotter) mountWithTarfsVolume(rafs rafs.Rafs, blobID string) ([]string, error) {
-	var volume *KataVirtualVolume
-
+func (o *snapshotter) mountWithTarfsVolume(ctx context.Context, rafs rafs.Rafs, blobID, key string) ([]string, error) {
+	options := []string{}
 	if info, ok := rafs.Annotations[label.NydusImageBlockInfo]; ok {
 		path, err := o.fs.GetTarfsImageDiskFilePath(blobID)
 		if err != nil {
 			return []string{}, errors.Wrapf(err, "get tarfs image disk file path")
 		}
-		volume = &KataVirtualVolume{
-			VolumeType: KataVirtualVolumeImageRawBlockType,
-			Source:     path,
-			FSType:     "erofs",
-			Options:    []string{"ro"},
-		}
-		if len(info) > 0 {
-			dmverity, err := parseTarfsDmVerityInfo(info)
-			if err != nil {
-				return []string{}, err
-			}
-			volume.DmVerity = &dmverity
-		}
-	}
-
-	if volume != nil {
-		if !volume.Validate() {
-			return []string{}, errors.Errorf("got invalid kata volume, %v", volume)
-		}
-		info, err := EncodeKataVirtualVolumeToBase64(*volume)
+		log.L.Debugf("mountWithTarfsVolume info %v", info)
+		opt, err := o.prepareKataVirtualVolume(label.NydusImageBlockInfo, path, KataVirtualVolumeImageRawBlockType, "erofs", []string{"ro"}, rafs.Annotations)
 		if err != nil {
-			return []string{}, errors.Errorf("failed to encoding Kata Volume info %v", volume)
+			return options, errors.Wrapf(err, "failed to prepare KataVirtualVolume for image_raw_block")
 		}
-		opt := fmt.Sprintf("%s=%s", KataVirtualVolumeOptionName, info)
-		return []string{opt}, nil
+
+		options = append(options, opt)
+		log.L.Debugf("mountWithTarfsVolume type=%v, options %v", KataVirtualVolumeImageRawBlockType, options)
+		return options, nil
 	}
 
-	return []string{}, nil
+	if _, ok := rafs.Annotations[label.NydusLayerBlockInfo]; ok {
+		for {
+			pID, pInfo, _, pErr := snapshot.GetSnapshotInfo(ctx, o.ms, key)
+			log.G(ctx).Debugf("mountWithKataVolume pID= %v, pInfo = %v", pID, pInfo)
+
+			if pErr != nil {
+				return options, errors.Wrapf(pErr, "failed to get snapshot info")
+			}
+			if pInfo.Kind == snapshots.KindActive {
+				key = pInfo.Parent
+				continue
+			}
+
+			blobID = pInfo.Labels[label.NydusTarfsLayer]
+			path, err := o.fs.GetTarfsLayerDiskFilePath(blobID)
+			if err != nil {
+				return options, errors.Wrapf(err, "get tarfs image disk file path")
+			}
+
+			opt, err := o.prepareKataVirtualVolume(label.NydusLayerBlockInfo, path, KataVirtualVolumeLayerRawBlockType, "erofs", []string{"ro"}, pInfo.Labels)
+			if err != nil {
+				return options, errors.Wrapf(err, "failed to prepare KataVirtualVolume for layer_raw_block")
+			}
+
+			options = append(options, opt)
+
+			if pInfo.Parent == "" {
+				break
+			}
+			key = pInfo.Parent
+		}
+		log.L.Debugf("mountWithTarfsVolume type=%v, options %v", KataVirtualVolumeLayerRawBlockType, options)
+		return options, nil
+	}
+
+	// If Neither image_raw_block or layer_raw_block, return empty strings
+	return options, nil
 }
 
 func (o *snapshotter) prepareKataVirtualVolume(blockType, source, volumeType, fsType string, options []string, labels map[string]string) (string, error) {
