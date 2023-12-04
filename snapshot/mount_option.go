@@ -211,6 +211,37 @@ func (o *snapshotter) mountWithTarfsVolume(rafs rafs.Rafs, blobID string) ([]str
 	return []string{}, nil
 }
 
+func (o *snapshotter) prepareKataVirtualVolume(blockType, source, volumeType, fsType string, options []string, labels map[string]string) (string, error) {
+	volume := &KataVirtualVolume{
+		VolumeType: volumeType,
+		Source:     source,
+		FSType:     fsType,
+		Options:    options,
+	}
+	if blockType == label.NydusImageBlockInfo || blockType == label.NydusLayerBlockInfo {
+		dmverityInfo := labels[blockType]
+		if len(dmverityInfo) > 0 {
+			dmverity, err := parseTarfsDmVerityInfo(dmverityInfo)
+			if err != nil {
+				return "", err
+			}
+			volume.DmVerity = &dmverity
+		}
+	} else if blockType == label.NydusProxyMode {
+		volume.ImagePull = &ImagePullVolume{Metadata: labels}
+	}
+
+	if !volume.Validate() {
+		return "", errors.Errorf("got invalid kata volume, %v", volume)
+	}
+	info, err := EncodeKataVirtualVolumeToBase64(*volume)
+	if err != nil {
+		return "", errors.Errorf("failed to encoding Kata Volume info %v", volume)
+	}
+	opt := fmt.Sprintf("%s=%s", KataVirtualVolumeOptionName, info)
+	return opt, nil
+}
+
 func parseTarfsDmVerityInfo(info string) (DmVerityInfo, error) {
 	var dataBlocks, hashOffset uint64
 	var rootHash string
