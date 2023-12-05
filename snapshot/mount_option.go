@@ -151,10 +151,11 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overla
 
 func (o *snapshotter) mountWithProxyVolume(rafs rafs.Rafs) ([]string, error) {
 	options := []string{}
+	source := rafs.Annotations[label.CRIImageRef]
 	for k, v := range rafs.Annotations {
 		options = append(options, fmt.Sprintf("%s=%s", k, v))
 	}
-	opt, err := o.prepareKataVirtualVolume(label.NydusProxyMode, "", KataVirtualVolumeImageGuestPullType, "", options, rafs.Annotations)
+	opt, err := o.prepareKataVirtualVolume(label.NydusProxyMode, source, KataVirtualVolumeImageGuestPullType, "", options, rafs.Annotations)
 	if err != nil {
 		return options, errors.Wrapf(err, "failed to prepare KataVirtualVolume")
 	}
