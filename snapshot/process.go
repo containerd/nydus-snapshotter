@@ -69,7 +69,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				labels[label.NydusProxyMode] = "true"
 				handler = skipHandler
 			} else {
-				return nil, "", errors.Errorf("missing CRI reference annotation for snaposhot %s", s.ID)
+				return nil, "", errors.Errorf("missing CRI reference annotation for snapshot %s", s.ID)
 			}
 		case label.IsNydusMetaLayer(labels):
 			logger.Debugf("found nydus meta layer")

@@ -26,8 +26,8 @@ sudo tar xzf cni-plugins-linux-amd64-$CNI_VERSION.tgz -C /opt/cni/bin/
 wget https://github.com/kubernetes-sigs/cri-tools/releases/download/$CRICTL_VERSION/crictl-$CRICTL_VERSION-linux-amd64.tar.gz
 tar xzf crictl-$CRICTL_VERSION-linux-amd64.tar.gz -C /usr/local/bin/
 # install nydus-overlayfs
-NYDUS_VER=v$(curl -s "https://api.github.com/repos/dragonflyoss/image-service/releases/latest" | jq -r .tag_name | sed 's/^v//')
-wget https://github.com/dragonflyoss/image-service/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+NYDUS_VER=v$(curl -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
 tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz
 sudo cp nydus-static/nydus-overlayfs /usr/local/sbin/
 ```

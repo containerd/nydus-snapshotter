@@ -2,26 +2,26 @@
 [**[📖 Website]**](https://nydus.dev/)
 [**[☸ Quick Start (Kubernetes)**]](https://github.com/containerd/nydus-snapshotter/blob/main/docs/run_nydus_in_kubernetes.md)
 [**[🤓 Quick Start (nerdctl)**]](https://github.com/containerd/nerdctl/blob/master/docs/nydus.md)
-[**[❓ FAQs & Troubleshooting]**](https://github.com/dragonflyoss/image-service/wiki/FAQ)
+[**[❓ FAQs & Troubleshooting]**](https://github.com/dragonflyoss/nydus/wiki/FAQ)
 
 # Nydus Snapshotter
 
-<p><img src="https://github.com/dragonflyoss/image-service/blob/master/misc/logo.svg" width="170"></p>
+<p><img src="https://github.com/dragonflyoss/nydus/blob/master/misc/logo.svg" width="170"></p>
 
 [![Release Version](https://img.shields.io/github/v/release/containerd/nydus-snapshotter?style=flat)](https://github.com/containerd/nydus-snapshotter/releases)
 [![LICENSE](https://img.shields.io/github/license/containerd/nydus-snapshotter.svg?style=flat)](https://github.com/containerd/nydus-snapshotter/blob/main/LICENSE)
 ![CI](https://github.com/containerd/nydus-snapshotter/actions/workflows/ci.yml/badge.svg?event=push)
 [![Go Report Card](https://goreportcard.com/badge/github.com/containerd/nydus-snapshotter?style=flat)](https://goreportcard.com/report/github.com/containerd/nydus-snapshotter)
 [![Twitter](https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Ftwitter.com%2Fdragonfly_oss)](https://twitter.com/dragonfly_oss)
-[![Nydus Stars](https://img.shields.io/github/stars/dragonflyoss/image-service?label=Nydus%20Stars&style=social)](https://github.com/dragonflyoss/image-service)
+[![Nydus Stars](https://img.shields.io/github/stars/dragonflyoss/nydus?label=Nydus%20Stars&style=social)](https://github.com/dragonflyoss/nydus)
 
 Nydus-snapshotter is a **non-core** sub-project of containerd.
 
 Nydus snapshotter is an external plugin of containerd for [Nydus image service](https://nydus.dev) which implements a chunk-based content-addressable filesystem on top of a called `RAFS (Registry Acceleration File System)` format that improves the current OCI image specification, in terms of container launching speed, image space, and network bandwidth efficiency, as well as data integrity with several runtime backends: FUSE, virtiofs and in-kernel [EROFS](https://www.kernel.org/doc/html/latest/filesystems/erofs.html).
 
-Nydus supports lazy pulling feature since pulling image is one of the time-consuming steps in the container lifecycle. Lazy pulling here means a container can run even the image is partially available and necessary chunks of the image are fetched on-demand. Apart from that, Nydus also supports [(e)Stargz](https://github.com/containerd/stargz-snapshotter) and OCI (by using [zran](https://github.com/dragonflyoss/image-service/blob/master/docs/nydus-zran.md)) lazy pulling directly **WITHOUT** any explicit conversion.
+Nydus supports lazy pulling feature since pulling image is one of the time-consuming steps in the container lifecycle. Lazy pulling here means a container can run even the image is partially available and necessary chunks of the image are fetched on-demand. Apart from that, Nydus also supports [(e)Stargz](https://github.com/containerd/stargz-snapshotter) and OCI (by using [zran](https://github.com/dragonflyoss/nydus/blob/master/docs/nydus-zran.md)) lazy pulling directly **WITHOUT** any explicit conversion.
 
-For more details about how to build Nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/image-service/blob/master/docs/nydusify.md) conversion tool and [acceld](https://github.com/goharbor/acceleration-service).
+For more details about how to build Nydus container image, please refer to [nydusify](https://github.com/dragonflyoss/nydus/blob/master/docs/nydusify.md) conversion tool and [acceld](https://github.com/goharbor/acceleration-service).
 
 ## Architecture
 
@@ -64,7 +64,7 @@ systemctl restart containerd
 
 ### Get Nydus Binaries
 
-Get `nydusd` `nydus-image` and `nydusctl` binaries from [nydus releases page](https://github.com/dragonflyoss/image-service/releases).
+Get `nydusd` `nydus-image` and `nydusctl` binaries from [nydus releases page](https://github.com/dragonflyoss/nydus/releases).
 It's suggested to install the binaries to your system path. `nydusd` is FUSE userspace daemon and a vhost-user-fs backend. Nydus-snapshotter
 will fork a nydusd process when necessary.
 
@@ -196,7 +196,7 @@ Feel free to reach/join us via Slack and/or Dingtalk.
 - **Twitter:** [@dragonfly_oss](https://twitter.com/dragonfly_oss)
 - **Dingtalk:** [34971767](https://qr.dingtalk.com/action/joingroup?code=v1,k1,ioWGzuDZEIO10Bf+/ohz4RcQqAkW0MtOwoG1nbbMxQg=&_dt_no_comment=1&origin=11)
 
-<img src="https://github.com/dragonflyoss/image-service/blob/master/misc/dingtalk.jpg" width="250" height="300"/>
+<img src="https://github.com/dragonflyoss/nydus/blob/master/misc/dingtalk.jpg" width="250" height="300"/>
 
 - **Technical Meeting:** Every Wednesday at 06:00 UTC (Beijing, Shanghai 14:00), please see our [HackMD](https://hackmd.io/@Nydus/Bk8u2X0p9) page for more information.
 
