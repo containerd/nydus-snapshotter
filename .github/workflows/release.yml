@@ -13,6 +13,27 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - build-os: linux
+            build-arch: amd64
+            build-linker: x86-64
+          - build-os: linux
+            build-arch: arm64
+            build-linker: aarch64
+          - build-os: linux
+            build-arch: s390x
+            build-linker: s390x
+          - build-os: linux
+            build-arch: ppc64le
+            build-linker: powerpc64le
+          - build-os: linux
+            build-arch: riscv64
+            build-linker: riscv64
+          - build-os: linux
+            build-arch: static
+            build-linker: static
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -22,9 +43,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          key: ${{ matrix.build-os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go
+            ${{ matrix.build-os }}-go
       - name: cache cargo
         uses: actions/cache@v3
         with:
@@ -34,23 +55,29 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             tools/optimizer-server/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('tools/optimizer-server/Cargo.lock') }}
+          key: ${{ matrix.build-os }}-cargo-${{ hashFiles('tools/optimizer-server/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo
+            ${{ matrix.build-os }}-cargo
+      - name: install gnu gcc linker
+        run: |
+          if [ "${{ matrix.build-linker }}" != "static" ]; then
+            sudo apt-get install -y gcc-${{ matrix.build-linker }}-linux-gnu
+          fi
       - name: build nydus-snapshotter and optimizer
         run: |
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
           export PATH=$PATH:$(go env GOPATH)/bin
-          make static-release
+          if [ "${{ matrix.build-arch }}" == "static" ]; then
+            make static-package
+          else
+            make package GOOS=${{ matrix.build-os }} GOARCH=${{ matrix.build-arch }}
+          fi
       - name: upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: nydus-snapshotter_artifacts
+          name: release-tars-${{ matrix.build-os }}-${{ matrix.build-arch }}
           path: |
-            bin/containerd-nydus-grpc
-            bin/nydus-overlayfs
-            bin/optimizer-nri-plugin
-            bin/optimizer-server
+            package/*.tar.gz*
   upload:
     runs-on: ubuntu-latest
     needs: [build]
@@ -59,28 +86,14 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v3
         with:
-          name: nydus-snapshotter_artifacts
-          path: nydus-snapshotter
-      - name: Upload Artifacts
-        run: |
-          tag=$(echo $GITHUB_REF | cut -d/ -f3-)
-          tarball="nydus-snapshotter-$tag-x86_64.tgz"
-          chmod +x nydus-snapshotter/*
-          tar cf - nydus-snapshotter | gzip > ${tarball}
-          echo "tag=$tag" >> $GITHUB_ENV
-          echo "tarball=$tarball" >> $GITHUB_ENV
-
-          tarball_shasum="$tarball.sha256sum"
-          sha256sum $tarball > $tarball_shasum
-          echo "tarball_shasum=$tarball_shasum" >> $GITHUB_ENV
+          path: builds
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           name: "Nydus Snapshotter ${{ env.tag }} Release"
           generate_release_notes: true
           files: |
-            ${{ env.tarball }}
-            ${{ env.tarball_shasum }}
+            builds/release-tars-**/*
 
   publish-image:
     runs-on: ubuntu-latest
@@ -97,8 +110,11 @@ jobs:
       - name: download artifacts
         uses: actions/download-artifact@v3
         with:
-          name: nydus-snapshotter_artifacts
+          name: release-tars-linux-static
           path: misc/snapshotter
+      - name: unpack static release
+        run: |
+          cd misc/snapshotter && tar -zxf *.tar.gz && mv bin/* . && rm -rf bin
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v4
