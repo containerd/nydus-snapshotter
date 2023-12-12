@@ -19,6 +19,7 @@ require (
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3
 	github.com/containers/ocicrypt v1.1.7
+	github.com/distribution/reference v0.5.0
 	github.com/docker/cli v23.0.1+incompatible
 	github.com/freddierice/go-losetup v0.0.0-20220711213114-2a14873012db
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -82,7 +83,7 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/docker/distribution v2.8.2+incompatible
+	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker v23.0.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/docker/distribution/reference"
+	"github.com/distribution/reference"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
