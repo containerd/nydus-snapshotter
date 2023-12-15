@@ -27,7 +27,8 @@ pprof_address = ""
 nydusd_config = "/etc/nydus/nydusd-config.fusedev.json"
 nydusd_path = "/usr/local/bin/nydusd"
 nydusimage_path = "/usr/local/bin/nydus-image"
-# fusedev or fscache
+# The fs driver can be one of the following options: fusedev, fscache, blockdev, proxy, or nodev. 
+# If `fs_driver` option is not specified, the default value is fusedev.
 fs_driver = "fusedev"
 # How to process when daemon dies: "none", "restart" or "failover"
 recover_policy = "restart"
