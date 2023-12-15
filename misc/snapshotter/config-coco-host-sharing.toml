@@ -1,4 +1,3 @@
-
 version = 1
 # Snapshotter's own home directory where it stores and creates necessary resources
 root = "/var/lib/containerd-nydus"
