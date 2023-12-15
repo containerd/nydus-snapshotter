@@ -2,13 +2,13 @@ FROM alpine:3.17.0 AS sourcer
 
 ARG NYDUS_VER=v2.1.5
 
-RUN apk add --no-cache curl
-RUN apk add --no-cache --upgrade grep
-RUN wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+RUN apk add --no-cache curl && \
+    apk add --no-cache --upgrade grep && \
+    curl -OL https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     echo $NYDUS_VER > /.nydus_version && \
     tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
-    rm nydus-static-$NYDUS_VER-linux-amd64.tgz
-RUN mv nydus-static/* /
+    rm nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+    mv nydus-static/* /
 
 FROM alpine:3.17.0
 
@@ -24,8 +24,11 @@ RUN mkdir -p /usr/local/bin/ /etc/nydus/ /var/lib/containerd-nydus/cache /tmp/bl
 COPY --from=sourcer /nydus* /usr/local/bin/
 COPY containerd-nydus-grpc /usr/local/bin/
 RUN chmod +x /usr/local/bin/containerd-nydus-grpc
-COPY nydusd-config.fusedev.json /etc/nydus/config.json
-COPY nydusd-config-localfs.json /etc/nydus/localfs.json
+COPY nydusd-config.fusedev.json /etc/nydus/nydusd-fusedev.json
+COPY nydusd-config-localfs.json /etc/nydus/nydusd-localfs.json
+COPY nydusd-config.fscache.json /etc/nydus/nydusd-fscache.json
+COPY config.toml /etc/nydus/config.toml
+
 COPY entrypoint.sh /
 
 ENTRYPOINT ["/entrypoint.sh"]
