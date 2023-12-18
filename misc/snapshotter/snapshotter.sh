@@ -38,6 +38,10 @@ die() {
     exit 1
 }
 
+print_usage() {
+	echo "Usage: $0 [deploy/cleanup]"
+}
+
 function fs_driver_handler() {
 
     case "${FS_DRIVER}" in
@@ -149,3 +153,34 @@ function cleanup_snapshotter() {
     rm -rf "${SNAPSHOTTER_SCRYPT_DIR}"
     rm -rf "${NYDUS_LIB_DIR}/*"
 }
+
+function main() {
+    # script requires that user is root
+    euid=$(id -u)
+    if [[ $euid -ne 0 ]]; then
+        die "This script must be run as root"
+    fi
+
+    action=${1:-}
+    if [ -z "$action" ]; then
+        print_usage
+        die "invalid arguments"
+    fi
+
+    case "$action" in
+    deploy)
+        deploy_snapshotter
+        ;;
+    cleanup)
+        cleanup_snapshotter
+        ;;
+    *)
+        die "invalid arguments"
+        print_usage
+        ;;
+    esac
+
+    sleep infinity
+}
+
+main "$@"
