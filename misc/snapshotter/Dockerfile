@@ -13,17 +13,17 @@ RUN apk add --no-cache curl && \
 FROM alpine:3.17.0
 
 WORKDIR /root/
-
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat bash jq gcompat
 
 VOLUME /var/lib/containerd-nydus /run/containerd-nydus
 
 COPY --from=sourcer /.nydus_version /.nydus_version
 
-RUN mkdir -p /usr/local/bin/ /etc/nydus/ /var/lib/containerd-nydus/cache /tmp/blobs/
-COPY --from=sourcer /nydus* /usr/local/bin/
-COPY containerd-nydus-grpc /usr/local/bin/
-RUN chmod +x /usr/local/bin/containerd-nydus-grpc
+RUN mkdir -p /usr/bin/ /opt/nydus/ /var/lib/containerd-nydus/cache /tmp/blobs/
+COPY --from=sourcer /nydus* /usr/bin/
+COPY containerd-nydus-grpc /usr/bin/
+COPY snapshotter.sh /opt/nydus/snapshotter.sh
+RUN chmod +x /usr/bin/containerd-nydus-grpc /opt/nydus/snapshotter.sh
 COPY nydusd-config.fusedev.json /etc/nydus/nydusd-fusedev.json
 COPY nydusd-config-localfs.json /etc/nydus/nydusd-localfs.json
 COPY nydusd-config.fscache.json /etc/nydus/nydusd-fscache.json

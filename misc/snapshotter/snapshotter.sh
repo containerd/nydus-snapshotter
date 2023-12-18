@@ -19,13 +19,15 @@ SNAPSHOTTER_GRPC_SOCKET="${SNAPSHOTTER_GRPC_SOCKET:-/run/containerd-nydus/contai
 # The directory about nydus and nydus snapshotter
 NYDUS_CONFIG_DIR="${NYDUS_CONFIG_DIR:-/etc/nydus}"
 NYDUS_LIB_DIR="${NYDUS_LIB_DIR:-/var/lib/containerd-nydus}"
-NYDUS_BINARY_DIR="${NYDUS_BINARY_DIR:-/usr/local/bin}"
+NYDUS_BINARY_DIR="${NYDUS_BINARY_DIR:-/usr/bin}"
 SNAPSHOTTER_SCRYPT_DIR="${SNAPSHOTTER_SCRYPT_DIR:-/opt/nydus}"
 
 # The binary about nydus-snapshotter
 SNAPSHOTTER_BINARY="${SNAPSHOTTER_BINARY:-${NYDUS_BINARY_DIR}/containerd-nydus-grpc}"
 # The config about nydus snapshotter
 SNAPSHOTTER_CONFIG="${SNAPSHOTTER_CONFIG:-${NYDUS_CONFIG_DIR}/config.toml}"
+# If true, the script would read the config from env.
+ENABLE_CONFIG_FROM_VOLUME="${ENABLE_CONFIG_FROM_VOLUME:-false}"
 # If true, the script would enable the "runtime specific snapshotter" in containerd config.
 ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER="${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER:-false}"
 
@@ -39,36 +41,39 @@ die() {
 }
 
 print_usage() {
-	echo "Usage: $0 [deploy/cleanup]"
+    echo "Usage: $0 [deploy/cleanup]"
 }
 
 function fs_driver_handler() {
-
-    case "${FS_DRIVER}" in
-    fusedev) 
-        sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fusedev.json\"|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|fs_driver = .*|fs_driver = \"fusedev\"|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}" 
-        ;;
-    fscache) 
-        sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fscache.json\"|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|fs_driver = .*|fs_driver = \"fscache\"|" "${SNAPSHOTTER_CONFIG}"
-        sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}"  
-        ;;
-    blockdev) 
-        sed -i -e "s|fs_driver = .*|fs_driver = \"blockdev\"|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|enable_tarfs = .*|enable_tarfs = true|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"  
-        sed -i -e "s|export_mode = .*|export_mode = \"layer_block_with_verity\"|" "${SNAPSHOTTER_CONFIG}"  
-        ;;
-    proxy) 
-        sed -i -e "s|fs_driver = .*|fs_driver = \"proxy\"|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}" 
-        sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"  
-        ;;
-    *) die "invalid fs driver ${FS_DRIVER}" ;;
-    esac
+    if [ "${ENABLE_CONFIG_FROM_VOLUME}" == "true" ]; then
+        SNAPSHOTTER_CONFIG="/etc/nydus-snapshotter/config.toml"
+    else
+        case "${FS_DRIVER}" in
+        fusedev) 
+            sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fusedev.json\"|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|fs_driver = .*|fs_driver = \"fusedev\"|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}" 
+            ;;
+        fscache) 
+            sed -i -e "s|nydusd_config = .*|nydusd_config = \"${NYDUS_CONFIG_DIR}/nydusd-fscache.json\"|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|fs_driver = .*|fs_driver = \"fscache\"|" "${SNAPSHOTTER_CONFIG}"
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"multiple\"|" "${SNAPSHOTTER_CONFIG}"  
+            ;;
+        blockdev) 
+            sed -i -e "s|fs_driver = .*|fs_driver = \"blockdev\"|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|enable_tarfs = .*|enable_tarfs = true|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"  
+            sed -i -e "s|export_mode = .*|export_mode = \"layer_block_with_verity\"|" "${SNAPSHOTTER_CONFIG}"  
+            ;;
+        proxy) 
+            sed -i -e "s|fs_driver = .*|fs_driver = \"proxy\"|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|enable_kata_volume = .*|enable_kata_volume = true|" "${SNAPSHOTTER_CONFIG}" 
+            sed -i -e "s|daemon_mode = .*|daemon_mode = \"none\"|" "${SNAPSHOTTER_CONFIG}"  
+            ;;
+        *) die "invalid fs driver ${FS_DRIVER}" ;;
+        esac
+    fi
     COMMANDLINE+=" --config ${SNAPSHOTTER_CONFIG}"
 }
 
