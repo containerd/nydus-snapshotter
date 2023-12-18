@@ -129,3 +129,23 @@ function deploy_snapshotter() {
     configure_snapshotter
     ${COMMANDLINE} &
 }
+
+function cleanup_snapshotter() {
+    echo "cleaning up snapshotter"
+
+    pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}')
+    if [ ! -z "$pid" ]; then
+        for i in $(nsenter -t 1 -m ctr -n k8s.io snapshot --snapshotter nydus list | grep -v KEY | cut -d' ' -f1); do
+            nsenter -t 1 -m ctr -n k8s.io snapshot --snapshotter nydus rm $i || true
+        done
+    fi
+    echo "Recover containerd config"
+    cat "$CONTAINER_RUNTIME_CONFIG".bak.nydus >"$CONTAINER_RUNTIME_CONFIG"
+    kill -9 $pid || true
+    echo "Removing nydus-snapshotter artifacts from host"
+    rm -f "${SNAPSHOTTER_BINARY}"
+    rm -f "${NYDUS_BINARY_DIR}/nydus-overlayfs"
+    rm -rf "${NYDUS_CONFIG_DIR}"
+    rm -rf "${SNAPSHOTTER_SCRYPT_DIR}"
+    rm -rf "${NYDUS_LIB_DIR}/*"
+}
