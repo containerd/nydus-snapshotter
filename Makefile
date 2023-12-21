@@ -1,5 +1,6 @@
 all: clean build
 optimizer: clean-optimizer build-optimizer
+prefetch: clean-prefetch build-prefetch
 
 PKG = github.com/containerd/nydus-snapshotter
 PACKAGES ?= $(shell go list ./... | grep -v /tests)
@@ -95,6 +96,10 @@ static-package: package/$(STATIC_RELEASE).tar.gz
 converter:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/converter ./cmd/converter
 
+.PHONY: build-prefetch
+build-prefetch:
+	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/prefetchfiles-nri-plugin ./cmd/prefetchfiles-nri-plugin
+
 .PHONY: clean
 clean:
 	rm -f bin/*
@@ -104,6 +109,10 @@ clean:
 clean-optimizer:
 	rm -rf bin/optimizer-nri-plugin bin/optimizer-server
 	make -C tools/optimizer-server clean
+
+.PHONY: clean-prefetch
+clean-prefetch:
+	rm -rf bin/prefetch-nri-plugin
 
 .PHONY: install
 install:
@@ -128,6 +137,10 @@ install-optimizer:
 	sudo install -D -m 755 misc/example/optimizer-nri-plugin.conf /etc/nri/conf.d/02-optimizer-nri-plugin.conf
 
 	@sudo mkdir -p /opt/nri/optimizer/results
+
+install-prefetch:
+	sudo install -D -m 755 bin/prefetchfiles-nri-plugin /opt/nri/plugins/03-prefetchfiles-nri-plugin
+	sudo install -D -m 755 misc/example/prefetchfiles-nri-plugin.conf /etc/nri/conf.d/03-prefetchfiles-nri-plugin.conf
 
 .PHONY: vet
 vet:
