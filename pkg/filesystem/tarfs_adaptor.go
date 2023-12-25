@@ -82,3 +82,10 @@ func (fs *Filesystem) GetTarfsImageDiskFilePath(id string) (string, error) {
 	}
 	return fs.tarfsMgr.ImageDiskFilePath(id), nil
 }
+
+func (fs *Filesystem) GetTarfsLayerDiskFilePath(id string) (string, error) {
+	if fs.tarfsMgr == nil {
+		return "", errors.New("tarfs mode is not enabled")
+	}
+	return fs.tarfsMgr.LayerDiskFilePath(id), nil
+}

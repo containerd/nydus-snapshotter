@@ -52,7 +52,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 
 			logger.Infof("Nydus remote snapshot %s is ready", id)
-			mounts, err := sn.mountRemote(ctx, labels, s, id)
+			mounts, err := sn.mountRemote(ctx, labels, s, id, key)
 			return false, mounts, err
 		}
 	}

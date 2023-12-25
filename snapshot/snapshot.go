@@ -433,7 +433,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	}
 
 	if needRemoteMounts {
-		return o.mountRemote(ctx, info.Labels, *snap, metaSnapshotID)
+		return o.mountRemote(ctx, info.Labels, *snap, metaSnapshotID, key)
 	}
 
 	return o.mountNative(ctx, info.Labels, *snap)
@@ -531,7 +531,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 	}
 
 	if needRemoteMounts {
-		return o.mountRemote(ctx, base.Labels, s, metaSnapshotID)
+		return o.mountRemote(ctx, base.Labels, s, metaSnapshotID, key)
 	}
 	return o.mountNative(ctx, base.Labels, s)
 }
@@ -840,7 +840,7 @@ func overlayMount(options []string) []mount.Mount {
 
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
 // `s` and `id` can represent a different layer, it's useful when View an image
-func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string, s storage.Snapshot, id string) ([]mount.Mount, error) {
+func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string, s storage.Snapshot, id, key string) ([]mount.Mount, error) {
 	var overlayOptions []string
 	if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
 		overlayOptions = append(overlayOptions, "volatile")
@@ -871,7 +871,7 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	log.G(ctx).Infof("remote mount options %v", overlayOptions)
 
 	if o.enableKataVolume {
-		return o.mountWithKataVolume(ctx, id, overlayOptions)
+		return o.mountWithKataVolume(ctx, id, overlayOptions, key)
 	}
 	// Add `extraoption` if NydusOverlayFS is enable or daemonMode is `None`
 	if o.enableNydusOverlayFS || config.GetDaemonMode() == config.DaemonModeNone {

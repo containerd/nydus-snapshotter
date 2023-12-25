@@ -466,10 +466,17 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	updateFields := []string{}
 
 	wholeImage, exportDisk, withVerity := config.GetTarfsExportFlags()
+
+	log.L.Debugf("ExportBlockData wholeImage = %v, exportDisk = %v, withVerity = %v, perLayer = %v", wholeImage, exportDisk, withVerity, perLayer)
 	// Nothing to do for this case, all needed datum are ready.
 	if !exportDisk && !withVerity {
 		return updateFields, nil
 	} else if !wholeImage != perLayer {
+		// Special handling for `layer_block` mode
+		if exportDisk && !withVerity && !perLayer {
+			labels[label.NydusLayerBlockInfo] = ""
+			updateFields = append(updateFields, "labels."+label.NydusLayerBlockInfo)
+		}
 		return updateFields, nil
 	}
 
@@ -505,7 +512,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		diskFileName = t.ImageDiskFilePath(blobID)
 	} else {
 		metaFileName = t.layerMetaFilePath(storageLocater(snapshotID))
-		diskFileName = t.layerDiskFilePath(blobID)
+		diskFileName = t.LayerDiskFilePath(blobID)
 	}
 
 	// Do not regenerate if the disk image already exists.
@@ -821,7 +828,7 @@ func (t *Manager) layerTarFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID)
 }
 
-func (t *Manager) layerDiskFilePath(blobID string) string {
+func (t *Manager) LayerDiskFilePath(blobID string) string {
 	return filepath.Join(t.cacheDirPath, blobID+"."+TarfsLayerDiskName)
 }
 
