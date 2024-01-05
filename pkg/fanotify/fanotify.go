@@ -14,6 +14,7 @@ import (
 	"log/syslog"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,28 +25,33 @@ import (
 )
 
 type Server struct {
-	BinaryPath   string
-	ContainerPid uint32
-	ImageName    string
-	PersistFile  string
-	Readable     bool
-	Overwrite    bool
-	Timeout      time.Duration
-	Client       *conn.Client
-	Cmd          *exec.Cmd
-	LogWriter    *syslog.Writer
+	BinaryPath    string
+	ContainerPid  uint32
+	ImageName     string
+	PersistFile   string
+	Readable      bool
+	Overwrite     bool
+	Timeout       time.Duration
+	Client        *conn.Client
+	Cmd           *exec.Cmd
+	LogWriter     *syslog.Writer
+	ContainerName string
+	IsSent        bool
+	Mu            sync.Mutex
 }
 
-func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, readable bool, overwrite bool, timeout time.Duration, logWriter *syslog.Writer) *Server {
+func NewServer(binaryPath string, containerPid uint32, imageName string, persistFile string, readable bool, overwrite bool, timeout time.Duration, logWriter *syslog.Writer, containerName string, hasSentPrefetchList bool) *Server {
 	return &Server{
-		BinaryPath:   binaryPath,
-		ContainerPid: containerPid,
-		ImageName:    imageName,
-		PersistFile:  persistFile,
-		Readable:     readable,
-		Overwrite:    overwrite,
-		Timeout:      timeout,
-		LogWriter:    logWriter,
+		BinaryPath:    binaryPath,
+		ContainerPid:  containerPid,
+		ImageName:     imageName,
+		PersistFile:   persistFile,
+		Readable:      readable,
+		Overwrite:     overwrite,
+		Timeout:       timeout,
+		LogWriter:     logWriter,
+		ContainerName: containerName,
+		IsSent:        hasSentPrefetchList,
 	}
 }
 
@@ -137,6 +143,7 @@ func (fserver *Server) RunReceiver() error {
 				return errors.Wrapf(err, "failed to write csv")
 			}
 			csvWriter.Flush()
+
 		}
 	}
 
