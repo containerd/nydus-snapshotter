@@ -34,6 +34,10 @@ nodes:
 
 Next, we also need a config for containerd(`containerd-config.toml`).
 
+**NOTE:** It may be necessary to explain here why `disable_snapshot_annotations` and `discard_unpacked_layers` need to be configured in containerd.
+- `disable_snapshot_annotations`: This variable disables to pass additional annotations (image related information) to snapshotters in containerd (default value is `true`). In nydus snapshotter, we need these annotations to pull images. Therefore, we need to set it to `false`.
+- `discard_unpacked_layers`: This variable allows GC to remove layers from the content store after successfully unpacking these layers to the snapshotter in containerd (default value is `true`). In nydus snapshotter, we need to preserve layers for demand pulling and sharing even after they are unpacked. Therefore, we need to set it to `false`.
+
 ```toml
 version = 2
 [debug]
