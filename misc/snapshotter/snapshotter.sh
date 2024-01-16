@@ -8,6 +8,8 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
+SNAPSHOTTER_ARTIFACTS_DIR="/opt/nydus-artifacts"
+
 # Container runtime config, the default container runtime is containerd
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-containerd}"
 CONTAINER_RUNTIME_CONFIG="${CONTAINER_RUNTIME_CONFIG:-/etc/containerd/config.toml}"
@@ -19,17 +21,22 @@ SNAPSHOTTER_GRPC_SOCKET="${SNAPSHOTTER_GRPC_SOCKET:-/run/containerd-nydus/contai
 # The directory about nydus and nydus snapshotter
 NYDUS_CONFIG_DIR="${NYDUS_CONFIG_DIR:-/etc/nydus}"
 NYDUS_LIB_DIR="${NYDUS_LIB_DIR:-/var/lib/containerd-nydus}"
-NYDUS_BINARY_DIR="${NYDUS_BINARY_DIR:-/usr/bin}"
+NYDUS_BINARY_DIR="${NYDUS_BINARY_DIR:-/usr/local/bin}"
 SNAPSHOTTER_SCRYPT_DIR="${SNAPSHOTTER_SCRYPT_DIR:-/opt/nydus}"
 
 # The binary about nydus-snapshotter
 SNAPSHOTTER_BINARY="${SNAPSHOTTER_BINARY:-${NYDUS_BINARY_DIR}/containerd-nydus-grpc}"
+
 # The config about nydus snapshotter
 SNAPSHOTTER_CONFIG="${SNAPSHOTTER_CONFIG:-${NYDUS_CONFIG_DIR}/config.toml}"
+# The systemd service config about nydus snapshotter
+SNAPSHOTTER_SERVICE="${SNAPSHOTTER_SERVICE:-/etc/systemd/system/nydus-snapshotter.service}"
 # If true, the script would read the config from env.
 ENABLE_CONFIG_FROM_VOLUME="${ENABLE_CONFIG_FROM_VOLUME:-false}"
 # If true, the script would enable the "runtime specific snapshotter" in containerd config.
 ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER="${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER:-false}"
+# If true, the snapshotter would be running as a systemd service
+ENABLE_SYSTEMD_SERVICE="${ENABLE_SYSTEMD_SERVICE:-false}"
 
 COMMANDLINE=""
 
@@ -46,7 +53,7 @@ print_usage() {
 
 function fs_driver_handler() {
     if [ "${ENABLE_CONFIG_FROM_VOLUME}" == "true" ]; then
-        SNAPSHOTTER_CONFIG="/etc/nydus-snapshotter/config.toml"
+        SNAPSHOTTER_CONFIG="${NYDUS_CONFIG_DIR}/config.toml"
     else
         case "${FS_DRIVER}" in
         fusedev) 
@@ -131,12 +138,42 @@ EOF
     nsenter -t 1 -m systemctl -- restart containerd.service
 }
 
+function install_snapshotter() {
+    echo "install nydus snapshotter artifacts"
+    find "${SNAPSHOTTER_ARTIFACTS_DIR}${NYDUS_BINARY_DIR}" -type f -exec install -Dm 755 -t "${NYDUS_BINARY_DIR}" "{}"  \;
+    find "${SNAPSHOTTER_ARTIFACTS_DIR}${NYDUS_CONFIG_DIR}" -type f -exec install -Dm 644 -t "${NYDUS_CONFIG_DIR}" "{}"  \;
+    install -D -m 644 "${SNAPSHOTTER_ARTIFACTS_DIR}${SNAPSHOTTER_SCRYPT_DIR}/snapshotter.sh" "${SNAPSHOTTER_SCRYPT_DIR}/snapshotter.sh"
+    if [ "${ENABLE_SYSTEMD_SERVICE}" == "true" ]; then
+        install -D -m 644 "${SNAPSHOTTER_ARTIFACTS_DIR}${SNAPSHOTTER_SERVICE}" "${SNAPSHOTTER_SERVICE}"
+    fi
+    if [ "${ENABLE_CONFIG_FROM_VOLUME}" == "true" ]; then
+        find "/etc/nydus-snapshotter" -type f -exec install -Dm 644 -t "${NYDUS_CONFIG_DIR}" "{}"  \;
+    fi
+}
+
 function deploy_snapshotter() {
     echo "deploying snapshotter"
+    if [ ! -f "${CONTAINER_RUNTIME_CONFIG}" ] && [ "${CONTAINER_RUNTIME}" == "containerd" ]; then
+        mkdir -p /etc/containerd || true
+        containerd config default >/etc/containerd/config.toml
+    fi
+
+    install_snapshotter
+
     COMMANDLINE="${SNAPSHOTTER_BINARY}"
     fs_driver_handler
     configure_snapshotter
-    ${COMMANDLINE} &
+    if [ "${ENABLE_SYSTEMD_SERVICE}" == "true" ]; then
+        echo "running snapshotter as systemd service"
+        sed -i "s|^ExecStart=.*$|ExecStart=$COMMANDLINE|" "${SNAPSHOTTER_SERVICE}"
+        nsenter -t 1 -m systemctl daemon-reload
+        nsenter -t 1 -m systemctl enable nydus-snapshotter.service
+        nsenter -t 1 -m systemctl start nydus-snapshotter.service
+        nsenter -t 1 -m systemctl -- restart containerd.service
+    else
+        echo "running snapshotter as standalone process"
+        ${COMMANDLINE} &
+    fi
 }
 
 function cleanup_snapshotter() {
@@ -150,12 +187,19 @@ function cleanup_snapshotter() {
     fi
     echo "Recover containerd config"
     cat "$CONTAINER_RUNTIME_CONFIG".bak.nydus >"$CONTAINER_RUNTIME_CONFIG"
-    kill -9 $pid || true
+    if [ "${ENABLE_SYSTEMD_SERVICE}" == "true" ]; then
+        nsenter -t 1 -m systemctl stop nydus-snapshotter.service
+        nsenter -t 1 -m systemctl disable --now nydus-snapshotter.service
+        rm -f "${SNAPSHOTTER_SERVICE}"
+    else
+        kill -9 $pid || true
+    fi
+    nsenter -t 1 -m systemctl -- restart containerd.service
     echo "Removing nydus-snapshotter artifacts from host"
     rm -f "${SNAPSHOTTER_BINARY}"
-    rm -f "${NYDUS_BINARY_DIR}/nydus-overlayfs"
-    rm -rf "${NYDUS_CONFIG_DIR}"
-    rm -rf "${SNAPSHOTTER_SCRYPT_DIR}"
+    rm -f "${NYDUS_BINARY_DIR}/nydus*"
+    rm -rf "${NYDUS_CONFIG_DIR}/*"
+    rm -rf "${SNAPSHOTTER_SCRYPT_DIR}/*"
     rm -rf "${NYDUS_LIB_DIR}/*"
 }
 

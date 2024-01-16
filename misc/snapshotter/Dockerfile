@@ -11,23 +11,28 @@ RUN apk add --no-cache curl && \
     mv nydus-static/* /
 
 FROM alpine:3.17.0
+ARG DESTINATION=/opt/nydus-artifacts
+ARG CONFIG_DESTINATION=${DESTINATION}/etc/nydus
+ARG BINARY_DESTINATION=${DESTINATION}/usr/local/bin
+ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 
 WORKDIR /root/
-RUN apk add --no-cache libc6-compat bash jq gcompat
+RUN apk add --no-cache libc6-compat bash
 
 VOLUME /var/lib/containerd-nydus /run/containerd-nydus
 
 COPY --from=sourcer /.nydus_version /.nydus_version
 
-RUN mkdir -p /usr/bin/ /opt/nydus/ /var/lib/containerd-nydus/cache /tmp/blobs/
-COPY --from=sourcer /nydus* /usr/bin/
-COPY containerd-nydus-grpc /usr/bin/
-COPY snapshotter.sh /opt/nydus/snapshotter.sh
-RUN chmod +x /usr/bin/containerd-nydus-grpc /opt/nydus/snapshotter.sh
-COPY nydusd-config.fusedev.json /etc/nydus/nydusd-fusedev.json
-COPY nydusd-config-localfs.json /etc/nydus/nydusd-localfs.json
-COPY nydusd-config.fscache.json /etc/nydus/nydusd-fscache.json
-COPY config.toml /etc/nydus/config.toml
+RUN mkdir -p ${CONFIG_DESTINATION} ${BINARY_DESTINATION} ${SCRIPT_DESTINATION} /var/lib/containerd-nydus/cache /tmp/blobs/
+COPY --from=sourcer /nydus* ${BINARY_DESTINATION}/
+COPY containerd-nydus-grpc ${BINARY_DESTINATION}/
+COPY snapshotter.sh ${SCRIPT_DESTINATION}/snapshotter.sh
+RUN chmod +x ${BINARY_DESTINATION}/containerd-nydus-grpc ${SCRIPT_DESTINATION}/snapshotter.sh
+COPY nydusd-config.fusedev.json ${CONFIG_DESTINATION}/nydusd-fusedev.json
+COPY nydusd-config-localfs.json ${CONFIG_DESTINATION}/nydusd-localfs.json
+COPY nydusd-config.fscache.json ${CONFIG_DESTINATION}/nydusd-fscache.json
+COPY config.toml ${CONFIG_DESTINATION}/config.toml
+COPY nydus-snapshotter.service ${DESTINATION}/etc/systemd/system/nydus-snapshotter.service
 
 COPY entrypoint.sh /
 

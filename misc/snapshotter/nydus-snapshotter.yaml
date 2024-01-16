@@ -8,9 +8,10 @@ metadata:
   namespace: nydus-system
 data:
   FS_DRIVER: "fusedev"
-  ENABLE_CONFIG_FROM_VOLUME: false
-  ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER: false
-    
+  ENABLE_CONFIG_FROM_VOLUME: "false"
+  ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER: "false"
+  ENABLE_SYSTEMD_SERVICE: "true"
+
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -62,7 +63,13 @@ spec:
               configMapKeyRef:
                 name: nydus-snapshotter-configs
                 key: ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER
-                optional: true               
+                optional: true
+          - name: ENABLE_SYSTEMD_SERVICE
+            valueFrom:
+              configMapKeyRef:
+                name: nydus-snapshotter-configs
+                key: ENABLE_SYSTEMD_SERVICE
+                optional: true                    
         lifecycle:
           preStop:
             exec:
@@ -70,12 +77,12 @@ spec:
               - "bash"
               - "-c"
               - |
-                /opt/nydus/snapshotter.sh cleanup
+                /opt/nydus-artifacts/opt/nydus/snapshotter.sh cleanup
         command: 
          - bash
          - -c
          - |-
-           /opt/nydus/snapshotter.sh deploy
+           /opt/nydus-artifacts/opt/nydus/snapshotter.sh deploy
         volumeMounts:
         - name: config-volume
           mountPath: "/etc/nydus-snapshotter"
@@ -85,11 +92,18 @@ spec:
         - name: nydus-run
           mountPath: "/run/containerd-nydus"
           mountPropagation: Bidirectional
+        - name: nydus-opt
+          mountPath: "/opt/nydus"
+          mountPropagation: Bidirectional
+        - name: nydus-etc
+          mountPath: "/etc/nydus"
+          mountPropagation: Bidirectional     
         - name: containerd-conf
           mountPath: "/etc/containerd/config.toml"
         - name: local-bin
-          mountPath: "/usr/local/bin"
-
+          mountPath: "/usr/local/bin/"
+        - name: etc-systemd-system
+          mountPath: "/etc/systemd/system/"
         securityContext:
           privileged: true
 
@@ -106,10 +120,21 @@ spec:
         hostPath:
           path: /var/lib/containerd-nydus
           type: DirectoryOrCreate
+      - name: nydus-opt
+        hostPath:
+          path: /opt/nydus
+          type: DirectoryOrCreate
+      - name: nydus-etc
+        hostPath:
+          path: /etc/nydus
+          type: DirectoryOrCreate
       - name: containerd-conf
         hostPath:
           path: /etc/containerd/config.toml
       - name: local-bin
         hostPath:
           path: /usr/local/bin/
+      - name: etc-systemd-system
+        hostPath:
+          path: /etc/systemd/system/
       
