@@ -51,6 +51,29 @@ print_usage() {
     echo "Usage: $0 [deploy/cleanup]"
 }
 
+wait_service_active(){
+    local wait_time="$1"
+	local sleep_time="$2"
+	local service="$3"
+
+    nsenter -t 1 -m systemctl restart $service
+
+    # Wait for containerd to be running
+    while [ "$wait_time" -gt 0 ]; do
+        if nsenter -t 1 -m systemctl is-active --quiet $service; then
+            echo "$service is running"
+            return 0  
+        else
+            sleep "$sleep_time"
+			wait_time=$((wait_time-sleep_time))
+        fi
+    done
+
+    echo "Timeout reached. $service may not be running."
+    nsenter -t 1 -m systemctl status $service
+    return 1  
+}
+
 function fs_driver_handler() {
     if [ "${ENABLE_CONFIG_FROM_VOLUME}" == "true" ]; then
         SNAPSHOTTER_CONFIG="${NYDUS_CONFIG_DIR}/config.toml"
@@ -134,8 +157,8 @@ EOF
     if [ "${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER}" == "false" ]; then
         sed -i -e '/\[plugins\..*\.containerd\]/,/snapshotter =/ s/snapshotter = "[^"]*"/snapshotter = "nydus"/' "${CONTAINER_RUNTIME_CONFIG}".bak
     fi
+    
     cat "${CONTAINER_RUNTIME_CONFIG}".bak >  "${CONTAINER_RUNTIME_CONFIG}"
-    nsenter -t 1 -m systemctl -- restart containerd.service
 }
 
 function install_snapshotter() {
@@ -168,12 +191,13 @@ function deploy_snapshotter() {
         sed -i "s|^ExecStart=.*$|ExecStart=$COMMANDLINE|" "${SNAPSHOTTER_SERVICE}"
         nsenter -t 1 -m systemctl daemon-reload
         nsenter -t 1 -m systemctl enable nydus-snapshotter.service
-        nsenter -t 1 -m systemctl start nydus-snapshotter.service
-        nsenter -t 1 -m systemctl -- restart containerd.service
+        wait_service_active 30 5 nydus-snapshotter
     else
         echo "running snapshotter as standalone process"
         ${COMMANDLINE} &
     fi
+    wait_service_active 30 5 containerd
+
 }
 
 function cleanup_snapshotter() {
@@ -194,7 +218,7 @@ function cleanup_snapshotter() {
     else
         kill -9 $pid || true
     fi
-    nsenter -t 1 -m systemctl -- restart containerd.service
+    wait_service_active 30 5 containerd
     echo "Removing nydus-snapshotter artifacts from host"
     rm -f "${SNAPSHOTTER_BINARY}"
     rm -f "${NYDUS_BINARY_DIR}/nydus*"
