@@ -34,6 +34,3 @@ COPY nydusd-config.fscache.json ${CONFIG_DESTINATION}/nydusd-fscache.json
 COPY config.toml ${CONFIG_DESTINATION}/config.toml
 COPY nydus-snapshotter.service ${DESTINATION}/etc/systemd/system/nydus-snapshotter.service
 
-COPY entrypoint.sh /
-
-ENTRYPOINT ["/entrypoint.sh"]
