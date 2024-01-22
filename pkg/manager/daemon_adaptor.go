@@ -23,7 +23,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
-	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
 )
 
 const endpointGetBackend string = "/api/v1/daemons/%s/backend"
@@ -122,7 +121,6 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 // Build commandline according to nydusd daemon configuration.
 func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool) (*exec.Cmd, error) {
 	var cmdOpts []command.Opt
-	var imageReference string
 
 	nydusdThreadNum := d.NydusdThreadNum()
 
@@ -147,8 +145,6 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 			if rafs == nil {
 				return nil, errors.Wrapf(errdefs.ErrNotFound, "daemon %s no rafs instance associated", d.ID())
 			}
-
-			imageReference = rafs.ImageID
 
 			bootstrap, err := rafs.BootstrapFile()
 			if err != nil {
@@ -176,12 +172,8 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 			command.WithID(d.ID()))
 	}
 
-	if imageReference != "" {
-		prefetchfiles := prefetch.Pm.GetPrefetchInfo(imageReference)
-		if prefetchfiles != "" {
-			cmdOpts = append(cmdOpts, command.WithPrefetchFiles(prefetchfiles))
-			prefetch.Pm.DeleteFromPrefetchMap(imageReference)
-		}
+	if d.States.PrefetchDir != "" {
+		cmdOpts = append(cmdOpts, command.WithPrefetchFiles(d.States.PrefetchDir))
 	}
 
 	cmdOpts = append(cmdOpts,
