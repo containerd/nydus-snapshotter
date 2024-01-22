@@ -209,6 +209,11 @@ type SystemControllerConfig struct {
 	DebugConfig DebugConfig `toml:"debug"`
 }
 
+type PrefetchControllerConfig struct {
+	Enable         bool   `toml:"enable"`
+	PrefetchConfig string `toml:"distribution_pull_endpoint"`
+}
+
 type SnapshotterConfig struct {
 	// Configuration format version
 	Version int `toml:"version"`
@@ -229,6 +234,8 @@ type SnapshotterConfig struct {
 	LoggingConfig          LoggingConfig          `toml:"log"`
 	CgroupConfig           CgroupConfig           `toml:"cgroup"`
 	Experimental           Experimental           `toml:"experimental"`
+	// Get prefetch list from http server
+	PrefetchControllerConfig PrefetchControllerConfig `toml:"prefetch"`
 }
 
 func LoadSnapshotterConfig(path string) (*SnapshotterConfig, error) {

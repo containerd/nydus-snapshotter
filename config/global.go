@@ -38,6 +38,7 @@ type GlobalConfig struct {
 	DaemonThreadsNum int
 	CacheGCPeriod    time.Duration
 	MirrorsConfig    MirrorsConfig
+	PrefetchRoot     string
 }
 
 func IsFusedevSharedModeEnabled() bool {
@@ -62,6 +63,18 @@ func GetSocketRoot() string {
 
 func GetConfigRoot() string {
 	return globalConfig.ConfigRoot
+}
+
+func GetPrefetchRoot() string {
+	return globalConfig.PrefetchRoot
+}
+
+func GetPrefetchEndpoint() string {
+	return globalConfig.origin.PrefetchControllerConfig.PrefetchConfig
+}
+
+func IsPrefetchEnabled() bool {
+	return globalConfig.origin.PrefetchControllerConfig.Enable
 }
 
 func GetMirrorsConfigDir() string {
@@ -181,6 +194,7 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.ConfigRoot = filepath.Join(c.Root, "config")
 	globalConfig.SocketRoot = filepath.Join(c.Root, "socket")
 	globalConfig.RootMountpoint = filepath.Join(c.Root, "mnt")
+	globalConfig.PrefetchRoot = filepath.Join(c.Root, "prefetch")
 
 	globalConfig.MirrorsConfig = c.RemoteConfig.MirrorsConfig
 

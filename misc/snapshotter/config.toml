@@ -9,6 +9,10 @@ daemon_mode = "dedicated"
 # Whether snapshotter should try to clean up resources when it is closed
 cleanup_on_close = false
 
+[prefetch]
+enable = false
+get_prefetch_endpoint = "http://localhost:1323/api/v1/prefetch/download"
+
 [system]
 # Snapshotter's debug and trace HTTP server interface
 enable = true
