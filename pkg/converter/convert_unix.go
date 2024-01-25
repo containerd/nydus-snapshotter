@@ -315,7 +315,7 @@ func seekFile(ra content.ReaderAt, targetName string, handle func(io.Reader, *ta
 // provided by the caller.
 //
 // Important: the caller must check `io.WriteCloser.Close() == nil` to ensure
-// the conversion workflow is finished.
+// the conversion workflow is finished if `io.WriteCloser == nil`.
 func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, error) {
 	if opt.FsVersion == "" {
 		opt.FsVersion = "6"
@@ -348,14 +348,93 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 		return nil, fmt.Errorf("'--batch-size' can only be supported by fs version 6")
 	}
 
+	if opt.FromDir != "" {
+		return nil, packFromDirectory(ctx, dest, opt, builderPath, opt.FromDir)
+	}
+
 	if opt.features.Contains(tool.FeatureTar2Rafs) {
 		return packFromTar(ctx, dest, opt)
 	}
 
-	return packFromDirectory(ctx, dest, opt, builderPath)
+	return packFromUnpackedTar(ctx, dest, opt, builderPath)
 }
 
-func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, builderPath string) (io.WriteCloser, error) {
+func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, builderPath, sourceDir string) error {
+	if opt.ExternalBlobWriter == nil {
+		return fmt.Errorf("the 'ExternalBlobWriter' option requires the 'AttributesPath' option be specified")
+	}
+
+	workDir, err := ensureWorkDir(opt.WorkDir)
+	if err != nil {
+		return errors.Wrap(err, "ensure work directory")
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(workDir)
+		}
+	}()
+
+	blobPath := filepath.Join(workDir, "blob")
+	blobFifo, err := fifo.OpenFifo(ctx, blobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
+	if err != nil {
+		return errors.Wrapf(err, "create fifo file for blob")
+	}
+	defer blobFifo.Close()
+
+	externalBlobPath := filepath.Join(workDir, "external-blob")
+	externalBlobFifo, err := fifo.OpenFifo(ctx, externalBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
+	if err != nil {
+		return errors.Wrapf(err, "create fifo file for external blob")
+	}
+	defer externalBlobFifo.Close()
+
+	go func() {
+		err := tool.Pack(tool.PackOption{
+			BuilderPath: builderPath,
+
+			BlobPath:         blobPath,
+			ExternalBlobPath: externalBlobPath,
+			FsVersion:        opt.FsVersion,
+			SourcePath:       sourceDir,
+			ChunkDictPath:    opt.ChunkDictPath,
+			AttributesPath:   opt.AttributesPath,
+			PrefetchPatterns: opt.PrefetchPatterns,
+			AlignedChunk:     opt.AlignedChunk,
+			ChunkSize:        opt.ChunkSize,
+			BatchSize:        opt.BatchSize,
+			Compressor:       opt.Compressor,
+			Timeout:          opt.Timeout,
+			Encrypt:          opt.Encrypt,
+
+			Features: opt.features,
+		})
+		if err != nil {
+			blobFifo.Close()
+		}
+	}()
+
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(dest, blobFifo, *buffer); err != nil {
+			return errors.Wrap(err, "pack to nydus blob")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err := io.CopyBuffer(opt.ExternalBlobWriter, externalBlobFifo, *buffer); err != nil {
+			return errors.Wrap(err, "pack to nydus external blob")
+		}
+		return nil
+	})
+
+	return eg.Wait()
+}
+
+func packFromUnpackedTar(ctx context.Context, dest io.Writer, opt PackOption, builderPath string) (io.WriteCloser, error) {
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure work directory")

@@ -29,11 +29,12 @@ func isSignalKilled(err error) bool {
 type PackOption struct {
 	BuilderPath string
 
-	BootstrapPath    string
 	BlobPath         string
+	ExternalBlobPath string
 	FsVersion        string
 	SourcePath       string
 	ChunkDictPath    string
+	AttributesPath   string
 	PrefetchPatterns string
 	Compressor       string
 	OCIRef           bool
@@ -97,10 +98,21 @@ func buildPackArgs(option PackOption) []string {
 	if option.Features.Contains(FeatureTar2Rafs) {
 		args = append(
 			args,
-			"--type",
-			"tar-rafs",
 			"--blob-inline-meta",
 		)
+		if option.AttributesPath != "" {
+			args = append(
+				args,
+				"--type",
+				"dir-rafs",
+			)
+		} else {
+			args = append(
+				args,
+				"--type",
+				"tar-rafs",
+			)
+		}
 		if option.FsVersion == "6" {
 			args = append(
 				args,
@@ -139,6 +151,12 @@ func buildPackArgs(option PackOption) []string {
 	}
 	if option.Encrypt {
 		args = append(args, "--encrypt")
+	}
+	if option.AttributesPath != "" {
+		args = append(args, "--attributes", option.AttributesPath)
+	}
+	if option.ExternalBlobPath != "" {
+		args = append(args, "--external-blob", option.ExternalBlobPath)
 	}
 	args = append(args, option.SourcePath)
 
