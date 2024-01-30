@@ -17,8 +17,8 @@ VERSION=$(shell git describe --match 'v[0-9]*' --dirty='.m' --always --tags)
 REVISION=$(shell git rev-parse HEAD)$(shell if ! git diff --no-ext-diff --quiet --exit-code; then echo .m; fi)
 
 
-RELEASE=nydus-snapshotter-$(VERSION:v%=%)-${GOOS}-${GOARCH}
-STATIC_RELEASE=nydus-snapshotter-$(VERSION:v%=%)-${GOOS}-static
+RELEASE=nydus-snapshotter-v$(VERSION:v%=%)-${GOOS}-${GOARCH}
+STATIC_RELEASE=nydus-snapshotter-v$(VERSION:v%=%)-${GOOS}-static
 
 # Relpace test target images for e2e tests.
 ifdef E2E_TEST_TARGET_IMAGES_FILE
