@@ -90,7 +90,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          name: "Nydus Snapshotter ${{ env.tag }} Release"
+          name: "Nydus Snapshotter ${{ github.ref_name }} Release"
           generate_release_notes: true
           files: |
             builds/release-tars-**/*
@@ -120,12 +120,6 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-      - name: Get the nydusd version
-        id: step_one
-        run: |
-          export NYDUS_STABLE_VER=$(curl https://api.github.com/repos/dragonflyoss/nydus/releases/latest | jq -r .tag_name)
-          echo "NYDUS_STABLE_VER=$NYDUS_STABLE_VER" >> "$GITHUB_ENV"
-          printf 'nydus version is: %s\n' "$NYDUS_STABLE_VER"
       - name: build and push nydus-snapshotter image
         uses: docker/build-push-action@v3
         with:
@@ -134,4 +128,4 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: NYDUS_VER=${{ env.NYDUS_STABLE_VER }}
+          build-args: NYDUS_VER=${{ github.ref_name }}
