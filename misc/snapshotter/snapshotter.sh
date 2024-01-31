@@ -12,7 +12,7 @@ SNAPSHOTTER_ARTIFACTS_DIR="/opt/nydus-artifacts"
 
 # Container runtime config, the default container runtime is containerd
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-containerd}"
-CONTAINER_RUNTIME_CONFIG="${CONTAINER_RUNTIME_CONFIG:-/etc/containerd/config.toml}"
+CONTAINER_RUNTIME_CONFIG="/etc/containerd/config.toml"
 
 # Common nydus snapshotter config options
 FS_DRIVER="${FS_DRIVER:-fusedev}"
@@ -178,7 +178,7 @@ function deploy_snapshotter() {
     echo "deploying snapshotter"
     if [ ! -f "${CONTAINER_RUNTIME_CONFIG}" ] && [ "${CONTAINER_RUNTIME}" == "containerd" ]; then
         mkdir -p /etc/containerd || true
-        containerd config default >/etc/containerd/config.toml
+        containerd config default > ${CONTAINER_RUNTIME_CONFIG}
     fi
 
     install_snapshotter
