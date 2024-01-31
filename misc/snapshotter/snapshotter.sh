@@ -226,7 +226,11 @@ function get_container_runtime() {
     fi
 
     if echo "$runtime" | grep -qE 'containerd.*-k3s'; then
-        if nsenter -t -1 -m systemctl is-active --quiet k3s-agent; then
+        if nsenter -t 1 -m systemctl is-active --quiet rke2-agent; then
+            echo "rke2-agent"
+        elif nsenter -t 1 -m systemctl is-active --quiet rke2-server; then
+            echo "rke2-server"
+        elif nsenter -t 1 -m systemctl is-active --quiet k3s-agent; then
             echo "k3s-agent"
         else
             echo "k3s"
@@ -244,7 +248,7 @@ function main() {
     fi
 
     CONTAINER_RUNTIME=$(get_container_runtime)
-    if [ "${CONTAINER_RUNTIME}" == "k3s" ] || [ "${CONTAINER_RUNTIME}" == "k3s-agent" ]; then
+    if [ "${CONTAINER_RUNTIME}" == "k3s" ] || [ "${CONTAINER_RUNTIME}" == "k3s-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-server" ]; then
         CONTAINER_RUNTIME_CONFIG_TMPL="${CONTAINER_RUNTIME_CONFIG}.tmpl"
         if [ ! -f "${CONTAINER_RUNTIME_CONFIG_TMPL}" ]; then
             cp "${CONTAINER_RUNTIME_CONFIG}" "${CONTAINER_RUNTIME_CONFIG_TMPL}"

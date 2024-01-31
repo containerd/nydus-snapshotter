@@ -39,6 +39,11 @@ kubectl apply -f misc/snapshotter/base/nydus-snapshotter.yaml
 kubectl apply -k misc/snapshotter/overlays/k3s/
 ```
 
+```bash
+# rke2
+kubectl apply -k misc/snapshotter/overlays/rke2/
+```
+
 Then, we can confirm that nydus snapshotter is running through the DaemonSet.
 ```bash
 $ kubectl get pods -n nydus-system 
@@ -88,6 +93,11 @@ $ kubectl delete -f misc/snapshotter/base/nydus-snapshotter.yaml
 ```bash
 # k3s
 $ kubectl delete -k misc/snapshotter/overlays/k3s/ 
+```
+
+```bash
+# rke2
+$ kubectl delete -k misc/snapshotter/overlays/rke2/
 ```
 
 ```bash
