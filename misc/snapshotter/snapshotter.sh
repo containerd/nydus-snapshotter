@@ -235,6 +235,10 @@ function get_container_runtime() {
         else
             echo "k3s"
         fi
+    elif nsenter -t 1 -m systemctl is-active --quiet k0scontroller; then
+        echo "k0s-controller"
+    elif nsenter -t 1 -m systemctl is-active --quiet k0sworker; then
+        echo "k0s-worker"
     else
         echo "$runtime" | awk -F '[:]' '{print $1}'
     fi
