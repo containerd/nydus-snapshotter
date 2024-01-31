@@ -30,7 +30,7 @@ kubectl apply -f misc/snapshotter/nydus-snapshotter-rbac.yaml
 Afterward, we can deploy a DaemonSet for nydus snapshotter.
 
 ```bash
-kubectl apply -f misc/snapshotter/nydus-snapshotter.yaml
+kubectl apply -f misc/snapshotter/base/nydus-snapshotter.yaml
 ```
 
 Then, we can confirm that nydus snapshotter is running through the DaemonSet.
@@ -75,7 +75,7 @@ Jan 17 16:14:23 worker containerd-nydus-grpc[1100169]: time="2024-01-17T16:14:23
 We use `preStop`` hook in the DaemonSet to uninstall nydus snapshotter and roll back the containerd configuration.
 
 ```bash
-$ kubectl delete -f misc/snapshotter/nydus-snapshotter.yaml 
+$ kubectl delete -f misc/snapshotter/base/nydus-snapshotter.yaml 
 $ kubectl delete -f misc/snapshotter/nydus-snapshotter-rbac.yaml 
 $ systemd restart containerd.service
 ```
