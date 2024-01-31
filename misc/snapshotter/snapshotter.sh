@@ -225,7 +225,15 @@ function get_container_runtime() {
         die "\"$NODE_NAME\" is an invalid node name"
     fi
 
-    echo "$runtime" | awk -F '[:]' '{print $1}'
+    if echo "$runtime" | grep -qE 'containerd.*-k3s'; then
+        if nsenter -t -1 -m systemctl is-active --quiet k3s-agent; then
+            echo "k3s-agent"
+        else
+            echo "k3s"
+        fi
+    else
+        echo "$runtime" | awk -F '[:]' '{print $1}'
+    fi
 }
 
 function main() {
@@ -236,7 +244,14 @@ function main() {
     fi
 
     CONTAINER_RUNTIME=$(get_container_runtime)
-    if [ "${CONTAINER_RUNTIME}" == "containerd" ]; then
+    if [ "${CONTAINER_RUNTIME}" == "k3s" ] || [ "${CONTAINER_RUNTIME}" == "k3s-agent" ]; then
+        CONTAINER_RUNTIME_CONFIG_TMPL="${CONTAINER_RUNTIME_CONFIG}.tmpl"
+        if [ ! -f "${CONTAINER_RUNTIME_CONFIG_TMPL}" ]; then
+            cp "${CONTAINER_RUNTIME_CONFIG}" "${CONTAINER_RUNTIME_CONFIG_TMPL}"
+        fi
+
+        CONTAINER_RUNTIME_CONFIG="${CONTAINER_RUNTIME_CONFIG_TMPL}"
+    elif [ "${CONTAINER_RUNTIME}" == "containerd" ]; then
         if [ ! -f "${CONTAINER_RUNTIME_CONFIG}" ]; then
             mkdir -p $(dirname ${CONTAINER_RUNTIME_CONFIG}) || true
             if [ -x $(command -v ${CONTAINER_RUNTIME}) ]; then
