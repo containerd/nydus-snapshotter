@@ -104,6 +104,8 @@ jobs:
                  --fs-version 6
       - name: Run E2E test
         run: |
+          kubectl describe pod nydus-snapshotter -n nydus-system 
+          kubectl logs nydus-snapshotter -n nydus-system 
           registry_ip=$(ip addr show eth0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
           kubectl create --namespace nydus-system secret generic regcred \
               --from-file=.dockerconfigjson=$HOME/.docker/config.json \
@@ -118,6 +120,8 @@ jobs:
 
           kubectl apply -f tests/e2e/k8s/test-pod.yaml
           kubectl wait po test-pod -n nydus-system --for=condition=ready --timeout=1m
+          kubectl describe pod test-pod -n nydus-system 
+          kubectl logs test-pod -n nydus-system 
           kubectl delete -f tests/e2e/k8s/test-pod.yaml
       - name: Dump logs
         if: failure()
