@@ -27,10 +27,21 @@ Next, we can configure access control for nydus snapshotter.
 kubectl apply -f misc/snapshotter/nydus-snapshotter-rbac.yaml
 ```
 
-Afterward, we can deploy a DaemonSet for nydus snapshotter.
+Afterward, we can deploy a DaemonSet for nydus snapshotter, according to the kubernetes flavour you're using.
 
 ```bash
-kubectl apply -f misc/snapshotter/nydus-snapshotter.yaml
+# Vanilla kubernetes
+kubectl apply -f misc/snapshotter/base/nydus-snapshotter.yaml
+```
+
+```bash
+# k3s
+kubectl apply -k misc/snapshotter/overlays/k3s/
+```
+
+```bash
+# rke2
+kubectl apply -k misc/snapshotter/overlays/rke2/
 ```
 
 Then, we can confirm that nydus snapshotter is running through the DaemonSet.
@@ -75,7 +86,21 @@ Jan 17 16:14:23 worker containerd-nydus-grpc[1100169]: time="2024-01-17T16:14:23
 We use `preStop`` hook in the DaemonSet to uninstall nydus snapshotter and roll back the containerd configuration.
 
 ```bash
-$ kubectl delete -f misc/snapshotter/nydus-snapshotter.yaml 
+# Vanilla kubernetes
+$ kubectl delete -f misc/snapshotter/base/nydus-snapshotter.yaml 
+```
+
+```bash
+# k3s
+$ kubectl delete -k misc/snapshotter/overlays/k3s/ 
+```
+
+```bash
+# rke2
+$ kubectl delete -k misc/snapshotter/overlays/rke2/
+```
+
+```bash
 $ kubectl delete -f misc/snapshotter/nydus-snapshotter-rbac.yaml 
 $ systemd restart containerd.service
 ```

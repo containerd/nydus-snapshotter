@@ -99,7 +99,7 @@ spec:
           mountPath: "/etc/nydus"
           mountPropagation: Bidirectional     
         - name: containerd-conf
-          mountPath: "/etc/containerd/config.toml"
+          mountPath: "/etc/containerd/"
         - name: local-bin
           mountPath: "/usr/local/bin/"
         - name: etc-systemd-system
@@ -130,7 +130,7 @@ spec:
           type: DirectoryOrCreate
       - name: containerd-conf
         hostPath:
-          path: /etc/containerd/config.toml
+          path: /etc/containerd/
       - name: local-bin
         hostPath:
           path: /usr/local/bin/

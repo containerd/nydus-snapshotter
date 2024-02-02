@@ -1,5 +1,6 @@
-FROM alpine:3.17.0 AS sourcer
+FROM alpine:3.17.0 AS base
 
+FROM base AS sourcer
 ARG NYDUS_VER=v2.1.5
 
 RUN apk add --no-cache curl && \
@@ -10,7 +11,15 @@ RUN apk add --no-cache curl && \
     rm nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     mv nydus-static/* /
 
-FROM alpine:3.17.0
+FROM base AS kubectl-sourcer
+RUN apk add --no-cache curl && \
+    ARCH=$(uname -m) && \
+    if [ "${ARCH}" = "x86_64" ]; then ARCH=amd64; fi && \
+    if [ "${ARCH}" = "aarch64" ]; then ARCH=arm64; fi && \
+    curl -fL --progress-bar -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl && \
+    chmod +x /usr/bin/kubectl
+
+FROM base
 ARG DESTINATION=/opt/nydus-artifacts
 ARG CONFIG_DESTINATION=${DESTINATION}/etc/nydus
 ARG BINARY_DESTINATION=${DESTINATION}/usr/local/bin
@@ -22,6 +31,7 @@ RUN apk add --no-cache libc6-compat bash
 VOLUME /var/lib/containerd-nydus /run/containerd-nydus
 
 COPY --from=sourcer /.nydus_version /.nydus_version
+COPY --from=kubectl-sourcer /usr/bin/kubectl /usr/bin/kubectl
 
 RUN mkdir -p ${CONFIG_DESTINATION} ${BINARY_DESTINATION} ${SCRIPT_DESTINATION} /var/lib/containerd-nydus/cache /tmp/blobs/
 COPY --from=sourcer /nydus* ${BINARY_DESTINATION}/

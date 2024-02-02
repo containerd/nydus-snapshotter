@@ -12,7 +12,7 @@ SNAPSHOTTER_ARTIFACTS_DIR="/opt/nydus-artifacts"
 
 # Container runtime config, the default container runtime is containerd
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-containerd}"
-CONTAINER_RUNTIME_CONFIG="${CONTAINER_RUNTIME_CONFIG:-/etc/containerd/config.toml}"
+CONTAINER_RUNTIME_CONFIG="/etc/containerd/config.toml"
 
 # Common nydus snapshotter config options
 FS_DRIVER="${FS_DRIVER:-fusedev}"
@@ -110,9 +110,6 @@ function fs_driver_handler() {
 function configure_snapshotter() {
 
     echo "configuring snapshotter"
-    if [ "${CONTAINER_RUNTIME}" != "containerd" ]; then
-        die "not supported container runtime: ${CONTAINER_RUNTIME}"
-    fi
 
     # Copy the container runtime config to a backup
     cp "$CONTAINER_RUNTIME_CONFIG" "$CONTAINER_RUNTIME_CONFIG".bak.nydus
@@ -176,11 +173,6 @@ function install_snapshotter() {
 
 function deploy_snapshotter() {
     echo "deploying snapshotter"
-    if [ ! -f "${CONTAINER_RUNTIME_CONFIG}" ] && [ "${CONTAINER_RUNTIME}" == "containerd" ]; then
-        mkdir -p /etc/containerd || true
-        containerd config default >/etc/containerd/config.toml
-    fi
-
     install_snapshotter
 
     COMMANDLINE="${SNAPSHOTTER_BINARY}"
@@ -196,7 +188,7 @@ function deploy_snapshotter() {
         echo "running snapshotter as standalone process"
         ${COMMANDLINE} &
     fi
-    wait_service_active 30 5 containerd
+    wait_service_active 30 5 ${CONTAINER_RUNTIME}
 
 }
 
@@ -218,7 +210,7 @@ function cleanup_snapshotter() {
     else
         kill -9 $pid || true
     fi
-    wait_service_active 30 5 containerd
+    wait_service_active 30 5 ${CONTAINER_RUNTIME}
     echo "Removing nydus-snapshotter artifacts from host"
     rm -f "${SNAPSHOTTER_BINARY}"
     rm -f "${NYDUS_BINARY_DIR}/nydus*"
@@ -227,11 +219,57 @@ function cleanup_snapshotter() {
     rm -rf "${NYDUS_LIB_DIR}/*"
 }
 
+function get_container_runtime() {
+    local runtime=$(kubectl get node ${NODE_NAME} -o jsonpath='{.status.nodeInfo.containerRuntimeVersion}')
+    if [ "$?" -ne 0 ]; then
+        die "\"$NODE_NAME\" is an invalid node name"
+    fi
+
+    if echo "$runtime" | grep -qE 'containerd.*-k3s'; then
+        if nsenter -t 1 -m systemctl is-active --quiet rke2-agent; then
+            echo "rke2-agent"
+        elif nsenter -t 1 -m systemctl is-active --quiet rke2-server; then
+            echo "rke2-server"
+        elif nsenter -t 1 -m systemctl is-active --quiet k3s-agent; then
+            echo "k3s-agent"
+        else
+            echo "k3s"
+        fi
+    elif nsenter -t 1 -m systemctl is-active --quiet k0scontroller; then
+        echo "k0s-controller"
+    elif nsenter -t 1 -m systemctl is-active --quiet k0sworker; then
+        echo "k0s-worker"
+    else
+        echo "$runtime" | awk -F '[:]' '{print $1}'
+    fi
+}
+
 function main() {
     # script requires that user is root
     euid=$(id -u)
     if [[ $euid -ne 0 ]]; then
         die "This script must be run as root"
+    fi
+
+    CONTAINER_RUNTIME=$(get_container_runtime)
+    if [ "${CONTAINER_RUNTIME}" == "k3s" ] || [ "${CONTAINER_RUNTIME}" == "k3s-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-server" ]; then
+        CONTAINER_RUNTIME_CONFIG_TMPL="${CONTAINER_RUNTIME_CONFIG}.tmpl"
+        if [ ! -f "${CONTAINER_RUNTIME_CONFIG_TMPL}" ]; then
+            cp "${CONTAINER_RUNTIME_CONFIG}" "${CONTAINER_RUNTIME_CONFIG_TMPL}"
+        fi
+
+        CONTAINER_RUNTIME_CONFIG="${CONTAINER_RUNTIME_CONFIG_TMPL}"
+    elif [ "${CONTAINER_RUNTIME}" == "containerd" ]; then
+        if [ ! -f "${CONTAINER_RUNTIME_CONFIG}" ]; then
+            mkdir -p $(dirname ${CONTAINER_RUNTIME_CONFIG}) || true
+            if [ -x $(command -v ${CONTAINER_RUNTIME}) ]; then
+                ${CONTAINER_RUNTIME} config default > ${CONTAINER_RUNTIME_CONFIG}
+            else
+                die "Not able to find an executable ${CONTAINER_RUNTIME} binary to create the default config"
+            fi
+        fi
+    else
+        die "${CONTAINER_RUNTIME} is a unsupported containe runtime"
     fi
 
     action=${1:-}
