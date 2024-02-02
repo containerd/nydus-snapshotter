@@ -67,7 +67,7 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	recoveringDaemons := make(map[string]*daemon.Daemon, 0)
 	liveDaemons := make(map[string]*daemon.Daemon, 0)
 	for _, fsManager := range fs.enabledManagers {
-		err := fsManager.Recover(ctx, &recoveringDaemons, &liveDaemons)
+		err := fsManager.Recover(ctx, fs.tarfsMgr, &recoveringDaemons, &liveDaemons)
 		if err != nil {
 			return nil, errors.Wrap(err, "reconnect daemons and recover filesystem instance")
 		}
@@ -351,7 +351,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			err = errors.Wrapf(err, "mount file system by daemon %s, snapshot %s", d.ID(), snapshotID)
 		}
 	case config.FsDriverBlockdev:
-		err = fs.tarfsMgr.MountTarErofs(snapshotID, s, labels, rafs)
+		err = fs.tarfsMgr.MountErofs(snapshotID, s, labels, rafs)
 		if err != nil {
 			err = errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
 		}

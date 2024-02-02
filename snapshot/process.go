@@ -157,7 +157,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			// which have already been prepared by overlay snapshotter
 
 			logger.Infof("Prepare active snapshot %s in Nydus tarfs mode", key)
-			err = sn.mergeTarfs(ctx, s, pID, pInfo)
+			err = sn.mergeTarfs(ctx, s, parent, pInfo)
 			if err != nil {
 				return nil, "", errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
 			}

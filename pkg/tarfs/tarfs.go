@@ -20,9 +20,11 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/log"
+	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -31,7 +33,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
-	losetup "github.com/freddierice/go-losetup"
+	"github.com/moby/sys/mountinfo"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -42,7 +44,6 @@ import (
 )
 
 const (
-	TarfsStatusInit    = 0
 	TarfsStatusPrepare = 1
 	TarfsStatusReady   = 2
 	TarfsStatusFailed  = 3
@@ -57,6 +58,7 @@ const (
 )
 
 type Manager struct {
+	RemountMap           map[string]*rafs.Rafs      // Scratch space to store rafs instances needing remount on startup
 	snapshotMap          map[string]*snapshotStatus // tarfs snapshots status, indexed by snapshot ID
 	mutex                sync.Mutex
 	mutexLoopDev         sync.Mutex
@@ -76,17 +78,18 @@ type snapshotStatus struct {
 	mutex           sync.Mutex
 	status          int
 	blobID          string
-	blobTarFilePath string
 	erofsMountPoint string
-	dataLoopdev     *losetup.Device
-	metaLoopdev     *losetup.Device
+	dataLoopdev     *os.File
+	metaLoopdev     *os.File
 	wg              *sync.WaitGroup
 	cancel          context.CancelFunc
+	ctx             context.Context
 }
 
 func NewManager(insecure, checkTarfsHint bool, cacheDirPath, nydusImagePath string, maxConcurrentProcess int64) *Manager {
 	return &Manager{
 		snapshotMap:          map[string]*snapshotStatus{},
+		RemountMap:           map[string]*rafs.Rafs{},
 		cacheDirPath:         cacheDirPath,
 		nydusImagePath:       nydusImagePath,
 		insecure:             insecure,
@@ -211,7 +214,7 @@ func (t *Manager) getBlobStream(ctx context.Context, remote *remote.Remote, ref 
 }
 
 // generate tar file and layer bootstrap, return if this blob is an empty blob
-func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID, upperDirPath string) (err error) {
+func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID, upperDirPath string, w *sync.WaitGroup) (err error) {
 	snapshotImageDir := filepath.Join(upperDirPath, "image")
 	if err := os.MkdirAll(snapshotImageDir, 0750); err != nil {
 		return errors.Wrapf(err, "create data dir %s for tarfs snapshot", snapshotImageDir)
@@ -233,20 +236,33 @@ func (t *Manager) generateBootstrap(tarReader io.Reader, snapshotID, layerBlobID
 	defer os.Remove(layerTarFileTmp)
 
 	fifoName := filepath.Join(upperDirPath, "layer_"+snapshotID+"_"+"tar.fifo")
-	if err = syscall.Mkfifo(fifoName, 0644); err != nil {
+	if err = syscall.Mkfifo(fifoName, 0640); err != nil {
 		return err
 	}
 	defer os.Remove(fifoName)
 
+	w.Add(1)
 	go func() {
-		fifoFile, err := os.OpenFile(fifoName, os.O_WRONLY, os.ModeNamedPipe)
-		if err != nil {
-			log.L.Warnf("can not open fifo file,  err %v", err)
-			return
+		defer w.Done()
+
+		var fifoFile *os.File
+		for i := 1; i < 100 && fifoFile == nil; i++ {
+			file, err := os.OpenFile(fifoName, os.O_RDWR, os.ModeNamedPipe)
+			switch {
+			case err == nil:
+				fifoFile = file
+			case os.IsNotExist(err) || os.IsPermission(err):
+				log.L.Warnf("open fifo file, %v", err)
+				return
+			default:
+				log.L.Warnf("open fifo file, %v", err)
+				time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+			}
 		}
 		defer fifoFile.Close()
+
 		if _, err := io.Copy(fifoFile, io.TeeReader(tarReader, tarFile)); err != nil {
-			log.L.Warnf("tar stream copy err %v", err)
+			log.L.Warnf("tar stream copy, %v", err)
 		}
 	}()
 
@@ -306,34 +322,75 @@ func (t *Manager) getImageBlobInfo(metaFilePath string) (string, error) {
 }
 
 // download & uncompress an oci/docker blob, and then generate the tarfs bootstrap
-func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotID, ref string,
-	manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
+func (t *Manager) blobProcess(ctx context.Context, snapshotID, ref string,
+	manifestDigest, layerDigest digest.Digest, upperDirPath string, retry bool) error {
 	layerBlobID := layerDigest.Hex()
-	epilog := func(err error, msg string) {
-		st, err1 := t.getSnapshotStatus(snapshotID, true)
+
+	epilog := func(err error, msg string) error {
+		st, err1 := t.getSnapshotStatusWithLock(snapshotID)
 		if err1 != nil {
-			// return errors.Errorf("can not found status object for snapshot %s after prepare", snapshotID)
-			err1 = errors.Wrapf(err1, "can not found status object for snapshot %s after prepare", snapshotID)
-			log.L.WithError(err1).Errorf("async prepare tarfs layer for snapshot ID %s", snapshotID)
-			return
+			return errors.Wrapf(err, "can not found status object for snapshot %s after prepare", snapshotID)
 		}
-		defer st.mutex.Unlock()
+		defer func() {
+			if st.wg != nil {
+				st.wg.Done()
+				st.wg = nil
+			}
+			st.mutex.Unlock()
+		}()
 
 		st.blobID = layerBlobID
-		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
 		if err != nil {
-			log.L.WithError(err).Errorf(msg)
 			st.status = TarfsStatusFailed
 		} else {
 			st.status = TarfsStatusReady
 		}
-		log.L.Infof(msg)
+
+		return errors.Wrapf(err, msg)
+	}
+
+	process := func(rc io.ReadCloser, remote *remote.Remote) error {
+		defer rc.Close()
+
+		var w sync.WaitGroup
+		defer w.Wait()
+
+		ds, err := compression.DecompressStream(rc)
+		if err != nil {
+			return epilog(err, "unpack layer blob stream for tarfs")
+		}
+		defer ds.Close()
+
+		if t.validateDiffID {
+			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
+			if err != nil {
+				return epilog(err, "get layer diffID")
+			}
+			digester := digest.Canonical.Digester()
+			dr := io.TeeReader(ds, digester.Hash())
+			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath, &w)
+			switch {
+			case err != nil && !errdefs.IsAlreadyExists(err):
+				return epilog(err, "generate tarfs from image layer blob")
+			case err == nil && digester.Digest() != diffID:
+				return epilog(err, "image layer diffID does not match")
+			default:
+				msg := fmt.Sprintf("Nydus tarfs for snapshot %s is ready, digest %s", snapshotID, digester.Digest())
+				return epilog(nil, msg)
+			}
+		} else {
+			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath, &w)
+			if err != nil && !errdefs.IsAlreadyExists(err) {
+				return epilog(err, "generate tarfs data from image layer blob")
+			}
+			msg := fmt.Sprintf("Nydus tarfs for snapshot %s is ready", snapshotID)
+			return epilog(nil, msg)
+		}
 	}
 
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)
 	if err != nil {
-		epilog(err, "create key chain for connection")
-		return err
+		return epilog(err, "create key chain for connection")
 	}
 	remote := remote.New(keyChain, t.insecure)
 	rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
@@ -341,51 +398,67 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 		rc, _, err = t.getBlobStream(ctx, remote, ref, layerDigest)
 	}
 	if err != nil {
-		epilog(err, "get blob stream for layer")
-		return errors.Wrapf(err, "get blob stream by digest")
+		return epilog(err, "get blob stream for layer")
 	}
 
-	go func() {
-		defer wg.Done()
-		defer rc.Close()
-
-		ds, err := compression.DecompressStream(rc)
-		if err != nil {
-			epilog(err, "unpack layer blob stream for tarfs")
-			return
-		}
-		defer ds.Close()
-
-		if t.validateDiffID {
-			diffID, err := t.getBlobDiffID(ctx, remote, ref, manifestDigest, layerDigest)
-			if err != nil {
-				epilog(err, "get layer diffID")
-				return
-			}
-			digester := digest.Canonical.Digester()
-			dr := io.TeeReader(ds, digester.Hash())
-			err = t.generateBootstrap(dr, snapshotID, layerBlobID, upperDirPath)
-			switch {
-			case err != nil && !errdefs.IsAlreadyExists(err):
-				epilog(err, "generate tarfs from image layer blob")
-			case err == nil && digester.Digest() != diffID:
-				epilog(err, "image layer diffID does not match")
-			default:
-				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready, digest %s", snapshotID, digester.Digest())
-				epilog(nil, msg)
-			}
-		} else {
-			err = t.generateBootstrap(ds, snapshotID, layerBlobID, upperDirPath)
-			if err != nil && !errdefs.IsAlreadyExists(err) {
-				epilog(err, "generate tarfs data from image layer blob")
-			} else {
-				msg := fmt.Sprintf("nydus tarfs for snapshot %s is ready", snapshotID)
-				epilog(nil, msg)
-			}
-		}
-	}()
+	if retry {
+		// Download and convert layer content in synchronous mode when retry for error recovering
+		err = process(rc, remote)
+	} else {
+		// Download and convert layer content in background.
+		// Will retry when the content is actually needed if the background process failed.
+		go func() {
+			_ = process(rc, remote)
+		}()
+	}
 
 	return err
+}
+
+func (t *Manager) retryPrepareLayer(snapshotID, upperDirPath string, labels map[string]string) error {
+	ref, ok := labels[label.CRIImageRef]
+	if !ok {
+		return errors.Errorf("not found image reference label")
+	}
+	layerDigest := digest.Digest(labels[label.CRILayerDigest])
+	if err := layerDigest.Validate(); err != nil {
+		return errors.Wrapf(err, "invalid layer digest")
+	}
+	manifestDigest := digest.Digest(labels[label.CRIManifestDigest])
+	if err := manifestDigest.Validate(); err != nil {
+		return errors.Wrapf(err, "invalid manifest digest")
+	}
+
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
+	if err != nil {
+		return errors.Wrapf(err, "retry downloading content for snapshot %s", snapshotID)
+	}
+	ctx := st.ctx
+	switch st.status {
+	case TarfsStatusPrepare:
+		log.L.Infof("Another thread is retrying snapshot %s, wait for the result", snapshotID)
+		st.mutex.Unlock()
+		_, err = t.waitLayerReady(snapshotID, false)
+		return err
+	case TarfsStatusReady:
+		log.L.Infof("Another thread has retried snapshot %s and succeed", snapshotID)
+		st.mutex.Unlock()
+		return nil
+	case TarfsStatusFailed:
+		log.L.Infof("Snapshot %s is in FAILED state, retry downloading layer content", snapshotID)
+		if st.wg == nil {
+			st.wg = &sync.WaitGroup{}
+			st.wg.Add(1)
+		}
+		st.status = TarfsStatusPrepare
+		st.mutex.Unlock()
+	}
+
+	if err := t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, upperDirPath, true); err != nil {
+		log.L.WithError(err).Errorf("async prepare tarfs layer of snapshot ID %s", snapshotID)
+	}
+
+	return nil
 }
 
 func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDigest digest.Digest, upperDirPath string) error {
@@ -402,13 +475,15 @@ func (t *Manager) PrepareLayer(snapshotID, ref string, manifestDigest, layerDige
 		status: TarfsStatusPrepare,
 		wg:     wg,
 		cancel: cancel,
+		ctx:    ctx,
 	}
 	t.mutex.Unlock()
 
-	return t.blobProcess(ctx, wg, snapshotID, ref, manifestDigest, layerDigest, upperDirPath)
+	return t.blobProcess(ctx, snapshotID, ref, manifestDigest, layerDigest, upperDirPath, false)
 }
 
-func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) string) error {
+func (t *Manager) MergeLayers(ctx context.Context, s storage.Snapshot, storageLocater func(string) string,
+	infoGetter func(ctx context.Context, id string) (string, snapshots.Info, error)) error {
 	mergedBootstrap := t.imageMetaFilePath(storageLocater(s.ParentIDs[0]))
 	if _, err := os.Stat(mergedBootstrap); err == nil {
 		log.L.Debugf("tarfs snapshot %s already has merged bootstrap %s", s.ParentIDs[0], mergedBootstrap)
@@ -419,21 +494,30 @@ func (t *Manager) MergeLayers(s storage.Snapshot, storageLocater func(string) st
 	// When merging bootstrap, we need to arrange layer bootstrap in order from low to high
 	for idx := len(s.ParentIDs) - 1; idx >= 0; idx-- {
 		snapshotID := s.ParentIDs[idx]
-		err := t.waitLayerReady(snapshotID)
+		_, err := t.waitLayerReady(snapshotID, false)
+		if err != nil {
+			upperDir, info, err1 := infoGetter(ctx, snapshotID)
+			if err1 == nil {
+				err1 = t.retryPrepareLayer(snapshotID, upperDir, info.Labels)
+				if err1 != nil {
+					log.L.Errorf("failed to retry downloading content for snapshot %s, %s", snapshotID, err1)
+				} else {
+					err = nil
+				}
+			}
+		}
 		if err != nil {
 			return errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
 		}
 
-		st, err := t.getSnapshotStatus(snapshotID, false)
-		if err != nil {
-			return err
-		}
-		if st.status != TarfsStatusReady {
-			return errors.Errorf("tarfs snapshot %s is not ready, %d", snapshotID, st.status)
-		}
-
 		metaFilePath := t.layerMetaFilePath(storageLocater(snapshotID))
 		bootstraps = append(bootstraps, metaFilePath)
+	}
+
+	// Merging image with only one layer is a noop, just copy the layer bootstrap as image bootstrap
+	if len(s.ParentIDs) == 1 {
+		metaFilePath := t.layerMetaFilePath(storageLocater(s.ParentIDs[0]))
+		return errors.Wrapf(os.Link(metaFilePath, mergedBootstrap), "create hard link from image bootstrap to layer bootstrap")
 	}
 
 	mergedBootstrapTmp := mergedBootstrap + ".tarfs.tmp"
@@ -489,18 +573,6 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 		}
 		snapshotID = s.ParentIDs[0]
 	}
-	err := t.waitLayerReady(snapshotID)
-	if err != nil {
-		return updateFields, errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
-	}
-	st, err := t.getSnapshotStatus(snapshotID, false)
-	if err != nil {
-		return updateFields, err
-	}
-	if st.status != TarfsStatusReady {
-		return updateFields, errors.Errorf("tarfs snapshot %s is not ready, %d", snapshotID, st.status)
-	}
-
 	blobID, ok := labels[label.NydusTarfsLayer]
 	if !ok {
 		return updateFields, errors.Errorf("Missing Nydus tarfs layer annotation for snapshot %s", s.ID)
@@ -519,6 +591,13 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	if _, err := os.Stat(diskFileName); err == nil {
 		return updateFields, nil
 	}
+
+	st, err := t.waitLayerReady(snapshotID, true)
+	if err != nil {
+		return updateFields, errors.Wrapf(err, "wait for tarfs snapshot %s to get ready", snapshotID)
+	}
+	defer st.mutex.Unlock()
+
 	diskFileNameTmp := diskFileName + ".tarfs.tmp"
 	defer os.Remove(diskFileNameTmp)
 
@@ -570,7 +649,7 @@ func (t *Manager) ExportBlockData(s storage.Snapshot, perLayer bool, labels map[
 	return updateFields, nil
 }
 
-func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels map[string]string, rafs *rafs.Rafs) error {
+func (t *Manager) MountErofs(snapshotID string, s *storage.Snapshot, labels map[string]string, rafs *rafs.Rafs) error {
 	if s == nil {
 		return errors.New("snapshot object for MountTarErofs() is nil")
 	}
@@ -591,41 +670,37 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 	}
 
 	var devices []string
+	var parents []string
 	// When merging bootstrap, we need to arrange layer bootstrap in order from low to high
 	for idx := len(s.ParentIDs) - 1; idx >= 0; idx-- {
 		snapshotID := s.ParentIDs[idx]
-		err := t.waitLayerReady(snapshotID)
+		st, err := t.waitLayerReady(snapshotID, true)
 		if err != nil {
 			return errors.Wrapf(err, "wait for tarfs conversion task")
-		}
-
-		st, err := t.getSnapshotStatus(snapshotID, true)
-		if err != nil {
-			return err
-		}
-		if st.status != TarfsStatusReady {
-			st.mutex.Unlock()
-			return errors.Errorf("snapshot %s tarfs format error %d", snapshotID, st.status)
 		}
 
 		var blobMarker = "\"blob_id\":\"" + st.blobID + "\""
 		if strings.Contains(blobInfo, blobMarker) {
 			if st.dataLoopdev == nil {
-				loopdev, err := t.attachLoopdev(st.blobTarFilePath)
+				blobTarFilePath := t.layerTarFilePath(st.blobID)
+				loopdev, err := t.attachLoopdev(blobTarFilePath)
 				if err != nil {
 					st.mutex.Unlock()
-					return errors.Wrapf(err, "attach layer tar file %s to loopdev", st.blobTarFilePath)
+					return errors.Wrapf(err, "attach layer tar file %s to loopdev", blobTarFilePath)
 				}
 				st.dataLoopdev = loopdev
 			}
-			devices = append(devices, "device="+st.dataLoopdev.Path())
+			devices = append(devices, "device="+st.dataLoopdev.Name())
+			parents = append(parents, snapshotID)
 		}
 
 		st.mutex.Unlock()
 	}
+	parentList := strings.Join(parents, ",")
+	devices = append(devices, "ro")
 	mountOpts := strings.Join(devices, ",")
 
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
 		return err
 	}
@@ -647,7 +722,84 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 		}
 		st.metaLoopdev = loopdev
 	}
-	devName := st.metaLoopdev.Path()
+	devName := st.metaLoopdev.Name()
+
+	if err = os.MkdirAll(mountPoint, 0750); err != nil {
+		return errors.Wrapf(err, "create tarfs mount dir %s", mountPoint)
+	}
+
+	err = unix.Mount(devName, mountPoint, "erofs", 0, mountOpts)
+	if err != nil {
+		return errors.Wrapf(err, "mount erofs at %s with opts %s", mountPoint, mountOpts)
+	}
+	st.erofsMountPoint = mountPoint
+	rafs.SetMountpoint(mountPoint)
+	rafs.AddAnnotation(label.NydusTarfsParents, parentList)
+	return nil
+}
+
+func (t *Manager) RemountErofs(snapshotID string, rafs *rafs.Rafs) error {
+	upperDirPath := path.Join(rafs.GetSnapshotDir(), "fs")
+
+	log.L.Infof("remount EROFS for tarfs snapshot %s at %s", snapshotID, upperDirPath)
+	var parents []string
+	if parentList, ok := rafs.Annotations[label.NydusTarfsParents]; ok {
+		parents = strings.Split(parentList, ",")
+	} else {
+		if !config.GetTarfsMountOnHost() {
+			rafs.SetMountpoint(upperDirPath)
+		}
+		return nil
+	}
+
+	var devices []string
+	for idx := 0; idx < len(parents); idx++ {
+		snapshotID := parents[idx]
+		st, err := t.waitLayerReady(snapshotID, true)
+		if err != nil {
+			return errors.Wrapf(err, "wait for tarfs conversion task")
+		}
+
+		if st.dataLoopdev == nil {
+			blobTarFilePath := t.layerTarFilePath(st.blobID)
+			loopdev, err := t.attachLoopdev(blobTarFilePath)
+			if err != nil {
+				st.mutex.Unlock()
+				return errors.Wrapf(err, "attach layer tar file %s to loopdev", blobTarFilePath)
+			}
+			st.dataLoopdev = loopdev
+		}
+		devices = append(devices, "device="+st.dataLoopdev.Name())
+
+		st.mutex.Unlock()
+	}
+	devices = append(devices, "ro")
+	mountOpts := strings.Join(devices, ",")
+
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
+	if err != nil {
+		return err
+	}
+	defer st.mutex.Unlock()
+
+	mountPoint := path.Join(rafs.GetSnapshotDir(), "mnt")
+	if len(st.erofsMountPoint) > 0 {
+		if st.erofsMountPoint == mountPoint {
+			log.L.Debugf("tarfs for snapshot %s has already been mounted at %s", snapshotID, mountPoint)
+			return nil
+		}
+		return errors.Errorf("tarfs for snapshot %s has already been mounted at %s", snapshotID, st.erofsMountPoint)
+	}
+
+	if st.metaLoopdev == nil {
+		mergedBootstrap := t.imageMetaFilePath(upperDirPath)
+		loopdev, err := t.attachLoopdev(mergedBootstrap)
+		if err != nil {
+			return errors.Wrapf(err, "attach merged bootstrap %s to loopdev", mergedBootstrap)
+		}
+		st.metaLoopdev = loopdev
+	}
+	devName := st.metaLoopdev.Name()
 
 	if err = os.MkdirAll(mountPoint, 0750); err != nil {
 		return errors.Wrapf(err, "create tarfs mount dir %s", mountPoint)
@@ -663,7 +815,7 @@ func (t *Manager) MountTarErofs(snapshotID string, s *storage.Snapshot, labels m
 }
 
 func (t *Manager) UmountTarErofs(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
 		return errors.Wrapf(err, "umount a tarfs snapshot %s which is already removed", snapshotID)
 	}
@@ -681,7 +833,7 @@ func (t *Manager) UmountTarErofs(snapshotID string) error {
 }
 
 func (t *Manager) DetachLayer(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, true)
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
 		return os.ErrNotExist
 	}
@@ -696,7 +848,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	}
 
 	if st.metaLoopdev != nil {
-		err := st.metaLoopdev.Detach()
+		err := deleteLoop(st.metaLoopdev)
 		if err != nil {
 			st.mutex.Unlock()
 			return errors.Wrapf(err, "detach merged bootstrap loopdev for tarfs snapshot %s", snapshotID)
@@ -705,7 +857,7 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	}
 
 	if st.dataLoopdev != nil {
-		err := st.dataLoopdev.Detach()
+		err := deleteLoop(st.dataLoopdev)
 		if err != nil {
 			st.mutex.Unlock()
 			return errors.Wrapf(err, "detach layer bootstrap loopdev for tarfs snapshot %s", snapshotID)
@@ -723,40 +875,143 @@ func (t *Manager) DetachLayer(snapshotID string) error {
 	return nil
 }
 
-func (t *Manager) getSnapshotStatus(snapshotID string, lock bool) (*snapshotStatus, error) {
+func (t *Manager) RecoverSnapshoInfo(ctx context.Context, id string, info snapshots.Info, upperPath string) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	log.L.Infof("recover tarfs snapshot %s with path %s", id, upperPath)
+
+	if _, ok := t.snapshotMap[id]; ok {
+		// RecoverSnapshotInfo() is called after RecoverRafsInstance(), so there may be some snapshots already exist.
+		return nil
+	}
+
+	layerMetaFilePath := t.layerMetaFilePath(upperPath)
+	if _, err := os.Stat(layerMetaFilePath); err == nil {
+		layerDigest := digest.Digest(info.Labels[label.CRILayerDigest])
+		if err := layerDigest.Validate(); err != nil {
+			return errors.Wrapf(err, "fetch layer digest label")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		t.snapshotMap[id] = &snapshotStatus{
+			status: TarfsStatusReady,
+			blobID: layerDigest.Hex(),
+			cancel: cancel,
+			ctx:    ctx,
+		}
+	} else {
+		ctx, cancel := context.WithCancel(context.Background())
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		t.snapshotMap[id] = &snapshotStatus{
+			status: TarfsStatusFailed,
+			wg:     wg,
+			cancel: cancel,
+			ctx:    ctx,
+		}
+	}
+	return nil
+}
+
+// This method is called in single threaded mode during startup, so we do not lock `snapshotStatus` objects.
+func (t *Manager) RecoverRafsInstance(r *rafs.Rafs) error {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	log.L.Infof("recover rafs instance %s for tarfs", r.SnapshotID)
+
+	if _, ok := t.snapshotMap[r.SnapshotID]; ok {
+		return errors.Errorf("snapshot %s already exists", r.SnapshotID)
+	}
+
+	layerDigest := digest.Digest(r.Annotations[label.CRILayerDigest])
+	if layerDigest.Validate() != nil {
+		return errors.Errorf("invalid layer digest for snapshot %s", r.SnapshotID)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	upperDir := path.Join(r.GetSnapshotDir(), "fs")
+	metaFilePath := t.layerMetaFilePath(upperDir)
+
+	if _, err := os.Stat(metaFilePath); err == nil {
+		mountPoint := path.Join(r.GetSnapshotDir(), "mnt")
+		mounted, err := mountinfo.Mounted(mountPoint)
+		if !mounted || err != nil {
+			mountPoint = ""
+		}
+		if !mounted && err == nil {
+			if _, ok := r.Annotations[label.NydusTarfsParents]; ok {
+				t.RemountMap[r.SnapshotID] = r
+			}
+		}
+		t.snapshotMap[r.SnapshotID] = &snapshotStatus{
+			status:          TarfsStatusReady,
+			blobID:          layerDigest.Hex(),
+			erofsMountPoint: mountPoint,
+			cancel:          cancel,
+			ctx:             ctx,
+		}
+	} else {
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		t.snapshotMap[r.SnapshotID] = &snapshotStatus{
+			status: TarfsStatusFailed,
+			wg:     wg,
+			cancel: cancel,
+			ctx:    ctx,
+		}
+	}
+
+	return nil
+}
+
+func (t *Manager) getSnapshotStatusWithLock(snapshotID string) (*snapshotStatus, error) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	st, ok := t.snapshotMap[snapshotID]
 	if ok {
-		if lock {
-			st.mutex.Lock()
-		}
+		st.mutex.Lock()
 		return st, nil
 	}
 	return nil, errors.Errorf("not found snapshot %s", snapshotID)
 }
 
-func (t *Manager) waitLayerReady(snapshotID string) error {
-	st, err := t.getSnapshotStatus(snapshotID, false)
+func (t *Manager) waitLayerReady(snapshotID string, lock bool) (*snapshotStatus, error) {
+	st, err := t.getSnapshotStatusWithLock(snapshotID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if st.status != TarfsStatusReady {
+
+	if st.wg != nil && st.status == TarfsStatusPrepare {
+		wg := st.wg
+		st.mutex.Unlock()
 		log.L.Debugf("wait tarfs conversion task for snapshot %s", snapshotID)
+		wg.Wait()
+		st, err = t.getSnapshotStatusWithLock(snapshotID)
+		if err != nil {
+			return nil, err
+		}
 	}
-	st.wg.Wait()
+
 	if st.status != TarfsStatusReady {
-		return errors.Errorf("snapshot %s is in state %d instead of ready state", snapshotID, st.status)
+		state := tarfsStatusString(st.status)
+		st.mutex.Unlock()
+		return nil, errors.Errorf("snapshot %s is in %s state instead of Ready", snapshotID, state)
 	}
-	return nil
+
+	if !lock {
+		st.mutex.Unlock()
+	}
+	return st, nil
 }
 
-func (t *Manager) attachLoopdev(blob string) (*losetup.Device, error) {
+func (t *Manager) attachLoopdev(blob string) (*os.File, error) {
 	// losetup.Attach() is not thread-safe hold lock here
 	t.mutexLoopDev.Lock()
 	defer t.mutexLoopDev.Unlock()
-	dev, err := losetup.Attach(blob, 0, false)
-	return &dev, err
+	param := LoopParams{
+		Readonly:  true,
+		Autoclear: true,
+	}
+	return setupLoop(blob, param)
 }
 
 func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, manifestDigest digest.Digest) (bool, error) {
@@ -812,6 +1067,9 @@ func (t *Manager) GetConcurrentLimiter(ref string) *semaphore.Weighted {
 
 func (t *Manager) copyTarfsAnnotations(labels map[string]string, rafs *rafs.Rafs) {
 	keys := []string{
+		label.CRIImageRef,
+		label.CRILayerDigest,
+		label.CRIManifestDigest,
 		label.NydusTarfsLayer,
 		label.NydusImageBlockInfo,
 		label.NydusLayerBlockInfo,
@@ -842,4 +1100,17 @@ func (t *Manager) layerMetaFilePath(upperDirPath string) string {
 
 func (t *Manager) imageMetaFilePath(upperDirPath string) string {
 	return filepath.Join(upperDirPath, "image", TarfsImageBootstrapName)
+}
+
+func tarfsStatusString(status int) string {
+	switch status {
+	case TarfsStatusReady:
+		return "Ready"
+	case TarfsStatusPrepare:
+		return "Prepare"
+	case TarfsStatusFailed:
+		return "Failed"
+	default:
+		return "Unknown"
+	}
 }

@@ -34,6 +34,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
 	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
@@ -224,8 +225,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
 
+	var tarfsMgr *tarfs.Manager
 	if cfg.Experimental.TarfsConfig.EnableTarfs {
-		tarfsMgr := tarfs.NewManager(skipSSLVerify, cfg.Experimental.TarfsConfig.TarfsHint,
+		tarfsMgr = tarfs.NewManager(skipSSLVerify, cfg.Experimental.TarfsConfig.TarfsHint,
 			cacheConfig.CacheDir, cfg.DaemonConfig.NydusImagePath,
 			int64(cfg.Experimental.TarfsConfig.MaxConcurrentProc))
 		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
@@ -283,7 +285,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		syncRemove = true
 	}
 
-	return &snapshotter{
+	snapshotter := &snapshotter{
 		root:                 cfg.Root,
 		nydusdPath:           cfg.DaemonConfig.NydusdPath,
 		ms:                   ms,
@@ -293,7 +295,41 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
 		enableKataVolume:     cfg.SnapshotsConfig.EnableKataVolume,
 		cleanupOnClose:       cfg.CleanupOnClose,
-	}, nil
+	}
+
+	// There's special requirement to recover tarfs instance because it depdens on `snapshotter.ms`
+	// so it can't be done in `Filesystem.Recover()`
+	if tarfsMgr != nil {
+		snapshotter.recoverTarfs(ctx, tarfsMgr)
+	}
+
+	return snapshotter, nil
+}
+
+func (o *snapshotter) recoverTarfs(ctx context.Context, tarfsMgr *tarfs.Manager) {
+	// First recover all snapshot information related to tarfs, mount operation depends on snapshots.
+	_ = o.Walk(ctx, func(ctx context.Context, i snapshots.Info) error {
+		if _, ok := i.Labels[label.NydusTarfsLayer]; ok {
+			id, _, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, i.Name)
+			if err != nil {
+				return errors.Wrapf(err, "get id for snapshot %s", i.Name)
+			}
+			log.L.Infof("found tarfs snapshot %s with name %s", id, i.Name)
+			upperPath := o.upperPath(id)
+			if err = tarfsMgr.RecoverSnapshoInfo(ctx, id, i, upperPath); err != nil {
+				return errors.Wrapf(err, "get id for snapshot %s", i.Name)
+			}
+		}
+		return nil
+	})
+
+	for id, r := range tarfsMgr.RemountMap {
+		log.L.Infof("remount tarfs snapshot %s", id)
+		if err := tarfsMgr.RemountErofs(id, r); err != nil {
+			log.L.Warnf("failed to remount EROFS filesystem for tarfs, %s", err)
+		}
+	}
+	tarfsMgr.RemountMap = map[string]*rafs.Rafs{}
 }
 
 func (o *snapshotter) Cleanup(ctx context.Context) error {
@@ -518,7 +554,7 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 
 	if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
 		log.L.Infof("Prepare view snapshot %s in Nydus tarfs mode", pID)
-		err = o.mergeTarfs(ctx, s, pID, pInfo)
+		err = o.mergeTarfs(ctx, s, parent, pInfo)
 		if err != nil {
 			return nil, errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
 		}
@@ -558,7 +594,7 @@ func (o *snapshotter) Commit(ctx context.Context, name, key string, opts ...snap
 		return err
 	}
 
-	log.L.Infof("[Commit] snapshot with key %q snapshot id %s", key, id)
+	log.L.Infof("[Commit] snapshot with key %q, name %s, snapshot id %s", key, name, id)
 
 	// For OCI compatibility, we calculate disk usage of the snapshotDir and commit the usage to DB.
 	// Nydus disk usage under the cacheDir will be delayed until containerd queries.
@@ -795,9 +831,21 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	return &base, s, nil
 }
 
-func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID string, pInfo snapshots.Info) error {
-	if err := o.fs.MergeTarfsLayers(s, func(id string) string { return o.upperPath(id) }); err != nil {
-		return errors.Wrapf(err, "tarfs merge fail %s", pID)
+func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, parent string, pInfo snapshots.Info) error {
+	infoGetter := func(ctx context.Context, id string) (string, snapshots.Info, error) {
+		for {
+			id2, info, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parent)
+			if err != nil {
+				return "", snapshots.Info{}, err
+			} else if id2 == id {
+				return o.upperPath(id), info, nil
+			}
+			parent = info.Parent
+		}
+	}
+
+	if err := o.fs.MergeTarfsLayers(ctx, s, func(id string) string { return o.upperPath(id) }, infoGetter); err != nil {
+		return err
 	}
 	if config.GetTarfsExportEnabled() {
 		updateFields, err := o.fs.ExportBlockData(s, false, pInfo.Labels, func(id string) string { return o.upperPath(id) })
