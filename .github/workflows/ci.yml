@@ -15,48 +15,36 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.20.1"
       - name: Check out code
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.55.2
+          skip-cache: true
       - name: Build
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
-          export PATH=$PATH:$(go env GOPATH)/bin
           make
           make test
-          make check
   build-optimizer:
     name: Build optimizer
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.20.1"
       - name: Check out code
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Build
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.2
-          export PATH=$PATH:$(go env GOPATH)/bin
           rustup component add rustfmt clippy
           make build-optimizer
   smoke:
@@ -64,21 +52,15 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Check out code
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Set up containerd
-        uses: crazy-max/ghaction-setup-containerd@v2
+        uses: crazy-max/ghaction-setup-containerd@v3
       - name: Build
         run: |
           # Download nydus components
@@ -99,19 +81,13 @@ jobs:
         GOOS: ["linux", "windows", "darwin"]
         GOARCH: ["amd64", "arm64"]
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Check out code
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Build
         run: |
           make -e GOOS=${{ matrix.GOOS }} GOARCH=${{ matrix.GOARCH }} converter
@@ -122,23 +98,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - name: Install Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Checkout code
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Run unit tests.
         run: make cover
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./coverage.txt

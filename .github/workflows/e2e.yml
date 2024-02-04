@@ -22,21 +22,15 @@ jobs:
   run-e2e-for-cgroups-v1:
     runs-on: ubuntu-20.04
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Log in to container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -51,21 +45,15 @@ jobs:
   run-e2e-for-cgroups-v2:
     runs-on: ubuntu-22.04
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.19.6"
       - name: Checkout repository
-        uses: actions/checkout@v3
-      - name: cache go mod
-        uses: actions/cache@v3
+        uses: actions/checkout@v4
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Log in to container registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
