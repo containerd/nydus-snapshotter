@@ -74,10 +74,9 @@ func (rs *Cache) Get(snapshotID string) *Rafs {
 
 func (rs *Cache) Len() int {
 	rs.mu.Lock()
-	len := len(rs.instances)
-	rs.mu.Unlock()
+	defer rs.mu.Unlock()
 
-	return len
+	return len(rs.instances)
 }
 
 func (rs *Cache) Head() *Rafs {

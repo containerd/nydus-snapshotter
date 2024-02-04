@@ -60,7 +60,7 @@ func LoadFuseConfig(p string) (*FuseDaemonConfig, error) {
 	return &cfg, nil
 }
 
-func (c *FuseDaemonConfig) Supplement(host, repo, snapshotID string, params map[string]string) {
+func (c *FuseDaemonConfig) Supplement(host, repo, _ string, params map[string]string) {
 	c.Device.Backend.Config.Host = host
 	c.Device.Backend.Config.Repo = repo
 	c.Device.Cache.Config.WorkDir = params[CacheDir]

@@ -199,7 +199,7 @@ func (db *Database) Close() error {
 	return nil
 }
 
-func (db *Database) SaveDaemon(ctx context.Context, d *daemon.Daemon) error {
+func (db *Database) SaveDaemon(_ context.Context, d *daemon.Daemon) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 		var existing daemon.ConfigState
@@ -210,7 +210,7 @@ func (db *Database) SaveDaemon(ctx context.Context, d *daemon.Daemon) error {
 	})
 }
 
-func (db *Database) UpdateDaemon(ctx context.Context, d *daemon.Daemon) error {
+func (db *Database) UpdateDaemon(_ context.Context, d *daemon.Daemon) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 
@@ -223,7 +223,7 @@ func (db *Database) UpdateDaemon(ctx context.Context, d *daemon.Daemon) error {
 	})
 }
 
-func (db *Database) DeleteDaemon(ctx context.Context, id string) error {
+func (db *Database) DeleteDaemon(_ context.Context, id string) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 
@@ -236,7 +236,7 @@ func (db *Database) DeleteDaemon(ctx context.Context, id string) error {
 }
 
 // Cleanup deletes all daemon records
-func (db *Database) CleanupDaemons(ctx context.Context) error {
+func (db *Database) CleanupDaemons(_ context.Context) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 
@@ -246,7 +246,7 @@ func (db *Database) CleanupDaemons(ctx context.Context) error {
 	})
 }
 
-func (db *Database) WalkDaemons(ctx context.Context, cb func(info *daemon.ConfigState) error) error {
+func (db *Database) WalkDaemons(_ context.Context, cb func(info *daemon.ConfigState) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		bucket := getDaemonsBucket(tx)
 
@@ -263,7 +263,7 @@ func (db *Database) WalkDaemons(ctx context.Context, cb func(info *daemon.Config
 }
 
 // WalkDaemons iterates all daemon records and invoke callback on each
-func (db *Database) WalkRafsInstances(ctx context.Context, cb func(r *rafs.Rafs) error) error {
+func (db *Database) WalkRafsInstances(_ context.Context, cb func(r *rafs.Rafs) error) error {
 	return db.db.View(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 
@@ -279,7 +279,7 @@ func (db *Database) WalkRafsInstances(ctx context.Context, cb func(r *rafs.Rafs)
 	})
 }
 
-func (db *Database) AddRafsInstance(ctx context.Context, instance *rafs.Rafs) error {
+func (db *Database) AddRafsInstance(_ context.Context, instance *rafs.Rafs) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 
@@ -287,7 +287,7 @@ func (db *Database) AddRafsInstance(ctx context.Context, instance *rafs.Rafs) er
 	})
 }
 
-func (db *Database) DeleteRafsInstance(ctx context.Context, snapshotID string) error {
+func (db *Database) DeleteRafsInstance(_ context.Context, snapshotID string) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)
 

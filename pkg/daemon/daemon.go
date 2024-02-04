@@ -300,17 +300,13 @@ func (d *Daemon) sharedErofsMount(ra *rafs.Rafs) error {
 		return errors.Wrapf(err, "create mountpoint %s", mountPoint)
 	}
 
-	bootstrapPath, err := ra.BootstrapFile()
-	if err != nil {
-		return err
-	}
 	fscacheID := erofs.FscacheID(ra.SnapshotID)
 
 	cfg := c.(*daemonconfig.FscacheDaemonConfig)
 	ra.AddAnnotation(rafs.AnnoFsCacheDomainID, cfg.DomainID)
 	ra.AddAnnotation(rafs.AnnoFsCacheID, fscacheID)
 
-	if err := erofs.Mount(bootstrapPath, cfg.DomainID, fscacheID, mountPoint); err != nil {
+	if err := erofs.Mount(cfg.DomainID, fscacheID, mountPoint); err != nil {
 		if !errdefs.IsErofsMounted(err) {
 			return errors.Wrapf(err, "mount erofs to %s", mountPoint)
 		}

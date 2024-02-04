@@ -117,7 +117,7 @@ func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, erro
 	return keychain, nil
 }
 
-func (kc PassKeyChain) Resolve(target authn.Resource) (authn.Authenticator, error) {
+func (kc PassKeyChain) Resolve(_ authn.Resource) (authn.Authenticator, error) {
 	return authn.FromConfig(kc.toAuthConfig()), nil
 }
 

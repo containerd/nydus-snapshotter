@@ -364,10 +364,11 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 
 	fs := sc.fs
 
-	var new daemon.Daemon
-	new.States = d.States
-	new.Supervisor = d.Supervisor
-	new.CloneRafsInstances(d)
+	newDaemon := daemon.Daemon{
+		States:     d.States,
+		Supervisor: d.Supervisor,
+	}
+	newDaemon.CloneRafsInstances(d)
 
 	s := path.Base(d.GetAPISock())
 	next, err := buildNextAPISocket(s)
@@ -376,9 +377,9 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 	}
 
 	upgradingSocket := path.Join(path.Dir(d.GetAPISock()), next)
-	new.States.APISocket = upgradingSocket
+	newDaemon.States.APISocket = upgradingSocket
 
-	cmd, err := manager.BuildDaemonCommand(&new, c.NydusdPath, true)
+	cmd, err := manager.BuildDaemonCommand(&newDaemon, c.NydusdPath, true)
 	if err != nil {
 		return err
 	}
@@ -392,15 +393,15 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 		return errors.Wrap(err, "start process")
 	}
 
-	if err := new.WaitUntilState(types.DaemonStateInit); err != nil {
+	if err := newDaemon.WaitUntilState(types.DaemonStateInit); err != nil {
 		return errors.Wrap(err, "wait until init state")
 	}
 
-	if err := new.TakeOver(); err != nil {
+	if err := newDaemon.TakeOver(); err != nil {
 		return errors.Wrap(err, "take over resources")
 	}
 
-	if err := new.WaitUntilState(types.DaemonStateReady); err != nil {
+	if err := newDaemon.WaitUntilState(types.DaemonStateReady); err != nil {
 		return errors.Wrap(err, "wait unit ready state")
 	}
 
@@ -413,23 +414,23 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 		return errors.Wrap(err, "old daemon exits")
 	}
 
-	fs.TryRetainSharedDaemon(&new)
+	fs.TryRetainSharedDaemon(&newDaemon)
 
-	if err := new.Start(); err != nil {
+	if err := newDaemon.Start(); err != nil {
 		return errors.Wrap(err, "start file system service")
 	}
 
-	if err := manager.SubscribeDaemonEvent(&new); err != nil {
+	if err := manager.SubscribeDaemonEvent(&newDaemon); err != nil {
 		return &json.InvalidUnmarshalError{}
 	}
 
-	log.L.Infof("Started service of upgraded daemon on socket %s", new.GetAPISock())
+	log.L.Infof("Started service of upgraded daemon on socket %s", newDaemon.GetAPISock())
 
-	if err := manager.UpdateDaemonLocked(&new); err != nil {
+	if err := manager.UpdateDaemonLocked(&newDaemon); err != nil {
 		return err
 	}
 
-	log.L.Infof("Upgraded daemon success on socket %s", new.GetAPISock())
+	log.L.Infof("Upgraded daemon success on socket %s", newDaemon.GetAPISock())
 
 	return nil
 }

@@ -42,7 +42,7 @@ type CompatDaemon struct {
 	CustomMountPoint *string
 }
 
-func (db *Database) WalkCompatDaemons(ctx context.Context, handler func(cd *CompatDaemon) error) error {
+func (db *Database) WalkCompatDaemons(_ context.Context, handler func(cd *CompatDaemon) error) error {
 
 	return db.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(daemonsBucket)
