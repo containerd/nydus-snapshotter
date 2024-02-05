@@ -114,7 +114,7 @@ func (remote *Remote) RetryWithPlainHTTP(ref string, err error) bool {
 	return remote.withPlainHTTP
 }
 
-func (remote *Remote) Resolve(ctx context.Context, ref string) remotes.Resolver {
+func (remote *Remote) Resolve(_ context.Context, _ string) remotes.Resolver {
 	return remote.resolverFunc(remote.withPlainHTTP)
 }
 

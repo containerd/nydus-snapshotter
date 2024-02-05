@@ -17,13 +17,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Set up Go
-        uses: actions/setup-go@v3
+      - name: Setup Golang
+        uses: actions/setup-go@v5
         with:
-          go-version: "1.19.6"
+          go-version-file: 'go.mod'
+          cache-dependency-path: "go.sum"
       - name: Setup Kind
         uses: engineerd/setup-kind@v0.5.0
         with:

@@ -384,7 +384,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	return nil
 }
 
-func (fs *Filesystem) Umount(ctx context.Context, snapshotID string) error {
+func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs == nil {
 		log.L.Debugf("no RAFS filesystem instance associated with snapshot %s", snapshotID)

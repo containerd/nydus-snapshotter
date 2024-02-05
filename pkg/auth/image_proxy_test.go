@@ -25,7 +25,7 @@ type MockAlphaImageService struct {
 	runtime_alpha.UnimplementedImageServiceServer
 }
 
-func (*MockAlphaImageService) PullImage(ctx context.Context, req *runtime_alpha.PullImageRequest) (*runtime_alpha.PullImageResponse, error) {
+func (*MockAlphaImageService) PullImage(_ context.Context, _ *runtime_alpha.PullImageRequest) (*runtime_alpha.PullImageResponse, error) {
 	return &runtime_alpha.PullImageResponse{}, nil
 }
 
@@ -33,7 +33,7 @@ type MockImageService struct {
 	runtime.UnimplementedImageServiceServer
 }
 
-func (*MockImageService) PullImage(ctx context.Context, req *runtime.PullImageRequest) (*runtime.PullImageResponse, error) {
+func (*MockImageService) PullImage(_ context.Context, _ *runtime.PullImageRequest) (*runtime.PullImageResponse, error) {
 	return &runtime.PullImageResponse{}, nil
 }
 

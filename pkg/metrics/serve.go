@@ -63,7 +63,7 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	return &s, nil
 }
 
-func (s *Server) CollectDaemonResourceMetrics(ctx context.Context) {
+func (s *Server) CollectDaemonResourceMetrics(_ context.Context) {
 	var daemonResource collector.DaemonResourceCollector
 	for _, pm := range s.managers {
 		// Collect daemon resource usage metrics.

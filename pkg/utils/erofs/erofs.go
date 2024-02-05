@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func Mount(bootstrapPath, domainID, fscacheID, mountpoint string) error {
+func Mount(domainID, fscacheID, mountpoint string) error {
 	mount := unix.Mount
 	var opts string
 

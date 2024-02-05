@@ -162,7 +162,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 // Generate nydus bootstrap from stargz layers
 // Download estargz TOC part from each layer as `nydus-image` conversion source.
 // After conversion, a nydus metadata or bootstrap is used to pointing to each estargz blob
-func (fs *Filesystem) PrepareStargzMetaLayer(blob *stargz.Blob, storagePath string, labels map[string]string) error {
+func (fs *Filesystem) PrepareStargzMetaLayer(blob *stargz.Blob, storagePath string, _ map[string]string) error {
 	ref := blob.GetImageReference()
 	layerDigest := blob.GetDigest()
 

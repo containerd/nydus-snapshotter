@@ -56,7 +56,7 @@ func TestResolver_resolve(t *testing.T) {
 type MockResolver struct {
 }
 
-func (res *MockResolver) Resolve(ref name.Reference, digest string, keychain authn.Keychain) (string, http.RoundTripper, error) {
+func (res *MockResolver) Resolve(_ name.Reference, _ string, _ authn.Keychain) (string, http.RoundTripper, error) {
 	return "http://oss.com/v2/test/myserver/blobs/sha256:mock", &mockRoundTripper{}, nil
 }
 
