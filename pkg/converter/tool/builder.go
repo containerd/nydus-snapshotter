@@ -76,7 +76,7 @@ type outputJSON struct {
 	Blobs []string
 }
 
-func buildPackArgs(option PackOption) []string {
+func buildPackArgs(option PackOption) ([]string, error) {
 	if option.FsVersion == "" {
 		option.FsVersion = "6"
 	}
@@ -100,7 +100,11 @@ func buildPackArgs(option PackOption) []string {
 			args,
 			"--blob-inline-meta",
 		)
-		if option.AttributesPath != "" {
+		info, err := os.Stat(option.SourcePath)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
 			args = append(
 				args,
 				"--type",
@@ -160,7 +164,7 @@ func buildPackArgs(option PackOption) []string {
 	}
 	args = append(args, option.SourcePath)
 
-	return args
+	return args, nil
 }
 
 func Pack(option PackOption) error {
@@ -175,7 +179,10 @@ func Pack(option PackOption) error {
 		defer cancel()
 	}
 
-	args := buildPackArgs(option)
+	args, err := buildPackArgs(option)
+	if err != nil {
+		return err
+	}
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)

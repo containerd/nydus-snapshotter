@@ -360,10 +360,6 @@ func Pack(ctx context.Context, dest io.Writer, opt PackOption) (io.WriteCloser, 
 }
 
 func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, builderPath, sourceDir string) error {
-	if opt.ExternalBlobWriter == nil {
-		return fmt.Errorf("the 'ExternalBlobWriter' option requires the 'AttributesPath' option be specified")
-	}
-
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return errors.Wrap(err, "ensure work directory")
@@ -381,12 +377,17 @@ func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, buil
 	}
 	defer blobFifo.Close()
 
-	externalBlobPath := filepath.Join(workDir, "external-blob")
-	externalBlobFifo, err := fifo.OpenFifo(ctx, externalBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
-	if err != nil {
-		return errors.Wrapf(err, "create fifo file for external blob")
+	externalBlobPath := ""
+	var externalBlobFifo io.ReadWriteCloser
+	if opt.ExternalBlobWriter != nil {
+		var err error
+		externalBlobPath = filepath.Join(workDir, "external-blob")
+		externalBlobFifo, err = fifo.OpenFifo(ctx, externalBlobPath, syscall.O_CREAT|syscall.O_RDONLY|syscall.O_NONBLOCK, 0640)
+		if err != nil {
+			return errors.Wrapf(err, "create fifo file for external blob")
+		}
+		defer externalBlobFifo.Close()
 	}
-	defer externalBlobFifo.Close()
 
 	go func() {
 		err := tool.Pack(tool.PackOption{
@@ -422,14 +423,17 @@ func packFromDirectory(ctx context.Context, dest io.Writer, opt PackOption, buil
 		}
 		return nil
 	})
-	eg.Go(func() error {
-		buffer := bufPool.Get().(*[]byte)
-		defer bufPool.Put(buffer)
-		if _, err := io.CopyBuffer(opt.ExternalBlobWriter, externalBlobFifo, *buffer); err != nil {
-			return errors.Wrap(err, "pack to nydus external blob")
-		}
-		return nil
-	})
+
+	if opt.ExternalBlobWriter != nil {
+		eg.Go(func() error {
+			buffer := bufPool.Get().(*[]byte)
+			defer bufPool.Put(buffer)
+			if _, err := io.CopyBuffer(opt.ExternalBlobWriter, externalBlobFifo, *buffer); err != nil {
+				return errors.Wrap(err, "pack to nydus external blob")
+			}
+			return nil
+		})
+	}
 
 	return eg.Wait()
 }
