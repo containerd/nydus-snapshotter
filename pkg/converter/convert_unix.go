@@ -108,7 +108,7 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 		ctx,
 		dst,
 		ds,
-		archive.WithConvertWhiteout(func(hdr *tar.Header, file string) (bool, error) {
+		archive.WithConvertWhiteout(func(_ *tar.Header, _ string) (bool, error) {
 			// Keep to extract all whiteout files.
 			return true, nil
 		}),

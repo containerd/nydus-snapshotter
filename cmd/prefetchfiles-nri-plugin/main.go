@@ -140,7 +140,7 @@ func main() {
 		Version:     version.Version,
 		Flags:       flags.Flag,
 		HideVersion: true,
-		Action: func(c *cli.Context) error {
+		Action: func(_ *cli.Context) error {
 			var (
 				opts []stub.Option
 				err  error

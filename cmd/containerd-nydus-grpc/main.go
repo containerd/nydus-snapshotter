@@ -30,7 +30,7 @@ func main() {
 		Version:     version.Version,
 		Flags:       flags.F,
 		HideVersion: true,
-		Action: func(c *cli.Context) error {
+		Action: func(_ *cli.Context) error {
 			if flags.Args.PrintVersion {
 				fmt.Println("Version:    ", version.Version)
 				fmt.Println("Revision:   ", version.Revision)

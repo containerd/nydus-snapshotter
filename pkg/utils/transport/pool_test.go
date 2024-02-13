@@ -41,7 +41,7 @@ func (t FakeReference) Scope(action string) string {
 func TestResolve(t *testing.T) {
 	var callCount int
 	failed := false
-	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		callCount++
 		if !failed {
 			fmt.Fprintf(w, "ok")

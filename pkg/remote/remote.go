@@ -78,7 +78,7 @@ func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
 				),
 			),
 			docker.WithClient(newClient(insecure)),
-			docker.WithPlainHTTP(func(host string) (bool, error) {
+			docker.WithPlainHTTP(func(_ string) (bool, error) {
 				return plainHTTP, nil
 			}),
 		)

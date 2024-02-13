@@ -217,7 +217,7 @@ func (sc *Controller) getBackend() func(w http.ResponseWriter, r *http.Request) 
 }
 
 func (sc *Controller) setPrefetchConfiguration() func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(_ http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			log.L.Errorf("Failed to read prefetch list: %v", err)
@@ -231,7 +231,7 @@ func (sc *Controller) setPrefetchConfiguration() func(w http.ResponseWriter, r *
 }
 
 func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		info := make([]daemonInfo, 0, 10)
 
 		for _, manager := range sc.managers {
@@ -282,7 +282,7 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 
 // TODO: Implement me!
 func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		m := newErrorMessage("not implemented")
 		http.Error(w, m.encode(), http.StatusNotImplemented)
 	}

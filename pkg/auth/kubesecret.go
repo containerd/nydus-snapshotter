@@ -125,7 +125,7 @@ func (kubelistener *KubeSecretListener) SyncKubeSecrets(ctx context.Context, cli
 				return
 			}
 		},
-		UpdateFunc: func(old, new interface{}) {
+		UpdateFunc: func(_, new interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(new)
 			if err != nil {
 				logrus.WithError(err).Errorf("failed to get key for secret from cache")

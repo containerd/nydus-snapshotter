@@ -19,7 +19,7 @@ var (
 	DefaultAttempts      = uint(10)
 	DefaultDelay         = 100 * time.Millisecond
 	DefaultMaxJitter     = 100 * time.Millisecond
-	DefaultOnRetry       = func(n uint, err error) {}
+	DefaultOnRetry       = func(_ uint, _ error) {}
 	DefaultRetryIf       = IsRecoverable
 	DefaultDelayType     = CombineDelay(FixedDelay, RandomDelay)
 	DefaultLastErrorOnly = false
