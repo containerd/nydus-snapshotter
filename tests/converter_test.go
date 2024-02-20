@@ -443,7 +443,7 @@ func buildChunkDict(t *testing.T, workDir, fsVersion string, n int) (string, str
 	require.Equal(t, []digest.Digest{lowerNydusBlobDigest}, blobDigests)
 
 	dictBlobPath := ""
-	err = filepath.WalkDir(blobDir, func(path string, entry fs.DirEntry, err error) error {
+	err = filepath.WalkDir(blobDir, func(path string, _ fs.DirEntry, err error) error {
 		require.NoError(t, err)
 		if path == blobDir {
 			return nil

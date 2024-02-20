@@ -708,13 +708,13 @@ func (o *snapshotter) workPath(id string) string {
 }
 
 func (o *snapshotter) findReferrerLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
-	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, info snapshots.Info) bool {
+	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(_ string, info snapshots.Info) bool {
 		return o.fs.CheckReferrer(ctx, info.Labels)
 	})
 }
 
 func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
-	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(id string, i snapshots.Info) bool {
+	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(_ string, i snapshots.Info) bool {
 		return label.IsNydusMetaLayer(i.Labels)
 	})
 }

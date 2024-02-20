@@ -37,7 +37,7 @@ func prepareNydusServer(t *testing.T) (string, func()) {
 	if err == nil {
 		_ = os.Remove(mockSocket)
 	}
-	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)
 		info := types.DaemonInfo{
 			ID:      "testid",
