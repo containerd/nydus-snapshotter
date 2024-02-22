@@ -34,6 +34,7 @@ jobs:
         run: |
           make
           cp bin/containerd-nydus-grpc ./
+          cp bin/nydus-overlayfs ./
           cp -r misc/snapshotter/* ./
           ls -tl ./
           NYDUS_VER=v$(curl --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
