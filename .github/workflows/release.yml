@@ -144,13 +144,16 @@ jobs:
           echo "NYDUS_STABLE_VER=$NYDUS_STABLE_VER" >> "$GITHUB_ENV"
           printf 'nydus version is: %s\n' "$NYDUS_STABLE_VER"
       - name: build and push nydus-snapshotter image
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           context: misc/snapshotter
           file: misc/snapshotter/Dockerfile
           push: true
           platforms: ${{ matrix.build-os }}/${{ matrix.build-arch }}
-          tags: ${{ steps.meta.outputs.tags }}-${{ matrix.build-arch }}
+          provenance: false
+          tags: |
+            ${{ fromJSON(steps.meta.outputs.json).tags[0] }}-${{ matrix.build-arch }}
+            ${{ fromJSON(steps.meta.outputs.json).tags[1] }}-${{ matrix.build-arch }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: NYDUS_VER=${{ env.NYDUS_STABLE_VER }}
 
@@ -171,7 +174,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       - name: Publish manifest for multi-arch image
         run: |
-          docker manifest create ${{ steps.meta.outputs.tags }} \
-          --amend ${{ steps.meta.outputs.tags }}-amd64 --amend ${{ steps.meta.outputs.tags }}-arm64 \
-          --amend ${{ steps.meta.outputs.tags }}-s390x --amend ${{ steps.meta.outputs.tags }}-ppc64le
-          docker manifest push ${{ steps.meta.outputs.tags }}
+          IFS=',' read -ra tags <<< "$(echo "${{ steps.meta.outputs.tags }}" | tr '\n' ',')"
+          for tag in "${tags[@]}"; do
+            docker manifest create "${tag}" \
+              --amend "${tag}-amd64" \
+              --amend "${tag}-arm64" \
+              --amend "${tag}-s390x" \
+              --amend "${tag}-ppc64le"
+            docker manifest push "${tag}"
+          done
