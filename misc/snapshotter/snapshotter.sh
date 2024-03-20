@@ -257,7 +257,7 @@ function main() {
     fi
 
     CONTAINER_RUNTIME=$(get_container_runtime)
-    if [ "${CONTAINER_RUNTIME}" == "k3s" ] || [ "${CONTAINER_RUNTIME}" == "k3s-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-server" ]; then
+    if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
         CONTAINER_RUNTIME_CONFIG_TMPL="${CONTAINER_RUNTIME_CONFIG}.tmpl"
         if [ ! -f "${CONTAINER_RUNTIME_CONFIG_TMPL}" ]; then
             cp "${CONTAINER_RUNTIME_CONFIG}" "${CONTAINER_RUNTIME_CONFIG_TMPL}"
