@@ -197,8 +197,13 @@ function cleanup_snapshotter() {
 
     pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}')
     if [ ! -z "$pid" ]; then
-        for i in $(nsenter -t 1 -m ctr -n k8s.io snapshot --snapshotter nydus list | grep -v KEY | cut -d' ' -f1); do
-            nsenter -t 1 -m ctr -n k8s.io snapshot --snapshotter nydus rm $i || true
+        local ctr_args=""
+        if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
+            ctr_args="--address /run/k3s/containerd/containerd.sock "
+        fi
+        ctr_args+="--namespace k8s.io snapshot --snapshotter nydus"
+        for i in $(nsenter -t 1 -m ctr ${ctr_args} list | grep -v KEY | cut -d' ' -f1); do
+            nsenter -t 1 -m ctr ${ctr_args} rm $i || true
         done
     fi
     echo "Recover containerd config"
@@ -252,7 +257,7 @@ function main() {
     fi
 
     CONTAINER_RUNTIME=$(get_container_runtime)
-    if [ "${CONTAINER_RUNTIME}" == "k3s" ] || [ "${CONTAINER_RUNTIME}" == "k3s-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-agent" ] || [ "${CONTAINER_RUNTIME}" == "rke2-server" ]; then
+    if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
         CONTAINER_RUNTIME_CONFIG_TMPL="${CONTAINER_RUNTIME_CONFIG}.tmpl"
         if [ ! -f "${CONTAINER_RUNTIME_CONFIG_TMPL}" ]; then
             cp "${CONTAINER_RUNTIME_CONFIG}" "${CONTAINER_RUNTIME_CONFIG_TMPL}"
