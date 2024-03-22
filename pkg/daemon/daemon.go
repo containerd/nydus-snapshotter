@@ -54,7 +54,8 @@ type ConfigState struct {
 	SupervisorPath  string
 	ThreadNum       int
 	// Where the configuration file resides, all rafs instances share the same configuration template
-	ConfigDir string
+	ConfigDir   string
+	PrefetchDir string
 }
 
 // TODO: Record queried nydusd state

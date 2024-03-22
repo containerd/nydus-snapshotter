@@ -16,6 +16,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  REGISTRY: ghcr.io
+  SNAPSHOTTER_CONFIG: /etc/nydus/config.toml
+  SOURCE_SNAPSHOTTER_CONFIG: misc/snapshotter/config.toml
+  NYDUSD_CONFIG: /etc/nydus/nydusd-config.fusedev.json
+  SOURCE_NYDUSD_CONFIG: misc/snapshotter/nydusd-config.fusedev.json
+  SNAPSHOTTER_SYSTEMD_UNIT_SERVICE: misc/snapshotter/nydus-snapshotter.fusedev.service
 
 jobs:
   run_optimizer:
@@ -58,6 +64,34 @@ jobs:
           sudo mkdir -p /opt/cni/bin
           sudo tar xzf cni-plugins-linux-amd64-v1.2.0.tgz -C /opt/cni/bin/
           sudo install -D -m 755 misc/example/10-containerd-net.conflist /etc/cni/net.d/10-containerd-net.conflist
+      - name: Setup nydus-snapshotter and nydus service
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+          sudo install -D -m 755 bin/containerd-nydus-grpc /usr/local/bin/containerd-nydus-grpc
+          if [ ! -e "${{ env.NYDUSD_CONFIG }}" ]; then
+          echo "Installing ${{ env.SOURCE_NYDUSD_CONFIG }} to ${{ env.NYDUSD_CONFIG }}"
+          sudo install -D -m 664 "${{ env.SOURCE_NYDUSD_CONFIG }}" "${{ env.NYDUSD_CONFIG }}"
+          fi
+          if [ ! -e "${{ env.SNAPSHOTTER_CONFIG }}" ]; then
+          echo "Installing ${{ env.SOURCE_SNAPSHOTTER_CONFIG }} to ${{ env.SNAPSHOTTER_CONFIG }}"
+          sudo install -D -m 664 "${{ env.SOURCE_SNAPSHOTTER_CONFIG }}" "${{ env.SNAPSHOTTER_CONFIG }}"
+          fi
+          sudo ln -f -s /etc/nydus/nydusd-config.fusedev.json /etc/nydus/nydusd-config.json
+          echo "Installing ${{ env.SNAPSHOTTER_SYSTEMD_UNIT_SERVICE }} to /etc/systemd/system/nydus-snapshotter.service"
+          sudo install -D -m 644 "${{ env.SNAPSHOTTER_SYSTEMD_UNIT_SERVICE }}" /etc/systemd/system/nydus-snapshotter.service
+          if command -v systemctl >/dev/null; then
+            sudo systemctl enable /etc/systemd/system/nydus-snapshotter.service
+            sudo systemctl restart nydus-snapshotter
+          fi
+          sleep 5
+          NYDUS_VER=v$(curl -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+          tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
+          # sudo systemctl restart nydus-snapshotter.service
+          sudo install -D -m 755 nydus-static/nydusd /usr/local/bin/nydusd 
+          sudo install -D -m 755 nydus-static/nydus-image /usr/local/bin/nydus-image 
+          sudo install -D -m 755 nydus-static/nydusctl /usr/local/bin/nydusctl
+
       - name: Build and install optimizer
         run: |
           rustup component add rustfmt clippy
@@ -84,22 +118,45 @@ jobs:
             echo "containerd is not ready"
             exit 1
           fi
+      - name: Setup prefetch-distribution http server
+        run: |
+          go build -o prefetch-distribution tools/prefetch-distribution/main.go
+          nohup ./prefetch-distribution &  
+          sleep 5
+      - name: Log in to container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate accessed files list
         run: |
           sed -i "s|host_path: script|host_path: $(pwd)/misc/optimizer/script|g" misc/optimizer/nginx.yaml
           sudo crictl run misc/optimizer/nginx.yaml misc/optimizer/sandbox.yaml
           sleep 20
           sudo crictl rmp  -f --all
+          sudo crictl rmi --all
           tree /opt/nri/optimizer/results/
-          count=$(cat /opt/nri/optimizer/results/library/nginx:1.23.3 | wc -l)
+          count=$(cat /opt/nri/optimizer/results/dragonflyoss/image-service/nginx:nydus-latest | wc -l)
           expected=$(cat misc/optimizer/script/file_list.txt | wc -l)
           echo "count: $count expected minimum value: $expected"
           if [ $count -lt $expected ]; then
-            echo "failed to generate accessed files list for nginx:1.23.3"
+            echo "failed to generate accessed files list for nginx:nydus-latest"
             cat misc/optimizer/script/file_list.txt
             exit 1
           fi
-          cat /opt/nri/optimizer/results/library/nginx:1.23.3.csv
+          cat /opt/nri/optimizer/results/dragonflyoss/image-service/nginx:nydus-latest.csv
+      - name: Transmit the prefetch list to nydusd
+        run: |
+          sed -i "s|host_path: script|host_path: $(pwd)/misc/optimizer/script|g" misc/optimizer/nginx.yaml
+          sudo crictl run misc/optimizer/nginx.yaml misc/optimizer/sandbox.yaml
+          if sudo ps aux | grep  "[/]usr/local/bin/nydusd"  | grep "prefetch-files"; then
+              echo "Found --prefetch-files in running processes"
+          else
+              echo "Error: --prefetch-files not found in running processes"
+              exit 1
+          fi
       - name: Dump logs
         if: failure()
         continue-on-error: true

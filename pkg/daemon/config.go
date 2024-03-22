@@ -16,6 +16,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/internal/constant"
+	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
 )
 
 // Build runtime nydusd daemon object, which might be persisted later
@@ -27,6 +28,20 @@ func WithSocketDir(dir string) NewDaemonOpt {
 			return errors.Wrapf(err, "create socket dir %s", s)
 		}
 		d.States.APISocket = path.Join(s, "api.sock")
+		return nil
+	}
+}
+
+func WithPrefetchDir(dir, imageID string) NewDaemonOpt {
+	return func(d *Daemon) error {
+		s := filepath.Join(dir, d.ID())
+		prefetchDir, err := prefetch.GetPrefetchList(s, imageID)
+		if err != nil && !errors.Is(err, prefetch.ErrUds) {
+			return errors.Wrapf(err, "failed to get prefetchList for image %s in path %s", imageID, s)
+		}
+		if prefetchDir != "" {
+			d.States.PrefetchDir = prefetchDir
+		}
 		return nil
 	}
 }
