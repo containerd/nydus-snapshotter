@@ -29,11 +29,12 @@ func isSignalKilled(err error) bool {
 type PackOption struct {
 	BuilderPath string
 
-	BootstrapPath    string
 	BlobPath         string
+	ExternalBlobPath string
 	FsVersion        string
 	SourcePath       string
 	ChunkDictPath    string
+	AttributesPath   string
 	PrefetchPatterns string
 	Compressor       string
 	OCIRef           bool
@@ -75,7 +76,7 @@ type outputJSON struct {
 	Blobs []string
 }
 
-func buildPackArgs(option PackOption) []string {
+func buildPackArgs(option PackOption) ([]string, error) {
 	if option.FsVersion == "" {
 		option.FsVersion = "6"
 	}
@@ -97,10 +98,25 @@ func buildPackArgs(option PackOption) []string {
 	if option.Features.Contains(FeatureTar2Rafs) {
 		args = append(
 			args,
-			"--type",
-			"tar-rafs",
 			"--blob-inline-meta",
 		)
+		info, err := os.Stat(option.SourcePath)
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			args = append(
+				args,
+				"--type",
+				"dir-rafs",
+			)
+		} else {
+			args = append(
+				args,
+				"--type",
+				"tar-rafs",
+			)
+		}
 		if option.FsVersion == "6" {
 			args = append(
 				args,
@@ -140,9 +156,15 @@ func buildPackArgs(option PackOption) []string {
 	if option.Encrypt {
 		args = append(args, "--encrypt")
 	}
+	if option.AttributesPath != "" {
+		args = append(args, "--attributes", option.AttributesPath)
+	}
+	if option.ExternalBlobPath != "" {
+		args = append(args, "--external-blob", option.ExternalBlobPath)
+	}
 	args = append(args, option.SourcePath)
 
-	return args
+	return args, nil
 }
 
 func Pack(option PackOption) error {
@@ -157,7 +179,10 @@ func Pack(option PackOption) error {
 		defer cancel()
 	}
 
-	args := buildPackArgs(option)
+	args, err := buildPackArgs(option)
+	if err != nil {
+		return err
+	}
 	logrus.Debugf("\tCommand: %s %s", option.BuilderPath, strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, option.BuilderPath, args...)
