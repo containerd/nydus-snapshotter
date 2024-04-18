@@ -31,6 +31,10 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			EnableStargz:         false,
 			EnableReferrerDetect: false,
 		},
+		PrefetchControllerConfig: PrefetchControllerConfig{
+			Enable:         false,
+			PrefetchConfig: "http://localhost:1323/api/v1/prefetch",
+		},
 		CleanupOnClose: false,
 		SystemControllerConfig: SystemControllerConfig{
 			Enable:  true,
