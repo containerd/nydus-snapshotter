@@ -74,12 +74,14 @@ const FAN_OPEN: u64 = 0x0000_0020;
 const FAN_OPEN_EXEC: u64 = 0x00001000;
 const AT_FDCWD: i32 = -100;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum SetnsError {
     IO(io::Error),
     Nix(nix::Error),
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum SendError {
     IO(io::Error),
