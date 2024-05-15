@@ -14,6 +14,11 @@
 
 version = 2
 
+[plugins."io.containerd.grpc.v1.cri"]
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+      snapshotter = "nydus"
+      disable_snapshot_annotations = false
+      
 [proxy_plugins]
   [proxy_plugins.nydus]
     type = "snapshot"
