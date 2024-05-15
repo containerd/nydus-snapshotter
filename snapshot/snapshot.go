@@ -22,9 +22,9 @@ import (
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/continuity/fs"
-
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
@@ -430,6 +430,11 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	snap, err := snapshot.GetSnapshot(ctx, o.ms, key)
 	if err != nil {
 		return nil, errors.Wrapf(err, "get snapshot %s", key)
+	}
+
+	if treatAsProxyDriver(info.Labels) {
+		log.L.Warnf("[Mounts] treat as proxy mode for the prepared snapshot by other snapshotter possibly: id = %s, labels = %v", id, info.Labels)
+		return o.mountProxy(ctx, *snap)
 	}
 
 	if needRemoteMounts {
@@ -838,6 +843,50 @@ func overlayMount(options []string) []mount.Mount {
 	}
 }
 
+// Handle proxy mount which the snapshot has been prepared by other snapshotter, mainly used for pause image in containerd
+func (o *snapshotter) mountProxy(ctx context.Context, s storage.Snapshot) ([]mount.Mount, error) {
+	var overlayOptions []string
+	if s.Kind == snapshots.KindActive {
+		overlayOptions = append(overlayOptions,
+			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
+			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
+		)
+	}
+
+	log.G(ctx).Debugf("len(s.ParentIDs) = %v", len(s.ParentIDs))
+	parentPaths := make([]string, 0, len(s.ParentIDs)+1)
+	if len(s.ParentIDs) == 0 {
+		parentPaths = append(parentPaths, config.GetSnapshotsRootDir())
+	} else {
+		for _, id := range s.ParentIDs {
+			parentPaths = append(parentPaths, o.upperPath(id))
+		}
+	}
+
+	lowerDirOption := fmt.Sprintf("lowerdir=%s", strings.Join(parentPaths, ":"))
+	overlayOptions = append(overlayOptions, lowerDirOption)
+	log.G(ctx).Infof("proxy mount options %v", overlayOptions)
+	options, err := o.mountWithProxyVolume(rafs.Rafs{
+		FsDriver:    config.GetFsDriver(),
+		Annotations: make(map[string]string),
+	})
+	if err != nil {
+		return []mount.Mount{}, errors.Wrapf(err, "create kata volume for proxy")
+	}
+	if len(options) > 0 {
+		overlayOptions = append(overlayOptions, options...)
+	}
+	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
+	mounts := []mount.Mount{
+		{
+			Type:    "fuse.nydus-overlayfs",
+			Source:  "overlay",
+			Options: overlayOptions,
+		},
+	}
+	return mounts, nil
+}
+
 // `s` is the upmost snapshot and `id` refers to the nydus meta snapshot
 // `s` and `id` can represent a different layer, it's useful when View an image
 func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string, s storage.Snapshot, id, key string) ([]mount.Mount, error) {
@@ -1010,4 +1059,20 @@ func (o *snapshotter) snapshotRoot() string {
 
 func (o *snapshotter) snapshotDir(id string) string {
 	return filepath.Join(o.snapshotRoot(), id)
+}
+
+func treatAsProxyDriver(labels map[string]string) bool {
+	isProxyDriver := config.GetFsDriver() == config.FsDriverProxy
+	isProxyLabel := label.IsNydusProxyMode(labels)
+	_, isProxyImage := labels[label.CRIImageRef]
+	log.G(context.Background()).Debugf("isProxyDriver = %t, isProxyLabel = %t, isProxyImage = %t", isProxyDriver, isProxyLabel, isProxyImage)
+	switch {
+	case isProxyDriver && isProxyImage:
+		return false
+	case isProxyDriver != isProxyLabel:
+		log.G(context.Background()).Warnf("check Labels With Driver failed, driver = %q, labels = %q", config.GetFsDriver(), labels)
+		return true
+	default:
+		return false
+	}
 }

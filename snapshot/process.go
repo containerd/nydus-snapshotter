@@ -57,6 +57,11 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		}
 	}
 
+	proxyHandler := func() (bool, []mount.Mount, error) {
+		mounts, err := sn.mountProxy(ctx, s)
+		return false, mounts, err
+	}
+
 	// OCI image is also marked with "containerd.io/snapshot.ref" by Containerd
 	target, isRoLayer := labels[label.TargetSnapshotRef]
 
@@ -118,6 +123,10 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		// It should not be committed during this Prepare() operation.
 
 		pID, pInfo, _, pErr := snapshot.GetSnapshotInfo(ctx, sn.ms, parent)
+		if treatAsProxyDriver(pInfo.Labels) {
+			logger.Warnf("treat as proxy mode for the prepared snapshot by other snapshotter possibly: id = %s, labels = %v", pID, pInfo.Labels)
+			handler = proxyHandler
+		}
 		if pErr == nil && label.IsNydusProxyMode(pInfo.Labels) {
 			logger.Infof("Prepare active snapshot %s in proxy mode", key)
 			handler = remoteHandler(pID, pInfo.Labels)
