@@ -39,6 +39,7 @@ spec:
       hostPID: true
       containers:
       - name: nydus-snapshotter
+        # The image tag will be updated to reflect the release version in GitHub Release action.
         image: "ghcr.io/containerd/nydus-snapshotter:latest"
         imagePullPolicy: Always
         env:
