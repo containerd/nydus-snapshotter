@@ -287,6 +287,10 @@ func (m *Manager) cleanUpDaemonResources(d *daemon.Daemon) {
 	resource := []string{d.States.ConfigDir, d.States.LogDir}
 	if !d.IsSharedDaemon() {
 		socketDir := path.Dir(d.GetAPISock())
+		if d.States.PrefetchDir != "" {
+			prefetchDir := path.Dir(d.States.PrefetchDir)
+			resource = append(resource, prefetchDir)
+		}
 		resource = append(resource, socketDir)
 	}
 
