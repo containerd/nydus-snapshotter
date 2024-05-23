@@ -40,6 +40,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.3
 	github.com/urfave/cli/v2 v2.25.0
+	github.com/vmihailenco/msgpack/v5 v5.4.1
 	go.etcd.io/bbolt v1.3.7
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	golang.org/x/net v0.17.0
@@ -54,6 +55,8 @@ require (
 	k8s.io/cri-api v0.28.3
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 )
+
+require github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 
 require (
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20221215162035-5330a85ea652 // indirect
