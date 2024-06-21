@@ -32,7 +32,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker"
 	"github.com/pelletier/go-toml"
