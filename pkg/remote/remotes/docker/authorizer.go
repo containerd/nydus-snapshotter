@@ -25,7 +25,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker/auth"
 	remoteerrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"
