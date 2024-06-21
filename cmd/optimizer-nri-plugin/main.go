@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
 	"github.com/containerd/containerd/reference/docker"
@@ -122,7 +122,6 @@ type plugin struct {
 
 var (
 	cfg                  PluginConfig
-	log                  *logrus.Logger
 	logWriter            *syslog.Writer
 	globalFanotifyServer = make(map[string]*fanotify.Server)
 
@@ -135,8 +134,8 @@ const (
 	imageNameLabel = "io.kubernetes.cri.image-name"
 )
 
-func (p *plugin) Configure(_ context.Context, config, runtime, version string) (stub.EventMask, error) {
-	log.Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
+func (p *plugin) Configure(ctx context.Context, config, runtime, version string) (stub.EventMask, error) {
+	log.G(ctx).Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
 	if config == "" {
 		return p.mask, nil
 	}
@@ -154,7 +153,7 @@ func (p *plugin) Configure(_ context.Context, config, runtime, version string) (
 		return 0, errors.Wrap(err, "parse events in configuration")
 	}
 
-	log.Infof("configuration: %#v", cfg)
+	log.G(ctx).Infof("configuration: %#v", cfg)
 
 	return p.mask, nil
 }
@@ -240,13 +239,13 @@ func main() {
 
 			cfg = flags.Args.Config
 
-			log = logrus.StandardLogger()
-			log.SetFormatter(&logrus.TextFormatter{
-				PadLevelText: true,
-			})
+			// FIXME(thaJeztah): ucontainerd's log does not set "PadLevelText: true"
+			_ = log.SetFormat(log.TextFormat)
+			ctx := log.WithLogger(context.Background(), log.L)
+
 			logWriter, err = syslog.New(syslog.LOG_INFO, "optimizer-nri-plugin")
 			if err == nil {
-				log.SetOutput(io.MultiWriter(os.Stdout, logWriter))
+				log.G(ctx).Logger.SetOutput(io.MultiWriter(os.Stdout, logWriter))
 			}
 
 			if flags.Args.PluginName != "" {
@@ -259,17 +258,17 @@ func main() {
 			p := &plugin{}
 
 			if p.mask, err = api.ParseEventMask(flags.Args.PluginEvents); err != nil {
-				log.Fatalf("failed to parse events: %v", err)
+				log.G(ctx).Fatalf("failed to parse events: %v", err)
 			}
 			cfg.Events = strings.Split(flags.Args.PluginEvents, ",")
 
 			if p.stub, err = stub.New(p, append(opts, stub.WithOnClose(p.onClose))...); err != nil {
-				log.Fatalf("failed to create plugin stub: %v", err)
+				log.G(ctx).Fatalf("failed to create plugin stub: %v", err)
 			}
 
 			err = p.stub.Run(context.Background())
 			if err != nil {
-				log.Errorf("plugin exited with error %v", err)
+				log.G(ctx).Errorf("plugin exited with error %v", err)
 				os.Exit(1)
 			}
 
@@ -278,9 +277,9 @@ func main() {
 	}
 	if err := app.Run(os.Args); err != nil {
 		if errdefs.IsConnectionClosed(err) {
-			log.Info("optimizer NRI plugin exited")
+			log.L.Info("optimizer NRI plugin exited")
 		} else {
-			log.WithError(err).Fatal("failed to start optimizer NRI plugin")
+			log.L.WithError(err).Fatal("failed to start optimizer NRI plugin")
 		}
 	}
 }

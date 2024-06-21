@@ -9,9 +9,9 @@ package filesystem
 import (
 	"context"
 
-	"github.com/containerd/containerd/log"
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"

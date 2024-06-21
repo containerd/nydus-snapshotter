@@ -22,8 +22,8 @@ import (
 	"syscall"
 
 	"github.com/containerd/containerd/archive/compression"
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"

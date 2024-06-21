@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/registry"
 	"github.com/golang/groupcache/lru"
 	"github.com/google/go-containerregistry/pkg/authn"

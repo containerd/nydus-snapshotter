@@ -9,7 +9,7 @@ package erofs
 import (
 	"fmt"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"

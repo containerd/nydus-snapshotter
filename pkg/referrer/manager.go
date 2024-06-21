@@ -9,7 +9,7 @@ package referrer
 import (
 	"context"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/golang/groupcache/lru"
 	"github.com/opencontainers/go-digest"

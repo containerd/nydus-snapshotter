@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/containerd/cgroups/v3/cgroup2"
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"golang.org/x/exp/slices"
 )
 

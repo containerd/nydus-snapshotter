@@ -8,7 +8,7 @@ package v1
 
 import (
 	"github.com/containerd/cgroups/v3/cgroup1"
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 )

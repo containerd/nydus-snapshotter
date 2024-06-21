@@ -7,7 +7,7 @@
 package cgroup
 
 import (
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 )
 
 type Manager struct {

@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 )
 
 const (

@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
