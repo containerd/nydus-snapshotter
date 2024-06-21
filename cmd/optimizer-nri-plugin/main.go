@@ -124,15 +124,18 @@ var (
 	cfg                  PluginConfig
 	log                  *logrus.Logger
 	logWriter            *syslog.Writer
-	_                    = stub.ConfigureInterface(&plugin{})
 	globalFanotifyServer = make(map[string]*fanotify.Server)
+
+	_ = stub.ConfigureInterface(&plugin{})
+	_ = stub.StartContainerInterface(&plugin{})
+	_ = stub.StopContainerInterface(&plugin{})
 )
 
 const (
 	imageNameLabel = "io.kubernetes.cri.image-name"
 )
 
-func (p *plugin) Configure(config, runtime, version string) (stub.EventMask, error) {
+func (p *plugin) Configure(_ context.Context, config, runtime, version string) (stub.EventMask, error) {
 	log.Infof("got configuration data: %q from runtime %s %s", config, runtime, version)
 	if config == "" {
 		return p.mask, nil
@@ -156,7 +159,7 @@ func (p *plugin) Configure(config, runtime, version string) (stub.EventMask, err
 	return p.mask, nil
 }
 
-func (p *plugin) StartContainer(_ *api.PodSandbox, container *api.Container) error {
+func (p *plugin) StartContainer(_ context.Context, _ *api.PodSandbox, container *api.Container) error {
 	dir, imageName, err := GetImageName(container.Annotations)
 	if err != nil {
 		return err
@@ -183,7 +186,7 @@ func (p *plugin) StartContainer(_ *api.PodSandbox, container *api.Container) err
 	return nil
 }
 
-func (p *plugin) StopContainer(_ *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
+func (p *plugin) StopContainer(_ context.Context, _ *api.PodSandbox, container *api.Container) ([]*api.ContainerUpdate, error) {
 	var update = []*api.ContainerUpdate{}
 	_, imageName, err := GetImageName(container.Annotations)
 	if err != nil {
