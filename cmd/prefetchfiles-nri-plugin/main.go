@@ -85,6 +85,8 @@ var (
 	globalSocket string
 	log          *logrus.Logger
 	logWriter    *syslog.Writer
+
+	_ = stub.RunPodInterface(&plugin{})
 )
 
 // sendDataOverHTTP sends the prefetch data to the specified endpoint over HTTP using a Unix socket.
@@ -115,7 +117,7 @@ func sendDataOverHTTP(data string, endpoint, sock string) error {
 	return nil
 }
 
-func (p *plugin) RunPodSandbox(pod *api.PodSandbox) error {
+func (p *plugin) RunPodSandbox(_ context.Context, pod *api.PodSandbox) error {
 	prefetchList, ok := pod.Annotations[nydusPrefetchAnnotation]
 	if !ok {
 		return nil
