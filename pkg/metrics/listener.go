@@ -12,7 +12,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/registry"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

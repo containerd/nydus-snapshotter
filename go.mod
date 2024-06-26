@@ -3,7 +3,7 @@ module github.com/containerd/nydus-snapshotter
 go 1.19
 
 require (
-	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230106234847-43070de90fa1
+	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24
 	github.com/KarpelesLab/reflink v1.0.1
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.6+incompatible
 	github.com/aws/aws-sdk-go-v2 v1.17.6
@@ -11,19 +11,20 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.16
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.56
 	github.com/containerd/cgroups v1.1.0
-	github.com/containerd/cgroups/v3 v3.0.1
-	github.com/containerd/containerd v1.7.0
-	github.com/containerd/continuity v0.3.0
+	github.com/containerd/cgroups/v3 v3.0.2
+	github.com/containerd/containerd v1.7.7
+	github.com/containerd/continuity v0.4.2
 	github.com/containerd/fifo v1.1.0
-	github.com/containerd/nri v0.3.0
+	github.com/containerd/log v0.1.0
+	github.com/containerd/nri v0.4.0
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3
 	github.com/containers/ocicrypt v1.1.7
 	github.com/distribution/reference v0.5.0
-	github.com/docker/cli v23.0.1+incompatible
+	github.com/docker/cli v23.0.3+incompatible
 	github.com/freddierice/go-losetup v0.0.0-20220711213114-2a14873012db
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
-	github.com/google/go-containerregistry v0.13.0
+	github.com/google/go-containerregistry v0.14.0
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/go-retryablehttp v0.7.2
 	github.com/imdario/mergo v0.3.13
@@ -37,8 +38,8 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/rs/xid v1.4.0
-	github.com/sirupsen/logrus v1.9.0
-	github.com/stretchr/testify v1.8.3
+	github.com/sirupsen/logrus v1.9.3
+	github.com/stretchr/testify v1.8.4
 	github.com/urfave/cli/v2 v2.25.0
 	go.etcd.io/bbolt v1.3.7
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
@@ -56,9 +57,9 @@ require (
 )
 
 require (
-	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20221215162035-5330a85ea652 // indirect
-	github.com/Microsoft/go-winio v0.6.0 // indirect
-	github.com/Microsoft/hcsshim v0.10.0-rc.7 // indirect
+	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20230306123547-8075edf89bb0 // indirect
+	github.com/Microsoft/go-winio v0.6.1 // indirect
+	github.com/Microsoft/hcsshim v0.11.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.24 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.30 // indirect
@@ -77,11 +78,10 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cilium/ebpf v0.9.1 // indirect
-	github.com/containerd/ttrpc v1.2.1 // indirect
-	github.com/containerd/typeurl/v2 v2.1.0 // indirect
+	github.com/containerd/ttrpc v1.2.2 // indirect
+	github.com/containerd/typeurl/v2 v2.1.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
-	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker v23.0.3+incompatible // indirect

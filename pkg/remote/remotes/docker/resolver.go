@@ -29,10 +29,10 @@ import (
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/reference"
 	"github.com/containerd/containerd/tracing"
 	"github.com/containerd/containerd/version"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker/schema1" //nolint:staticcheck // Ignore SA1019. Need to keep deprecated package for compatibility.
 	remoteerrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"

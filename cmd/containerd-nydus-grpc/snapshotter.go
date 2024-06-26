@@ -22,8 +22,8 @@ import (
 
 	api "github.com/containerd/containerd/api/services/snapshots/v1"
 	"github.com/containerd/containerd/contrib/snapshotservice"
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/log"
 	"google.golang.org/grpc"
 )
 

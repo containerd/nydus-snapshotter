@@ -14,9 +14,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/continuity/fs"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 )
 

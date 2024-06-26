@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 )
 

@@ -11,6 +11,12 @@ run:
     - pkg/remote/remotes
 
 linters-settings:
+  depguard:
+    rules:
+      main:
+        deny:
+          - pkg: "github.com/containerd/containerd/log"
+            desc: The containerd log package was migrated to a separate module. Use github.com/containerd/log instead.
   #   govet:
   #     check-shadowing: true
   #     enable:
@@ -34,6 +40,7 @@ linters-settings:
 
 linters:
   enable:
+    - depguard      # Checks for imports that shouldn't be used.
     - staticcheck
     - unconvert
     - gofmt

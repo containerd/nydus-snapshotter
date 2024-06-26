@@ -10,7 +10,7 @@ package manager
 import (
 	"sync"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 )
 

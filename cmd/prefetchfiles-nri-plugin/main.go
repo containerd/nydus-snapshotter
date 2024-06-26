@@ -17,11 +17,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/log"
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -83,8 +83,9 @@ type plugin struct {
 
 var (
 	globalSocket string
-	log          *logrus.Logger
 	logWriter    *syslog.Writer
+
+	_ = stub.RunPodInterface(&plugin{})
 )
 
 // sendDataOverHTTP sends the prefetch data to the specified endpoint over HTTP using a Unix socket.
@@ -115,7 +116,7 @@ func sendDataOverHTTP(data string, endpoint, sock string) error {
 	return nil
 }
 
-func (p *plugin) RunPodSandbox(pod *api.PodSandbox) error {
+func (p *plugin) RunPodSandbox(ctx context.Context, pod *api.PodSandbox) error {
 	prefetchList, ok := pod.Annotations[nydusPrefetchAnnotation]
 	if !ok {
 		return nil
@@ -123,7 +124,7 @@ func (p *plugin) RunPodSandbox(pod *api.PodSandbox) error {
 
 	err := sendDataOverHTTP(prefetchList, endpointPrefetch, globalSocket)
 	if err != nil {
-		log.Errorf("failed to send data: %v", err)
+		log.G(ctx).Errorf("failed to send data: %v", err)
 		return err
 	}
 
@@ -131,7 +132,6 @@ func (p *plugin) RunPodSandbox(pod *api.PodSandbox) error {
 }
 
 func main() {
-
 	flags := NewPluginFlags()
 
 	app := &cli.App{
@@ -146,7 +146,9 @@ func main() {
 				err  error
 			)
 
-			log = logrus.StandardLogger()
+			// FIXME(thaJeztah): ucontainerd's log does not set "PadLevelText: true"
+			_ = log.SetFormat(log.TextFormat)
+			ctx := log.WithLogger(context.Background(), log.L)
 
 			configFileName := "prefetchConfig.toml"
 			configDir := defaultPrefetchConfigDir
@@ -154,7 +156,7 @@ func main() {
 
 			config, err := toml.LoadFile(configFilePath)
 			if err != nil {
-				log.Warnf("failed to read config file: %v", err)
+				log.G(ctx).Warnf("failed to read config file: %v", err)
 			}
 
 			configSocketAddrRaw := config.Get("file_prefetch.socket_address")
@@ -162,19 +164,15 @@ func main() {
 				if configSocketAddr, ok := configSocketAddrRaw.(string); ok {
 					globalSocket = configSocketAddr
 				} else {
-					log.Warnf("failed to read config: 'file_prefetch.socket_address' is not a string")
+					log.G(ctx).Warnf("failed to read config: 'file_prefetch.socket_address' is not a string")
 				}
 			} else {
 				globalSocket = flags.Args.SocketAddress
 			}
 
-			log.SetFormatter(&logrus.TextFormatter{
-				PadLevelText: true,
-			})
 			logWriter, err = syslog.New(syslog.LOG_INFO, "prefetch-nri-plugin")
-
 			if err == nil {
-				log.SetOutput(io.MultiWriter(os.Stdout, logWriter))
+				log.G(ctx).Logger.SetOutput(io.MultiWriter(os.Stdout, logWriter))
 			}
 
 			if flags.Args.PluginName != "" {
@@ -187,11 +185,11 @@ func main() {
 			p := &plugin{}
 
 			if p.mask, err = api.ParseEventMask(defaultEvents); err != nil {
-				log.Fatalf("failed to parse events: %v", err)
+				log.G(ctx).Fatalf("failed to parse events: %v", err)
 			}
 
 			if p.stub, err = stub.New(p, opts...); err != nil {
-				log.Fatalf("failed to create plugin stub: %v", err)
+				log.G(ctx).Fatalf("failed to create plugin stub: %v", err)
 			}
 
 			err = p.stub.Run(context.Background())
@@ -202,11 +200,10 @@ func main() {
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
-
 		if errdefs.IsConnectionClosed(err) {
-			log.Info("prefetch NRI plugin exited")
+			log.L.Info("prefetch NRI plugin exited")
 		} else {
-			log.WithError(err).Fatal("failed to start prefetch NRI plugin")
+			log.L.WithError(err).Fatal("failed to start prefetch NRI plugin")
 		}
 	}
 }

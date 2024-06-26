@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 )
 
 type prefetchInfo struct {

@@ -9,8 +9,8 @@ package collector
 import (
 	"context"
 
-	"github.com/containerd/containerd/log"
 	"github.com/containerd/continuity/fs"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/data"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/prometheus/client_golang/prometheus"

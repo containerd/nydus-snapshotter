@@ -30,7 +30,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
 	remoteserrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"
 	digest "github.com/opencontainers/go-digest"

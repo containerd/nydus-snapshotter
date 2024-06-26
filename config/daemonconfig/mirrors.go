@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 )

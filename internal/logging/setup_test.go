@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/containerd/containerd/log"
+	"github.com/containerd/log"
 	"github.com/sirupsen/logrus"
 	"gotest.tools/assert"
 )

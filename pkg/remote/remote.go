@@ -13,13 +13,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/distribution/reference"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker"
+	"github.com/distribution/reference"
+	"github.com/pkg/errors"
 )
 
 // IsErrHTTPResponseToHTTPSClient returns whether err is
@@ -106,7 +105,7 @@ func (remote *Remote) RetryWithPlainHTTP(ref string, err error) bool {
 		// If the error message includes the current registry host string, it
 		// implies that we can retry the request with plain HTTP.
 		if strings.Contains(err.Error(), fmt.Sprintf("/%s/", host)) {
-			logrus.WithError(err).Warningf("retrying with http for %s", host)
+			log.G(context.TODO()).WithError(err).Warningf("retrying with http for %s", host)
 			remote.withPlainHTTP = true
 		}
 	}
