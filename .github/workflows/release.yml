@@ -36,6 +36,9 @@ jobs:
             build-linker: static
     steps:
       - uses: actions/checkout@v3
+      - name: Pin docker image version to release version
+        run: |
+          sed -i "s|ghcr.io/containerd/nydus-snapshotter:latest|ghcr.io/containerd/nydus-snapshotter:${{ github.ref_name }}|" misc/snapshotter/base/nydus-snapshotter.yaml
       - uses: actions/setup-go@v3
         with:
           go-version: "1.19.6"
