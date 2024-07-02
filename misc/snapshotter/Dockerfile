@@ -36,9 +36,8 @@ COPY --from=kubectl-sourcer /usr/bin/kubectl /usr/bin/kubectl
 
 RUN mkdir -p ${CONFIG_DESTINATION} ${BINARY_DESTINATION} ${SCRIPT_DESTINATION} /var/lib/containerd-nydus/cache /tmp/blobs/
 COPY --from=sourcer /nydus* ${BINARY_DESTINATION}/
-COPY containerd-nydus-grpc nydus-overlayfs ${BINARY_DESTINATION}/
-COPY snapshotter.sh ${SCRIPT_DESTINATION}/snapshotter.sh
-RUN chmod +x ${BINARY_DESTINATION}/containerd-nydus-grpc ${BINARY_DESTINATION}/nydus-overlayfs ${SCRIPT_DESTINATION}/snapshotter.sh
+COPY --chmod=755 containerd-nydus-grpc nydus-overlayfs ${BINARY_DESTINATION}/
+COPY --chmod=755 snapshotter.sh ${SCRIPT_DESTINATION}/snapshotter.sh
 COPY nydusd-config.fusedev.json ${CONFIG_DESTINATION}/nydusd-fusedev.json
 COPY nydusd-config-localfs.json ${CONFIG_DESTINATION}/nydusd-localfs.json
 COPY nydusd-config.fscache.json ${CONFIG_DESTINATION}/nydusd-fscache.json
