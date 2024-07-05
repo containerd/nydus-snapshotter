@@ -99,7 +99,7 @@ crictl run nginx.yaml pod.yaml
 
 ```
 
-The result file for the nginx image is `/opt/nri/optimizer/results/nginx:latest`.
+The result file for the nginx image is `/opt/nri/optimizer/results/library/nginx:latest`.
 
 ## Build Nydus Image with Optimizer's Suggestions
 
@@ -125,7 +125,7 @@ sudo nydusify convert --source nginx --target sctb512/nginx:nydusv6 --fs-version
 With the `--prefetch-patterns` argument, we can specify the list of files to be written in the front of the nydus image and be prefetched in order when starting a container.
 
 ```console
-sudo nydusify convert --source nginx --target sctb512/nginx:optimized-nydusv6 --fs-version 6 --prefetch-patterns < /opt/nri/optimizer/results/nginx:latest
+sudo nydusify convert --source nginx --target sctb512/nginx:optimized-nydusv6 --fs-version 6 --prefetch-patterns < /opt/nri/optimizer/results/library/nginx:latest
 ```
 
 On a host with nydus-snapshotter installed and configured properly, start a container with an optimized nydus image.
