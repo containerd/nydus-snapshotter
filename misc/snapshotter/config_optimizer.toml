@@ -10,7 +10,7 @@ daemon_mode = "dedicated"
 cleanup_on_close = false
 
 [prefetch]
-enable = false
+enable = true
 distribution_pull_endpoint = "http://localhost:1323/api/v1/prefetch"
 
 [system]

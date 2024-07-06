@@ -15,14 +15,9 @@ import (
 	"path/filepath"
 	"strings"
 
-<<<<<<< HEAD
 	"github.com/containerd/log"
-=======
-	"github.com/containerd/containerd/log"
-	"github.com/pkg/errors"
-
 	"github.com/containerd/nydus-snapshotter/config"
->>>>>>> 5977f28 (unawareness prefetch implementation on snapshotter side)
+	"github.com/pkg/errors"
 )
 
 type prefetchlist struct {
