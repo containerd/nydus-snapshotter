@@ -3,7 +3,7 @@
     "backend": {
       "type": "localfs",
       "config": {
-        "dir": "/var/lib/containerd-nydus/cache/"
+        "dir": "/var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/"
       }
     },
     "cache": {

@@ -24,7 +24,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 
 	exampleConfig := SnapshotterConfig{
 		Version:    1,
-		Root:       "/var/lib/containerd-nydus",
+		Root:       "/var/lib/containerd/io.containerd.snapshotter.v1.nydus",
 		Address:    "/run/containerd-nydus/containerd-nydus-grpc.sock",
 		DaemonMode: "dedicated",
 		Experimental: Experimental{

@@ -20,7 +20,7 @@ SNAPSHOTTER_GRPC_SOCKET="${SNAPSHOTTER_GRPC_SOCKET:-/run/containerd-nydus/contai
 
 # The directory about nydus and nydus snapshotter
 NYDUS_CONFIG_DIR="${NYDUS_CONFIG_DIR:-/etc/nydus}"
-NYDUS_LIB_DIR="${NYDUS_LIB_DIR:-/var/lib/containerd-nydus}"
+NYDUS_LIB_DIR="${NYDUS_LIB_DIR:-/var/lib/containerd/io.containerd.snapshotter.v1.nydus}"
 NYDUS_BINARY_DIR="${NYDUS_BINARY_DIR:-/usr/local/bin}"
 SNAPSHOTTER_SCRYPT_DIR="${SNAPSHOTTER_SCRYPT_DIR:-/opt/nydus}"
 
