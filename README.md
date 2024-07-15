@@ -91,7 +91,7 @@ Or you can start nydus-snapshotter manually.
 # Otherwise, provide them in below command line.
 # `address` is the domain socket that you configured in containerd configuration file
 # `--nydusd-config` is the path to `nydusd` configuration file
-# The default nydus-snapshotter work directory is located at `/var/lib/containerd-nydus`
+# The default nydus-snapshotter work directory is located at `/var/lib/containerd/io.containerd.snapshotter.v1.nydus`
 
 $ sudo ./containerd-nydus-grpc --config /etc/nydus/config.toml --nydusd-config /etc/nydus/nydusd-config.json --log-to-stdout
 ```
