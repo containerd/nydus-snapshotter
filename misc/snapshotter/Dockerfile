@@ -29,7 +29,7 @@ ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 WORKDIR /root/
 RUN apk add --no-cache libc6-compat bash
 
-VOLUME /var/lib/containerd-nydus /run/containerd-nydus
+VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus /run/containerd-nydus
 
 COPY --from=sourcer /.nydus_version /.nydus_version
 COPY --from=kubectl-sourcer /usr/bin/kubectl /usr/bin/kubectl

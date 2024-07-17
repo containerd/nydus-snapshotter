@@ -41,7 +41,7 @@ const (
 	NydusdBinaryName             string = "nydusd"
 	NydusImageBinaryName         string = "nydus-image"
 
-	DefaultRootDir                 = "/var/lib/containerd-nydus"
+	DefaultRootDir                 = "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
 	DefaultAddress                 = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 	DefaultSystemControllerAddress = "/run/containerd-nydus/system.sock"
 

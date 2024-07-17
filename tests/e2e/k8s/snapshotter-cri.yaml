@@ -98,7 +98,7 @@ spec:
         - name: config-volume
           mountPath: "/etc/nydus-snapshotter"
         - name: nydus-lib
-          mountPath: "/var/lib/containerd-nydus"
+          mountPath: "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
           mountPropagation: Bidirectional
         - name: nydus-run
           mountPath: "/run/containerd-nydus"
@@ -131,7 +131,7 @@ spec:
         type: DirectoryOrCreate
     - name: nydus-lib
       hostPath:
-        path: /var/lib/containerd-nydus
+        path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
         type: DirectoryOrCreate
     - name: nydus-etc
       hostPath:
