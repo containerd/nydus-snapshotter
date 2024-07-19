@@ -6,4 +6,4 @@ resources:
 # newTag points to the latest release image and must be updated before tagging a new release
 images:
 - name: ghcr.io/containerd/nydus-snapshotter
-  newTag: v0.13.13
+  newTag: v0.13.14
