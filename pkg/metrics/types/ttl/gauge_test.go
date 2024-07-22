@@ -30,7 +30,7 @@ func TestNewGaugeVecWithTTL(t *testing.T) {
 	metricsCh := make(chan prometheus.Metric, 2)
 	go g.Collect(metricsCh)
 
-	var metricsSlice []dto.Metric
+	var metricsSlice []*dto.Metric
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -39,13 +39,13 @@ func TestNewGaugeVecWithTTL(t *testing.T) {
 			var metrics dto.Metric
 			err := m.Write(&metrics)
 			assert.Nil(t, err)
-			metricsSlice = append(metricsSlice, metrics)
+			metricsSlice = append(metricsSlice, &metrics)
 			wg.Done()
 		}
 	}()
 	wg.Wait()
 	assert.Equal(t, 2, len(metricsSlice))
-	metricsSlice = []dto.Metric{}
+	metricsSlice = []*dto.Metric{}
 
 	time.Sleep(3 * time.Second)
 	g.WithLabelValues("value1").Set(10)
@@ -64,7 +64,7 @@ func TestNewGaugeVecWithTTL(t *testing.T) {
 			err := m.Write(&metrics)
 			assert.Nil(t, err)
 			mu.Lock()
-			metricsSlice = append(metricsSlice, metrics)
+			metricsSlice = append(metricsSlice, &metrics)
 			mu.Unlock()
 		}
 	}()

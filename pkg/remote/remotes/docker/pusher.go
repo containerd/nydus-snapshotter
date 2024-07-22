@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"

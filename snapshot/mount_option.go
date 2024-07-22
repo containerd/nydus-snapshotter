@@ -15,9 +15,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/containerd/containerd/mount"
-	"github.com/containerd/containerd/snapshots"
-	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/label"

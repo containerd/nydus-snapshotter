@@ -24,7 +24,7 @@ networking:
   ipFamily: dual
 nodes:
   - role: control-plane
-    image: kindest/node:v1.23.4
+    image: kindest/node:v1.30.2
     extraMounts:
       - hostPath: ./containerd-config.toml
         containerPath: /etc/containerd/config.toml

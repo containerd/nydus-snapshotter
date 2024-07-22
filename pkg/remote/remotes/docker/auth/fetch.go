@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd/version"
+	"github.com/containerd/containerd/v2/version"
 	"github.com/containerd/log"
 	remoteserrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"
 )

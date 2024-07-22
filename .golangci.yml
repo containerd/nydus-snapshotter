@@ -2,10 +2,12 @@
 
 run:
   concurrency: 4
-  deadline: 5m
+  timeout: 5m
   issues-exit-code: 1
   tests: true
-  skip-dirs:
+
+issues:
+  exclude-dirs:
     - misc
     # The package is ported from containerd project, let's skip it.
     - pkg/remote/remotes
@@ -53,7 +55,7 @@ linters:
     - goimports
     - revive
     - ineffassign
-    - vet
+    - govet
     - unused
     - misspell
     - bodyclose

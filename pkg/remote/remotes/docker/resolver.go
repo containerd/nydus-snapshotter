@@ -27,10 +27,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/reference"
-	"github.com/containerd/containerd/tracing"
-	"github.com/containerd/containerd/version"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/pkg/reference"
+	"github.com/containerd/containerd/v2/pkg/tracing"
+	"github.com/containerd/containerd/v2/version"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
@@ -588,7 +588,6 @@ func (r *request) do(ctx context.Context) (*http.Response, error) {
 	_, httpSpan := tracing.StartSpan(
 		ctx,
 		tracing.Name("remotes.docker.resolver", "HTTPRequest"),
-		tracing.WithHTTPRequest(req),
 	)
 	defer httpSpan.End()
 	resp, err := client.Do(req)

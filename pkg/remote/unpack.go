@@ -12,7 +12,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/containerd/containerd/archive/compression"
+	"github.com/containerd/containerd/v2/pkg/archive/compression"
 )
 
 // Unpack unpacks the file named `source` in tar stream

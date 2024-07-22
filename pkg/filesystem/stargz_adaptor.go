@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/KarpelesLab/reflink"
-	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
