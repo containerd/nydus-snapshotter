@@ -42,19 +42,19 @@ jobs:
             ${{ runner.os }}-cargo
       - name: containerd runc and crictl
         run: |
-          sudo wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.26.0/crictl-v1.26.0-linux-amd64.tar.gz
+          sudo wget -q https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.26.0/crictl-v1.26.0-linux-amd64.tar.gz
           sudo tar zxvf ./crictl-v1.26.0-linux-amd64.tar.gz -C /usr/local/bin
           sudo install -D -m 755 misc/optimizer/crictl.yaml /etc/crictl.yaml
-          sudo wget https://github.com/containerd/containerd/releases/download/v1.7.0/containerd-static-1.7.0-linux-amd64.tar.gz
+          sudo wget -q https://github.com/containerd/containerd/releases/download/v1.7.0/containerd-static-1.7.0-linux-amd64.tar.gz
           sudo systemctl stop containerd
           sudo tar -zxf ./containerd-static-1.7.0-linux-amd64.tar.gz -C /usr/
           sudo install -D -m 755 misc/optimizer/containerd-config.toml /etc/containerd/config.toml
           sudo systemctl restart containerd
-          sudo wget https://github.com/opencontainers/runc/releases/download/v1.1.5/runc.amd64 -O /usr/bin/runc
+          sudo wget -q https://github.com/opencontainers/runc/releases/download/v1.1.5/runc.amd64 -O /usr/bin/runc
           sudo chmod +x /usr/bin/runc
       - name: Setup CNI
         run: |
-          wget https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-amd64-v1.2.0.tgz
+          wget -q https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-amd64-v1.2.0.tgz
           sudo mkdir -p /opt/cni/bin
           sudo tar xzf cni-plugins-linux-amd64-v1.2.0.tgz -C /opt/cni/bin/
           sudo install -D -m 755 misc/example/10-containerd-net.conflist /etc/cni/net.d/10-containerd-net.conflist

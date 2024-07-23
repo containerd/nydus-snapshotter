@@ -65,7 +65,7 @@ jobs:
         run: |
           # Download nydus components
           NYDUS_VER=v$(curl --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
-          wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+          wget -q https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
           tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
           mkdir -p /usr/bin
           sudo mv nydus-static/nydus-image nydus-static/nydusd nydus-static/nydusify /usr/bin/
