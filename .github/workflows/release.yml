@@ -1,4 +1,4 @@
-.github/workflows/release.ymlname: release
+name: release
 
 on:
   push:
@@ -140,7 +140,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       - name: Get the nydusd version
         run: |
-          export NYDUS_STABLE_VER=$(curl https://api.github.com/repos/dragonflyoss/nydus/releases/latest | jq -r .tag_name)
+          export NYDUS_STABLE_VER=$(curl -fsSL https://api.github.com/repos/dragonflyoss/nydus/releases/latest | jq -r .tag_name)
           echo "NYDUS_STABLE_VER=$NYDUS_STABLE_VER" >> "$GITHUB_ENV"
           printf 'nydus version is: %s\n' "$NYDUS_STABLE_VER"
       - name: build and push nydus-snapshotter image

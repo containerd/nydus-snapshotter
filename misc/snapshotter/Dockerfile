@@ -5,7 +5,7 @@ ARG NYDUS_VER=v2.2.4
 
 RUN apk add --no-cache curl && \
     apk add --no-cache --upgrade grep && \
-    curl -OL https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+    curl -fsSL -O https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     echo $NYDUS_VER > /.nydus_version && \
     tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     rm nydus-static-$NYDUS_VER-linux-amd64.tgz && \
@@ -17,7 +17,7 @@ RUN apk add --no-cache curl && \
     ARCH=$(uname -m) && \
     if [ "${ARCH}" = "x86_64" ]; then ARCH=amd64; fi && \
     if [ "${ARCH}" = "aarch64" ]; then ARCH=arm64; fi && \
-    curl -fL --progress-bar -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl && \
+    curl -fsSL -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl && \
     chmod +x /usr/bin/kubectl
 
 FROM base

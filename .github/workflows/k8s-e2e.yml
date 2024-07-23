@@ -37,7 +37,7 @@ jobs:
           cp bin/nydus-overlayfs ./
           cp -r misc/snapshotter/* ./
           ls -tl ./
-          NYDUS_VER=v$(curl --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          NYDUS_VER=v$(curl -fsSL --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
           docker build --build-arg NYDUS_VER=${NYDUS_VER} -t local-dev:e2e .
 
           ## load local test image into kind node
@@ -93,7 +93,7 @@ jobs:
           docker exec kind-control-plane systemctl restart containerd
       - name: Install Nydus binaries and convert nydus image
         run: |
-          NYDUS_VER=v$(curl --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          NYDUS_VER=v$(curl -fsSL --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
           wget -q https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
           tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz
           sudo cp nydus-static/nydusify nydus-static/nydus-image /usr/local/bin/
