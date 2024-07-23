@@ -3,8 +3,8 @@ FROM alpine:3.17.0 AS base
 FROM base AS sourcer
 ARG NYDUS_VER=v2.2.4
 
-RUN apk add --no-cache curl && \
-    apk add --no-cache --upgrade grep && \
+RUN apk add -q --no-cache curl && \
+    apk add -q --no-cache --upgrade grep && \
     curl -fsSL -O https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
     echo $NYDUS_VER > /.nydus_version && \
     tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
@@ -13,7 +13,7 @@ RUN apk add --no-cache curl && \
     && rm -rf /nydus-overlayfs
 
 FROM base AS kubectl-sourcer
-RUN apk add --no-cache curl && \
+RUN apk add -q --no-cache curl && \
     ARCH=$(uname -m) && \
     if [ "${ARCH}" = "x86_64" ]; then ARCH=amd64; fi && \
     if [ "${ARCH}" = "aarch64" ]; then ARCH=arm64; fi && \
@@ -27,7 +27,7 @@ ARG BINARY_DESTINATION=${DESTINATION}/usr/local/bin
 ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 
 WORKDIR /root/
-RUN apk add --no-cache libc6-compat bash
+RUN apk add -q --no-cache libc6-compat bash
 
 VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus /run/containerd-nydus
 
