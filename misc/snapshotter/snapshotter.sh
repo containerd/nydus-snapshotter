@@ -195,7 +195,7 @@ function deploy_snapshotter() {
 function cleanup_snapshotter() {
     echo "cleaning up snapshotter"
 
-    pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}')
+    pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}' || true)
     if [ ! -z "$pid" ]; then
         local ctr_args=""
         if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
