@@ -142,7 +142,7 @@ function reboot_containerd {
     killall "nydusd" || true
 
     # Let snapshotter shutdown all its services.
-    sleep 0.5
+    sleep 2
 
     # FIXME
     echo "umount globally shared mountpoint"
@@ -267,7 +267,7 @@ function start_single_container_on_stargz {
     reboot_containerd multiple
 
     killall "containerd-nydus-grpc" || true
-    sleep 0.5
+    sleep 2
 
     containerd-nydus-grpc --enable-stargz --daemon-mode multiple --fs-driver fusedev \
         --recover-policy none --log-to-stdout --config-path /etc/nydus/nydusd-config.json &
