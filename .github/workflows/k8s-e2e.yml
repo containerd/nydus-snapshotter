@@ -13,7 +13,7 @@ env:
 
 jobs:
   e2e_tests_k8s:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -152,3 +152,4 @@ jobs:
           name: k8s-e2e-tests-logs
           path: |
             /tmp/nydus-log
+          overwrite: true

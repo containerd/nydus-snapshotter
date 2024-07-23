@@ -13,7 +13,7 @@ jobs:
   build:
     name: Build and Lint
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
   build-optimizer:
     name: Build optimizer
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
   smoke:
     name: Smoke
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -75,7 +75,7 @@ jobs:
   cross-build-test:
     name: Cross Build Test
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         GOOS: ["linux", "windows", "darwin"]
@@ -95,7 +95,7 @@ jobs:
   coverage:
     name: Code coverage
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build]
     steps:
       - name: Checkout code
