@@ -61,7 +61,6 @@ COPY integration/entrypoint.sh /
 WORKDIR /nydus-snapshotter
 
 ENV PATH="${PATH}:/usr/local/bin/"
-ENV GO111MODULE=on
 
 # Prevent git from complaining about ownership
 RUN git config --global --add safe.directory /nydus-snapshotter
