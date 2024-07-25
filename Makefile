@@ -58,6 +58,11 @@ build:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS)" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
 
+.PHONY: static
+static:
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(LDFLAGS) -extldflags -static" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs
+
 debug:
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/containerd-nydus-grpc ./cmd/containerd-nydus-grpc
 	GOOS=${GOOS} GOARCH=${GOARCH} ${PROXY} go build -ldflags "$(DEBUG_LDFLAGS)" -gcflags "-N -l" -v -o bin/nydus-overlayfs ./cmd/nydus-overlayfs

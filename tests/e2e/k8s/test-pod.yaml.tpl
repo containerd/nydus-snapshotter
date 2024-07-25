@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
     - name: busybox
-      image: REGISTRY_IP:5000/busybox:nydus-v6-latest
+      image: REGISTRY_URL/busybox:nydus-v6-latest
       imagePullPolicy: Always
       command: ["sh", "-c"]
       args:
