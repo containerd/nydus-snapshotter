@@ -53,8 +53,8 @@ print_usage() {
 
 wait_service_active(){
     local wait_time="$1"
-	local sleep_time="$2"
-	local service="$3"
+    local sleep_time="$2"
+    local service="$3"
 
     nsenter -t 1 -m systemctl restart $service
 
@@ -65,7 +65,7 @@ wait_service_active(){
             return 0  
         else
             sleep "$sleep_time"
-			wait_time=$((wait_time-sleep_time))
+            wait_time=$((wait_time-sleep_time))
         fi
     done
 
@@ -141,14 +141,14 @@ EOF
                 "${CONTAINER_RUNTIME_CONFIG}".bak
     else
         sed -i '/\[plugins\..*\.containerd\]/a\disable_snapshot_annotations = false' \
-			"${CONTAINER_RUNTIME_CONFIG}".bak
+                "${CONTAINER_RUNTIME_CONFIG}".bak
     fi
     if grep -q 'discard_unpacked_layers' "$CONTAINER_RUNTIME_CONFIG".bak; then
         sed -i -e "s|discard_unpacked_layers = .*|discard_unpacked_layers = false|" \
                 "${CONTAINER_RUNTIME_CONFIG}".bak
     else
         sed -i '/\[plugins\..*\.containerd\]/a\discard_unpacked_layers = false' \
-			"${CONTAINER_RUNTIME_CONFIG}".bak
+                "${CONTAINER_RUNTIME_CONFIG}".bak
     fi
 
     if [ "${ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER}" == "false" ]; then
@@ -195,7 +195,7 @@ function deploy_snapshotter() {
 function cleanup_snapshotter() {
     echo "cleaning up snapshotter"
 
-    pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}')
+    pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}' || true)
     if [ ! -z "$pid" ]; then
         local ctr_args=""
         if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
@@ -218,10 +218,10 @@ function cleanup_snapshotter() {
     wait_service_active 30 5 ${CONTAINER_RUNTIME}
     echo "Removing nydus-snapshotter artifacts from host"
     rm -f "${SNAPSHOTTER_BINARY}"
-    rm -f "${NYDUS_BINARY_DIR}/nydus*"
-    rm -rf "${NYDUS_CONFIG_DIR}/*"
-    rm -rf "${SNAPSHOTTER_SCRYPT_DIR}/*"
-    rm -rf "${NYDUS_LIB_DIR}/*"
+    rm -f "${NYDUS_BINARY_DIR}"/nydus*
+    rm -rf "${NYDUS_CONFIG_DIR}"/*
+    rm -rf "${SNAPSHOTTER_SCRYPT_DIR}"/*
+    rm -rf "${NYDUS_LIB_DIR}"/*
 }
 
 function get_container_runtime() {
