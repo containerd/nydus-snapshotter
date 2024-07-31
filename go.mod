@@ -20,6 +20,7 @@ require (
 	github.com/containerd/fifo v1.1.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/nri v0.6.1
+	github.com/containerd/platforms v0.2.1
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3
 	github.com/containers/ocicrypt v1.1.10
@@ -80,7 +81,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cilium/ebpf v0.9.1 // indirect
-	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/containerd/ttrpc v1.2.5 // indirect
 	github.com/containerd/typeurl/v2 v2.1.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
