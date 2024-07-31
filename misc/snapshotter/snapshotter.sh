@@ -192,36 +192,81 @@ function deploy_snapshotter() {
 
 }
 
+function remove_images() {
+    local SNAPSHOTTER="nydus"
+    local NAMESPACE="k8s.io"
+    local ctr_args="nsenter -t 1 -m ctr"
+
+    if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
+        ctr_args+=" --address /run/k3s/containerd/containerd.sock"
+    fi
+    ctr_args+=" --namespace $NAMESPACE"
+
+    # List all snapshots for nydus snapshotter
+    local SNAPSHOTS=$($ctr_args snapshot --snapshotter $SNAPSHOTTER ls | awk 'NR>1 {print $1}')
+    echo "Images associated with snapshotter $SNAPSHOTTER:"
+
+    # Loop through each snapshot and find associated contents
+    for SNAPSHOT in $SNAPSHOTS; do
+        local CONTENTS=$($ctr_args content ls | grep $SNAPSHOT | awk '{print $1}')
+        echo "Snapshot: $SNAPSHOT, Contents: $CONTENTS"
+        if [ -z "$CONTENTS" ]; then
+            continue
+        fi
+        # Loop through each content and find associated digests of images
+        for CONTENT in $CONTENTS; do
+            local DIGESTS=$($ctr_args image ls | grep $CONTENT | awk '{print $3}')
+            echo "Content: $CONTENT, Digests: $DIGESTS"
+            if [ -z "$DIGESTS" ]; then
+                continue
+            fi
+            # Loop through each digest and find associated image references
+            for DIGEST in $DIGESTS; do
+                local IMAGES=$($ctr_args image ls | grep $DIGEST | awk '{print $1}')
+                echo "Digest: $DIGEST, Images: $IMAGES"
+                if [ -z "$IMAGES" ]; then
+                    continue
+                fi
+                for IMAGE in $IMAGES; do
+                    # Delete the image
+                    $ctr_args images rm $IMAGE > /dev/null 2>&1 || true
+                    echo "Images $IMAGES removed"
+                done
+            done
+            # Delete the content
+            $ctr_args content rm $CONTENT > /dev/null 2>&1 || true
+            echo "content $CONTENT removed"
+        done
+        # Delete the snapshot
+        $ctr_args snapshot --snapshotter $SNAPSHOTTER rm $SNAPSHOT > /dev/null 2>&1 || true
+        echo "snapshot $SNAPSHOT removed"
+    done
+    echo "INFO: Images removed"
+}
+
 function cleanup_snapshotter() {
     echo "cleaning up snapshotter"
 
     pid=$(ps -ef | grep containerd-nydus-grpc | grep -v grep | awk '{print $1}' || true)
     if [ ! -z "$pid" ]; then
-        local ctr_args=""
-        if [[ " k3s k3s-agent rke2-agent rke2-server " =~ " ${CONTAINER_RUNTIME} " ]]; then
-            ctr_args="--address /run/k3s/containerd/containerd.sock "
-        fi
-        ctr_args+="--namespace k8s.io snapshot --snapshotter nydus"
-        for i in $(nsenter -t 1 -m ctr ${ctr_args} list | grep -v KEY | cut -d' ' -f1); do
-            nsenter -t 1 -m ctr ${ctr_args} rm $i || true
-        done
+        remove_images
     fi
     echo "Recover containerd config"
     cat "$CONTAINER_RUNTIME_CONFIG".bak.nydus >"$CONTAINER_RUNTIME_CONFIG"
     if [ "${ENABLE_SYSTEMD_SERVICE}" == "true" ]; then
         nsenter -t 1 -m systemctl stop nydus-snapshotter.service
         nsenter -t 1 -m systemctl disable --now nydus-snapshotter.service
-        rm -f "${SNAPSHOTTER_SERVICE}"
+        rm -f "${SNAPSHOTTER_SERVICE}" || true
     else
         kill -9 $pid || true
     fi
     wait_service_active 30 5 ${CONTAINER_RUNTIME}
     echo "Removing nydus-snapshotter artifacts from host"
-    rm -f "${SNAPSHOTTER_BINARY}"
     rm -f "${NYDUS_BINARY_DIR}"/nydus*
     rm -rf "${NYDUS_CONFIG_DIR}"/*
     rm -rf "${SNAPSHOTTER_SCRYPT_DIR}"/*
     rm -rf "${NYDUS_LIB_DIR}"/*
+    echo "cleaned up snapshotter"
 }
 
 function get_container_runtime() {
