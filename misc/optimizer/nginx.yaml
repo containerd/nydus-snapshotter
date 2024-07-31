@@ -2,7 +2,7 @@ metadata:
   name: nginx
 
 image:
-  image: nginx:1.23.3
+  image: ghcr.io/dragonflyoss/image-service/nginx:nydus-latest
 
 mounts:
   - host_path: script
@@ -12,7 +12,7 @@ command:
   - /script/entrypoint.sh
 
 args:
- - /script/file_list.txt
+  - /script/file_list.txt
 
 log_path: nginx.0.log
 linux: {}
