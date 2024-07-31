@@ -24,21 +24,21 @@ $ nerdctl run --snapshotter nydus --rm nginx
 
 # Show mounted rootfs a container
 $ mount
-/dev/loop17 on /var/lib/containerd-nydus/snapshots/7/mnt type erofs (ro,relatime,user_xattr,acl,cache_strategy=readaround)
+/dev/loop17 on /var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/7/mnt type erofs (ro,relatime,user_xattr,acl,cache_strategy=readaround)
 
 # Show loop devices used to mount layers and bootstrap for a container image
 $ losetup 
 NAME SIZELIMIT OFFSET AUTOCLEAR RO BACK-FILE                                                                       DIO LOG-SEC
-/dev/loop11 0      0         0  0 /var/lib/containerd-nydus/cache/fd9f026c631046113bd492f69761c3ba6042c791c35a60e7c7f3b8f254592daa 0     512
-/dev/loop12 0      0         0  0 /var/lib/containerd-nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3 0     512
-/dev/loop13 0      0         0  0 /var/lib/containerd-nydus/cache/96576293dd2954ff84251aa0455687c8643358ba1b190ea1818f56b41884bdbd 0     512
-/dev/loop14 0      0         0  0 /var/lib/containerd-nydus/cache/a7c4092be9044bd4eef78f27c95785ef3a9f345d01fd4512bc94ddaaefc359f4 0     512
-/dev/loop15 0      0         0  0 /var/lib/containerd-nydus/cache/e3b6889c89547ec9ba653ab44ed32a99370940d51df956968c0d578dd61ab665 0     512
-/dev/loop16 0      0         0  0 /var/lib/containerd-nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75 0     512
-/dev/loop17 0      0         0  0 /var/lib/containerd-nydus/snapshots/7/fs/image/image.boot                         0     512
+/dev/loop11 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/fd9f026c631046113bd492f69761c3ba6042c791c35a60e7c7f3b8f254592daa 0     512
+/dev/loop12 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3 0     512
+/dev/loop13 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/96576293dd2954ff84251aa0455687c8643358ba1b190ea1818f56b41884bdbd 0     512
+/dev/loop14 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/a7c4092be9044bd4eef78f27c95785ef3a9f345d01fd4512bc94ddaaefc359f4 0     512
+/dev/loop15 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/e3b6889c89547ec9ba653ab44ed32a99370940d51df956968c0d578dd61ab665 0     512
+/dev/loop16 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75 0     512
+/dev/loop17 0      0         0  0 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/7/fs/image/image.boot                         0     512
 
 # Files without suffix are tar files, files with suffix `layer.disk` are raw disk image for container image layers
-$ ls -l /var/lib/containerd-nydus/cache/
+$ ls -l /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/
 total 376800
 -rw-r--r-- 1 root root      3584 Aug 30 23:18 055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3
 -rw-r--r-- 1 root root    527872 Aug 30 23:18 055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3.layer.disk
@@ -54,15 +54,15 @@ total 376800
 -rw-r--r-- 1 root root    529408 Aug 30 23:18 e3b6889c89547ec9ba653ab44ed32a99370940d51df956968c0d578dd61ab665.layer.disk
 -rw-r--r-- 1 root root 112968704 Aug 30 23:18 fd9f026c631046113bd492f69761c3ba6042c791c35a60e7c7f3b8f254592daa
 -rw-r--r-- 1 root root 113492992 Aug 30 23:18 fd9f026c631046113bd492f69761c3ba6042c791c35a60e7c7f3b8f254592daa.layer.disk
-$ file /var/lib/containerd-nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3
-/var/lib/containerd-nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3: POSIX tar archive
+$ file /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3
+/var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3: POSIX tar archive
 
 # Mount the raw disk image for a container image layer
-$ losetup /dev/loop100 /var/lib/containerd-nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3.layer.disk 
+$ losetup /dev/loop100 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3.layer.disk 
 $ mount -t erofs /dev/loop100 ./mnt/
 $ mount
 tmpfs on /run/user/0 type tmpfs (rw,nosuid,nodev,relatime,size=1544836k,nr_inodes=386209,mode=700,inode64)
-/dev/loop17 on /var/lib/containerd-nydus/snapshots/7/mnt type erofs (ro,relatime,user_xattr,acl,cache_strategy=readaround)
+/dev/loop17 on /var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/7/mnt type erofs (ro,relatime,user_xattr,acl,cache_strategy=readaround)
 /dev/loop100 on /root/ws/nydus-snapshotter.git/mnt type erofs (ro,relatime,user_xattr,acl,cache_strategy=readaround)
 
 ```
@@ -81,7 +81,7 @@ $ containerd-nydus-grpc --config /etc/nydus/config.toml &
 $ nerdctl run --snapshotter nydus --rm nginx
 
 # Files without suffix are tar files, files with suffix `image.disk` are raw disk image for a container image
-$ ls -l /var/lib/containerd-nydus/cache/
+$ ls -l /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/
 total 376320
 -rw-r--r-- 1 root root      3584 Aug 30 23:35 055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3
 -rw-r--r-- 1 root root  77814784 Aug 30 23:35 52d2b7f179e32b4cbd579ee3c4958027988f9a8274850ab0c7c24661e3adaac5
@@ -109,7 +109,7 @@ $ containerd-nydus-grpc --config /etc/nydus/config.toml &
 $ nerdctl run --snapshotter nydus --rm nginx
 
 # Files without suffix are tar files, files with suffix `image.disk` are raw disk image for a container image
-$ ls -l /var/lib/containerd-nydus/cache/
+$ ls -l /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/
 total 388296
 -rw-r--r-- 1 root root      3584 Aug 30 23:45 055fa98b43638b67d10c58d41094d99c8696cc34b7a960c7a0cc5d9d152d12b3
 -rw-r--r-- 1 root root  77814784 Aug 30 23:46 52d2b7f179e32b4cbd579ee3c4958027988f9a8274850ab0c7c24661e3adaac5
@@ -120,7 +120,7 @@ total 388296
 -rw-r--r-- 1 root root      5120 Aug 30 23:45 e3b6889c89547ec9ba653ab44ed32a99370940d51df956968c0d578dd61ab665
 -rw-r--r-- 1 root root 112968704 Aug 30 23:46 fd9f026c631046113bd492f69761c3ba6042c791c35a60e7c7f3b8f254592daa
 
-$ losetup /dev/loop100 /var/lib/containerd-nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75.image.disk
+$ losetup /dev/loop100 /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75.image.disk
 $  veritysetup open --no-superblock --format=1 -s "" --hash=sha256 --data-block-size=512 --hash-block-size=4096 --data-blocks 379918 --hash-offset 194519040 /dev/loop100 image1 /dev/loop100 8113799aaf9a5d14feca1eadc3b7e6ea98bdaf61e3a2e4a8ef8c24e26a551efd
 $ lsblk
 loop100   7:100  0 197.2M  0 loop  
@@ -136,11 +136,11 @@ $ veritysetup status dm-0
   hash name:   sha256
   salt:        -
   data device: /dev/loop100
-  data loop:   /var/lib/containerd-nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75.image.disk
+  data loop:   /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75.image.disk
   size:        379918 sectors
   mode:        readonly
   hash device: /dev/loop100
-  hash loop:   /var/lib/containerd-nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75.image.disk
+  hash loop:   /var/lib/containerd/io.containerd.snapshotter.v1.nydus/cache/da761d9a302b21dc50767b67d46f737f5072fb4490c525b4a7ae6f18e1dbbf75.image.disk
   hash offset: 379920 sectors
   root hash:   8113799aaf9a5d14feca1eadc3b7e6ea98bdaf61e3a2e4a8ef8c24e26a551efd
 

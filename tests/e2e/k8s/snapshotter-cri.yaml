@@ -168,7 +168,7 @@ data:
   ENABLE_SYSTEMD_SERVICE: "true"
   config.toml: |-
     version = 1
-    root = "/var/lib/containerd-nydus"
+    root = "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
     address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
     daemon_mode = "multiple"
     enable_system_controller = true

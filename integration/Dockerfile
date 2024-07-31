@@ -1,11 +1,11 @@
-
 ARG CONTAINERD_VER=1.6.15
 ARG CONTAINERD_PROJECT=/containerd
 ARG RUNC_VERSION=1.1.4
 ARG NYDUS_SNAPSHOTTER_PROJECT=/nydus-snapshotter
 ARG DOWNLOADS_MIRROR="https://github.com"
 ARG NYDUS_VER=2.2.4
-ARG NERDCTL_VER=1.0.0
+ARG NERDCTL_VER=1.7.6
+ARG DELVE_VER=1.23.0
 
 FROM golang:1.21.12-bookworm AS golang-base
 
@@ -16,6 +16,7 @@ ARG NYDUS_SNAPSHOTTER_PROJECT
 ARG DOWNLOADS_MIRROR
 ARG NYDUS_VER
 ARG NERDCTL_VER
+ARG DELVE_VER
 
 # RUN echo '\
 # deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free\n\
@@ -25,7 +26,7 @@ ARG NERDCTL_VER
 
 RUN apt-get update -qq && apt-get install -qq libbtrfs-dev libseccomp-dev sudo psmisc jq lsof net-tools
 
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
+RUN go install github.com/go-delve/delve/cmd/dlv@v"$DELVE_VER"
 
 # Install containerd
 RUN wget -q ${DOWNLOADS_MIRROR}/containerd/containerd/releases/download/v${CONTAINERD_VER}/containerd-${CONTAINERD_VER}-linux-amd64.tar.gz && \

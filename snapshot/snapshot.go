@@ -1033,7 +1033,7 @@ func (o *snapshotter) cleanupDirectories(ctx context.Context) ([]string, error) 
 }
 
 func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) error {
-	// For example: cleanupSnapshotDirectory /var/lib/containerd-nydus/snapshots/34" dir=/var/lib/containerd-nydus/snapshots/34
+	// For example: cleanupSnapshotDirectory /var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/34" dir=/var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/34
 
 	snapshotID := filepath.Base(dir)
 	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
