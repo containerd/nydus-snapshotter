@@ -15,7 +15,7 @@ import (
 	"time"
 
 	snpkg "github.com/containerd/containerd/pkg/snapshotters"
-	"github.com/containerd/containerd/reference/docker"
+	distribution "github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -37,12 +37,12 @@ func ConvertToVPCHost(registryHost string) string {
 }
 
 func ParseImage(imageID string) (Image, error) {
-	named, err := docker.ParseDockerRef(imageID)
+	named, err := distribution.ParseDockerRef(imageID)
 	if err != nil {
 		return Image{}, err
 	}
-	host := docker.Domain(named)
-	repo := docker.Path(named)
+	host := distribution.Domain(named)
+	repo := distribution.Path(named)
 	return Image{
 		Host: host,
 		Repo: repo,

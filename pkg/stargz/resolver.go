@@ -18,15 +18,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/transport"
+	"github.com/containerd/stargz-snapshotter/estargz"
+	distribution "github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-
-	"github.com/containerd/stargz-snapshotter/estargz"
+	"github.com/pkg/errors"
 )
 
 const httpTimeout = 15 * time.Second
@@ -152,12 +150,12 @@ func parseFooter(p []byte) (tocOffset int64, ok bool) {
 }
 
 func (r *Resolver) resolve(ref, digest string, keychain authn.Keychain) (*io.SectionReader, error) {
-	named, err := docker.ParseDockerRef(ref)
+	named, err := distribution.ParseDockerRef(ref)
 	if err != nil {
 		return nil, err
 	}
-	host := docker.Domain(named)
-	sref := fmt.Sprintf("%s/%s", host, docker.Path(named))
+	host := distribution.Domain(named)
+	sref := fmt.Sprintf("%s/%s", host, distribution.Path(named))
 	nref, err := name.ParseReference(sref)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse ref %q (%q)", sref, digest)
