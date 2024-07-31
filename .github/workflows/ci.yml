@@ -13,7 +13,7 @@ jobs:
   build:
     name: Build and Lint
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
   build-optimizer:
     name: Build optimizer
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
   smoke:
     name: Smoke
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -64,8 +64,8 @@ jobs:
       - name: Build
         run: |
           # Download nydus components
-          NYDUS_VER=v$(curl --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' -s "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
-          wget https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
+          NYDUS_VER=v$(curl -fsSL --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' "https://api.github.com/repos/dragonflyoss/nydus/releases/latest" | jq -r .tag_name | sed 's/^v//')
+          wget -q https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz
           tar xzvf nydus-static-$NYDUS_VER-linux-amd64.tgz
           mkdir -p /usr/bin
           sudo mv nydus-static/nydus-image nydus-static/nydusd nydus-static/nydusify /usr/bin/
@@ -75,7 +75,7 @@ jobs:
   cross-build-test:
     name: Cross Build Test
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         GOOS: ["linux", "windows", "darwin"]
@@ -95,7 +95,7 @@ jobs:
   coverage:
     name: Code coverage
     timeout-minutes: 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build]
     steps:
       - name: Checkout code
