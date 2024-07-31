@@ -14,10 +14,8 @@ import (
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/pkg/dialer"
 	"github.com/containerd/containerd/reference"
-	runtime_alpha "github.com/containerd/containerd/third_party/k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 	"github.com/containerd/log"
 	"github.com/containerd/stargz-snapshotter/service/keychain/cri"
-	"github.com/containerd/stargz-snapshotter/service/keychain/crialpha"
 	"github.com/containerd/stargz-snapshotter/service/resolver"
 	distribution "github.com/distribution/reference"
 	"github.com/pkg/errors"
@@ -57,30 +55,17 @@ func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress st
 		criAddr = imageServiceAddress
 	}
 
-	connectAlphaCRI := func() (runtime_alpha.ImageServiceClient, error) {
-		conn, err := newCRIConn(criAddr)
-		if err != nil {
-			return nil, err
-		}
-		return runtime_alpha.NewImageServiceClient(conn), nil
-	}
-
-	connectCri := func() (runtime.ImageServiceClient, error) {
+	criCred, criServer := cri.NewCRIKeychain(ctx, func() (runtime.ImageServiceClient, error) {
 		conn, err := newCRIConn(criAddr)
 		if err != nil {
 			return nil, err
 		}
 
 		return runtime.NewImageServiceClient(conn), nil
-	}
-
-	criAlphaCred, criAlphaServer := crialpha.NewCRIAlphaKeychain(ctx, connectAlphaCRI)
-	runtime_alpha.RegisterImageServiceServer(rpc, criAlphaServer)
-
-	criCred, criServer := cri.NewCRIKeychain(ctx, connectCri)
+	})
 	runtime.RegisterImageServiceServer(rpc, criServer)
 
-	Credentials = append(Credentials, criAlphaCred, criCred)
+	Credentials = append(Credentials, criCred)
 
 	log.G(ctx).WithField("target-image-service", criAddr).Info("setup image proxy keychain")
 }
