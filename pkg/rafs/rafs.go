@@ -15,7 +15,7 @@ import (
 	"github.com/mohae/deepcopy"
 	"github.com/pkg/errors"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs"
 
 	"github.com/containerd/nydus-snapshotter/config"
 )
