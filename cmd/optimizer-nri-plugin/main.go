@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/containerd/log"
+	distribution "github.com/distribution/reference"
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
-	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -201,12 +201,12 @@ func (p *plugin) StopContainer(_ context.Context, _ *api.PodSandbox, container *
 }
 
 func GetImageName(annotations map[string]string) (string, string, error) {
-	named, err := docker.ParseDockerRef(annotations[imageNameLabel])
+	named, err := distribution.ParseDockerRef(annotations[imageNameLabel])
 	if err != nil {
 		return "", "", err
 	}
-	nameTagged := named.(docker.NamedTagged)
-	repo := docker.Path(nameTagged)
+	nameTagged := named.(distribution.NamedTagged)
+	repo := distribution.Path(nameTagged)
 
 	dir := filepath.Dir(repo)
 	image := filepath.Base(repo)

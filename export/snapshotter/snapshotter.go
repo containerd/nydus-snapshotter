@@ -1,8 +1,8 @@
 package snapshotter
 
 import (
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/plugin"
+	"github.com/containerd/platforms"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"

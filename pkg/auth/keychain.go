@@ -13,8 +13,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
+	distribution "github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 )
 
@@ -106,12 +106,12 @@ func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyCha
 }
 
 func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {
-	named, err := docker.ParseDockerRef(ref)
+	named, err := distribution.ParseDockerRef(ref)
 	if err != nil {
 		return nil, errors.Wrapf(err, "parse ref %s", ref)
 	}
 
-	host := docker.Domain(named)
+	host := distribution.Domain(named)
 	keychain := GetRegistryKeyChain(host, ref, labels)
 
 	return keychain, nil

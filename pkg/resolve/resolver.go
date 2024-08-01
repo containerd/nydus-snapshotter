@@ -12,9 +12,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/containerd/containerd/reference/docker"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/transport"
+	distribution "github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/name"
 	retryablehttp "github.com/hashicorp/go-retryablehttp"
 	"github.com/pkg/errors"
@@ -32,12 +32,12 @@ func NewResolver() *Resolver {
 }
 
 func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.ReadCloser, error) {
-	named, err := docker.ParseDockerRef(ref)
+	named, err := distribution.ParseDockerRef(ref)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed parse docker ref %s", ref)
 	}
-	host := docker.Domain(named)
-	sref := fmt.Sprintf("%s/%s", host, docker.Path(named))
+	host := distribution.Domain(named)
+	sref := fmt.Sprintf("%s/%s", host, distribution.Path(named))
 	nref, err := name.ParseReference(sref)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse ref %q (%q)", sref, digest)
