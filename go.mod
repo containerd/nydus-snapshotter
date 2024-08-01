@@ -3,6 +3,7 @@ module github.com/containerd/nydus-snapshotter
 go 1.21
 
 require (
+	dario.cat/mergo v1.0.0
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24
 	github.com/KarpelesLab/reflink v1.0.1
 	github.com/aliyun/aliyun-oss-go-sdk v2.2.6+incompatible
@@ -28,7 +29,6 @@ require (
 	github.com/google/go-containerregistry v0.14.0
 	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/go-retryablehttp v0.7.2
-	github.com/imdario/mergo v0.3.13
 	github.com/klauspost/compress v1.16.0
 	github.com/moby/locker v1.0.1
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
@@ -110,6 +110,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.2.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

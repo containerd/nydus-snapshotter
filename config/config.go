@@ -10,7 +10,7 @@ package config
 import (
 	"os"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 
