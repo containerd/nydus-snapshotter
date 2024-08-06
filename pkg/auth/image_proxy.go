@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/containerd/containerd/defaults"
-	"github.com/containerd/containerd/pkg/dialer"
-	"github.com/containerd/containerd/reference"
+	"github.com/containerd/containerd/v2/defaults"
+	"github.com/containerd/containerd/v2/pkg/dialer"
+	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/log"
 	"github.com/containerd/stargz-snapshotter/service/keychain/cri"
 	"github.com/containerd/stargz-snapshotter/service/resolver"
@@ -45,7 +45,7 @@ func newCRIConn(criAddr string) (*grpc.ClientConn, error) {
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
 	}
-	return grpc.Dial(dialer.DialAddress(criAddr), gopts...)
+	return grpc.NewClient(dialer.DialAddress(criAddr), gopts...)
 }
 
 // from stargz-snapshotter/cmd/containerd-stargz-grpc/main.go#main
@@ -63,6 +63,7 @@ func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress st
 
 		return runtime.NewImageServiceClient(conn), nil
 	})
+
 	runtime.RegisterImageServiceServer(rpc, criServer)
 
 	Credentials = append(Credentials, criCred)

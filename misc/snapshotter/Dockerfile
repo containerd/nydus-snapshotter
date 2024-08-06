@@ -1,7 +1,8 @@
 FROM alpine:3.17.0 AS base
 
 FROM base AS sourcer
-ARG NYDUS_VER=v2.2.4
+ARG TARGETARCH
+ARG NYDUS_VER=v2.2.5
 
 RUN apk add -q --no-cache curl && \
     apk add -q --no-cache --upgrade grep && \
@@ -13,11 +14,10 @@ RUN apk add -q --no-cache curl && \
     && rm -rf /nydus-overlayfs
 
 FROM base AS kubectl-sourcer
+ARG TARGETARCH
+
 RUN apk add -q --no-cache curl && \
-    ARCH=$(uname -m) && \
-    if [ "${ARCH}" = "x86_64" ]; then ARCH=amd64; fi && \
-    if [ "${ARCH}" = "aarch64" ]; then ARCH=arm64; fi && \
-    curl -fsSL -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl && \
+    curl -fsSL -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/"$(curl -L -s https://dl.k8s.io/release/stable.txt)"/bin/linux/"$TARGETARCH"/kubectl && \
     chmod +x /usr/bin/kubectl
 
 FROM base
@@ -29,7 +29,8 @@ ARG SCRIPT_DESTINATION=${DESTINATION}/opt/nydus
 WORKDIR /root/
 RUN apk add -q --no-cache libc6-compat bash
 
-VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus /run/containerd-nydus
+VOLUME /var/lib/containerd/io.containerd.snapshotter.v1.nydus
+VOLUME /run/containerd-nydus
 
 COPY --from=sourcer /.nydus_version /.nydus_version
 COPY --from=kubectl-sourcer /usr/bin/kubectl /usr/bin/kubectl

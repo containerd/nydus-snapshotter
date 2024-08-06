@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	snpkg "github.com/containerd/containerd/pkg/snapshotters"
+	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	distribution "github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"

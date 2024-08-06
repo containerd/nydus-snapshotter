@@ -12,8 +12,8 @@ import (
 	"io"
 	"math/rand"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/errdefs"
 
 	"github.com/containers/ocicrypt"

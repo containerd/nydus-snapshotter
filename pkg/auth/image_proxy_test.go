@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/containerd/containerd/pkg/dialer"
+	"github.com/containerd/containerd/v2/pkg/dialer"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -78,9 +78,9 @@ func TestFromImagePull(t *testing.T) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(dialer.ContextDialer),
 	}
-	conn, err := grpc.Dial(dialer.DialAddress(proxySocket), gopts...)
-	assertions.NoError(err)
 
+	conn, err := grpc.NewClient(dialer.DialAddress(proxySocket), gopts...)
+	assertions.NoError(err)
 	criClient := runtime.NewImageServiceClient(conn)
 
 	_, err = criClient.PullImage(ctx, &runtime.PullImageRequest{
@@ -96,9 +96,9 @@ func TestFromImagePull(t *testing.T) {
 
 	// get correct kc after pulling
 	kc, err = FromCRI("docker.io", tagImage)
-	assertions.NoError(err)
 	assertions.Equal("test", kc.Username)
 	assertions.Equal("passwd", kc.Password)
+	assertions.NoError(err)
 
 	// get empty kc with wrong tag
 	kc, err = FromCRI("docker.io", "docker.io/library/busybox:another")

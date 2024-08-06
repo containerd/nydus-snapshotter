@@ -9,7 +9,7 @@ package cgroup
 import (
 	"errors"
 
-	"github.com/containerd/cgroups"
+	"github.com/containerd/cgroups/v3"
 	v1 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v1"
 	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
 )

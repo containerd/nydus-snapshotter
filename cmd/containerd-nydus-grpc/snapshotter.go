@@ -21,8 +21,8 @@ import (
 	"github.com/containerd/nydus-snapshotter/snapshot"
 
 	api "github.com/containerd/containerd/api/services/snapshots/v1"
-	"github.com/containerd/containerd/contrib/snapshotservice"
-	"github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/v2/contrib/snapshotservice"
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/log"
 	"google.golang.org/grpc"
 )

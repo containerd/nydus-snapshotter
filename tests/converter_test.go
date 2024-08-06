@@ -29,17 +29,17 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/containerd/containerd"
-	containerdconverter "github.com/containerd/containerd/images/converter"
-	"github.com/containerd/containerd/namespaces"
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/content"
+	containerdconverter "github.com/containerd/containerd/v2/core/images/converter"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
+	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/log"
 	"github.com/containerd/platforms"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/encryption"
@@ -694,8 +694,9 @@ func testImageConvertS3Backend(t *testing.T, fsVersion string) {
 		if err != nil {
 			t.Errorf("failed to load aws config")
 		}
+		endpoint := "http://localhost:9000"
 		client := s3.NewFromConfig(s3AWSConfig, func(o *s3.Options) {
-			o.EndpointResolver = s3.EndpointResolverFromURL("http://localhost:9000")
+			o.BaseEndpoint = &endpoint
 			o.Region = "us-east-1"
 			o.UsePathStyle = true
 			o.Credentials = credentials.NewStaticCredentialsProvider("minio", "minio123", "")

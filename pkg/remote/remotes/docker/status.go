@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/errdefs"
 	"github.com/moby/locker"
 )

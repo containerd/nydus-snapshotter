@@ -19,7 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -85,7 +85,7 @@ func (b *S3Backend) client() (*s3.Client, error) {
 	}
 
 	client := s3.NewFromConfig(s3AWSConfig, func(o *s3.Options) {
-		o.EndpointResolver = s3.EndpointResolverFromURL(b.endpointWithScheme)
+		o.BaseEndpoint = &b.endpointWithScheme
 		o.Region = b.region
 		o.UsePathStyle = true
 		if len(b.accessKeySecret) > 0 && len(b.accessKeyID) > 0 {

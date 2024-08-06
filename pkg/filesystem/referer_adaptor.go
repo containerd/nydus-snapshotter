@@ -10,7 +10,7 @@ import (
 	"context"
 	"fmt"
 
-	snpkg "github.com/containerd/containerd/pkg/snapshotters"
+	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

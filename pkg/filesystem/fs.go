@@ -15,14 +15,14 @@ import (
 	"os"
 	"path"
 
-	snpkg "github.com/containerd/containerd/pkg/snapshotters"
+	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/containerd/containerd/snapshots"
-	"github.com/containerd/containerd/snapshots/storage"
+	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/containerd/log"
 
 	"github.com/containerd/nydus-snapshotter/config"
