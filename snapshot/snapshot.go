@@ -69,9 +69,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "initialize image verifier")
 	}
 
-	daemonConfig, err := daemonconfig.NewDaemonConfig(config.GetFsDriver(), cfg.DaemonConfig.NydusdConfigPath)
+	var daemonConfig daemonconfig.DaemonConfig
+	daemonConfig, err = daemonconfig.NewDaemonConfig(config.GetFsDriver(), cfg.DaemonConfig.NydusdConfigPath)
 	if err != nil {
-		return nil, errors.Wrap(err, "load daemon configuration")
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, errors.Wrap(err, "load daemon configuration")
+		}
 	}
 
 	db, err := store.NewDatabase(cfg.Root)
