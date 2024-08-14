@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nydus-snapshotter
+  namespace: {{ .Release.Namespace }}
+spec:
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: nydus-snapshotter
+      app.kubernetes.io/name: nydus-snapshotter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: nydus-snapshotter
+        app.kubernetes.io/name: nydus-snapshotter
+    spec:
+      serviceAccountName: nydus-snapshotter-sa
+      {{- if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: nydus-snapshotter
+          args:
+            - "--root"
+            - "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
+          securityContext:
+            privileged: true
+          image: {{ .Values.publicConfig.registry }}/{{ .Values.snapshotter.daemonset.image.name }}:{{ .Values.snapshotter.daemonset.image.tag }}
+          imagePullPolicy: {{ .Values.image.imagePullPolicy }}
+          {{- if .Values.snapshotter.daemonset.resources }}
+          resources:
+            {{- toYaml .Values.snapshotter.daemonset.resources | trim | nindent 12 }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                command: 
+                  - /bin/sh
+                  - -c
+                  - |-
+                    jq --arg type rootfs-persister 'del(.plugins[] | select(.type == $type))' /etc/nri/conf.json > \
+                    /etc/nri/conf.json.tmp && \
+                    mv /etc/nri/conf.json.tmp /etc/nri/conf.json
+          startupProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |-
+                  status=$(/nydus-snapshotter/ctr plugin ls | grep nydus | awk '{print $4}')
+                  if [[ $status == "ok" ]]; then
+                    echo "nydus is healthy" && true;
+                  else
+                    echo "nydus is unhealthy" && false
+                  fi
+            failureThreshold: 10
+            initialDelaySeconds: 2
+            periodSeconds: 2
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+            - name: nydus
+              mountPath: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
+              mountPropagation: Bidirectional
+            - name: etc-containerd
+              mountPath: /etc/containerd
+            - name: nydus-run
+              mountPath: /run/containerd-nydus/
+            - name: nri-bin
+              mountPath: /opt/nri/bin
+            - name: etc-nri
+              mountPath: /etc/nri
+            - name: containerd-socket
+              mountPath: /run/containerd/containerd.sock
+            - name: nydus-bin
+              mountPath: /opt/nydus
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: nydus
+          hostPath:
+            path: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
+            type: DirectoryOrCreate
+        - name: nydus-run
+          hostPath:
+            path: /run/containerd-nydus/
+            type: DirectoryOrCreate
+        - name: etc-containerd
+          hostPath:
+            path: /etc/containerd
+            type: Directory
+        - name: nri-bin
+          hostPath:
+            path: /opt/nri/bin
+            type: DirectoryOrCreate
+        - name: etc-nri
+          hostPath:
+            path: /etc/nri
+            type: DirectoryOrCreate
+        - name: containerd-socket
+          hostPath:
+            path: /run/containerd/containerd.sock
+            type: Socket
+        - name: nydus-bin
+          hostPath:
+            path: /opt/nydus
+            type: DirectoryOrCreate

@@ -1,0 +1,52 @@
+publicConfig:
+  registry: helm-cr-cn-guilin-boe.cr.volces.com/vke
+  endpoint: open-boe-stable.volcengineapi.com
+
+addonConfig:
+  tosAddress: https://tos-cn-boe.ivolces.com
+  tosBucket: vke-dev
+
+image:
+  imagePullPolicy: Always
+  imagePullSecret: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+rbac:
+  serviceAccount:
+    create: true
+    node:
+      name: csi-vepfs-node-sa
+    controller:
+      name: csi-vepfs-controller-sa
+
+snapshotter:
+  daemonset:
+    image:
+      name: nydus-snapshotter
+      tag: v0.9.0-vke.4
+    resources:
+      limits:
+        cpu: 1
+        memory: 500Mi
+      requests:
+        cpu: 200m
+        memory: 200Mi
+
+## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+# affinity -- Affinity for pod assignment
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node.kubernetes.io/instance-type
+              operator: NotIn
+              values:
+                - virtual-node
+                - dcp-node
+            - key: vke.volcengine.com/image-accelerate-enabled
+              operator: NotIn
+              values:
+                - "true"
