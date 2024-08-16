@@ -16,12 +16,13 @@ import (
 )
 
 var (
-	ErrAlreadyExists   = errdefs.ErrAlreadyExists
-	ErrNotFound        = errdefs.ErrNotFound
-	ErrInvalidArgument = errors.New("invalid argument")
-	ErrUnavailable     = errors.New("unavailable")
-	ErrNotImplemented  = errors.New("not implemented") // represents not supported and unimplemented
-	ErrDeviceBusy      = errors.New("device busy")     // represents not supported and unimplemented
+	ErrAlreadyExists      = errdefs.ErrAlreadyExists
+	ErrNotFound           = errdefs.ErrNotFound
+	ErrFailedPrecondition = errors.New("failed precondition")
+	ErrInvalidArgument    = errors.New("invalid argument")
+	ErrUnavailable        = errors.New("unavailable")
+	ErrNotImplemented     = errors.New("not implemented") // represents not supported and unimplemented
+	ErrDeviceBusy         = errors.New("device busy")     // represents not supported and unimplemented
 )
 
 // IsAlreadyExists returns true if the error is due to already exists
