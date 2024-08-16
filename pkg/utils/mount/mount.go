@@ -42,7 +42,7 @@ func NormalizePath(path string) (realPath string, err error) {
 		return "", errors.Wrapf(err, "get absolute path for %s", path)
 	}
 	if realPath, err = filepath.EvalSymlinks(realPath); err != nil {
-		return "", errors.Wrapf(err, "canonicalise path for %s", path)
+		return "", errors.Wrapf(err, "canonicalize path for %s", path)
 	}
 	if _, err := os.Stat(realPath); err != nil {
 		return "", errors.Wrapf(err, "stat target of %s", path)
