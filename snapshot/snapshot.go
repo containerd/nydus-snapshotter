@@ -849,10 +849,33 @@ func (o *snapshotter) mounts(ctx context.Context, labels map[string]string, s st
 
 	var options []string
 	if s.Kind == snapshots.KindActive {
-		options = append(options,
-			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
-			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
-		)
+		if v, ok := labels[label.RootfsWritableLayerPath]; ok {
+			// FIXME: Must be absolute path, validate it !!!
+			workDir := filepath.Join(v, "workdir")
+			fsDir := filepath.Join(v, "fs")
+
+			if err := os.MkdirAll(workDir, 0755); err != nil {
+				return nil, err
+			}
+
+			if err := os.MkdirAll(fsDir, 0755); err != nil {
+				return nil, err
+			}
+
+			options = append(options,
+				fmt.Sprintf("workdir=%s", workDir),
+				fmt.Sprintf("upperdir=%s", fsDir),
+			)
+
+			options = append(options, []string{"index=off", "nfs_export=off"}...)
+
+		} else {
+			options = append(options,
+				fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
+				fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
+			)
+		}
+
 		if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
 			options = append(options, "volatile")
 		}

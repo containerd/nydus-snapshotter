@@ -48,6 +48,9 @@ const (
 	// If this optional label of a snapshot is specified, when mounted to rootdir
 	// this snapshot will include volatile option
 	OverlayfsVolatileOpt = "containerd.io/snapshot/overlay.volatile"
+
+	// Relocate the overlayfs's writable layer to a different path
+	RootfsWritableLayerPath = "containerd.io/snapshot/writable-layer-path"
 )
 
 func IsNydusDataLayer(labels map[string]string) bool {
