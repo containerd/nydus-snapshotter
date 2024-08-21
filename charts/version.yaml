@@ -1,0 +1,8 @@
+Necessary: OnDemand
+Categories: [Image]
+PodNetworkModes: [CalicoVxlan, Flannel, VpcCniShared, VpcCniHybrid]
+DeployMode: Unmanaged
+DeployNodeTypes: [Node]
+InitialConfigSchema: '{"$schema":"https://json-schema.org/draft/2019-09/schema","type":"object","required":[],"properties":{"DeployNodeType":{"enum":["Node","VirtualNode"]},"Version":{"type":"string"},"DeployMode":{"enum":["Managed","Unmanaged"]},"ProjectName":{"type":"string","pattern":"^([A-Za-z0-9-_.]*)$","maxLength":64}},"additionalProperties":false}'
+RunningConfigSchema: "false"
+Profiles: ["Cloud"]
