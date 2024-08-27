@@ -16,6 +16,14 @@ BUILD_TIMESTAMP=$(shell date '+%Y-%m-%dT%H:%M:%S')
 VERSION=$(shell git describe --match 'v[0-9]*' --dirty='.m' --always --tags)
 REVISION=$(shell git rev-parse HEAD)$(shell if ! git diff --no-ext-diff --quiet --exit-code; then echo .m; fi)
 
+DOCKER_IMAGE_NAMESPACE ?= helm-cr-cn-guilin-boe.cr.volces.com/vke
+DOCKER_IMAGE_REPO_TAG ?= nydus-snapshotter:v0.9.0-vke.4
+DOCKER_IMAGE_REF = ${DOCKER_IMAGE_NAMESPACE}/${DOCKER_IMAGE_REPO_TAG}
+
+# container image tag format example 5.1.7.1-26
+VEPFS_BASE_VERSION ?= 5.1.7.1
+VEPFS_PATCH_VERSION = 31
+
 # Relpace test target images for e2e tests.
 ifdef E2E_TEST_TARGET_IMAGES_FILE
 ENV_TARGET_IMAGES_FILE = --env-file ${E2E_TEST_TARGET_IMAGES_FILE}
@@ -135,3 +143,8 @@ integration:
 	-v /usr/src/linux-headers-${KERNEL_VER}:/usr/src/linux-headers-${KERNEL_VER} \
 	${ENV_TARGET_IMAGES_FILE}  \
 	nydus-snapshotter-e2e:0.1
+
+
+docker-release:
+	docker build -t ${DOCKER_IMAGE_REF} -f docker/Dockerfile .
+	docker push ${DOCKER_IMAGE_REF}
