@@ -158,9 +158,10 @@ type ImageConfig struct {
 // Configure containerd snapshots interfaces and how to process the snapshots
 // requests from containerd
 type SnapshotConfig struct {
-	EnableNydusOverlayFS bool `toml:"enable_nydus_overlayfs"`
-	EnableKataVolume     bool `toml:"enable_kata_volume"`
-	SyncRemove           bool `toml:"sync_remove"`
+	EnableNydusOverlayFS bool   `toml:"enable_nydus_overlayfs"`
+	NydusOverlayFSPath   string `toml:"nydus_overlayfs_path"`
+	EnableKataVolume     bool   `toml:"enable_kata_volume"`
+	SyncRemove           bool   `toml:"sync_remove"`
 }
 
 // Configure cache manager that manages the cache files lifecycle
@@ -357,7 +358,9 @@ func ParseParameters(args *flags.Args, cfg *SnapshotterConfig) error {
 	// empty
 
 	// --- snapshot configuration
-	// empty
+	if args.NydusOverlayFSPath != "" {
+		cfg.SnapshotsConfig.NydusOverlayFSPath = args.NydusOverlayFSPath
+	}
 
 	// --- metrics configuration
 	// empty

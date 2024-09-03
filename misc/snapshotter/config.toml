@@ -85,6 +85,8 @@ enable_cri_keychain = false
 [snapshot]
 # Let containerd use nydus-overlayfs mount helper
 enable_nydus_overlayfs = false
+# Path to the nydus-overlayfs binary or name of the binary in $PATH
+nydus_overlayfs_path = "nydus-overlayfs"
 # Insert Kata Virtual Volume option to `Mount.Options`
 enable_kata_volume = false
 # Whether to remove resources when a snapshot is removed
