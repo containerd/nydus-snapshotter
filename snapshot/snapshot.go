@@ -55,6 +55,7 @@ type snapshotter struct {
 	fs                   *filesystem.Filesystem
 	cgroupManager        *cgroup.Manager
 	enableNydusOverlayFS bool
+	nydusOverlayFSPath   string
 	enableKataVolume     bool
 	syncRemove           bool
 	cleanupOnClose       bool
@@ -291,6 +292,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		fs:                   nydusFs,
 		cgroupManager:        cgroupMgr,
 		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
+		nydusOverlayFSPath:   cfg.SnapshotsConfig.NydusOverlayFSPath,
 		enableKataVolume:     cfg.SnapshotsConfig.EnableKataVolume,
 		cleanupOnClose:       cfg.CleanupOnClose,
 	}, nil
@@ -877,9 +879,16 @@ func (o *snapshotter) mountProxy(ctx context.Context, s storage.Snapshot) ([]mou
 		overlayOptions = append(overlayOptions, options...)
 	}
 	log.G(ctx).Debugf("fuse.nydus-overlayfs mount options %v", overlayOptions)
+
+	mountType := "fuse.nydus-overlayfs"
+	if o.nydusOverlayFSPath != "" {
+		log.G(ctx).Debugf("Using nydus-overlayfs from path: %s", o.nydusOverlayFSPath)
+		mountType = fmt.Sprintf("fuse.%s", o.nydusOverlayFSPath)
+	}
+
 	mounts := []mount.Mount{
 		{
-			Type:    "fuse.nydus-overlayfs",
+			Type:    mountType,
 			Source:  "overlay",
 			Options: overlayOptions,
 		},

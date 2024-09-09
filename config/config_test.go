@@ -51,6 +51,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		},
 		SnapshotsConfig: SnapshotConfig{
 			EnableNydusOverlayFS: false,
+			NydusOverlayFSPath:   "nydus-overlayfs",
 			SyncRemove:           false,
 		},
 		RemoteConfig: RemoteConfig{
@@ -92,7 +93,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 
 	A.EqualValues(cfg, &exampleConfig)
 
-	var args = flags.Args{}
+	args := flags.Args{}
 	args.RootDir = "/var/lib/containerd/nydus"
 	exampleConfig.Root = "/var/lib/containerd/nydus"
 
