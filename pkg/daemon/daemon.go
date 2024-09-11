@@ -87,6 +87,21 @@ type Daemon struct {
 	state types.DaemonState
 }
 
+type NydusdSupplementInfo struct {
+	DaemonState ConfigState
+	ImageID     string
+	SnapshotID  string
+	Vpc         bool
+	Labels      map[string]string
+	Params      map[string]string
+}
+
+func (s *NydusdSupplementInfo) GetImageID() string           { return s.ImageID }
+func (s *NydusdSupplementInfo) GetSnapshotID() string        { return s.SnapshotID }
+func (s *NydusdSupplementInfo) IsVPCRegistry() bool          { return s.Vpc }
+func (s *NydusdSupplementInfo) GetLabels() map[string]string { return s.Labels }
+func (s *NydusdSupplementInfo) GetParams() map[string]string { return s.Params }
+
 func (d *Daemon) Lock() {
 	d.mu.Lock()
 }
@@ -250,12 +265,7 @@ func (d *Daemon) sharedFusedevMount(rafs *rafs.Rafs) error {
 		return err
 	}
 
-	c, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(rafs.SnapshotID))
-	if err != nil {
-		return errors.Wrapf(err, "Failed to reload instance configuration %s",
-			d.ConfigFile(rafs.SnapshotID))
-	}
-
+	c := d.Config
 	cfg, err := c.DumpString()
 	if err != nil {
 		return errors.Wrap(err, "dump instance configuration")
@@ -280,12 +290,7 @@ func (d *Daemon) sharedErofsMount(ra *rafs.Rafs) error {
 		return errors.Wrapf(err, "failed to create fscache work dir %s", ra.FscacheWorkDir())
 	}
 
-	c, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(ra.SnapshotID))
-	if err != nil {
-		log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(ra.SnapshotID), err)
-		return err
-	}
-
+	c := d.Config
 	cfgStr, err := c.DumpString()
 	if err != nil {
 		return err
@@ -649,4 +654,30 @@ func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	}
 
 	return d, nil
+}
+
+func (d *Daemon) MountByAPI() error {
+	rafs := d.RafsCache.Head()
+	if rafs == nil {
+		return errors.Wrapf(errdefs.ErrNotFound, "daemon %s no rafs instance associated", d.ID())
+	}
+	client, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "mount instance %s", rafs.SnapshotID)
+	}
+	bootstrap, err := rafs.BootstrapFile()
+	if err != nil {
+		return err
+	}
+	c := d.Config
+	cfg, err := c.DumpString()
+	if err != nil {
+		return errors.Wrap(err, "dump instance configuration")
+	}
+	err = client.Mount("/", bootstrap, cfg)
+	if err != nil {
+		return errors.Wrapf(err, "mount rafs instance MountByAPI()")
+	}
+	return nil
+
 }

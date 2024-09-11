@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -122,6 +123,16 @@ type DeviceConfig struct {
 	} `json:"cache"`
 }
 
+var configRWMutex sync.RWMutex
+
+type SupplementInfoInterface interface {
+	GetImageID() string
+	GetSnapshotID() string
+	IsVPCRegistry() bool
+	GetLabels() map[string]string
+	GetParams() map[string]string
+}
+
 // For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
 // We don't have to persist configuration file for fscache since its configuration
 // is passed through HTTP API.
@@ -143,12 +154,14 @@ func DumpConfigString(c interface{}) (string, error) {
 }
 
 // Achieve a daemon configuration from template or snapshotter's configuration
-func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
-	vpcRegistry bool, labels map[string]string, params map[string]string) error {
+func SupplementDaemonConfig(c DaemonConfig, info SupplementInfoInterface) error {
 
-	image, err := registry.ParseImage(imageID)
+	configRWMutex.Lock()
+	defer configRWMutex.Unlock()
+
+	image, err := registry.ParseImage(info.GetImageID())
 	if err != nil {
-		return errors.Wrapf(err, "parse image %s", imageID)
+		return errors.Wrapf(err, "parse image %s", info.GetImageID())
 	}
 
 	backendType, _ := c.StorageBackend()
@@ -156,7 +169,7 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	switch backendType {
 	case backendTypeRegistry:
 		registryHost := image.Host
-		if vpcRegistry {
+		if info.IsVPCRegistry() {
 			registryHost = registry.ConvertToVPCHost(registryHost)
 		} else if registryHost == "docker.io" {
 			// For docker.io images, we should use index.docker.io
@@ -170,8 +183,8 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
-		keyChain := auth.GetRegistryKeyChain(registryHost, imageID, labels)
-		c.Supplement(registryHost, image.Repo, snapshotID, params)
+		keyChain := auth.GetRegistryKeyChain(registryHost, info.GetImageID(), info.GetLabels())
+		c.Supplement(registryHost, image.Repo, info.GetSnapshotID(), info.GetParams())
 		c.FillAuth(keyChain)
 
 	// Localfs and OSS backends don't need any update,
