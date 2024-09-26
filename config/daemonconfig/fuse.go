@@ -92,6 +92,8 @@ func (c *FuseDaemonConfig) StorageBackend() (string, *BackendConfig) {
 }
 
 func (c *FuseDaemonConfig) DumpString() (string, error) {
+	configRWMutex.Lock()
+	defer configRWMutex.Unlock()
 	return DumpConfigString(c)
 }
 

@@ -44,6 +44,16 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	fsDriver := config.GetFsDriver()
+	isSharedFusedev := fsDriver == config.FsDriverFusedev && config.GetDaemonMode() == config.DaemonModeShared
+	useSharedDaemon := fsDriver == config.FsDriverFscache || isSharedFusedev
+
+	if !useSharedDaemon {
+		errs := d.MountByAPI()
+		if errs != nil {
+			return errors.Wrapf(err, "failed to mount")
+		}
+	}
 
 	d.Lock()
 	defer d.Unlock()
@@ -155,10 +165,6 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 				return nil, errors.Wrapf(err, "locate bootstrap %s", bootstrap)
 			}
 
-			cmdOpts = append(cmdOpts,
-				command.WithConfig(d.ConfigFile("")),
-				command.WithBootstrap(bootstrap),
-			)
 			if config.IsBackendSourceEnabled() {
 				configAPIPath := fmt.Sprintf(endpointGetBackend, d.States.ID)
 				cmdOpts = append(cmdOpts,
