@@ -137,7 +137,7 @@ func writeFileToTar(t *testing.T, tw *tar.Writer, name string, data string) {
 		Name:  name,
 		Mode:  0444,
 		Size:  int64(len(data)),
-		Uname: u.Name,
+		Uname: u.Username,
 		Gname: g.Name,
 	}
 	err = tw.WriteHeader(hdr)
@@ -158,7 +158,7 @@ func writeDirToTar(t *testing.T, tw *tar.Writer, name string) {
 		Name:     name,
 		Mode:     0444,
 		Typeflag: tar.TypeDir,
-		Uname:    u.Name,
+		Uname:    u.Username,
 		Gname:    g.Name,
 	}
 	err = tw.WriteHeader(hdr)
