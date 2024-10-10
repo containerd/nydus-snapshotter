@@ -71,14 +71,15 @@ func (m *Manager) CacheUsage(ctx context.Context, blobID string) (snapshots.Usag
 	var usage snapshots.Usage
 
 	blobCachePath := path.Join(m.cacheDir, blobID)
+	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
 	// For backward compatibility
 	blobCacheSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix)
-	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
+	blobChunkMapSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix+chunkMapFileSuffix)
 	blobMeta := path.Join(m.cacheDir, blobID+metaFileSuffix)
 	imageDisk := path.Join(m.cacheDir, blobID+imageDiskFileSuffix)
 	layerDisk := path.Join(m.cacheDir, blobID+layerDiskFileSuffix)
 
-	stuffs := []string{blobCachePath, blobCacheSuffixedPath, blobChunkMap, blobMeta, imageDisk, layerDisk}
+	stuffs := []string{blobCachePath, blobChunkMap, blobCacheSuffixedPath, blobChunkMapSuffixedPath, blobMeta, imageDisk, layerDisk}
 
 	for _, f := range stuffs {
 		du, err := fs.DiskUsage(ctx, f)
@@ -97,14 +98,15 @@ func (m *Manager) CacheUsage(ctx context.Context, blobID string) (snapshots.Usag
 
 func (m *Manager) RemoveBlobCache(blobID string) error {
 	blobCachePath := path.Join(m.cacheDir, blobID)
-	blobCacheSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix)
 	blobChunkMap := path.Join(m.cacheDir, blobID+chunkMapFileSuffix)
+	blobCacheSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix)
+	blobChunkMapSuffixedPath := path.Join(m.cacheDir, blobID+dataFileSuffix+chunkMapFileSuffix)
 	blobMeta := path.Join(m.cacheDir, blobID+metaFileSuffix)
 	imageDisk := path.Join(m.cacheDir, blobID+imageDiskFileSuffix)
 	layerDisk := path.Join(m.cacheDir, blobID+layerDiskFileSuffix)
 
 	// NOTE: Delete chunk bitmap file before data blob
-	stuffs := []string{blobChunkMap, blobMeta, blobCachePath, blobCacheSuffixedPath, imageDisk, layerDisk}
+	stuffs := []string{blobChunkMap, blobChunkMapSuffixedPath, blobMeta, blobCachePath, blobCacheSuffixedPath, imageDisk, layerDisk}
 
 	for _, f := range stuffs {
 		err := os.Remove(f)
