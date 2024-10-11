@@ -14,7 +14,7 @@ readonly root
 
 
 KIND_VERSION=v0.23.0
-NYDUS_VERSION=v2.2.5
+NYDUS_VERSION=v2.3.0
 DOCKER_USER=testuser
 DOCKER_PASSWORD=testpassword
 NAMESPACE=nydus-system
