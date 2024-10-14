@@ -522,9 +522,9 @@ func testPack(t *testing.T, fsVersion string) {
 	dropCache(t)
 	verify(t, workDir, expectedOverlayFileTree)
 
-	ensureFile(t, filepath.Join(cacheDir, chunkDictBlobHash)+".chunk_map")
-	ensureNoFile(t, filepath.Join(cacheDir, lowerNydusBlobDigest.Hex())+".chunk_map")
-	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".chunk_map")
+	ensureFile(t, filepath.Join(cacheDir, chunkDictBlobHash)+".blob.data.chunk_map")
+	ensureNoFile(t, filepath.Join(cacheDir, lowerNydusBlobDigest.Hex())+".blob.data.chunk_map")
+	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".blob.data.chunk_map")
 }
 
 // sudo go test -v -count=1 -run TestPackRef ./tests
