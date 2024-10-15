@@ -2,7 +2,7 @@ FROM alpine:3.17.0 AS base
 
 FROM base AS sourcer
 ARG TARGETARCH
-ARG NYDUS_VER=v2.2.5
+ARG NYDUS_VER=v2.3.0
 
 RUN apk add -q --no-cache curl && \
     apk add -q --no-cache --upgrade grep && \
