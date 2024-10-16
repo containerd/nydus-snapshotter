@@ -130,6 +130,19 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			if err != nil {
 				return errors.Wrapf(err, "get filesystem manager for daemon %s", d.States.ID)
 			}
+
+			supplementInfo, err := fsManager.GetInfo(d.ID())
+			if err != nil {
+				return errors.Wrap(err, "GetInfo failed")
+			}
+
+			cfg := d.Config
+			err = daemonconfig.SupplementDaemonConfig(cfg, supplementInfo)
+			if err != nil {
+				return errors.Wrap(err, "supplement configuration")
+			}
+			d.Config = cfg
+
 			if err := fsManager.StartDaemon(d); err != nil {
 				return errors.Wrapf(err, "start daemon %s", d.ID())
 			}
@@ -232,7 +245,6 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		// Instance already exists, how could this happen? Can containerd handle this case?
 		return nil
 	}
-
 	fsDriver := config.GetFsDriver()
 	if label.IsTarfsDataLayer(labels) {
 		fsDriver = config.FsDriverBlockdev
@@ -302,34 +314,25 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			daemonconfig.WorkDir:   workDir,
 			daemonconfig.CacheDir:  cacheDir,
 		}
+		supplementInfo := &daemon.NydusdSupplementInfo{
+			DaemonState: d.States,
+			ImageID:     imageID,
+			SnapshotID:  snapshotID,
+			Vpc:         false,
+			Labels:      labels,
+			Params:      params,
+		}
 		cfg := deepcopy.Copy(*fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
-		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
+		err = daemonconfig.SupplementDaemonConfig(cfg, supplementInfo)
 		if err != nil {
 			return errors.Wrap(err, "supplement configuration")
 		}
-
+		if errs := fsManager.AddSupplementInfo(supplementInfo); errs != nil {
+			return errors.Wrapf(err, "AddSupplementInfo failed %s", d.States.ID)
+		}
 		// TODO: How to manage rafs configurations on-disk? separated json config file or DB record?
 		// In order to recover erofs mount, the configuration file has to be persisted.
-		var configSubDir string
-		if useSharedDaemon {
-			configSubDir = snapshotID
-		} else {
-			// Associate daemon config object when creating a new daemon object to avoid
-			// reading disk file again and again.
-			// For shared daemon, each rafs instance has its own configuration, so we don't
-			// attach a config interface to daemon in this case.
-			d.Config = cfg
-		}
-
-		err = cfg.DumpFile(d.ConfigFile(configSubDir))
-		if err != nil {
-			if errors.Is(err, errdefs.ErrAlreadyExists) {
-				log.L.Debugf("Configuration file %s already exits", d.ConfigFile(configSubDir))
-			} else {
-				return errors.Wrap(err, "dump daemon configuration file")
-			}
-		}
-
+		d.Config = cfg
 		d.AddRafsInstance(rafs)
 
 		// if publicKey is not empty we should verify bootstrap file of image
@@ -596,10 +599,6 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 	// it is loaded when requesting mount api
 	// Dump the configuration file since it is reloaded when recovering the nydusd
 	d.Config = *fsManager.DaemonConfig
-	err = d.Config.DumpFile(d.ConfigFile(""))
-	if err != nil && !errors.Is(err, errdefs.ErrAlreadyExists) {
-		return errors.Wrapf(err, "dump configuration file %s", d.ConfigFile(""))
-	}
 
 	if err := fsManager.StartDaemon(d); err != nil {
 		return errors.Wrap(err, "start shared daemon")
