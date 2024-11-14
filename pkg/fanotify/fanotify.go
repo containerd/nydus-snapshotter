@@ -80,7 +80,7 @@ func (fserver *Server) RunServer() error {
 
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			logrus.WithError(err).Errorf("Failed to wait for command to finish")
+			logrus.WithError(err).Errorf("Failed to wait for fserver to finish")
 		}
 	}()
 

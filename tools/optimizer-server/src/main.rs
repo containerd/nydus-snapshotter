@@ -273,7 +273,7 @@ fn main() {
 
             match waitpid(child, None) {
                 Ok(WaitStatus::Signaled(pid, signal, _)) => {
-                    eprintln!("cophild process {pid} was killed by signal {signal}");
+                    eprintln!("child process {pid} was killed by signal {signal}");
                 }
                 Ok(WaitStatus::Stopped(pid, signal)) => {
                     eprintln!("child process {pid} was stopped by signal {signal}");
