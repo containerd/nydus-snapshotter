@@ -17,10 +17,8 @@ use std::{
 use nix::{
     poll::{poll, PollFd, PollFlags},
     sched::{setns, CloneFlags},
-    unistd::{
-        fork, getpgid,
-        ForkResult::{Child, Parent},
-    },
+    sys::wait::{waitpid, WaitStatus},
+    unistd::{fork, getpgid, ForkResult},
 };
 use serde::Serialize;
 
@@ -259,19 +257,35 @@ fn main() {
             return;
         }
     }
-    let pid = unsafe { fork() };
-    match pid.expect("fork failed: unable to create child process") {
-        Child => {
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
             if let Err(e) = start_fanotify() {
                 eprintln!("failed to start fanotify server {e:?}");
             }
         }
-        Parent { child } => {
+        Ok(ForkResult::Parent { child }) => {
             if let Err(e) = getpgid(Some(child)).map(|pgid| {
                 eprintln!("forked optimizer server subprocess, pid: {child}, pgid: {pgid}");
             }) {
                 eprintln!("failed to get pgid of {child} {e:?}");
-            };
+            }
+
+            match waitpid(child, None) {
+                Ok(WaitStatus::Signaled(pid, signal, _)) => {
+                    eprintln!("cophild process {pid} was killed by signal {signal}");
+                }
+                Ok(WaitStatus::Stopped(pid, signal)) => {
+                    eprintln!("child process {pid} was stopped by signal {signal}");
+                }
+                Err(e) => {
+                    eprintln!("failed to wait for child process: {e}");
+                }
+                _ => {}
+            }
+        }
+        Err(e) => {
+            eprintln!("fork failed: unable to create child process: {e:?}");
         }
     }
 }
