@@ -79,6 +79,12 @@ func (fserver *Server) RunServer() error {
 	fserver.Cmd = cmd
 
 	go func() {
+		if err := cmd.Wait(); err != nil {
+			logrus.WithError(err).Errorf("Failed to wait for fserver to finish")
+		}
+	}()
+
+	go func() {
 		if err := fserver.RunReceiver(); err != nil {
 			logrus.WithError(err).Errorf("Failed to receive event information from server")
 		}
