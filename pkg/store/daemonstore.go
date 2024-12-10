@@ -31,14 +31,6 @@ func (s *DaemonRafsStore) AddDaemon(d *daemon.Daemon) error {
 	return s.db.SaveDaemon(context.TODO(), d)
 }
 
-func (s *DaemonRafsStore) AddInfo(supplementInfo *daemon.NydusdSupplementInfo) error {
-	return s.db.SaveInfo(context.TODO(), supplementInfo)
-}
-
-func (s *DaemonRafsStore) GetInfo(imageID string) (*daemon.NydusdSupplementInfo, error) {
-	return s.db.GetSupplementInfo(context.TODO(), imageID)
-}
-
 func (s *DaemonRafsStore) UpdateDaemon(d *daemon.Daemon) error {
 	return s.db.UpdateDaemon(context.TODO(), d)
 }

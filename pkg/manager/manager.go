@@ -197,23 +197,6 @@ func (m *Manager) AddDaemon(daemon *daemon.Daemon) error {
 	return nil
 }
 
-func (m *Manager) AddSupplementInfo(supplementInfo *daemon.NydusdSupplementInfo) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err := m.store.AddInfo(supplementInfo); err != nil {
-		return errors.Wrapf(err, "add supplementInfo %s", supplementInfo.DaemonState.ID)
-	}
-	return nil
-}
-
-func (m *Manager) GetInfo(daemonID string) (*daemon.NydusdSupplementInfo, error) {
-	info, err := m.store.GetInfo(daemonID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "add supplementInfo %s", daemonID)
-	}
-	return info, nil
-}
-
 func (m *Manager) UpdateDaemon(daemon *daemon.Daemon) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -339,7 +322,13 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		}
 
 		if d.States.FsDriver == config.FsDriverFusedev {
-			d.Config = *m.DaemonConfig
+			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
+			if err != nil {
+				log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
+				return err
+			}
+
+			d.Config = cfg
 		}
 
 		state, err := d.GetState()

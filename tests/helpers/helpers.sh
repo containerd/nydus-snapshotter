@@ -99,7 +99,7 @@ install::kind(){
 }
 
 install::kubectl(){
-  local version="${1:-v1.30.0}"
+  local version="${1:-}"
   [ "$version" ] || version="$(http::get /dev/stdout https://dl.k8s.io/release/stable.txt)"
   local temp
   temp="$(fs::mktemp "install")"

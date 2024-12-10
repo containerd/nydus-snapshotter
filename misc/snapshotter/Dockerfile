@@ -17,7 +17,7 @@ FROM base AS kubectl-sourcer
 ARG TARGETARCH
 
 RUN apk add -q --no-cache curl && \
-    curl -fsSL -o /usr/bin/kubectl https://dl.k8s.io/release/"$(curl -L -s https://dl.k8s.io/release/stable.txt)"/bin/linux/"$TARGETARCH"/kubectl && \
+    curl -fsSL -o /usr/bin/kubectl https://storage.googleapis.com/kubernetes-release/release/"$(curl -L -s https://dl.k8s.io/release/stable.txt)"/bin/linux/"$TARGETARCH"/kubectl && \
     chmod +x /usr/bin/kubectl
 
 FROM base
