@@ -41,8 +41,7 @@ var (
 	daemonsBucket = []byte("daemons")
 	// RAFS filesystem instances.
 	// A RAFS filesystem may have associated daemon or not.
-	instancesBucket      = []byte("instances")
-	supplementInfoBucket = []byte("supplement_info")
+	instancesBucket = []byte("instances")
 )
 
 // Database keeps infos that need to survive among snapshotter restart
@@ -86,11 +85,6 @@ func getDaemonsBucket(tx *bolt.Tx) *bolt.Bucket {
 func getInstancesBucket(tx *bolt.Tx) *bolt.Bucket {
 	bucket := tx.Bucket(v1RootBucket)
 	return bucket.Bucket(instancesBucket)
-}
-
-func getSupplementInfoBucket(tx *bolt.Tx) *bolt.Bucket {
-	bucket := tx.Bucket(v1RootBucket)
-	return bucket.Bucket(supplementInfoBucket)
 }
 
 func updateObject(bucket *bolt.Bucket, key string, obj interface{}) error {
@@ -169,10 +163,6 @@ func (db *Database) initDatabase() error {
 			return errors.Wrapf(err, "bucket %s", instancesBucket)
 		}
 
-		if _, err := bk.CreateBucketIfNotExists(supplementInfoBucket); err != nil {
-			return err
-		}
-
 		if val := bk.Get(versionKey); val == nil {
 			version = "v1.0"
 		} else {
@@ -217,25 +207,6 @@ func (db *Database) SaveDaemon(_ context.Context, d *daemon.Daemon) error {
 			return errdefs.ErrAlreadyExists
 		}
 		return putObject(bucket, d.ID(), d.States)
-	})
-}
-
-func (db *Database) SaveInfo(_ context.Context, supplementInfo *daemon.NydusdSupplementInfo) error {
-	return db.db.Update(func(tx *bolt.Tx) error {
-		bucket := getSupplementInfoBucket(tx)
-		key := []byte(supplementInfo.DaemonState.ID)
-		if existing := bucket.Get(key); existing != nil {
-			log.L.Infof("Supplement info already exists for ID: %s", supplementInfo.DaemonState.ID)
-			return nil
-		}
-		value, err := json.Marshal(supplementInfo)
-		if err != nil {
-			return errors.Wrap(err, "failed to marshal supplement info")
-		}
-		if err := bucket.Put(key, value); err != nil {
-			return errors.Wrap(err, "failed to save supplement info")
-		}
-		return nil
 	})
 }
 
@@ -289,25 +260,6 @@ func (db *Database) WalkDaemons(_ context.Context, cb func(info *daemon.ConfigSt
 			return cb(states)
 		})
 	})
-}
-
-func (db *Database) GetSupplementInfo(_ context.Context, daemonID string) (*daemon.NydusdSupplementInfo, error) {
-	var info daemon.NydusdSupplementInfo
-	err := db.db.View(func(tx *bolt.Tx) error {
-		bucket := getSupplementInfoBucket(tx)
-		if bucket == nil {
-			return errdefs.ErrNotFound
-		}
-		value := bucket.Get([]byte(daemonID))
-		if value == nil {
-			return errdefs.ErrNotFound
-		}
-		return json.Unmarshal(value, &info)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &info, nil
 }
 
 // WalkDaemons iterates all daemon records and invoke callback on each
