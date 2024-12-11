@@ -9,6 +9,7 @@ package daemonconfig
 import (
 	"encoding/json"
 	"os"
+	"path"
 
 	"github.com/pkg/errors"
 
@@ -91,7 +92,12 @@ func (c *FuseDaemonConfig) StorageBackend() (string, *BackendConfig) {
 }
 
 func (c *FuseDaemonConfig) DumpString() (string, error) {
-	configRWMutex.Lock()
-	defer configRWMutex.Unlock()
 	return DumpConfigString(c)
+}
+
+func (c *FuseDaemonConfig) DumpFile(f string) error {
+	if err := os.MkdirAll(path.Dir(f), 0755); err != nil {
+		return err
+	}
+	return DumpConfigFile(c, f)
 }

@@ -29,9 +29,6 @@ type Store interface {
 	WalkRafsInstances(ctx context.Context, cb func(*rafs.Rafs) error) error
 
 	NextInstanceSeq() (uint64, error)
-
-	AddInfo(supplementInfo *daemon.NydusdSupplementInfo) error
-	GetInfo(daemonID string) (*daemon.NydusdSupplementInfo, error)
 }
 
 var _ Store = &store.DaemonRafsStore{}

@@ -9,6 +9,7 @@ package daemonconfig
 import (
 	"encoding/json"
 	"os"
+	"path"
 
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
@@ -119,4 +120,12 @@ func (c *FscacheDaemonConfig) FillAuth(kc *auth.PassKeyChain) {
 
 func (c *FscacheDaemonConfig) DumpString() (string, error) {
 	return DumpConfigString(c)
+}
+
+func (c *FscacheDaemonConfig) DumpFile(f string) error {
+	if err := os.MkdirAll(path.Dir(f), 0755); err != nil {
+		return err
+	}
+
+	return DumpConfigFile(c, f)
 }

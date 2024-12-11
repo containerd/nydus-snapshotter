@@ -9,9 +9,9 @@ package daemonconfig
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
-	"sync"
 
 	"github.com/pkg/errors"
 
@@ -36,6 +36,7 @@ type DaemonConfig interface {
 	StorageBackend() (StorageBackendType, *BackendConfig)
 	UpdateMirrors(mirrorsConfigDir, registryHost string) error
 	DumpString() (string, error)
+	DumpFile(path string) error
 }
 
 // Daemon configurations factory
@@ -121,14 +122,19 @@ type DeviceConfig struct {
 	} `json:"cache"`
 }
 
-var configRWMutex sync.RWMutex
+// For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
+// We don't have to persist configuration file for fscache since its configuration
+// is passed through HTTP API.
+func DumpConfigFile(c interface{}, path string) error {
+	if config.IsBackendSourceEnabled() {
+		c = serializeWithSecretFilter(c)
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return errors.Wrapf(err, "marshal config")
+	}
 
-type SupplementInfoInterface interface {
-	GetImageID() string
-	GetSnapshotID() string
-	IsVPCRegistry() bool
-	GetLabels() map[string]string
-	GetParams() map[string]string
+	return os.WriteFile(path, b, 0600)
 }
 
 func DumpConfigString(c interface{}) (string, error) {
@@ -137,14 +143,12 @@ func DumpConfigString(c interface{}) (string, error) {
 }
 
 // Achieve a daemon configuration from template or snapshotter's configuration
-func SupplementDaemonConfig(c DaemonConfig, info SupplementInfoInterface) error {
+func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
+	vpcRegistry bool, labels map[string]string, params map[string]string) error {
 
-	configRWMutex.Lock()
-	defer configRWMutex.Unlock()
-
-	image, err := registry.ParseImage(info.GetImageID())
+	image, err := registry.ParseImage(imageID)
 	if err != nil {
-		return errors.Wrapf(err, "parse image %s", info.GetImageID())
+		return errors.Wrapf(err, "parse image %s", imageID)
 	}
 
 	backendType, _ := c.StorageBackend()
@@ -152,7 +156,7 @@ func SupplementDaemonConfig(c DaemonConfig, info SupplementInfoInterface) error 
 	switch backendType {
 	case backendTypeRegistry:
 		registryHost := image.Host
-		if info.IsVPCRegistry() {
+		if vpcRegistry {
 			registryHost = registry.ConvertToVPCHost(registryHost)
 		} else if registryHost == "docker.io" {
 			// For docker.io images, we should use index.docker.io
@@ -166,8 +170,8 @@ func SupplementDaemonConfig(c DaemonConfig, info SupplementInfoInterface) error 
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
-		keyChain := auth.GetRegistryKeyChain(registryHost, info.GetImageID(), info.GetLabels())
-		c.Supplement(registryHost, image.Repo, info.GetSnapshotID(), info.GetParams())
+		keyChain := auth.GetRegistryKeyChain(registryHost, imageID, labels)
+		c.Supplement(registryHost, image.Repo, snapshotID, params)
 		c.FillAuth(keyChain)
 
 	// Localfs and OSS backends don't need any update,
