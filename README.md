@@ -140,7 +140,7 @@ We can also use the `nydus-snapshotter` container image when we want to put Nydu
 
 ## Integrate with Dragonfly to Distribute Images by P2P
 
-Nydus is a sub-project of [Dragonfly](https://github.com/dragonflyoss/Dragonfly2). So it closely works with Dragonfly to distribute container images in a fast and efficient P2P fashion to reduce network latency and lower the pressure on a single-point of the registry.
+Nydus is a sub-project of [Dragonfly](https://github.com/dragonflyoss/dragonfly). So it closely works with Dragonfly to distribute container images in a fast and efficient P2P fashion to reduce network latency and lower the pressure on a single-point of the registry.
 
 ### Quickstart Dragonfly & Nydus in Kubernetes
 
