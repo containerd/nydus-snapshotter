@@ -5,3 +5,4 @@ coverage.txt
 tests/output/
 smoke.tests
 tools/optimizer-server/target
+vendor/
