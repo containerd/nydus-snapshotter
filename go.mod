@@ -14,13 +14,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.2
 	github.com/containerd/cgroups/v3 v3.0.3
 	github.com/containerd/containerd/api v1.8.0
-	github.com/containerd/containerd/v2 v2.0.0
+	github.com/containerd/containerd/v2 v2.0.2
 	github.com/containerd/continuity v0.4.4
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/fifo v1.1.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/nri v0.8.0
-	github.com/containerd/platforms v1.0.0-rc.0
+	github.com/containerd/platforms v1.0.0-rc.1
 	github.com/containerd/plugin v1.0.0
 	github.com/containerd/stargz-snapshotter v0.15.2-0.20240709063920-1dac5ef89319
 	github.com/containerd/stargz-snapshotter/estargz v0.15.2-0.20240709063920-1dac5ef89319
@@ -44,7 +44,7 @@ require (
 	github.com/prometheus/client_model v0.6.1
 	github.com/rs/xid v1.5.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.5
 	go.etcd.io/bbolt v1.3.11
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
@@ -83,11 +83,11 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cilium/ebpf v0.11.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
-	github.com/containerd/ttrpc v1.2.6 // indirect
-	github.com/containerd/typeurl/v2 v2.2.2 // indirect
+	github.com/containerd/ttrpc v1.2.7 // indirect
+	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -126,7 +126,7 @@ require (
 	github.com/opencontainers/runtime-tools v0.9.1-0.20221107090550-2e043c6bd626 // indirect
 	github.com/opencontainers/selinux v1.11.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -168,4 +168,19 @@ retract (
 	v0.11.1
 	v0.11.0
 	v0.3.0 // retagged: cd604c1b597558ea045a79c4f80a8c780909801b -> 85653575c7dafb6b06548478ee1dc61ac5905d00
+)
+
+exclude (
+	// These dependencies were updated to "master" in some modules we depend on,
+	// but have no code-changes since their last release. Unfortunately, this also
+	// causes a ripple effect, forcing all users of the containerd module to also
+	// update these dependencies to an unrelease / un-tagged version.
+	//
+	// Both these dependencies will unlikely do a new release in the near future,
+	// so exclude these versions so that we can downgrade to the current release.
+	//
+	// For additional details, see this PR and links mentioned in that PR:
+	// https://github.com/kubernetes-sigs/kustomize/pull/5830#issuecomment-2569960859
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 )
