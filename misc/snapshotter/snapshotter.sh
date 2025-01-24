@@ -230,7 +230,7 @@ function remove_images() {
                 for IMAGE in $IMAGES; do
                     # Delete the image
                     $ctr_args images rm $IMAGE > /dev/null 2>&1 || true
-                    echo "Images $IMAGES removed"
+                    echo "Image $IMAGE removed"
                 done
             done
             # Delete the content
