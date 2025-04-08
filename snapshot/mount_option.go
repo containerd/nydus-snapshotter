@@ -27,6 +27,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	KataVirtualVolumeDefaultSource = "overlay"
+	KataVirtualVolumeDummySource   = "dummy-image-reference"
+)
+
 type ExtraOption struct {
 	Source      string `json:"source"`
 	Config      string `json:"config"`
@@ -103,7 +108,7 @@ func (o *snapshotter) remoteMountWithExtraOptions(ctx context.Context, s storage
 	return []mount.Mount{
 		{
 			Type:    mountType,
-			Source:  "overlay",
+			Source:  KataVirtualVolumeDefaultSource,
 			Options: overlayOptions,
 		},
 	}, nil
@@ -152,7 +157,7 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overla
 		mounts := []mount.Mount{
 			{
 				Type:    mountType,
-				Source:  "overlay",
+				Source:  KataVirtualVolumeDefaultSource,
 				Options: overlayOptions,
 			},
 		}
@@ -165,6 +170,16 @@ func (o *snapshotter) mountWithKataVolume(ctx context.Context, id string, overla
 func (o *snapshotter) mountWithProxyVolume(rafs rafs.Rafs) ([]string, error) {
 	options := []string{}
 	source := rafs.Annotations[label.CRIImageRef]
+
+	// In the normal flow, this should correctly return the imageRef. However, passing the CRIImageRef label
+	// from containerd is not supported. Therefore, the source will be set to "".
+	// But in this case, kata runtime-rs has a non-empty check for the source field. To ensure this field
+	// remains non-empty, a forced assignment is used here. This does not affect the passing of information.
+	// it is solely to pass the check.
+	if len(source) == 0 {
+		source = KataVirtualVolumeDummySource
+	}
+
 	for k, v := range rafs.Annotations {
 		options = append(options, fmt.Sprintf("%s=%s", k, v))
 	}
