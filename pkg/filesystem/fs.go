@@ -243,7 +243,7 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	var imageID string
 	imageID, ok := labels[snpkg.TargetRefLabel]
 	if !ok {
-		// FIXME: Buildkit does not pass labels defined in containerd‘s fashion. So
+		// FIXME: Buildkit does not pass labels defined in containerd's fashion. So
 		// we have to use stargz snapshotter specific labels until Buildkit generalize it the necessary
 		// labels for all remote snapshotters.
 		imageID, ok = labels["containerd.io/snapshot/remote/stargz.reference"]
@@ -372,6 +372,13 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	// Persist it after associate instance after all the states are calculated.
 	if err == nil {
 		if err := fsManager.AddRafsInstance(rafs); err != nil {
+			// In the CoCo scenario, the existence of a rafs instance is not a concern, as the CoCo guest image pull
+			// does not utilize snapshots on the host. Therefore, we expect it to pass normally regardless of its existence.
+			// However, for the convenience of troubleshooting, we tend to print relevant logs.
+			if config.GetFsDriver() == config.FsDriverProxy {
+				log.L.Warnf("RAFS instance has associated with snapshot %s possibly: %v", snapshotID, err)
+				return nil
+			}
 			return errors.Wrapf(err, "create instance %s", snapshotID)
 		}
 	}
