@@ -922,35 +922,17 @@ func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
 	}
 }
 
-// convertIndex modifies the original index by appending "nydus.remoteimage.v1"
-// to the Platform.OSFeatures of each modified manifest descriptors.
+// convertIndex modifies the original index converting it to manifest directly if it contains only one manifest.
 func convertIndex(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 	var orgIndex ocispec.Index
 	if _, err := readJSON(ctx, cs, &orgIndex, orgDesc); err != nil {
 		return nil, errors.Wrap(err, "read target image index json")
-	}
-	// isManifestModified is a function to check whether the manifest is modified.
-	isManifestModified := func(manifest ocispec.Descriptor) bool {
-		for _, oldManifest := range orgIndex.Manifests {
-			if manifest.Digest == oldManifest.Digest {
-				return false
-			}
-		}
-		return true
 	}
 
 	var index ocispec.Index
 	indexLabels, err := readJSON(ctx, cs, &index, *newDesc)
 	if err != nil {
 		return nil, errors.Wrap(err, "read index json")
-	}
-	for i, manifest := range index.Manifests {
-		if !isManifestModified(manifest) {
-			// Skip the manifest which is not modified.
-			continue
-		}
-		manifest.Platform.OSFeatures = append(manifest.Platform.OSFeatures, ManifestOSFeatureNydus)
-		index.Manifests[i] = manifest
 	}
 
 	// If the converted manifest list contains only one manifest,
