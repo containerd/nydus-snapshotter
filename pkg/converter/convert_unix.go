@@ -1054,6 +1054,8 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 		// See the `subject` field description in
 		// https://github.com/opencontainers/image-spec/blob/main/manifest.md#image-manifest-property-descriptions
 		manifest.Subject = &oldDesc
+		// Remove the platform field as it is not supported by certain registries like ECR.
+		manifest.Subject.Platform = nil
 	}
 
 	// Update image manifest in content store.
