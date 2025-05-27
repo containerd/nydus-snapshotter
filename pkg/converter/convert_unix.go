@@ -36,8 +36,10 @@ import (
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/containerd/nydus-snapshotter/pkg/converter/containerdreconverter"
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 )
@@ -811,6 +813,29 @@ func makeBlobDesc(ctx context.Context, cs content.Store, opt PackOption, sourceD
 	return &targetDesc, nil
 }
 
+func makeOCIBlobDesc(ctx context.Context, cs content.Store, uncompressedDgst, targetDigest digest.Digest, mediaType string) (*ocispec.Descriptor, error) {
+	targetInfo, err := cs.Info(ctx, targetDigest)
+	if err != nil {
+		return nil, errors.Wrapf(err, "get target blob info %s", targetDigest)
+	}
+	if targetInfo.Labels == nil {
+		targetInfo.Labels = map[string]string{}
+	}
+
+	targetDesc := ocispec.Descriptor{
+		Digest:    targetDigest,
+		Size:      targetInfo.Size,
+		MediaType: mediaType,
+		Annotations: map[string]string{
+			// Use `containerd.io/uncompressed` to generate DiffID of
+			// layer defined in OCI spec.
+			LayerAnnotationUncompressed: uncompressedDgst.String(),
+		},
+	}
+
+	return &targetDesc, nil
+}
+
 // LayerConvertFunc returns a function which converts an OCI image layer to
 // a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
 func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
@@ -1036,6 +1061,149 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 	}
 
 	return newManifestDesc, nil
+}
+
+func ReconvertHookFunc() containerdreconverter.ConvertHookFunc {
+	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
+		desc := newDesc
+		if !images.IsManifestType(desc.MediaType) {
+			return desc, nil
+		}
+		if IsNydusBootstrap(*desc) {
+			return desc, nil
+		}
+		var err error
+		var labels map[string]string
+		switch desc.MediaType {
+		case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest:
+			var manifest ocispec.Manifest
+			labels, err = readJSON(ctx, cs, &manifest, *desc)
+			if err != nil {
+				return nil, errors.Wrap(err, "read manifest")
+			}
+
+			desc, err = writeJSON(ctx, cs, manifest, *desc, labels)
+			if err != nil {
+				return nil, errors.Wrap(err, "write manifest")
+			}
+			return desc, nil
+
+		case ocispec.MediaTypeImageIndex, images.MediaTypeDockerSchema2ManifestList:
+			var index ocispec.Index
+			labels, err = readJSON(ctx, cs, &index, *desc)
+			if err != nil {
+				return nil, errors.Wrap(err, "read manifest index")
+			}
+			for idx, maniDesc := range index.Manifests {
+				var manifest ocispec.Manifest
+				labels, err = readJSON(ctx, cs, &manifest, maniDesc)
+				if err != nil {
+					return nil, errors.Wrap(err, "read manifest")
+				}
+
+				newManiDesc, err := writeJSON(ctx, cs, manifest, maniDesc, labels)
+				if err != nil {
+					return nil, errors.Wrap(err, "write manifest")
+				}
+				index.Manifests[idx] = *newManiDesc
+			}
+			desc, err = writeJSON(ctx, cs, index, *desc, labels)
+			if err != nil {
+				return nil, errors.Wrap(err, "write manifest index")
+			}
+
+			return desc, nil
+
+		default:
+			return nil, errors.Errorf("unsupported media type %s", desc.MediaType)
+		}
+	}
+}
+
+func LayerReconvertFunc(opt UnpackOption) containerdreconverter.ConvertFunc {
+	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
+		if !images.IsLayerType(desc.MediaType) {
+			return nil, nil
+		}
+
+		// Skip the nydus bootstrap layer.
+		if IsNydusBootstrap(desc) {
+			logrus.Debugf("skip nydus bootstrap layer %s", desc.Digest.String())
+			return &desc, nil
+		}
+
+		ra, err := cs.ReaderAt(ctx, desc)
+		if err != nil {
+			return nil, errors.Wrap(err, "get reader")
+		}
+		defer ra.Close()
+
+		ref := fmt.Sprintf("convert-oci-from-%s", desc.Digest)
+		cw, err := content.OpenWriter(ctx, cs, content.WithRef(ref))
+		if err != nil {
+			return nil, errors.Wrap(err, "open blob writer")
+		}
+		defer cw.Close()
+
+		var gw io.WriteCloser
+		var mediaType string
+		switch opt.Compressor {
+		case "gzip":
+			gw = gzip.NewWriter(cw)
+			mediaType = ocispec.MediaTypeImageLayerGzip
+		default:
+			gw, err = zstd.NewWriter(cw)
+			if err != nil {
+				return nil, errors.Wrap(err, "create zstd writer")
+			}
+			mediaType = ocispec.MediaTypeImageLayerZstd
+		}
+		var data bytes.Buffer
+		writer := io.Writer(&data)
+		uncompressedDgster := digest.SHA256.Digester()
+
+		err = Unpack(ctx, ra, writer, opt)
+		if err != nil {
+			return nil, errors.Wrap(err, "unpack nydus to tar")
+		}
+
+		compressed := io.MultiWriter(gw, uncompressedDgster.Hash())
+		_, err = uncompressedDgster.Hash().Write(data.Bytes())
+		uncompressedDgst := uncompressedDgster.Digest()
+
+		buffer := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buffer)
+		if _, err = io.CopyBuffer(compressed, bytes.NewReader(data.Bytes()), *buffer); err != nil {
+			return nil, errors.Wrapf(err, "copy bootstrap targz into content store")
+		}
+		if err = gw.Close(); err != nil {
+			return nil, errors.Wrap(err, "close gzip writer")
+		}
+
+		compressedDgst := cw.Digest()
+		if err = cw.Commit(ctx, 0, compressedDgst, content.WithLabels(map[string]string{
+			LayerAnnotationUncompressed: uncompressedDgst.String(),
+		})); err != nil {
+			if !errdefs.IsAlreadyExists(err) {
+				return nil, errors.Wrap(err, "commit to content store")
+			}
+		}
+		if err = cw.Close(); err != nil {
+			return nil, errors.Wrap(err, "close content store writer")
+		}
+
+		newDesc, err := makeOCIBlobDesc(ctx, cs, uncompressedDgst, compressedDgst, mediaType)
+		if err != nil {
+			return nil, err
+		}
+
+		if opt.Backend != nil {
+			if err := opt.Backend.Push(ctx, cs, *newDesc); err != nil {
+				return nil, errors.Wrap(err, "push to storage backend")
+			}
+		}
+		return newDesc, nil
+	}
 }
 
 // MergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
