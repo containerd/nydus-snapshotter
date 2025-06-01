@@ -37,6 +37,8 @@ type Manager struct {
 	FsDriver string
 	store    Store
 
+	delegateNydusd bool
+
 	// Fields below are used to manage nydusd daemons.
 	//
 	// The `daemonCache` is cache for nydusd daemons stored in `store`.
@@ -59,6 +61,7 @@ type Opt struct {
 	FsDriver         string
 	NydusdBinaryPath string
 	RecoverPolicy    config.DaemonRecoverPolicy
+	DelegateNydusd   bool   // If true, the manager will not start nydusd daemons, but only manage them.
 	RootDir          string // Nydus-snapshotter work directory
 }
 
@@ -93,6 +96,7 @@ func NewManager(opt Opt) (*Manager, error) {
 		DaemonConfig:     opt.DaemonConfig,
 		CgroupMgr:        opt.CgroupMgr,
 		FsDriver:         opt.FsDriver,
+		delegateNydusd:   opt.DelegateNydusd,
 	}
 
 	// FIXME: How to get error if monitor goroutine terminates with error?
