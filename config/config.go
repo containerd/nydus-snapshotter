@@ -219,6 +219,10 @@ type SnapshotterConfig struct {
 	DaemonMode string `toml:"daemon_mode"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`
+	// Enable nydus-snapshotter to delegate nydusd creation and reaping membership to host.
+	// This is useful when nydus-snapshotter is running in a container deployed by Kubernetes, nydus-snapshotter must
+	// run in the host pid namespace and has privilege to enter the host mnt namespace.
+	DelegateNydusd bool `toml:"delegate_nydusd"`
 
 	SystemControllerConfig SystemControllerConfig `toml:"system"`
 	MetricsConfig          MetricsConfig          `toml:"metrics"`
