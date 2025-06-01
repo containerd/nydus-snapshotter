@@ -10,11 +10,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/containerd/log"
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
@@ -36,29 +39,79 @@ const endpointGetBackend string = "/api/v1/daemons/%s/backend"
 //     ensure the daemon has reached specified state.
 //   - `d` may have not been inserted into daemonStates and store yet.
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
-	cmd, err := m.BuildDaemonCommand(d, "", false)
-	if err != nil {
-		return errors.Wrapf(err, "create command for daemon %s", d.ID())
-	}
+	var nydusdPid int
+	if m.delegateNydusd {
+		if err := executeInMntNamespace("/proc/1/ns/mnt", func() error {
+			var err error
+			cmd, err := m.BuildDaemonCommand(d, "", false)
+			if err != nil {
+				return errors.Wrapf(err, "create command for daemon %s", d.ID())
+			}
 
-	if err := cmd.Start(); err != nil {
-		return err
+			o, err := cmd.CombinedOutput()
+			if err != nil {
+				return errors.Wrapf(err, "start delegatee %s", d.ID())
+			}
+
+			output := strings.TrimSpace(string(o))
+			serviceUnit := strings.TrimPrefix(output, "Running as unit:")
+
+			// systemctl show --property=MainPID run-rc28cf5fdc45c497cbe6736aea1e2701e.service
+			// MainPID=1037947
+			cmd = exec.Command("systemctl", "show", "--property=MainPID", strings.TrimSpace(serviceUnit))
+			o, err = cmd.CombinedOutput()
+			if err != nil {
+				return errors.Wrapf(err, "get nydusd MainPID for delegatee %s", d.ID())
+			}
+			output = strings.TrimSpace(string(o))
+			tokens := strings.Split(output, "=")
+			if len(tokens) != 2 {
+				return errors.Errorf("unexpected output %q from systemctl show", output)
+			}
+
+			if tokens[0] != "MainPID" {
+				return errors.Errorf("unexpected property %q from systemctl show", tokens[0])
+			}
+
+			nydusdPid, err = strconv.Atoi(tokens[1])
+			if err != nil {
+				return errors.Wrapf(err, "parse nydusd pid %q from systemctl show", tokens[1])
+			}
+
+			log.L.Infof("Delegatee nydusd %s started with pid %d", d.ID(), nydusdPid)
+
+			return nil
+		}); err != nil {
+			return errors.Wrapf(err, "start daemon %s", d.ID())
+		}
+	} else {
+		var err error
+		cmd, err := m.BuildDaemonCommand(d, "", false)
+		if err != nil {
+			return errors.Wrapf(err, "create command for daemon %s", d.ID())
+		}
+
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+
+		nydusdPid = cmd.Process.Pid
 	}
 
 	d.Lock()
 	defer d.Unlock()
 
-	d.States.ProcessID = cmd.Process.Pid
+	d.States.ProcessID = nydusdPid
 
 	// Profile nydusd daemon CPU usage during its startup.
 	if config.GetDaemonProfileCPUDuration() > 0 {
-		processState, err := metrics.GetProcessStat(cmd.Process.Pid)
+		processState, err := metrics.GetProcessStat(nydusdPid)
 		if err == nil {
 			timer := time.NewTimer(time.Duration(config.GetDaemonProfileCPUDuration()) * time.Second)
 
 			go func() {
 				<-timer.C
-				currentProcessState, err := metrics.GetProcessStat(cmd.Process.Pid)
+				currentProcessState, err := metrics.GetProcessStat(nydusdPid)
 				if err != nil {
 					log.L.WithError(err).Warnf("Failed to get daemon %s process state.", d.ID())
 					return
@@ -75,7 +128,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	// TODO: Is it right to commit daemon before nydusd successfully started?
 	// And it brings extra latency of accessing DB. Only write daemon record to
 	// DB when nydusd is started?
-	err = m.UpdateDaemon(d)
+	err := m.UpdateDaemon(d)
 	if err != nil {
 		// Nothing we can do, just ignore it for now
 		log.L.Errorf("Fail to update daemon info (%+v) to DB: %v", d, err)
@@ -212,14 +265,49 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		nydusdPath = m.NydusdBinaryPath
 	}
 
+	var cmd *exec.Cmd
 	log.L.Infof("nydusd command: %s %s", nydusdPath, strings.Join(args, " "))
-
-	cmd := exec.Command(nydusdPath, args...)
-
-	// nydusd standard output and standard error rather than its logs are
-	// always redirected to snapshotter's respectively
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if m.delegateNydusd {
+		delegateeCmdFlags := []string{"--description", "nydusd"}
+		args = append([]string{nydusdPath}, args...)
+		args = append(delegateeCmdFlags, args...)
+		cmd = exec.Command("systemd-run", args...)
+	} else {
+		cmd = exec.Command(nydusdPath, args...)
+		// nydusd standard output and standard error rather than its logs are
+		// always redirected to snapshotter's respectively
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 
 	return cmd, nil
+}
+
+// executeInMntNamespace runs a function in the specified namespace and ensures thread isolation
+func executeInMntNamespace(mntNamespacePath string, fn func() error) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Detach from the shared fs of the rest of the Go process in order to
+	// be able to CLONE_NEWNS.
+	if err := unix.Unshare(unix.CLONE_FS); err != nil {
+		return errors.Wrap(err, "failed to unshare filesystem namespace")
+	}
+
+	targetNS, err := os.Open(mntNamespacePath)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open target mnt namespace %q", mntNamespacePath)
+	}
+	defer targetNS.Close()
+
+	if err := unix.Setns(int(targetNS.Fd()), unix.CLONE_NEWNS); err != nil {
+		return errors.Wrapf(err, "failed to enter the namespace %q", mntNamespacePath)
+	}
+
+	if err := fn(); err != nil {
+		log.L.WithError(err).Errorf("failed to execute in the mnt namespace %s", mntNamespacePath)
+		return err
+	}
+
+	return err
 }
