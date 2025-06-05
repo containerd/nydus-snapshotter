@@ -17,15 +17,15 @@ address = "/run/containerd-nydus/system.sock"
 
 [system.debug]
 # Snapshotter can profile the CPU utilization of each nydusd daemon when it is being started.
-# This option specifies the profile duration when nydusd is downloading and uncomproessing data.
+# This option specifies the profile duration when nydusd is downloading and uncompressing data.
 daemon_cpu_profile_duration_secs = 5
 # Enable by assigning an address, empty indicates pprof server is disabled
 pprof_address = ""
 
 [daemon]
 # Specify a configuration file for nydusd
-nydusd_config = "/etc/nydus/nydusd-config.fusedev.json"
-nydusd_path = "/usr/local/bin/nydusd"
+nydusd_config   = "/etc/nydus/nydusd-config.fusedev.json"
+nydusd_path     = "/usr/local/bin/nydusd"
 nydusimage_path = "/usr/local/bin/nydus-image"
 # The fs driver can be one of the following options: fusedev, fscache, blockdev, proxy, or nodev. 
 # If `fs_driver` option is not specified, the default value is fusedev.
@@ -50,11 +50,11 @@ memory_limit = ""
 # Print logs to stdout rather than logging files
 log_to_stdout = false
 # Snapshotter's log level
-level = "info"
-log_rotation_compress = true
+level                   = "info"
+log_rotation_compress   = true
 log_rotation_local_time = true
 # Max number of days to retain logs
-log_rotation_max_age = 7
+log_rotation_max_age     = 7
 log_rotation_max_backups = 5
 # In unit MB(megabytes)
 log_rotation_max_size = 100
@@ -68,7 +68,7 @@ convert_vpc_registry = false
 
 [remote.mirrors_config]
 # Snapshotter will overwrite daemon's mirrors configuration
-# if the values loaded from this driectory are not null before starting a daemon.
+# if the values loaded from this directory are not null before starting a daemon.
 # Set to "" or an empty directory to disable it.
 #dir = "/etc/nydus/certs.d"
 
@@ -101,10 +101,10 @@ gc_period = "24h"
 cache_dir = ""
 
 [image]
-public_key_file = ""
+public_key_file    = ""
 validate_signature = false
 
-# The configuraions for features that are not production ready
+# The configurations for features that are not production ready
 [experimental]
 # Whether to enable stargz support
 enable_stargz = false
