@@ -31,7 +31,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/core/content"
-	containerdconverter "github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/containerd/v2/plugins/content/local"
 	"github.com/containerd/log"
@@ -40,8 +39,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
+	containerdconverter "github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
+	"github.com/containerd/nydus-snapshotter/pkg/converter/containerdreconverter"
 	"github.com/containerd/nydus-snapshotter/pkg/encryption"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -50,42 +51,42 @@ const envNydusdPath = "NYDUS_NYDUSD"
 
 var (
 	privateKey = []byte(`-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEAw8mbbvEiQ6BSfsjSq8XEz9ZOS5lOzI2Up3zXlKU9mZN/JBc2
-0TGQp0SnSCXYHmzJ9UrXqX2MDU2UFsQpVF0vTrvj+PURYHO5K2NIo8Dqj9uUTq5q
-ylwYLWWcuUQPLHeShOWDOeiVycaSP2dnSKwZOyhiQc/TvRXZ5oooFBHzMOrKhACv
-ZOfVxYNrrhwdsIX5+TRL8isxT4y8bkdzhY0R4J6z3aVhOAQhrp7fKtNtEA1edkIE
-Vd+F7k72qdTCSCNAhjy1Dyom3A9Yii2wNafcEtEr8D3dgnQMnkgpDhPCqLeeecmX
-n2BmELmBOW9Nio/tR8dc/wpW3OqB5ycmgnGu+QIDAQABAoIBAQCaAJUQmP/Yrdz1
-+UUs9C0xRmLjuD1xTNRnQh3YwHlJuelCHDh0KEaeK7RhXdM3a18YYLxuh2CIfkND
-/Rx9TacOiWByzWHTunMmm7vhgrd+XLu1gCBj+DjUTJ8QY2aEFbHccyPbgwV/Z4BV
-+yIU2bom/Eb9eVoV24BAhN+tmcju6f6PtGDQciV3QJqnzn+YUpl+e1+qjs1UnvSH
-fYRDWdoKIeBr9C4NYMh9qMxuduKErld+01aJvthSdxC6E2GKyQNj726IZm5cYQPL
-tbGc+Om+tR3mI3uK1MJZ00yoThuG216SB2hFqGCqgW4gpXpWGZVyGlh/JiQDDuSL
-sSFiLqYBAoGBAPXUgX+eIOfwh88tUy+VNKkAQvazv/KF+/eosU2aazJQBxvLRIWL
-qm1pjEU0ZzUP3a2rEsnZxHh2SYERGGJQVBVUlITQSaeW+XbEZbGCh5x9dTnY0hvc
-BjRLOk8jGYxAVtvXl88zfhS+c8jNM5M0ECRCP/yFkGE99DzWhXLf/D4ZAoGBAMvj
-HoZZvNaku3ruNgmI/Kp3Gx3aUiMwXIKXjQ0xc3f0A1Ccc5SAgYXLmLvqB+ZNJ+Sd
-Fd/87Zpb8kEy+JC5UE4ZwZo2SnL1wDyMZWRw3cTsf8mhvQ1kCpj5fPWUrGzUs/bh
-ImL6w5sh5IB3BYN5nAtZiRyrqQCHxqW2HK+EJVPhAoGAXLevuABeDNzNfDhuHY46
-9Fri5sVY6hHavMflR42sTKeeZr89stjAiM+8VgWzv3GifHP/fB4kWgLTKljWR45g
-iEMEWStt/EWXBVKBwHeoyj8PTagXZuaPeH2/GkX0xs8lc3lXCpEzRoOmi9/JSgXi
-6KoMFCQUFnkVezS11GPicVECgYEAhacXrniK+qW4JIidMbjz8IbtZq9kIp8kNZNF
-Kn3dNKfnuGMmvRVUUrG5KI3sqcKwQQPcgB1cYFCfyK+yE6T3CIuHxyCJwzxnzQk3
-uhTmu51Q04tL08hdzhPWH2JbeWghpNfGY94AdeRM1w2utpX0fdgusnWw7qESzjRI
-L6JPmeECgYBUkLNcEyrNMc90tk5jdQqCQb/frT6K5k04LjvXe+TlJPHBO3XJun0H
-OYrCC8EcKknH6jkHejHUdDTG/XjHvohzKI43xg61touKtgFOVpoq79vUBRVOuH85
-6vNEksKyKXUKYya19LJS/EpfC2uHUENPSmq/Bh7TDb4y70JWnGTVWA==
------END RSA PRIVATE KEY-----`)
+  MIIEpAIBAAKCAQEAw8mbbvEiQ6BSfsjSq8XEz9ZOS5lOzI2Up3zXlKU9mZN/JBc2
+  0TGQp0SnSCXYHmzJ9UrXqX2MDU2UFsQpVF0vTrvj+PURYHO5K2NIo8Dqj9uUTq5q
+  ylwYLWWcuUQPLHeShOWDOeiVycaSP2dnSKwZOyhiQc/TvRXZ5oooFBHzMOrKhACv
+  ZOfVxYNrrhwdsIX5+TRL8isxT4y8bkdzhY0R4J6z3aVhOAQhrp7fKtNtEA1edkIE
+  Vd+F7k72qdTCSCNAhjy1Dyom3A9Yii2wNafcEtEr8D3dgnQMnkgpDhPCqLeeecmX
+  n2BmELmBOW9Nio/tR8dc/wpW3OqB5ycmgnGu+QIDAQABAoIBAQCaAJUQmP/Yrdz1
+  +UUs9C0xRmLjuD1xTNRnQh3YwHlJuelCHDh0KEaeK7RhXdM3a18YYLxuh2CIfkND
+  /Rx9TacOiWByzWHTunMmm7vhgrd+XLu1gCBj+DjUTJ8QY2aEFbHccyPbgwV/Z4BV
+  +yIU2bom/Eb9eVoV24BAhN+tmcju6f6PtGDQciV3QJqnzn+YUpl+e1+qjs1UnvSH
+  fYRDWdoKIeBr9C4NYMh9qMxuduKErld+01aJvthSdxC6E2GKyQNj726IZm5cYQPL
+  tbGc+Om+tR3mI3uK1MJZ00yoThuG216SB2hFqGCqgW4gpXpWGZVyGlh/JiQDDuSL
+  sSFiLqYBAoGBAPXUgX+eIOfwh88tUy+VNKkAQvazv/KF+/eosU2aazJQBxvLRIWL
+  qm1pjEU0ZzUP3a2rEsnZxHh2SYERGGJQVBVUlITQSaeW+XbEZbGCh5x9dTnY0hvc
+  BjRLOk8jGYxAVtvXl88zfhS+c8jNM5M0ECRCP/yFkGE99DzWhXLf/D4ZAoGBAMvj
+  HoZZvNaku3ruNgmI/Kp3Gx3aUiMwXIKXjQ0xc3f0A1Ccc5SAgYXLmLvqB+ZNJ+Sd
+  Fd/87Zpb8kEy+JC5UE4ZwZo2SnL1wDyMZWRw3cTsf8mhvQ1kCpj5fPWUrGzUs/bh
+  ImL6w5sh5IB3BYN5nAtZiRyrqQCHxqW2HK+EJVPhAoGAXLevuABeDNzNfDhuHY46
+  9Fri5sVY6hHavMflR42sTKeeZr89stjAiM+8VgWzv3GifHP/fB4kWgLTKljWR45g
+  iEMEWStt/EWXBVKBwHeoyj8PTagXZuaPeH2/GkX0xs8lc3lXCpEzRoOmi9/JSgXi
+  6KoMFCQUFnkVezS11GPicVECgYEAhacXrniK+qW4JIidMbjz8IbtZq9kIp8kNZNF
+  Kn3dNKfnuGMmvRVUUrG5KI3sqcKwQQPcgB1cYFCfyK+yE6T3CIuHxyCJwzxnzQk3
+  uhTmu51Q04tL08hdzhPWH2JbeWghpNfGY94AdeRM1w2utpX0fdgusnWw7qESzjRI
+  L6JPmeECgYBUkLNcEyrNMc90tk5jdQqCQb/frT6K5k04LjvXe+TlJPHBO3XJun0H
+  OYrCC8EcKknH6jkHejHUdDTG/XjHvohzKI43xg61touKtgFOVpoq79vUBRVOuH85
+  6vNEksKyKXUKYya19LJS/EpfC2uHUENPSmq/Bh7TDb4y70JWnGTVWA==
+  -----END RSA PRIVATE KEY-----`)
 
 	publicKey = []byte(`-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw8mbbvEiQ6BSfsjSq8XE
-z9ZOS5lOzI2Up3zXlKU9mZN/JBc20TGQp0SnSCXYHmzJ9UrXqX2MDU2UFsQpVF0v
-Trvj+PURYHO5K2NIo8Dqj9uUTq5qylwYLWWcuUQPLHeShOWDOeiVycaSP2dnSKwZ
-OyhiQc/TvRXZ5oooFBHzMOrKhACvZOfVxYNrrhwdsIX5+TRL8isxT4y8bkdzhY0R
-4J6z3aVhOAQhrp7fKtNtEA1edkIEVd+F7k72qdTCSCNAhjy1Dyom3A9Yii2wNafc
-EtEr8D3dgnQMnkgpDhPCqLeeecmXn2BmELmBOW9Nio/tR8dc/wpW3OqB5ycmgnGu
-+QIDAQAB
------END PUBLIC KEY-----`)
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw8mbbvEiQ6BSfsjSq8XE
+  z9ZOS5lOzI2Up3zXlKU9mZN/JBc20TGQp0SnSCXYHmzJ9UrXqX2MDU2UFsQpVF0v
+  Trvj+PURYHO5K2NIo8Dqj9uUTq5qylwYLWWcuUQPLHeShOWDOeiVycaSP2dnSKwZ
+  OyhiQc/TvRXZ5oooFBHzMOrKhACvZOfVxYNrrhwdsIX5+TRL8isxT4y8bkdzhY0R
+  4J6z3aVhOAQhrp7fKtNtEA1edkIEVd+F7k72qdTCSCNAhjy1Dyom3A9Yii2wNafc
+  EtEr8D3dgnQMnkgpDhPCqLeeecmXn2BmELmBOW9Nio/tR8dc/wpW3OqB5ycmgnGu
+  +QIDAQAB
+  -----END PUBLIC KEY-----`)
 )
 
 func hugeString(mb int) string {
@@ -645,6 +646,16 @@ type ConvertTestOption struct {
 	afterConversionHook  func() error
 }
 
+type ReConvertTestOption struct {
+	t                    *testing.T
+	backend              converter.Backend
+	disableCheck         bool
+	encryptRecipients    []string
+	decryptKeys          []string
+	beforeConversionHook func() error
+	afterConversionHook  func() error
+}
+
 // sudo go test -v -count=1 -run TestImageConvert ./tests
 func TestImageConvert(t *testing.T) {
 	for _, fsVersion := range []string{"5", "6"} {
@@ -667,14 +678,14 @@ func testImageConvertS3Backend(t *testing.T, fsVersion string) {
 		fsVersion: fsVersion,
 	}
 	rawConfig := []byte(`{
-		"endpoint": "localhost:9000",
-		"scheme": "http",
-		"bucket_name": "nydus",
-		"region": "us-east-1",
-		"object_prefix": "path/to/my-registry/",
-		"access_key_id": "minio",
-		"access_key_secret": "minio123"
-	}`)
+		  "endpoint": "localhost:9000",
+		  "scheme": "http",
+		  "bucket_name": "nydus",
+		  "region": "us-east-1",
+		  "object_prefix": "path/to/my-registry/",
+		  "access_key_id": "minio",
+		  "access_key_secret": "minio123"
+	  }`)
 	backend, err := backend.NewBackend("s3", rawConfig, true)
 	if err != nil {
 		t.Fatalf("failed to create s3 backend: %v", err)
@@ -876,4 +887,93 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 		t.Fatalf("failed to check image %s: %v, \noutput:\n%s", targetImageRef, err, output)
 		return
 	}
+}
+
+// sudo go test -v -count=1 -run TestImageReConvert ./tests
+func TestImageReConvert(t *testing.T) {
+	testImageReConvertNoBackend(t)
+}
+
+func testImageReConvertNoBackend(t *testing.T) {
+	testImageReConvertBasic(&ReConvertTestOption{
+		t: t,
+	})
+}
+
+func testImageReConvertBasic(testOpt *ReConvertTestOption) {
+	const (
+		srcImageRef    = "docker.io/library/nginx:latest"
+		targetImageRef = "localhost:5000/nydus/nginx:nydus-latest"
+	)
+	t := testOpt.t
+	// setup docker registry
+	if err := exec.Command("docker", "run", "-d", "-p", "5000:5000", "--restart=always", "--name", "registry", "registry:2").Run(); err != nil {
+		t.Fatalf("failed to start docker registry: %v", err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("docker", "stop", "registry").Run(); err != nil {
+			t.Fatalf("failed to stop docker registry: %v", err)
+		}
+		if err := exec.Command("docker", "rm", "registry").Run(); err != nil {
+			t.Fatalf("failed to remove docker registry: %v", err)
+		}
+	}()
+	if testOpt.beforeConversionHook != nil {
+		if err := testOpt.beforeConversionHook(); err != nil {
+			t.Fatalf("failed to run before conversion hook: %v", err)
+			return
+		}
+		defer func() {
+			if err := testOpt.afterConversionHook(); err != nil {
+				t.Fatalf("failed to run after conversion hook: %v", err)
+			}
+		}()
+	}
+
+	if err := exec.Command("ctr", "images", "pull", srcImageRef, "--snapshotter", "nydus").Run(); err != nil {
+		t.Fatalf("failed to pull image %s: %v", srcImageRef, err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("ctr", "images", "rm", srcImageRef).Run(); err != nil {
+			t.Fatalf("failed to remove image %s: %v", srcImageRef, err)
+		}
+	}()
+	workDir, err := os.MkdirTemp("", fmt.Sprintf("nydus-containerd-converter-test-%d", time.Now().UnixNano()))
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+	nydusOpts := &converter.UnpackOption{
+		WorkDir: workDir,
+		Backend: testOpt.backend,
+	}
+	reconvertFunc := converter.LayerReconvertFunc(*nydusOpts)
+	reconvertHook := containerdreconverter.ConvertHooks{
+		PostConvertHook: converter.ReconvertHookFunc(),
+	}
+	convertFuncOpt := containerdreconverter.WithIndexConvertFunc(
+		containerdreconverter.IndexConvertFuncWithHook(
+			reconvertFunc,
+			false,
+			platforms.DefaultStrict(),
+			reconvertHook,
+		),
+	)
+
+	client, err := containerd.New("/run/containerd/containerd.sock")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+	if _, err = containerdreconverter.ReConvert(ctx, *client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
+		t.Fatal(err)
+		return
+	}
+	defer func() {
+		if err := exec.Command("ctr", "images", "rm", targetImageRef).Run(); err != nil {
+			t.Fatalf("failed to remove image %s: %v", targetImageRef, err)
+		}
+	}()
 }
