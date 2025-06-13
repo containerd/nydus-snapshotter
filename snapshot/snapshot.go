@@ -905,6 +905,19 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	}
 
 	lowerPaths := make([]string, 0, 8)
+	if o.fs.ReferrerDetectEnabled() {
+		// From the parent list, we want to add all the layers
+		// between the upmost snapshot and the nydus meta snapshot.
+		// On the other hand, we consider that all the layers below
+		// the nydus meta snapshot will be included in its mount.
+		for i := range s.ParentIDs {
+			if s.ParentIDs[i] == id {
+				break
+			}
+			lowerPaths = append(lowerPaths, o.upperPath(s.ParentIDs[i]))
+		}
+	}
+
 	lowerPathNydus, err := o.lowerPath(id)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to locate overlay lowerdir")
