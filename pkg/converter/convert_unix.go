@@ -39,7 +39,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/containerd/nydus-snapshotter/pkg/converter/containerdreconverter"
+	containerdreconverter "github.com/basuotian/nydus-snapshotter-reconvert/reconverter"
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 )
