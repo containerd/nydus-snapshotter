@@ -39,10 +39,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
-	containerdconverter "github.com/containerd/containerd/v2/core/images/converter"
+	containerdReconverter "github.com/basuotian/nydus-snapshotter-reconvert/reconverter"
+	containerdConverter "github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
-	"github.com/containerd/nydus-snapshotter/pkg/converter/containerdreconverter"
 	"github.com/containerd/nydus-snapshotter/pkg/encryption"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -829,7 +829,7 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 			return encryption.EncryptNydusBootstrap(ctx, cs, desc, testOpt.encryptRecipients)
 		}
 	}
-	convertHooks := containerdconverter.ConvertHooks{
+	convertHooks := containerdConverter.ConvertHooks{
 		PostConvertHook: converter.ConvertHookFunc(converter.MergeOption{
 			WorkDir:          nydusOpts.WorkDir,
 			BuilderPath:      nydusOpts.BuilderPath,
@@ -840,8 +840,8 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 			Encrypt:          encrypter,
 		}),
 	}
-	convertFuncOpt := containerdconverter.WithIndexConvertFunc(
-		containerdconverter.IndexConvertFuncWithHook(
+	convertFuncOpt := containerdConverter.WithIndexConvertFunc(
+		containerdConverter.IndexConvertFuncWithHook(
 			convertFunc,
 			true,
 			platforms.DefaultStrict(),
@@ -854,7 +854,7 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 		return
 	}
 	ctx := namespaces.WithNamespace(context.Background(), "default")
-	if _, err = containerdconverter.Convert(ctx, client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
+	if _, err = containerdConverter.Convert(ctx, client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
 		t.Fatal(err)
 		return
 	}
@@ -948,11 +948,11 @@ func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 		Backend: testOpt.backend,
 	}
 	reconvertFunc := converter.LayerReconvertFunc(*nydusOpts)
-	reconvertHook := containerdreconverter.ConvertHooks{
+	reconvertHook := containerdReconverter.ConvertHooks{
 		PostConvertHook: converter.ReconvertHookFunc(),
 	}
-	convertFuncOpt := containerdreconverter.WithIndexConvertFunc(
-		containerdreconverter.IndexConvertFuncWithHook(
+	convertFuncOpt := containerdReconverter.WithIndexConvertFunc(
+		containerdReconverter.IndexConvertFuncWithHook(
 			reconvertFunc,
 			false,
 			platforms.DefaultStrict(),
@@ -967,7 +967,7 @@ func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 	}
 
 	ctx := namespaces.WithNamespace(context.Background(), "default")
-	if _, err = containerdreconverter.ReConvert(ctx, *client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
+	if _, err = containerdReconverter.ReConvert(ctx, *client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
 		t.Fatal(err)
 		return
 	}

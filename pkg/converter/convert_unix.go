@@ -39,7 +39,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
-	containerdreconverter "github.com/basuotian/nydus-snapshotter-reconvert/reconverter"
+	containerdReconverter "github.com/basuotian/nydus-snapshotter-reconvert/reconverter"
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 )
@@ -813,7 +813,7 @@ func makeBlobDesc(ctx context.Context, cs content.Store, opt PackOption, sourceD
 	return &targetDesc, nil
 }
 
-func makeOCIBlobDesc(ctx context.Context, cs content.Store, uncompressedDgst, targetDigest digest.Digest, mediaType string) (*ocispec.Descriptor, error) {
+func makeOCIBlobDesc(ctx context.Context, cs content.Store, uncompressedDigest, targetDigest digest.Digest, mediaType string) (*ocispec.Descriptor, error) {
 	targetInfo, err := cs.Info(ctx, targetDigest)
 	if err != nil {
 		return nil, errors.Wrapf(err, "get target blob info %s", targetDigest)
@@ -829,7 +829,7 @@ func makeOCIBlobDesc(ctx context.Context, cs content.Store, uncompressedDgst, ta
 		Annotations: map[string]string{
 			// Use `containerd.io/uncompressed` to generate DiffID of
 			// layer defined in OCI spec.
-			LayerAnnotationUncompressed: uncompressedDgst.String(),
+			LayerAnnotationUncompressed: uncompressedDigest.String(),
 		},
 	}
 
@@ -1063,7 +1063,7 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 	return newManifestDesc, nil
 }
 
-func ReconvertHookFunc() containerdreconverter.ConvertHookFunc {
+func ReconvertHookFunc() containerdReconverter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		desc := newDesc
 		if !images.IsManifestType(desc.MediaType) {
@@ -1120,7 +1120,7 @@ func ReconvertHookFunc() containerdreconverter.ConvertHookFunc {
 	}
 }
 
-func LayerReconvertFunc(opt UnpackOption) containerdreconverter.ConvertFunc {
+func LayerReconvertFunc(opt UnpackOption) containerdReconverter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if !images.IsLayerType(desc.MediaType) {
 			return nil, nil
@@ -1143,7 +1143,6 @@ func LayerReconvertFunc(opt UnpackOption) containerdreconverter.ConvertFunc {
 		if err != nil {
 			return nil, errors.Wrap(err, "open blob writer")
 		}
-		defer cw.Close()
 
 		var gw io.WriteCloser
 		var mediaType string
@@ -1168,8 +1167,7 @@ func LayerReconvertFunc(opt UnpackOption) containerdreconverter.ConvertFunc {
 		}
 
 		compressed := io.MultiWriter(gw, uncompressedDgster.Hash())
-		_, err = uncompressedDgster.Hash().Write(data.Bytes())
-		uncompressedDgst := uncompressedDgster.Digest()
+		// _, err = uncompressedDgster.Hash().Write(data.Bytes())
 
 		buffer := bufPool.Get().(*[]byte)
 		defer bufPool.Put(buffer)
@@ -1180,9 +1178,10 @@ func LayerReconvertFunc(opt UnpackOption) containerdreconverter.ConvertFunc {
 			return nil, errors.Wrap(err, "close gzip writer")
 		}
 
+		uncompressedDigest := uncompressedDgster.Digest()
 		compressedDgst := cw.Digest()
 		if err = cw.Commit(ctx, 0, compressedDgst, content.WithLabels(map[string]string{
-			LayerAnnotationUncompressed: uncompressedDgst.String(),
+			LayerAnnotationUncompressed: uncompressedDigest.String(),
 		})); err != nil {
 			if !errdefs.IsAlreadyExists(err) {
 				return nil, errors.Wrap(err, "commit to content store")
@@ -1192,7 +1191,7 @@ func LayerReconvertFunc(opt UnpackOption) containerdreconverter.ConvertFunc {
 			return nil, errors.Wrap(err, "close content store writer")
 		}
 
-		newDesc, err := makeOCIBlobDesc(ctx, cs, uncompressedDgst, compressedDgst, mediaType)
+		newDesc, err := makeOCIBlobDesc(ctx, cs, uncompressedDigest, compressedDgst, mediaType)
 		if err != nil {
 			return nil, err
 		}
@@ -1262,8 +1261,8 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	defer cw.Close()
 
 	gw := gzip.NewWriter(cw)
-	uncompressedDgst := digest.SHA256.Digester()
-	compressed := io.MultiWriter(gw, uncompressedDgst.Hash())
+	uncompressedDigest := digest.SHA256.Digester()
+	compressed := io.MultiWriter(gw, uncompressedDigest.Hash())
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err := io.CopyBuffer(compressed, pr, *buffer); err != nil {
@@ -1275,7 +1274,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 
 	compressedDgst := cw.Digest()
 	if err := cw.Commit(ctx, 0, compressedDgst, content.WithLabels(map[string]string{
-		LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
+		LayerAnnotationUncompressed: uncompressedDigest.Digest().String(),
 	})); err != nil {
 		if !errdefs.IsAlreadyExists(err) {
 			return nil, nil, errors.Wrap(err, "commit to content store")
@@ -1338,7 +1337,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		Size:      bootstrapInfo.Size,
 		MediaType: mediaType,
 		Annotations: map[string]string{
-			LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
+			LayerAnnotationUncompressed: uncompressedDigest.Digest().String(),
 			LayerAnnotationFSVersion:    opt.FsVersion,
 			// Use this annotation to identify nydus bootstrap layer.
 			LayerAnnotationNydusBootstrap: "true",
