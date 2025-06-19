@@ -146,7 +146,11 @@ Nydus is a sub-project of [Dragonfly](https://github.com/dragonflyoss/dragonfly)
 
 We recommend using the Dragonfly P2P data distribution system to further improve the runtime performance of Nydus images.
 
-If you want to deploy Dragonfly and Nydus at the same time, please refer to this **[Quick Start](https://github.com/dragonflyoss/helm-charts/blob/main/INSTALL.md)**.
+Install nydus-snapshotter to your K8s cluster by invoking:
+
+```bash
+helm install nydus-snapshotter charts
+```
 
 ### Config Dragonfly mode
 
