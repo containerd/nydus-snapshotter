@@ -29,6 +29,7 @@ snapshotter:
     tolerations:
       - operator: Exists
     nodeSelector:
+  configuration:
 
 ## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
 # affinity -- Affinity for pod assignment
