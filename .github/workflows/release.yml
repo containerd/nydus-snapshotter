@@ -157,6 +157,18 @@ jobs:
             ${{ fromJSON(steps.meta.outputs.json).tags[1] }}-${{ matrix.build-arch }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: NYDUS_VER=${{ env.NYDUS_STABLE_VER }}
+      - name: build and push nydus-snapshotter image for Helm
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          platforms: ${{ matrix.build-os }}/${{ matrix.build-arch }}
+          provenance: false
+          tags: |
+            ${{ fromJSON(steps.meta.outputs.json).tags[0] }}-${{ matrix.build-arch }}-helm
+            ${{ fromJSON(steps.meta.outputs.json).tags[1] }}-${{ matrix.build-arch }}-helm
+          labels: ${{ steps.meta.outputs.labels }}
 
   publish-manifest:
     runs-on: ubuntu-22.04
