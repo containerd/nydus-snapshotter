@@ -5,6 +5,11 @@ metadata:
   name: nydus-snapshotter-config
   namespace: {{ .Release.Namespace }}
 data:
+  {{- if .Values.snapshotter.configuration }}
+  config.toml: |
+    {{- .Values.snapshotter.configuration | nindent 4 }}
+  {{- else }}
+  # Default configuration for nydus-snapshotter
   config.toml: |
     version = 1
     # Snapshotter's own home directory where it stores and creates necessary resources
@@ -147,3 +152,4 @@ data:
     # - "layer_block_with_verity": generate a raw block disk image with tarfs for a layer with dm-verity info
     # - "image_block_with_verity": generate a raw block disk image with tarfs for an image with dm-verity info
     export_mode = ""
+  {{- end}}
