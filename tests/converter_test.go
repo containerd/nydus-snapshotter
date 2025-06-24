@@ -902,8 +902,9 @@ func testImageReConvertNoBackend(t *testing.T) {
 
 func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 	const (
-		srcImageRef    = "docker.io/library/nginx:latest"
-		targetImageRef = "localhost:5000/nydus/nginx:nydus-latest"
+		preSrcImageRef = "docker.io/library/nginx:latest"
+		srcImageRef    = "localhost:5000/nydus/nginx:nydus-latest"
+		targetImageRef = "localhost:5000/nydus/nginx:oci"
 	)
 	t := testOpt.t
 	// setup docker registry
@@ -931,32 +932,48 @@ func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 		}()
 	}
 
-	if err := exec.Command("ctr", "images", "pull", srcImageRef, "--snapshotter", "nydus").Run(); err != nil {
-		t.Fatalf("failed to pull image %s: %v", srcImageRef, err)
+	// use convert to create nydus format srcImager
+	if err := exec.Command("ctr", "images", "pull", preSrcImageRef, "--snapshotter", "nydus").Run(); err != nil {
+		t.Fatalf("failed to pull image %s: %v", preSrcImageRef, err)
 		return
 	}
 	defer func() {
-		if err := exec.Command("ctr", "images", "rm", srcImageRef).Run(); err != nil {
-			t.Fatalf("failed to remove image %s: %v", srcImageRef, err)
+		if err := exec.Command("ctr", "images", "rm", preSrcImageRef).Run(); err != nil {
+			t.Fatalf("failed to remove image %s: %v", preSrcImageRef, err)
 		}
 	}()
+
 	workDir, err := os.MkdirTemp("", fmt.Sprintf("nydus-containerd-converter-test-%d", time.Now().UnixNano()))
 	require.NoError(t, err)
 	defer os.RemoveAll(workDir)
-	nydusOpts := &converter.UnpackOption{
+	nydusOpts := &converter.PackOption{
 		WorkDir: workDir,
 		Backend: testOpt.backend,
 	}
-	reconvertFunc := converter.LayerReconvertFunc(*nydusOpts)
-	reconvertHook := containerdReconverter.ConvertHooks{
-		PostConvertHook: converter.ReconvertHookFunc(),
+	convertFunc := converter.LayerConvertFunc(*nydusOpts)
+	var encrypter converter.Encrypter
+	if len(testOpt.encryptRecipients) > 0 {
+		encrypter = func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (ocispec.Descriptor, error) {
+			return encryption.EncryptNydusBootstrap(ctx, cs, desc, testOpt.encryptRecipients)
+		}
 	}
-	convertFuncOpt := containerdReconverter.WithIndexConvertFunc(
-		containerdReconverter.IndexConvertFuncWithHook(
-			reconvertFunc,
-			false,
+	convertHooks := containerdConverter.ConvertHooks{
+		PostConvertHook: converter.ConvertHookFunc(converter.MergeOption{
+			WorkDir:          nydusOpts.WorkDir,
+			BuilderPath:      nydusOpts.BuilderPath,
+			FsVersion:        nydusOpts.FsVersion,
+			ChunkDictPath:    nydusOpts.ChunkDictPath,
+			Backend:          testOpt.backend,
+			PrefetchPatterns: nydusOpts.PrefetchPatterns,
+			Encrypt:          encrypter,
+		}),
+	}
+	convertFuncOpt := containerdConverter.WithIndexConvertFunc(
+		containerdConverter.IndexConvertFuncWithHook(
+			convertFunc,
+			true,
 			platforms.DefaultStrict(),
-			reconvertHook,
+			convertHooks,
 		),
 	)
 
@@ -965,9 +982,35 @@ func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 		t.Fatal(err)
 		return
 	}
-
 	ctx := namespaces.WithNamespace(context.Background(), "default")
-	if _, err = containerdReconverter.ReConvert(ctx, *client, targetImageRef, srcImageRef, convertFuncOpt); err != nil {
+	if _, err = containerdConverter.Convert(ctx, client, srcImageRef, preSrcImageRef, convertFuncOpt); err != nil {
+		t.Fatal(err)
+		return
+	}
+	defer func() {
+		if err = exec.Command("ctr", "images", "rm", srcImageRef).Run(); err != nil {
+			t.Fatalf("failed to remove image %s: %v", srcImageRef, err)
+		}
+	}()
+
+	nydusReconvertOpts := &converter.UnpackOption{
+		WorkDir: workDir,
+		Backend: testOpt.backend,
+	}
+	reconvertFunc := converter.LayerReconvertFunc(*nydusReconvertOpts)
+	reconvertHook := containerdReconverter.ConvertHooks{
+		PostConvertHook: converter.ReconvertHookFunc(),
+	}
+	reConvertFuncOpt := containerdReconverter.WithIndexConvertFunc(
+		containerdReconverter.IndexConvertFuncWithHook(
+			reconvertFunc,
+			false,
+			platforms.DefaultStrict(),
+			reconvertHook,
+		),
+	)
+
+	if _, err = containerdReconverter.ReConvert(ctx, *client, targetImageRef, srcImageRef, reConvertFuncOpt); err != nil {
 		t.Fatal(err)
 		return
 	}
