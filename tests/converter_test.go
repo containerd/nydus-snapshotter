@@ -39,11 +39,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
-	containerdReconverter "github.com/basuotian/nydus-snapshotter-reconvert/reconverter"
 	containerdConverter "github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/encryption"
+	containerdReconverter "github.com/containerd/nydus-snapshotter/pkg/reconverter"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 

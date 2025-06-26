@@ -39,9 +39,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
-	containerdReconverter "github.com/basuotian/nydus-snapshotter-reconvert/reconverter"
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
+	containerdReconverter "github.com/containerd/nydus-snapshotter/pkg/reconverter"
 )
 
 const EntryBlob = "image.blob"

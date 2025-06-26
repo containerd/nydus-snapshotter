@@ -14,7 +14,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.27
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.8
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.2
-	github.com/basuotian/nydus-snapshotter-reconvert v0.0.0-20250616034217-fb760d7f8cf6
 	github.com/containerd/cgroups/v3 v3.0.5
 	github.com/containerd/containerd v1.7.27
 	github.com/containerd/containerd/api v1.9.0
