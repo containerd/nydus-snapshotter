@@ -138,7 +138,7 @@ func (fs *Filesystem) MergeStargzMetaLayer(ctx context.Context, s storage.Snapsh
 			"--bootstrap", tf.Name(),
 		}
 		options = append(options, bootstraps...)
-		cmd := exec.Command(fs.nydusImageBinaryPath, options...)
+		cmd := exec.Command(fs.nydusdBinaryPath, options...)
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 		log.G(ctx).Infof("nydus image command %v", options)
@@ -238,7 +238,7 @@ func (fs *Filesystem) PrepareStargzMetaLayer(blob *stargz.Blob, storagePath stri
 		"--blob-meta", blobMetaPath,
 	}
 	options = append(options, filepath.Join(storagePath, stargz.TocFileName))
-	cmd := exec.Command(fs.nydusImageBinaryPath, options...)
+	cmd := exec.Command(fs.nydusdBinaryPath, options...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	log.L.Infof("nydus image command %v", options)

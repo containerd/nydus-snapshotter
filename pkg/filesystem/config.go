@@ -19,9 +19,9 @@ import (
 
 type NewFSOpt func(d *Filesystem) error
 
-func WithNydusImageBinaryPath(p string) NewFSOpt {
+func WithNydusdBinaryPath(p string) NewFSOpt {
 	return func(fs *Filesystem) error {
-		fs.nydusImageBinaryPath = p
+		fs.nydusdBinaryPath = p
 		return nil
 	}
 }
