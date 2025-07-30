@@ -230,7 +230,7 @@ fn handle_fanotify_event(fd: i32) {
                 if e == nix::Error::EINTR {
                     continue;
                 }
-                eprintln!("Poll error {:?}", e);
+                eprintln!("Poll error {e:?}");
                 break;
             }
         }
