@@ -106,6 +106,13 @@ func WithFsDriver(fsDriver string) NewDaemonOpt {
 	}
 }
 
+func WithFailoverPolicy(failoverPolicy string) NewDaemonOpt {
+	return func(d *Daemon) error {
+		d.States.FailoverPolicy = failoverPolicy
+		return nil
+	}
+}
+
 func WithDaemonMode(daemonMode config.DaemonMode) NewDaemonOpt {
 	return func(d *Daemon) error {
 		d.States.DaemonMode = daemonMode

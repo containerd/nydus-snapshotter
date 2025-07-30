@@ -31,12 +31,14 @@ nydusimage_path = "/usr/local/bin/nydus-image"
 # If `fs_driver` option is not specified, the default value is fusedev.
 fs_driver = "fusedev"
 # How to process when daemon dies: "none", "restart" or "failover"
-recover_policy = "restart"
+recover_policy = "failover"
 # Nydusd worker thread number to handle FUSE or fscache requests, [0-1024].
 # Setting to 0 will use the default configuration of nydusd.
 threads_number = 4
 # Log rotation size for nydusd, in unit MB(megabytes). (default 100MB)
 log_rotation_size = 100
+# Nydusd failover policy, can be "none", "resend" or "flush"
+failover_policy = "resend"
 
 [cgroup]
 # Whether to use separate cgroup for nydusd.

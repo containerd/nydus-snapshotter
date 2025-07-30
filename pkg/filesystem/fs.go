@@ -669,6 +669,7 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 		daemon.WithLogToStdout(config.GetLogToStdout()),
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(fsManager.FsDriver),
+		daemon.WithFailoverPolicy(config.GetDaemonFailoverPolicy()),
 		daemon.WithDaemonMode(daemonMode),
 	}
 
