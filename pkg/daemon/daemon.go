@@ -604,6 +604,11 @@ func (d *Daemon) ClearVestige() {
 func (d *Daemon) CloneRafsInstances(src *Daemon) {
 	instances := src.RafsCache.List()
 	d.RafsCache.SetIntances(instances)
+	ref := src.GetRef()
+	for ref > 0 {
+		d.IncRef()
+		ref--
+	}
 }
 
 // Daemon must be started and reach RUNNING state before call this method
