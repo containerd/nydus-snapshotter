@@ -44,6 +44,7 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 	daemonConfig.RecoverPolicy = RecoverPolicyRestart.String()
 	daemonConfig.FsDriver = constant.DefaultFsDriver
 	daemonConfig.LogRotationSize = constant.DefaultDaemonRotateLogMaxSize
+	daemonConfig.FailoverPolicy = constant.DefaultFailoverPolicy
 
 	// cache configuration
 	cacheConfig := &c.CacheManagerConfig
