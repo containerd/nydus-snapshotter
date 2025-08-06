@@ -117,6 +117,12 @@ func unpackOciTar(ctx context.Context, dst string, reader io.Reader) error {
 		return errors.Wrap(err, "apply with convert whiteout")
 	}
 
+	// Read any trailing data for some tar formats, in case the
+	// PipeWriter of opposite side gets stuck.
+	if _, err := io.Copy(io.Discard, ds); err != nil {
+		return errors.Wrap(err, "trailing data after applying archive")
+	}
+
 	return nil
 }
 
