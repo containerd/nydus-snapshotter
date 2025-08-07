@@ -815,6 +815,10 @@ func makeBlobDesc(ctx context.Context, cs content.Store, opt PackOption, sourceD
 // a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
 func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
+		if ctx.Err() != nil {
+			// The context is already cancelled, no need to proceed.
+			return nil, ctx.Err()
+		}
 		if !images.IsLayerType(desc.MediaType) {
 			return nil, nil
 		}
@@ -864,13 +868,28 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 			return nil, errors.Wrap(err, "pack tar to nydus")
 		}
 
+		copyBufferDone := make(chan error, 1)
 		go func() {
-			defer pw.Close()
 			buffer := bufPool.Get().(*[]byte)
 			defer bufPool.Put(buffer)
-			if _, err := io.CopyBuffer(tw, tr, *buffer); err != nil {
-				pw.CloseWithError(err)
+			_, err := io.CopyBuffer(tw, tr, *buffer)
+			copyBufferDone <- err
+		}()
+
+		go func() {
+			defer pw.Close()
+			select {
+			case <-ctx.Done():
+				// The context was cancelled!
+				// Close the pipe with the context's error to signal
+				// the reader to stop.
+				pw.CloseWithError(ctx.Err())
 				return
+			case err := <-copyBufferDone:
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
 			}
 			if err := tr.Close(); err != nil {
 				pw.CloseWithError(err)
