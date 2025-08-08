@@ -253,4 +253,15 @@ func TestProcessConfigurations(t *testing.T) {
 
 	err = ProcessConfigurations(&snapshotterConfig3)
 	A.NoError(err)
+
+	var snapshotterConfig4 SnapshotterConfig
+	oversizedPath := "/path/to/very/long/root/directory/that/exceed/the/max/nydus-snapshotter"
+	A.Equal(MaxRootPathLen+1, len(oversizedPath))
+
+	snapshotterConfig4.Root = oversizedPath
+
+	err = MergeConfig(&snapshotterConfig4, &defaultSnapshotterConfig)
+	A.NoError(err)
+	err = ValidateConfig(&snapshotterConfig4)
+	A.Error(err)
 }
