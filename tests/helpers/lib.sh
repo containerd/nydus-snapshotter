@@ -133,7 +133,7 @@ _http::get(){
   shift
 
   local header
-  local command=(curl -fsSL --retry "$retry" --retry-delay "$delay" -o "$output")
+  local command=(curl -fsSL --retry-connrefused --retry "$retry" --retry-delay "$delay" -o "$output")
   # Add a basic auth user if necessary
   [ "$user" == "" ] || command+=(--user "$user:$password")
   # Force tls v1.2 and no redirect to http if url scheme is https
