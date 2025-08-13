@@ -16,15 +16,22 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/containers"
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
@@ -59,6 +66,8 @@ type snapshotter struct {
 	enableKataVolume     bool
 	syncRemove           bool
 	cleanupOnClose       bool
+	ctrd                 *client.Client // containerd client for container queries
+	snapName             string         // snapshotter name for filtering
 }
 
 func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
@@ -284,6 +293,13 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		syncRemove = true
 	}
 
+	// Initialize containerd client for container queries
+	ctrdClient, err := client.New("/run/containerd/containerd.sock")
+	if err != nil {
+		log.L.WithError(err).Warn("Failed to initialize containerd client for container queries")
+		ctrdClient = nil // Continue without client, will fall back to old method
+	}
+
 	return &snapshotter{
 		root:                 cfg.Root,
 		nydusdPath:           cfg.DaemonConfig.NydusdPath,
@@ -295,6 +311,8 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		nydusOverlayFSPath:   cfg.SnapshotsConfig.NydusOverlayFSPath,
 		enableKataVolume:     cfg.SnapshotsConfig.EnableKataVolume,
 		cleanupOnClose:       cfg.CleanupOnClose,
+		ctrd:                 ctrdClient,
+		snapName:             "nydus", // or get from config
 	}, nil
 }
 
@@ -941,6 +959,13 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	overlayOptions = append(overlayOptions, lowerDirOption)
 	log.G(ctx).Infof("remote mount options %v", overlayOptions)
 
+	// Check for PVC annotation and replace overlay options if found
+	if o.ctrd != nil && s.Kind == snapshots.KindActive {
+		if mounts := o.tryPVMount(ctx, key, overlayOptions); mounts != nil {
+			return mounts, nil
+		}
+	}
+
 	if o.enableKataVolume {
 		return o.mountWithKataVolume(ctx, id, overlayOptions, key)
 	}
@@ -1097,4 +1122,193 @@ func treatAsProxyDriver(labels map[string]string) bool {
 	default:
 		return false
 	}
+}
+
+// containerBySnapshotKey finds the container whose rootfs SnapshotKey matches snapKey
+func (o *snapshotter) containerBySnapshotKey(ctx context.Context, snapKey string) (string, *containers.Container, error) {
+	if o.ctrd == nil {
+		return "", nil, errors.New("containerd client not initialized")
+	}
+
+	// Extract just the hash part from the snapshot key for comparison
+	// snapKey format: k8s.io/168/0dd9fdfc1fcebe970420b127d5df2fb28958df2464872adbb71c651135be9692
+	// container.SnapshotKey format: 0dd9fdfc1fcebe970420b127d5df2fb28958df2464872adbb71c651135be9692
+	snapKeyParts := strings.Split(snapKey, "/")
+	var snapKeyHash string
+	if len(snapKeyParts) >= 3 {
+		snapKeyHash = snapKeyParts[2] // Get the hash part
+	} else {
+		snapKeyHash = snapKey // fallback to full key if format is unexpected
+	}
+
+	// List namespaces, then containers in each
+	nsList, err := o.ctrd.NamespaceService().List(ctx)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "list namespaces")
+	}
+
+	for _, ns := range nsList {
+		// Create context with namespace using containerd's namespaces package
+		nctx := namespaces.WithNamespace(ctx, ns)
+		
+		// List containers in this namespace
+		containerList, err := o.ctrd.ContainerService().List(nctx)
+		if err != nil {
+			// continue to next namespace rather than fail hard
+			continue
+		}
+		
+		for _, c := range containerList {
+			if c.SnapshotKey == snapKeyHash && (o.snapName == "" || c.Snapshotter == o.snapName) {
+				return ns, &c, nil
+			}
+		}
+	}
+	return "", nil, errdefs.ErrNotFound
+}
+
+// tryPVMount attempts to create a PVC-based mount if the pod has the appropriate annotation
+func (o *snapshotter) tryPVMount(ctx context.Context, key string, overlayOptions []string) []mount.Mount {
+	_, container, err := o.containerBySnapshotKey(ctx, key)
+	if err != nil || container == nil {
+		return nil
+	}
+
+	basePath, pvcPath, err := o.getPodPVCPathFromContainer(ctx, container, "nydus/use-pvc-upper")
+	if err != nil {
+		log.G(ctx).Debugf("Failed to query pod PVC path: %v", err)
+		return nil
+	}
+
+	if basePath == "" || pvcPath == "" {
+		return nil
+	}
+
+	log.G(ctx).Infof("Found PVC annotation basePath=%s, pvcPath=%s, replacing overlay paths", basePath, pvcPath)
+
+	// Create upperdir and workdir paths under the PVC mount
+	upperDir := filepath.Join(pvcPath, "upper")
+	workDir := filepath.Join(pvcPath, "work")
+
+	// Ensure upperdir and workdir exist
+	if err := os.MkdirAll(upperDir, 0755); err != nil {
+		log.G(ctx).WithError(err).Errorf("Failed to create upperdir %s", upperDir)
+		return nil
+	}
+	if err := os.MkdirAll(workDir, 0711); err != nil {
+		log.G(ctx).WithError(err).Errorf("Failed to create workdir %s", workDir)
+		return nil
+	}
+
+	// Remove existing upperdir/workdir options and add PVC-based paths
+	var newOptions []string
+	for _, option := range overlayOptions {
+		if !strings.HasPrefix(option, "upperdir=") && !strings.HasPrefix(option, "workdir=") {
+			newOptions = append(newOptions, option)
+		}
+	}
+	newOptions = append(newOptions,
+		fmt.Sprintf("upperdir=%s", upperDir),
+		fmt.Sprintf("workdir=%s", workDir),
+	)
+
+	log.G(ctx).Infof("Using PVC PVC paths for overlay mount - upperdir=%s, workdir=%s", upperDir, workDir)
+
+	return []mount.Mount{
+		{
+			Type:    "fuse.fuse-overlayfs",
+			Source:  "fuse-overlayfs",
+			Options: newOptions,
+		},
+	}
+}
+
+// getPodPVCPathFromContainer finds the actual PVC path for PVC overlay based on container and pod annotation
+func (o *snapshotter) getPodPVCPathFromContainer(ctx context.Context, container *containers.Container, annotationKey string) (basePath, actualPVCPath string, err error) {
+	if container == nil {
+		return "", "", nil
+	}
+	
+	// Extract pod information from container labels
+	podName, ok := container.Labels["io.kubernetes.pod.name"]
+	if !ok {
+		return "", "", errors.New("container missing io.kubernetes.pod.name label")
+	}
+	
+	podNamespace, ok := container.Labels["io.kubernetes.pod.namespace"]
+	if !ok {
+		return "", "", errors.New("container missing io.kubernetes.pod.namespace label")
+	}
+
+	// Create in-cluster config
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return "", "", err
+	}
+
+	// Create Kubernetes client
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Get the specific pod directly
+	pod, err := clientset.CoreV1().Pods(podNamespace).Get(context.Background(), podName, metav1.GetOptions{})
+	if err != nil {
+		return "", "", errors.Wrapf(err, "failed to get pod %s/%s", podNamespace, podName)
+	}
+
+	// Check if pod has the PVC annotation
+	basePathValue, exists := pod.Annotations[annotationKey]
+	if !exists || basePathValue == "" {
+		return "", "", nil
+	}
+
+	// Find the PVC volume in the pod
+	var pvcName string
+	for _, volume := range pod.Spec.Volumes {
+		if volume.PersistentVolumeClaim != nil {
+			pvcName = volume.PersistentVolumeClaim.ClaimName
+			break
+		}
+	}
+	
+	if pvcName == "" {
+		return "", "", errors.New("no PVC found in pod")
+	}
+
+	// Get PVC details to find the PV name
+	pvc, err := clientset.CoreV1().PersistentVolumeClaims(podNamespace).Get(context.Background(), pvcName, metav1.GetOptions{})
+	if err != nil {
+		return "", "", errors.Wrapf(err, "failed to get PVC %s", pvcName)
+	}
+
+	pvName := pvc.Spec.VolumeName
+	if pvName == "" {
+		return "", "", errors.New("PVC is not bound to a PV")
+	}
+
+	// Find the actual directory under basePath that starts with pvName
+	actualPVCPath, err = o.findPVCDirectory(basePathValue, pvName)
+	if err != nil {
+		return "", "", errors.Wrapf(err, "failed to find PVC directory for PV %s", pvName)
+	}
+	
+	return basePathValue, actualPVCPath, nil
+}
+
+// findPVCDirectory searches for a directory that starts with the given PV name
+func (o *snapshotter) findPVCDirectory(basePath, pvName string) (string, error) {
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return "", err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), pvName) {
+			return filepath.Join(basePath, entry.Name()), nil
+		}
+	}
+
+	return "", errors.Errorf("no directory found starting with PV name %s in %s", pvName, basePath)
 }
