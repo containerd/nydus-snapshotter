@@ -23,6 +23,9 @@ const (
 	LayerAnnotationNydusSourceDigest  = "containerd.io/snapshot/nydus-source-digest"
 	LayerAnnotationNydusTargetDigest  = "containerd.io/snapshot/nydus-target-digest"
 
+	LayerAnnotationOciSourceDigest    = "containerd.io/snapshot/oci-source-digest"
+	LayerAnnotationOciSourceReference = "containerd.io/snapshot/oci-source-reference"
+
 	LayerAnnotationNydusReferenceBlobIDs = "containerd.io/snapshot/nydus-reference-blob-ids"
 
 	LayerAnnotationUncompressed = "containerd.io/uncompressed"
