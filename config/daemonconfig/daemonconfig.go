@@ -26,6 +26,7 @@ const (
 	backendTypeLocalfs  StorageBackendType = "localfs"
 	backendTypeOss      StorageBackendType = "oss"
 	backendTypeRegistry StorageBackendType = "registry"
+	backendTypeS3       StorageBackendType = "s3"
 )
 
 type DaemonConfig interface {
@@ -83,14 +84,17 @@ type BackendConfig struct {
 	BlobRedirectedHost string         `json:"blob_redirected_host,omitempty"`
 	Mirrors            []MirrorConfig `json:"mirrors,omitempty"`
 
-	// OSS backend configs
+	// Shared by oss and s3 backend configs
 	EndPoint        string `json:"endpoint,omitempty"`
 	AccessKeyID     string `json:"access_key_id,omitempty" secret:"true"`
 	AccessKeySecret string `json:"access_key_secret,omitempty" secret:"true"`
 	BucketName      string `json:"bucket_name,omitempty"`
 	ObjectPrefix    string `json:"object_prefix,omitempty"`
 
-	// Shared by registry and oss backend
+	// S3-specific config
+	Region string `json:"region,omitempty"`
+
+	// Shared by registry, oss, and s3
 	Scheme     string `json:"scheme,omitempty"`
 	SkipVerify bool   `json:"skip_verify,omitempty"`
 
@@ -174,10 +178,11 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		c.Supplement(registryHost, image.Repo, snapshotID, params)
 		c.FillAuth(keyChain)
 
-	// Localfs and OSS backends don't need any update,
+	// Localfs, OSS and S3 backends don't need any update,
 	// just use the provided config in template
 	case backendTypeLocalfs:
 	case backendTypeOss:
+	case backendTypeS3:
 	default:
 		return errors.Errorf("unknown backend type %s", backendType)
 	}
