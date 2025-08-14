@@ -47,6 +47,16 @@ const (
 	// to manage those snapshots.
 	DaemonModeNone    DaemonMode = DaemonMode(constant.DaemonModeNone)
 	DaemonModeInvalid DaemonMode = DaemonMode(constant.DaemonModeInvalid)
+	// MaxRootPathLen defines the maximum allowed length of the root portion of a Unix domain socket path.
+	//
+	// This value is calculated based on the hard length limit of `sun_path` on Linux systems (108 bytes).
+	// Nydusd's socket path format is "${rootPath}/socket/${xid}/api?.sock".
+	// - The length of the fixed part "/socket/${xid}/api?.sock" is 38 bytes.
+	//
+	// Since the maximum upper limit of the total path length is 108 bytes, in order to avoid exceeding the limit, the maximum allowed length of rootPath is:
+	// 108 - len("/socket/${xid}/api?.sock") = 108 - 38 = 70.
+	// Therefore, we must set the effective maximum length of the root path to 70 bytes.
+	MaxRootPathLen = 70
 )
 
 func parseDaemonMode(m string) (DaemonMode, error) {
@@ -274,8 +284,12 @@ func ValidateConfig(c *SnapshotterConfig) error {
 		}
 	}
 
-	if len(c.Root) == 0 {
+	rootPathLen := len(c.Root)
+	if rootPathLen == 0 {
 		return errors.New("empty root directory")
+	}
+	if rootPathLen > MaxRootPathLen {
+		return errors.Errorf("root directory path is too long: %d bytes, max is %d bytes", rootPathLen, MaxRootPathLen)
 	}
 
 	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev &&
