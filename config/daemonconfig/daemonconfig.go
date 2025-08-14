@@ -178,11 +178,9 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		c.Supplement(registryHost, image.Repo, snapshotID, params)
 		c.FillAuth(keyChain)
 
-	// Localfs, OSS and S3 backends don't need any update,
-	// just use the provided config in template
-	case backendTypeLocalfs:
-	case backendTypeOss:
-	case backendTypeS3:
+	// For Localfs, OSS, and S3 backends, only the WorkDir needs to be supplemented.
+	case backendTypeLocalfs, backendTypeOss, backendTypeS3:
+		c.Supplement("", "", snapshotID, params)
 	default:
 		return errors.Errorf("unknown backend type %s", backendType)
 	}
