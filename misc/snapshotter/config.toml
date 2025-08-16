@@ -37,6 +37,8 @@ recover_policy = "restart"
 threads_number = 4
 # Log rotation size for nydusd, in unit MB(megabytes). (default 100MB)
 log_rotation_size = 100
+# Nydusd failover policy, can be "none", "resend" or "flush"
+failover_policy = "none"
 
 [cgroup]
 # Whether to use separate cgroup for nydusd.
