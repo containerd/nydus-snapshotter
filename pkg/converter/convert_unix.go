@@ -29,6 +29,7 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/images/converter"
 	"github.com/containerd/containerd/labels"
+	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/fifo"
 	"github.com/klauspost/compress/zstd"
 	"github.com/opencontainers/go-digest"
@@ -565,6 +566,11 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		return filepath.Join(workDir, digestHex)
 	}
 
+	getBlobMetaPath := func(layerIdx int, suffix string) string {
+    	digestHex := layers[layerIdx].Digest.Hex()
+    	return filepath.Join(workDir, digestHex + suffix)
+	}
+
 	eg, _ := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
 	rafsBlobDigests := []string{}
@@ -593,6 +599,16 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 				if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBootstrap, bootstrap); err != nil {
 					return errors.Wrap(err, "unpack nydus tar")
 				}
+
+				blobMetaPath := getBlobMetaPath(idx, ".blob.meta")
+        		blobMetaFile, err := os.Create(blobMetaPath)
+        		if err != nil {
+            		return errors.Wrap(err, "create blob.meta file")
+        		}
+
+        		if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBlobMeta, blobMetaFile); err != nil {
+              		return errors.Wrap(err, "unpack blob.meta (required but missing)")
+       			}
 
 				return nil
 			}
@@ -624,25 +640,63 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		return nil, errors.Wrap(err, "merge bootstrap")
 	}
 
+	bootstrapRa, err := local.OpenReader(targetBootstrapPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "open bootstrap reader")
+	}
+	defer bootstrapRa.Close()
+
+	files := []File{
+		{
+			Name:   EntryBootstrap,
+			Reader: content.NewReader(bootstrapRa), 
+			Size:   bootstrapRa.Size(),
+		},
+	}
+
+	var metaRas []io.Closer
+
+	for idx := range layers {
+    	digestHex := layers[idx].Digest.Hex()
+    	blobMetaPath := getBlobMetaPath(idx, ".blob.meta")
+    	if _, err := os.Stat(blobMetaPath); err == nil {
+        	metaRa, err := local.OpenReader(blobMetaPath)
+        	if err != nil {
+            	return nil, errors.Wrap(err, "open blob.meta")
+        	}
+
+			metaRas = append(metaRas, metaRa)
+
+        	files = append(files, File{
+            	Name:   fmt.Sprintf("%s.%s", digestHex, EntryBlobMeta), 
+            	Reader: content.NewReader(metaRa),
+            	Size:   metaRa.Size(),
+        	})
+    	}
+	}
+files = append(files, opt.AppendFiles...)
+
 	var rc io.ReadCloser
 
 	if opt.WithTar {
-		rc, err = packToTar(targetBootstrapPath, fmt.Sprintf("image/%s", EntryBootstrap), false)
-		if err != nil {
-			return nil, errors.Wrap(err, "pack bootstrap to tar")
-		}
+		rc = packToTar(files, false)
 	} else {
 		rc, err = os.Open(targetBootstrapPath)
 		if err != nil {
 			return nil, errors.Wrap(err, "open targe bootstrap")
 		}
 	}
-	defer rc.Close()
 
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err = io.CopyBuffer(dest, rc, *buffer); err != nil {
 		return nil, errors.Wrap(err, "copy merged bootstrap")
+	}
+
+	defer rc.Close()
+
+	for _, closer := range metaRas {
+    	closer.Close()
 	}
 
 	return blobDigests, nil
