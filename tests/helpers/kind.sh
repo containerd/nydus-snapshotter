@@ -53,7 +53,7 @@ configure::dockerd '{
   "cgroup-parent": "/actions_job",
   "insecure-registries" : [ "'"$registry_url"'" ]
 }'
-http::healthcheck "$registry_url"/v2/ 5 1 "$DOCKER_USER" "$DOCKER_PASSWORD"
+http::healthcheck "$registry_url"/v2/ 10 2 "$DOCKER_USER" "$DOCKER_PASSWORD"
 log::info "Login"
 docker::login "$DOCKER_USER" "$DOCKER_PASSWORD" "$registry_url"
 
