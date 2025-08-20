@@ -8,6 +8,8 @@
 
 package constant
 
+import "time"
+
 const (
 	DaemonModeMultiple  string = "multiple"
 	DaemonModeDedicated string = "dedicated"
@@ -30,12 +32,12 @@ const (
 )
 
 const (
-	DefaultDaemonMode string = DaemonModeMultiple
+	DefaultDaemonMode = DaemonModeMultiple
 
-	DefaultFsDriver string = FsDriverFusedev
+	DefaultFsDriver = FsDriverFusedev
 
 	DefaultLogLevel string = "info"
-	DefaultGCPeriod string = "24h"
+	DefaultGCPeriod        = 24 * time.Hour
 
 	DefaultNydusDaemonConfigPath string = "/etc/nydus/nydusd-config.json"
 	NydusdBinaryName             string = "nydusd"
@@ -52,6 +54,10 @@ const (
 	DefaultRotateLogMaxAge        = 0 // days
 	DefaultRotateLogLocalTime     = true
 	DefaultRotateLogCompress      = true
+
+	// metrics configuration
+	DefaultHungIOInterval  = 10 * time.Second
+	DefaultCollectInterval = 1 * time.Minute
 )
 
 const (
