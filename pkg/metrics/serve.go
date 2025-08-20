@@ -22,9 +22,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
-// Default interval to determine a hung IO.
-const defaultHungIOInterval = 10 * time.Second
-
 type ServerOpt func(*Server) error
 
 type Server struct {
@@ -41,7 +38,7 @@ func WithProcessManagers(managers []*manager.Manager) ServerOpt {
 	}
 }
 
-func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
+func NewServer(ctx context.Context, hungIOInterval time.Duration, opts ...ServerOpt) (*Server, error) {
 	var s Server
 	for _, o := range opts {
 		if err := o(&s); err != nil {
@@ -50,8 +47,7 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	}
 
 	s.fsCollector = collector.NewFsMetricsVecCollector()
-	// TODO(tangbin): make hung IO interval configurable
-	s.inflightCollector = collector.NewInflightMetricsVecCollector(defaultHungIOInterval)
+	s.inflightCollector = collector.NewInflightMetricsVecCollector(hungIOInterval)
 	for _, pm := range s.managers {
 		snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, pm.CacheDir(), os.Getpid())
 		if err != nil {
@@ -157,9 +153,8 @@ func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	}
 }
 
-func (s *Server) StartCollectMetrics(ctx context.Context) error {
-	// TODO(renzhen): make collect interval time configurable
-	timer := time.NewTicker(time.Duration(1) * time.Minute)
+func (s *Server) StartCollectMetrics(ctx context.Context, collectInterval time.Duration) error {
+	timer := time.NewTicker(collectInterval)
 	// The timer period is the same as the interval for determining hung IOs.
 	//
 	// Since the elapsed time of hung IO is configuration dependent,
