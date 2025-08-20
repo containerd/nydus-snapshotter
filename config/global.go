@@ -17,8 +17,10 @@ import (
 	"github.com/containerd/log"
 	"github.com/pkg/errors"
 
+	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/containerd/nydus-snapshotter/internal/logging"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/parser"
 )
 
 var (
@@ -29,15 +31,17 @@ var (
 // - access configuration information without passing a configuration object
 // - avoid frequent generation of information from configuration information
 type GlobalConfig struct {
-	origin           *SnapshotterConfig
-	SnapshotsDir     string
-	DaemonMode       DaemonMode
-	SocketRoot       string
-	ConfigRoot       string
-	RootMountpoint   string
-	DaemonThreadsNum int
-	CacheGCPeriod    time.Duration
-	MirrorsConfig    MirrorsConfig
+	origin                 *SnapshotterConfig
+	SnapshotsDir           string
+	DaemonMode             DaemonMode
+	SocketRoot             string
+	ConfigRoot             string
+	RootMountpoint         string
+	DaemonThreadsNum       int
+	CacheGCPeriod          time.Duration
+	MetricsHungIOInterval  time.Duration
+	MetricsCollectInterval time.Duration
+	MirrorsConfig          MirrorsConfig
 }
 
 func IsFusedevSharedModeEnabled() bool {
@@ -74,6 +78,14 @@ func GetFsDriver() string {
 
 func GetCacheGCPeriod() time.Duration {
 	return globalConfig.CacheGCPeriod
+}
+
+func GetMetricsHungIOInterval() time.Duration {
+	return globalConfig.MetricsHungIOInterval
+}
+
+func GetMetricsCollectInterval() time.Duration {
+	return globalConfig.MetricsCollectInterval
 }
 
 func GetLogDir() string {
@@ -172,9 +184,6 @@ func GetTarfsExportFlags() (bool, bool, bool) {
 }
 
 func ProcessConfigurations(c *SnapshotterConfig) error {
-	if c.LoggingConfig.LogDir == "" {
-		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
-	}
 	if c.CacheManagerConfig.CacheDir == "" {
 		c.CacheManagerConfig.CacheDir = filepath.Join(c.Root, "cache")
 	}
@@ -188,13 +197,14 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 
 	globalConfig.MirrorsConfig = c.RemoteConfig.MirrorsConfig
 
-	if c.CacheManagerConfig.GCPeriod != "" {
-		d, err := time.ParseDuration(c.CacheManagerConfig.GCPeriod)
-		if err != nil {
-			return errors.Errorf("invalid GC period '%s'", c.CacheManagerConfig.GCPeriod)
-		}
-		globalConfig.CacheGCPeriod = d
-	}
+	GCPeriod := parser.ParseDurationWithDefault(c.CacheManagerConfig.GCPeriod, "gc_period", constant.TwentyFourHoursDuration)
+	globalConfig.CacheGCPeriod = GCPeriod
+
+	hungIOInterval := parser.ParseDurationWithDefault(c.MetricsConfig.HungIOInterval, "hung_io_interval", constant.ThirtySecondsDuration)
+	globalConfig.MetricsHungIOInterval = hungIOInterval
+
+	collectInterval := parser.ParseDurationWithDefault(c.MetricsConfig.CollectInterval, "collect_interval", constant.OneMinuteDuration)
+	globalConfig.MetricsCollectInterval = collectInterval
 
 	m, err := parseDaemonMode(c.DaemonMode)
 	if err != nil {
@@ -209,6 +219,12 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.DaemonMode = m
 
 	return nil
+}
+
+func PrepareLogDir(c *SnapshotterConfig) {
+	if c.LoggingConfig.LogDir == "" {
+		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
+	}
 }
 
 func SetUpEnvironment(c *SnapshotterConfig) error {

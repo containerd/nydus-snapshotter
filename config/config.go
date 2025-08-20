@@ -213,7 +213,12 @@ type MirrorsConfig struct {
 }
 
 type MetricsConfig struct {
+	// Address is the network address for the metrics server. Empty indicates the server is disabled.
 	Address string `toml:"address"`
+	// HungIOInterval defines the timeout for a single I/O operation to be considered "hung".
+	HungIOInterval string `toml:"hung_io_interval"`
+	// CollectInterval defines how often metrics are collected and reported.
+	CollectInterval string `toml:"collect_interval"`
 }
 
 type DebugConfig struct {

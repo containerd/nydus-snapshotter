@@ -8,6 +8,8 @@
 
 package constant
 
+import "time"
+
 const (
 	DaemonModeMultiple  string = "multiple"
 	DaemonModeDedicated string = "dedicated"
@@ -30,9 +32,9 @@ const (
 )
 
 const (
-	DefaultDaemonMode string = DaemonModeMultiple
+	DefaultDaemonMode = DaemonModeMultiple
 
-	DefaultFsDriver string = FsDriverFusedev
+	DefaultFsDriver = FsDriverFusedev
 
 	DefaultLogLevel string = "info"
 	DefaultGCPeriod string = "24h"
@@ -52,6 +54,17 @@ const (
 	DefaultRotateLogMaxAge        = 0 // days
 	DefaultRotateLogLocalTime     = true
 	DefaultRotateLogCompress      = true
+
+	// metrics configuration
+	DefaultHungIOInterval  string = "30s"
+	DefaultCollectInterval string = "1m"
+)
+
+const (
+	// Time Constants
+	TwentyFourHoursDuration = 24 * time.Hour
+	OneMinuteDuration       = 1 * time.Minute
+	ThirtySecondsDuration   = 30 * time.Second
 )
 
 const (
