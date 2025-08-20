@@ -2,6 +2,7 @@
 set -o errexit -o errtrace -o functrace -o nounset -o pipefail
 
 AUTH_TYPE="${AUTH_TYPE:-kubeconf}"
+INDEX_DETECT="${INDEX_DETECT:-false}"
 [ "$(uname -m)" == "aarch64" ] && GOARCH=arm64 || GOARCH=amd64
 ROOTFUL="${ROOTFUL:-}"
 
@@ -18,6 +19,11 @@ NYDUS_VERSION=v2.3.0
 DOCKER_USER=testuser
 DOCKER_PASSWORD=testpassword
 NAMESPACE=nydus-system
+
+ADDITIONAL_NYDUS_CONVERT_ARGS=""
+if [ "$INDEX_DETECT" == "true" ]; then
+  ADDITIONAL_NYDUS_CONVERT_ARGS="--merge-platform"
+fi
 
 log::info "Configuring rootful and github"
 configure::rootful "${ROOTFUL:-}"
@@ -68,7 +74,8 @@ log::info "Converting test image to nydus and push"
 exec::nydusify convert \
    --source busybox:latest \
    --target $registry_url/busybox:nydus-v6-latest \
-   --fs-version 6
+   --fs-version 6 \
+   ${ADDITIONAL_NYDUS_CONVERT_ARGS}
 
 # Create fresh cluster
 log::info "Creating new cluster"
@@ -109,5 +116,14 @@ exec::kubectl wait po test-pod --namespace nydus-system --for=condition=ready --
   exec::kubectl --namespace nydus-system logs test-pod
   exit 1
 }
-exec::kubectl delete -f tests/e2e/k8s/test-pod.yaml
 
+if [ "$INDEX_DETECT" == "true" ]; then
+  snapshotter_logs="$(exec::kubectl --namespace nydus-system exec nydus-snapshotter -- cat /var/lib/containerd/io.containerd.snapshotter.v1.nydus/logs/nydus-snapshotter.log)"
+  echo "$snapshotter_logs" | grep -q "Found nydus alternative image in index for image" || {
+    log::error "Nydus snapshotter did not detect nydus image in index. Logs:"
+    log::error "$snapshotter_logs"
+    exit 1
+  }
+fi
+
+exec::kubectl delete -f tests/e2e/k8s/test-pod.yaml

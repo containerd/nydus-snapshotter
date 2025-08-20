@@ -19,3 +19,9 @@ jobs:
     uses: ./.github/workflows/k8s-e2e.yml
     with:
       auth-type: kubeconf
+
+  index_detect:
+    uses: ./.github/workflows/k8s-e2e.yml
+    with:
+      auth-type: kubeconf
+      index-detect: true

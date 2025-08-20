@@ -25,8 +25,9 @@ import (
 // Different actions for different layer types
 func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	sn *snapshotter, s storage.Snapshot, key, parent string, labels map[string]string,
-	storageLocater func() string) (_ func() (bool, []mount.Mount, error), target string, err error) {
+	storageLocater func() string) (_ func() (bool, []mount.Mount, error), target string, commitLabels map[string]string, err error) {
 	var handler func() (bool, []mount.Mount, error)
+	commitLabels = labels
 
 	// Handler to prepare a directory for containerd to download and unpacking layer.
 	defaultHandler := func() (bool, []mount.Mount, error) {
@@ -74,13 +75,17 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 				labels[label.NydusProxyMode] = "true"
 				handler = skipHandler
 			} else {
-				return nil, "", errors.Errorf("missing CRI reference annotation for snapshot %s", s.ID)
+				return nil, "", nil, errors.Errorf("missing CRI reference annotation for snapshot %s", s.ID)
 			}
 		case label.IsNydusMetaLayer(labels):
 			logger.Debugf("found nydus meta layer")
 			handler = defaultHandler
 		case label.IsNydusDataLayer(labels):
 			logger.Debugf("found nydus data layer")
+			handler = skipHandler
+		case sn.fs.CheckIndexAlternative(ctx, labels):
+			logger.Debugf("found nydus alternative image in index")
+			commitLabels[label.NydusIndexAlternative] = "true"
 			handler = skipHandler
 		case sn.fs.CheckReferrer(ctx, labels):
 			logger.Debugf("found referenced nydus manifest")
@@ -111,7 +116,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 					if config.GetTarfsExportEnabled() {
 						_, err = sn.fs.ExportBlockData(s, true, labels, func(id string) string { return sn.upperPath(id) })
 						if err != nil {
-							return nil, "", errors.Wrap(err, "export layer as tarfs block device")
+							return nil, "", nil, errors.Wrap(err, "export layer as tarfs block device")
 						}
 					}
 					handler = skipHandler
@@ -141,12 +146,23 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 		}
 
+		if handler == nil && sn.fs.IndexDetectEnabled() {
+			if id, info, err := sn.findIndexAlternativeLayer(ctx, key); err == nil {
+				logger.Infof("Found nydus alternative image in index for image: %s", info.Labels[snpkg.TargetRefLabel])
+				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
+				if err := sn.fs.TryFetchMetadataFromIndex(ctx, info.Labels, metaPath); err != nil {
+					return nil, "", nil, errors.Wrap(err, "try fetch metadata")
+				}
+				handler = remoteHandler(id, info.Labels)
+			}
+		}
+
 		if handler == nil && sn.fs.ReferrerDetectEnabled() {
 			if id, info, err := sn.findReferrerLayer(ctx, key); err == nil {
 				logger.Infof("Found referenced nydus manifest for image: %s", info.Labels[snpkg.TargetRefLabel])
 				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
 				if err := sn.fs.TryFetchMetadata(ctx, info.Labels, metaPath); err != nil {
-					return nil, "", errors.Wrap(err, "try fetch metadata")
+					return nil, "", nil, errors.Wrap(err, "try fetch metadata")
 				}
 				handler = remoteHandler(id, info.Labels)
 			}
@@ -154,7 +170,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 
 		if handler == nil && pErr == nil && sn.fs.StargzEnabled() && sn.fs.StargzLayer(pInfo.Labels) {
 			if err := sn.fs.MergeStargzMetaLayer(ctx, s); err != nil {
-				return nil, "", errors.Wrap(err, "merge stargz meta layers")
+				return nil, "", nil, errors.Wrap(err, "merge stargz meta layers")
 			}
 			handler = remoteHandler(pID, pInfo.Labels)
 			logger.Infof("Generated estargz merged meta for %s", key)
@@ -168,7 +184,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			logger.Infof("Prepare active snapshot %s in Nydus tarfs mode", key)
 			err = sn.mergeTarfs(ctx, s, pID, pInfo)
 			if err != nil {
-				return nil, "", errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
+				return nil, "", nil, errors.Wrapf(err, "merge tarfs layers for snapshot %s", pID)
 			}
 			logger.Infof("Prepared active snapshot %s in Nydus tarfs mode", key)
 			handler = remoteHandler(pID, pInfo.Labels)
@@ -179,5 +195,5 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		handler = defaultHandler
 	}
 
-	return handler, target, err
+	return handler, target, commitLabels, err
 }
