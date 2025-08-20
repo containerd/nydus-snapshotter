@@ -30,6 +30,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/index"
 	mgr "github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
@@ -219,6 +220,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, errors.Wrap(err, "create cache manager")
 	}
 	opts = append(opts, filesystem.WithCacheManager(cacheMgr))
+
+	if cfg.Experimental.EnableIndexDetect {
+		indexMgr := index.NewManager(skipSSLVerify)
+		opts = append(opts, filesystem.WithIndexManager(indexMgr))
+	}
 
 	if cfg.Experimental.EnableReferrerDetect {
 		referrerMgr := referrer.NewManager(skipSSLVerify)
@@ -420,6 +426,13 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		}
 	case snapshots.KindCommitted:
 	case snapshots.KindUnknown:
+	}
+
+	if o.fs.IndexDetectEnabled() && !needRemoteMounts {
+		if id, _, err := o.findIndexAlternativeLayer(ctx, key); err == nil {
+			needRemoteMounts = true
+			metaSnapshotID = id
+		}
 	}
 
 	if o.fs.ReferrerDetectEnabled() && !needRemoteMounts {
@@ -714,6 +727,12 @@ func (o *snapshotter) workPath(id string) string {
 	return filepath.Join(o.root, "snapshots", id, "work")
 }
 
+func (o *snapshotter) findIndexAlternativeLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
+	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(_ string, i snapshots.Info) bool {
+		return o.fs.CheckIndexAlternative(ctx, i.Labels)
+	})
+}
+
 func (o *snapshotter) findReferrerLayer(ctx context.Context, key string) (string, snapshots.Info, error) {
 	return snapshot.IterateParentSnapshots(ctx, o.ms, key, func(_ string, info snapshots.Info) bool {
 		return o.fs.CheckReferrer(ctx, info.Labels)
@@ -905,7 +924,7 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	}
 
 	lowerPaths := make([]string, 0, 8)
-	if o.fs.ReferrerDetectEnabled() {
+	if o.fs.ReferrerDetectEnabled() || o.fs.IndexDetectEnabled() {
 		// From the parent list, we want to add all the layers
 		// between the upmost snapshot and the nydus meta snapshot.
 		// On the other hand, we consider that all the layers below
