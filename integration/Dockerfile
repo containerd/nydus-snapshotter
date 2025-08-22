@@ -6,7 +6,7 @@ ARG DOWNLOADS_MIRROR="https://github.com"
 ARG NYDUS_VER=2.3.0
 ARG NERDCTL_VER=1.7.6
 ARG DELVE_VER=1.23.0
-ARG GO_VER=1.22.5-bookworm
+ARG GO_VER=1.24.0-bookworm
 
 FROM golang:$GO_VER AS golang-base
 ARG TARGETARCH

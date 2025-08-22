@@ -125,13 +125,13 @@ func (kubelistener *KubeSecretListener) SyncKubeSecrets(ctx context.Context, cli
 				return
 			}
 		},
-		UpdateFunc: func(_, new interface{}) {
-			key, err := cache.MetaNamespaceKeyFunc(new)
+		UpdateFunc: func(_, newObj interface{}) {
+			key, err := cache.MetaNamespaceKeyFunc(newObj)
 			if err != nil {
 				logrus.WithError(err).Errorf("failed to get key for secret from cache")
 				return
 			}
-			if err := kubelistener.addDockerConfig(key, new); err != nil {
+			if err := kubelistener.addDockerConfig(key, newObj); err != nil {
 				logrus.WithError(err).Errorf("failed to add a new dockerconfigjson")
 				return
 			}
