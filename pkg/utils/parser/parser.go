@@ -10,7 +10,9 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 )
 
@@ -74,4 +76,18 @@ func MemoryConfigToBytes(data string, totalMemoryBytes int) (int64, error) {
 
 	multiplier := unitMultipliers[unit]
 	return int64(value * float64(multiplier)), nil
+}
+
+func ParseDurationWithDefault(
+	raw string,
+	paramName string,
+	defaultValue time.Duration,
+) time.Duration {
+	d, err := time.ParseDuration(raw)
+	if err == nil && d > 0 {
+		return d
+	}
+
+	log.L.Warnf("Invalid %s %q, using default %s", paramName, raw, defaultValue)
+	return defaultValue
 }
