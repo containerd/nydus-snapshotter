@@ -37,6 +37,7 @@ type DaemonCommand struct {
 	LogFile         string `type:"param" name:"log-file"`
 	PrefetchFiles   string `type:"param" name:"prefetch-files"`
 	BackendSource   string `type:"param" name:"backend-source"`
+	FailoverPolicy  string `type:"param" name:"failover-policy"`
 }
 
 // Build exec style command line
@@ -194,5 +195,11 @@ func WithUpgrade() Opt {
 func WithBackendSource(source string) Opt {
 	return func(cmd *DaemonCommand) {
 		cmd.BackendSource = source
+	}
+}
+
+func WithFailoverPolicy(policy string) Opt {
+	return func(cmd *DaemonCommand) {
+		cmd.FailoverPolicy = policy
 	}
 }
