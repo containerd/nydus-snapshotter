@@ -63,18 +63,18 @@ func (db *Database) WalkCompatDaemons(_ context.Context, handler func(cd *Compat
 }
 
 // Snapshotter v0.3.0 and lower store nydusd and rafs instance configurations in the different folders.
-func RedirectInstanceConfig(new, old string) error {
-	oldConfig, err := os.Open(old)
+func RedirectInstanceConfig(newPath, oldPath string) error {
+	oldConfig, err := os.Open(oldPath)
 	if err != nil {
 		return err
 	}
 	defer oldConfig.Close()
 
-	err = os.MkdirAll(filepath.Dir(new), 0700)
+	err = os.MkdirAll(filepath.Dir(newPath), 0700)
 	if err != nil {
 		return err
 	}
-	newConfig, err := os.Create(new)
+	newConfig, err := os.Create(newPath)
 	if err != nil {
 		return err
 	}

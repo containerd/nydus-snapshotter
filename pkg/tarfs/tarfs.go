@@ -322,12 +322,12 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 		st.blobID = layerBlobID
 		st.blobTarFilePath = t.layerTarFilePath(layerBlobID)
 		if err != nil {
-			log.L.WithError(err).Errorf(msg)
+			log.L.WithError(err).Error(msg)
 			st.status = TarfsStatusFailed
 		} else {
 			st.status = TarfsStatusReady
 		}
-		log.L.Infof(msg)
+		log.L.Info(msg)
 	}
 
 	keyChain, err := auth.GetKeyChainByRef(ref, nil)

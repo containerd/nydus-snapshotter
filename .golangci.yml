@@ -64,12 +64,9 @@ linters:
     - nilnil
     - unparam
     - nilerr
-    # - goerr113
-    - exportloopref
     # - gosec
     - gocritic
     - prealloc
-    - tenv
     # - funlen
     - exhaustive
     - errcheck

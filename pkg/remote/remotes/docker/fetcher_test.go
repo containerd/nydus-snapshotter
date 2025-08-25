@@ -151,7 +151,7 @@ func TestDockerFetcherOpen(t *testing.T) {
 		}, {
 			name:           "should return StatusRequestTimeout after 5 retries",
 			mockedStatus:   http.StatusRequestTimeout,
-			mockedErr:      fmt.Errorf(http.StatusText(http.StatusRequestTimeout)),
+			mockedErr:      fmt.Errorf("%s", http.StatusText(http.StatusRequestTimeout)),
 			want:           nil,
 			wantErr:        true,
 			wantPlainError: true,
@@ -159,7 +159,7 @@ func TestDockerFetcherOpen(t *testing.T) {
 		}, {
 			name:           "should return StatusTooManyRequests after 5 retries",
 			mockedStatus:   http.StatusTooManyRequests,
-			mockedErr:      fmt.Errorf(http.StatusText(http.StatusTooManyRequests)),
+			mockedErr:      fmt.Errorf("%s", http.StatusText(http.StatusTooManyRequests)),
 			want:           nil,
 			wantErr:        true,
 			wantPlainError: true,
