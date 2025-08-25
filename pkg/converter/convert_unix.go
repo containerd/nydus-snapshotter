@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/containerd/archive"
 	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/images/converter"
@@ -290,18 +291,44 @@ func UnpackEntry(ra content.ReaderAt, targetName string, target io.Writer) (*TOC
 }
 
 func seekFile(ra content.ReaderAt, targetName string, handle func(io.Reader, *tar.Header) error) (*TOCEntry, error) {
-	// Try seek target data by TOC.
+	// Try seek target data by TOC first
 	entry, err := seekFileByTOC(ra, targetName, handle)
-	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
-			return nil, errors.Wrap(err, "seek file by TOC")
-		}
-	} else {
+	if err == nil {
 		return entry, nil
 	}
+	
+	// If TOC approach failed with anything other than NotFound, return error
+	if !errors.Is(err, ErrNotFound) {
+		return nil, errors.Wrap(err, "seek file by TOC")
+	}
 
-	// Seek target data by tar header, ensure compatible with old rafs blob format.
-	return nil, seekFileByTarHeader(ra, targetName, nil, handle)
+	// If TOC approach failed with NotFound, try tar header approach
+	// But we need to prevent handle from being called multiple times
+	var found bool
+	var handleErr error
+	
+	tarHandle := func(dataReader io.Reader, hdr *tar.Header) error {
+		if found {
+			return nil // 避免重复调用
+		}
+		found = true
+		handleErr = handle(dataReader, hdr)
+		return handleErr
+	}
+	
+	err = seekFileByTarHeader(ra, targetName, nil, tarHandle)
+	if err != nil {
+		return nil, err
+	}
+	
+	if !found {
+		return nil, errors.Wrapf(ErrNotFound, "target %s not found", targetName)
+	}
+	
+	// For tar header found files, return minimal TOCEntry
+	var nameBytes [16]byte
+	copy(nameBytes[:], targetName)
+	return &TOCEntry{Name: nameBytes}, nil
 }
 
 // Pack converts an OCI tar stream to nydus formatted stream with a tar-like
@@ -565,6 +592,11 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		return filepath.Join(workDir, digestHex)
 	}
 
+	getBlobMetaPath := func(layerIdx int, suffix string) string {
+		digestHex := layers[layerIdx].Digest.Hex()
+		return filepath.Join(workDir, digestHex+suffix)
+	}
+
 	eg, _ := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
 	rafsBlobDigests := []string{}
@@ -594,6 +626,17 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 					return errors.Wrap(err, "unpack nydus tar")
 				}
 
+				blobMetaPath := getBlobMetaPath(idx, ".blob.meta")
+				blobMetaFile, err := os.Create(blobMetaPath)
+				if err != nil {
+					return errors.Wrap(err, "create blob.meta file")
+				}
+
+        		if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBlobMeta, blobMetaFile); err != nil {
+            		return errors.Wrap(err, "unpack blob.meta using fixed algorithm")
+       	 		}
+
+				defer blobMetaFile.Close()
 				return nil
 			}
 		}(idx))
@@ -624,25 +667,63 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		return nil, errors.Wrap(err, "merge bootstrap")
 	}
 
+	bootstrapRa, err := local.OpenReader(targetBootstrapPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "open bootstrap reader")
+	}
+	defer bootstrapRa.Close()
+
+	files := []File{
+		{
+			Name:   EntryBootstrap,
+			Reader: content.NewReader(bootstrapRa),
+			Size:   bootstrapRa.Size(),
+		},
+	}
+
+	var metaRas []io.Closer
+
+	for idx := range layers {
+		digestHex := layers[idx].Digest.Hex()
+		blobMetaPath := getBlobMetaPath(idx, ".blob.meta")
+		if _, err := os.Stat(blobMetaPath); err == nil {
+			metaRa, err := local.OpenReader(blobMetaPath)
+			if err != nil {
+				return nil, errors.Wrap(err, "open blob.meta")
+			}
+
+			metaRas = append(metaRas, metaRa)
+
+			files = append(files, File{
+				Name:   fmt.Sprintf("%s.%s", digestHex, EntryBlobMeta),
+				Reader: content.NewReader(metaRa),
+				Size:   metaRa.Size(),
+			})
+		}
+	}
+	files = append(files, opt.AppendFiles...)
+
 	var rc io.ReadCloser
 
 	if opt.WithTar {
-		rc, err = packToTar(targetBootstrapPath, fmt.Sprintf("image/%s", EntryBootstrap), false)
-		if err != nil {
-			return nil, errors.Wrap(err, "pack bootstrap to tar")
-		}
+		rc = packToTar(files, false)
 	} else {
 		rc, err = os.Open(targetBootstrapPath)
 		if err != nil {
 			return nil, errors.Wrap(err, "open targe bootstrap")
 		}
 	}
-	defer rc.Close()
 
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err = io.CopyBuffer(dest, rc, *buffer); err != nil {
 		return nil, errors.Wrap(err, "copy merged bootstrap")
+	}
+
+	defer rc.Close()
+
+	for _, closer := range metaRas {
+		closer.Close()
 	}
 
 	return blobDigests, nil
