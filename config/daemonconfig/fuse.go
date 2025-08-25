@@ -61,8 +61,12 @@ func LoadFuseConfig(p string) (*FuseDaemonConfig, error) {
 }
 
 func (c *FuseDaemonConfig) Supplement(host, repo, _ string, params map[string]string) {
-	c.Device.Backend.Config.Host = host
-	c.Device.Backend.Config.Repo = repo
+	if host != "" {
+		c.Device.Backend.Config.Host = host
+	}
+	if repo != "" {
+		c.Device.Backend.Config.Repo = repo
+	}
 	c.Device.Cache.Config.WorkDir = params[CacheDir]
 }
 
