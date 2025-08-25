@@ -121,10 +121,10 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	}
 
 	// Try to bring all persisted and stopped nydusd up and remount Rafs
-	eg, _ := errgroup.WithContext(context.Background())
+	egRecover, _ := errgroup.WithContext(context.Background())
 	for _, d := range recoveringDaemons {
 		d := d
-		eg.Go(func() error {
+		egRecover.Go(func() error {
 			d.ClearVestige()
 			fsManager, err := fs.getManager(d.States.FsDriver)
 			if err != nil {
@@ -143,14 +143,41 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	if err := egRecover.Wait(); err != nil {
 		return nil, err
 	}
 
-	for _, d := range liveDaemons {
-		fs.TryRetainSharedDaemon(d)
+	newNydusImageBinaryCommit, err := daemon.GetDaemonGitCommit(fs.nydusImageBinaryPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get git commit from nydusd binary at path: %s", fs.nydusImageBinaryPath)
 	}
 
+	egLive, _ := errgroup.WithContext(context.Background())
+	for _, d := range liveDaemons {
+		egLive.Go(func() error {
+			daemonInfo, err := d.GetDaemonInfo()
+			if err != nil {
+				return errors.Wrapf(err, "failed to get daemon info from daemon ID: %s", d.ID())
+			}
+			if newNydusImageBinaryCommit != daemonInfo.DaemonVersion().GitCommit {
+				fsManager, err := fs.getManager(d.States.FsDriver)
+				if err != nil {
+					return errors.Wrapf(err, "get filesystem manager for daemon %s", d.States.ID)
+				}
+				newDaemon, upgradeErr := fsManager.DoDaemonUpgrade(d, fs.nydusImageBinaryPath, fsManager)
+				if upgradeErr != nil {
+					return errors.Wrapf(upgradeErr, "live Daemon %s hot upgrade fail", d.ID())
+				}
+				fs.TryRetainSharedDaemon(newDaemon)
+			} else {
+				fs.TryRetainSharedDaemon(d)
+			}
+			return nil
+		})
+	}
+	if err := egLive.Wait(); err != nil {
+		return nil, err
+	}
 	return &fs, nil
 }
 

@@ -9,8 +9,11 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -654,4 +657,18 @@ func NewDaemon(opt ...NewDaemonOpt) (*Daemon, error) {
 	}
 
 	return d, nil
+}
+
+func GetDaemonGitCommit(nydusdPath string) (string, error) {
+	cmd := exec.Command(nydusdPath, "--version")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to run %s -V", nydusdPath)
+	}
+	re := regexp.MustCompile(`Git Commit:\s*(.+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1]), nil
+	}
+	return "", errors.New("Git Commit not found in nydusd -V output")
 }
