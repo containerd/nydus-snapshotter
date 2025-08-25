@@ -360,6 +360,10 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 // Provide minimal parameters since most of it can be recovered by nydusd states.
 // Create a new daemon in Manger to take over the service.
 func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, manager *manager.Manager) error {
+	if d.Supervisor != nil {
+		return errors.New("should set recover policy to failover to enable hot upgrade")
+	}
+
 	log.L.Infof("Upgrading nydusd %s, request %v", d.ID(), c)
 
 	fs := sc.fs
@@ -384,14 +388,15 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 		return err
 	}
 
-	su := manager.SupervisorSet.GetSupervisor(d.ID())
-	if err := su.SendStatesTimeout(time.Second * 10); err != nil {
+	if err := d.Supervisor.SendStatesTimeout(time.Second * 10); err != nil {
 		return errors.Wrap(err, "Send states")
 	}
 
 	if err := cmd.Start(); err != nil {
 		return errors.Wrap(err, "start process")
 	}
+
+	newDaemon.States.ProcessID = cmd.Process.Pid
 
 	if err := newDaemon.WaitUntilState(types.DaemonStateInit); err != nil {
 		return errors.Wrap(err, "wait until init state")
