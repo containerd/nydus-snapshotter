@@ -6,6 +6,9 @@ on:
       auth-type:
         required: true
         type: string
+      index-detect:
+        required: false
+        type: boolean
 
 env:
   DOCKER_USER: testuser
@@ -28,7 +31,8 @@ jobs:
           cache-dependency-path: "go.sum"
       - name: Test
         run: |
-          AUTH_TYPE='${{ inputs.auth-type }}'
+          export AUTH_TYPE='${{ inputs.auth-type }}'
+          export INDEX_DETECT='${{ inputs.index-detect }}'
           ./tests/helpers/kind.sh
       - name: Dump logs
         if: failure()
