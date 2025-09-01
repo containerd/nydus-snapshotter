@@ -159,14 +159,12 @@ func (b *S3Backend) Push(ctx context.Context, cs content.Store, desc ocispec.Des
 	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
 		u.PartSize = MultipartChunkSize
 	})
-	putObjectInput := &s3.PutObjectInput{
+	if _, err := uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:            aws.String(b.bucketName),
 		Key:               aws.String(blobObjectKey),
 		Body:              reader,
 		ChecksumAlgorithm: b.checksumAlgorithm,
-	}
-
-	if _, err := uploader.Upload(ctx, putObjectInput); err != nil {
+	}); err != nil {
 		return errors.Wrap(err, "push blob to s3 backend")
 	}
 
