@@ -38,6 +38,7 @@ type S3Backend struct {
 	accessKeySecret    string
 	accessKeyID        string
 	forcePush          bool
+	computeChecksum    bool
 }
 
 type S3Config struct {
@@ -48,6 +49,7 @@ type S3Config struct {
 	BucketName      string `json:"bucket_name,omitempty"`
 	Region          string `json:"region,omitempty"`
 	ObjectPrefix    string `json:"object_prefix,omitempty"`
+	ComputeChecksum bool   `json:"compute_checksum,omitempty"`
 }
 
 func newS3Backend(rawConfig []byte, forcePush bool) (*S3Backend, error) {
@@ -75,6 +77,7 @@ func newS3Backend(rawConfig []byte, forcePush bool) (*S3Backend, error) {
 		accessKeySecret:    cfg.AccessKeySecret,
 		accessKeyID:        cfg.AccessKeyID,
 		forcePush:          forcePush,
+		computeChecksum:    cfg.ComputeChecksum,
 	}, nil
 }
 
@@ -140,12 +143,18 @@ func (b *S3Backend) Push(ctx context.Context, cs content.Store, desc ocispec.Des
 	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
 		u.PartSize = MultipartChunkSize
 	})
-	if _, err := uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket:            aws.String(b.bucketName),
-		Key:               aws.String(blobObjectKey),
-		Body:              reader,
-		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
-	}); err != nil {
+	putObjectInput := &s3.PutObjectInput{
+		Bucket: aws.String(b.bucketName),
+		Key:    aws.String(blobObjectKey),
+		Body:   reader,
+	}
+
+	// Only set checksum algorithm if checksum computation is enabled
+	if b.computeChecksum {
+		putObjectInput.ChecksumAlgorithm = types.ChecksumAlgorithmCrc32
+	}
+
+	if _, err := uploader.Upload(ctx, putObjectInput); err != nil {
 		return errors.Wrap(err, "push blob to s3 backend")
 	}
 
