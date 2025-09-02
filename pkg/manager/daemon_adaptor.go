@@ -200,6 +200,8 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 		cmdOpts = append(cmdOpts, command.WithLogFile(d.LogFile()))
 	}
 
+	cmdOpts = append(cmdOpts, command.WithFailoverPolicy(d.States.FailoverPolicy))
+
 	args, err := command.BuildCommand(cmdOpts)
 	if err != nil {
 		return nil, err
