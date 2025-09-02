@@ -9,6 +9,8 @@ package backend
 import (
 	"reflect"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 func Test_newS3Backend(t *testing.T) {
@@ -42,6 +44,32 @@ func Test_newS3Backend(t *testing.T) {
 				region:             "us-east-1",
 				accessKeySecret:    "minio123",
 				accessKeyID:        "minio",
+				checksumAlgorithm:  types.ChecksumAlgorithmCrc32,
+			},
+			wantErr: false,
+		},
+		{
+			name: "test2, set checksum algorithm",
+			args: args{
+				rawConfig: []byte(`{
+					"endpoint": "localhost:9000",
+					"scheme": "http",
+					"bucket_name": "nydus",
+					"region": "us-east-1",
+					"object_prefix": "path/to/my-registry/",
+					"access_key_id": "minio",
+					"access_key_secret": "minio123",
+					"checksum_algorithm": "SHA256"
+				}`),
+			},
+			want: &S3Backend{
+				objectPrefix:       "path/to/my-registry/",
+				bucketName:         "nydus",
+				endpointWithScheme: "http://localhost:9000",
+				region:             "us-east-1",
+				accessKeySecret:    "minio123",
+				accessKeyID:        "minio",
+				checksumAlgorithm:  types.ChecksumAlgorithmSha256,
 			},
 			wantErr: false,
 		},
