@@ -30,6 +30,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		Experimental: Experimental{
 			EnableStargz:         false,
 			EnableReferrerDetect: false,
+			EnableIndexDetect:    false,
 		},
 		CleanupOnClose: false,
 		SystemControllerConfig: SystemControllerConfig{

@@ -23,9 +23,9 @@ rules:
       - get
       - list
       - watch
-  - apiGroups: 
+  - apiGroups:
     - ""
-    resources: 
+    resources:
     - nodes
     verbs:
     - get
@@ -233,6 +233,8 @@ data:
     [image]
     public_key_file = ""
     validate_signature = false
+    [experimental]
+    enable_index_detect = true
 
   nydusd.json: |-
     {
