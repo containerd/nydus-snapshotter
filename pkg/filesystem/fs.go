@@ -14,6 +14,7 @@ import (
 	"context"
 	"os"
 	"path"
+	"path/filepath"
 
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/mohae/deepcopy"
@@ -275,6 +276,14 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			return errors.Wrapf(err, "find bootstrap file snapshot %s", snapshotID)
 		}
 
+		// Nydusd uses cache manager's directory to store blob caches. So cache
+		// manager knows where to find those blobs.
+		cacheDir := fs.cacheMgr.CacheDir()
+
+		if err := fs.copyBlobMetaFiles(bootstrap, cacheDir); err != nil {
+			log.L.Warnf("Failed to copy blob.meta files to cache: %v", err)
+		}
+
 		if useSharedDaemon {
 			d, err = fs.getSharedDaemon(fsDriver)
 			if err != nil {
@@ -292,9 +301,6 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			}
 		}
 
-		// Nydusd uses cache manager's directory to store blob caches. So cache
-		// manager knows where to find those blobs.
-		cacheDir := fs.cacheMgr.CacheDir()
 		// Fscache driver stores blob cache bitmap and blob header files here
 		workDir := rafs.FscacheWorkDir()
 		params := map[string]string{
@@ -388,6 +394,56 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		return err
 	}
 
+	return nil
+}
+
+func (fs *Filesystem) copyBlobMetaFiles(bootstrapPath, cacheDir string) error {
+	bootstrapDir := filepath.Dir(bootstrapPath)
+
+	pattern := filepath.Join(bootstrapDir, "*.blob.meta")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return errors.Wrap(err, "glob blob.meta files")
+	}
+
+	if len(matches) == 0 {
+		log.L.Debugf("No blob.meta files found in %s", bootstrapDir)
+		return nil
+	}
+
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return errors.Wrapf(err, "create cache directory %s", cacheDir)
+	}
+
+	for _, blobMetaPath := range matches {
+		fileName := filepath.Base(blobMetaPath)
+
+		cacheFileName := fileName + ".cached"
+		destPath := filepath.Join(cacheDir, cacheFileName)
+
+		if _, err := os.Stat(destPath); err == nil {
+			log.L.Warnf("File %s already exists in cache, skipping", cacheFileName)
+			continue
+		}
+
+		if err := os.Link(blobMetaPath, destPath); err == nil {
+			log.L.Infof("Created hard link for %s in cache directory", cacheFileName)
+			continue
+		}
+
+		input, err := os.ReadFile(blobMetaPath)
+		if err != nil {
+			log.L.Warnf("Failed to read source file %s: %v", blobMetaPath, err)
+			continue
+		}
+
+		if err := os.WriteFile(destPath, input, 0644); err != nil {
+			log.L.Warnf("Failed to write destination file %s: %v", destPath, err)
+			continue
+		}
+
+		log.L.Infof("Copied blob.meta file as %s to cache directory", cacheFileName)
+	}
 	return nil
 }
 
