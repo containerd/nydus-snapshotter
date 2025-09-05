@@ -14,6 +14,8 @@ import (
 	"context"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/mohae/deepcopy"
@@ -275,6 +277,14 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			return errors.Wrapf(err, "find bootstrap file snapshot %s", snapshotID)
 		}
 
+		// Nydusd uses cache manager's directory to store blob caches. So cache
+		// manager knows where to find those blobs.
+		cacheDir := fs.cacheMgr.CacheDir()
+
+		if err := fs.copyBlobMetaFiles(bootstrap, cacheDir); err != nil {
+			log.L.Warnf("Failed to copy blob.meta files to cache: %v", err)
+		}
+
 		if useSharedDaemon {
 			d, err = fs.getSharedDaemon(fsDriver)
 			if err != nil {
@@ -292,9 +302,6 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			}
 		}
 
-		// Nydusd uses cache manager's directory to store blob caches. So cache
-		// manager knows where to find those blobs.
-		cacheDir := fs.cacheMgr.CacheDir()
 		// Fscache driver stores blob cache bitmap and blob header files here
 		workDir := rafs.FscacheWorkDir()
 		params := map[string]string{
@@ -386,6 +393,95 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	if err != nil {
 		_ = fs.Umount(ctx, snapshotID)
 		return err
+	}
+
+	return nil
+}
+
+func (fs *Filesystem) copyBlobMetaFiles(bootstrapPath, cacheDir string) error {
+	bootstrapDir := filepath.Dir(bootstrapPath)
+
+	pattern := filepath.Join(bootstrapDir, "*.blob.meta")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return errors.Wrap(err, "glob blob.meta files")
+	}
+
+	if len(matches) == 0 {
+		log.L.Debugf("No blob.meta files found in %s", bootstrapDir)
+		return nil
+	}
+
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return errors.Wrapf(err, "create cache directory %s", cacheDir)
+	}
+
+	for _, blobMetaPath := range matches {
+		baseName := filepath.Base(blobMetaPath)
+		blobID := strings.TrimSuffix(baseName, ".blob.meta")
+		blobMetaHeaderPath := filepath.Join(bootstrapDir, blobID+".blob.meta.header")
+		if _, err := os.Stat(blobMetaHeaderPath); os.IsNotExist(err) {
+			log.L.Warnf("Header file %s not found, skipping", blobMetaHeaderPath)
+			continue
+		}
+		cacheFileName := blobID + ".blob.meta.cached"
+		destPath := filepath.Join(cacheDir, cacheFileName)
+
+		if _, err := os.Stat(destPath); err == nil {
+			log.L.Warnf("File %s already exists in cache, skipping", cacheFileName)
+			continue
+		}
+
+		if err := fs.assembleBlobMetaFile(blobMetaPath, blobMetaHeaderPath, destPath); err != nil {
+			log.L.Warnf("Failed to assemble blob meta file %s: %v", cacheFileName, err)
+			continue
+		}
+
+		if err := os.Remove(blobMetaPath); err != nil {
+			log.L.Warnf("Failed to remove source blob meta file %s: %v", blobMetaPath, err)
+		}
+
+		if err := os.Remove(blobMetaHeaderPath); err != nil {
+			log.L.Warnf("Failed to remove source blob meta header file %s: %v", blobMetaHeaderPath, err)
+		}
+	}
+	return nil
+}
+
+func (fs *Filesystem) assembleBlobMetaFile(metaPath, headerPath, destPath string) error {
+	metaData, err := os.ReadFile(metaPath)
+	if err != nil {
+		return errors.Wrapf(err, "read meta file %s", metaPath)
+	}
+
+	headerData, err := os.ReadFile(headerPath)
+	if err != nil {
+		return errors.Wrapf(err, "read header file %s", headerPath)
+	}
+
+	metaSize := len(metaData)
+	alignedSize := (metaSize + 4095) & ^4095
+	paddingSize := alignedSize - metaSize
+
+	destFile, err := os.Create(destPath)
+	if err != nil {
+		return errors.Wrapf(err, "create destination file %s", destPath)
+	}
+	defer destFile.Close()
+
+	if _, err := destFile.Write(metaData); err != nil {
+		return errors.Wrap(err, "write meta data")
+	}
+
+	if paddingSize > 0 {
+		padding := make([]byte, paddingSize)
+		if _, err := destFile.Write(padding); err != nil {
+			return errors.Wrap(err, "write padding")
+		}
+	}
+
+	if _, err := destFile.Write(headerData); err != nil {
+		return errors.Wrap(err, "write header data")
 	}
 
 	return nil
