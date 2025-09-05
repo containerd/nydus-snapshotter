@@ -572,6 +572,16 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 		return filepath.Join(workDir, digestHex)
 	}
 
+	getBlobMetaPath := func(layerIdx int, suffix string) string {
+		digestHex := layers[layerIdx].Digest.Hex()
+		return filepath.Join(workDir, digestHex+suffix)
+	}
+
+	getBlobMetaHeaderPath := func(layerIdx int, suffix string) string {
+		digestHex := layers[layerIdx].Digest.Hex()
+		return filepath.Join(workDir, digestHex+suffix)
+	}
+
 	eg, _ := errgroup.WithContext(ctx)
 	sourceBootstrapPaths := []string{}
 	rafsBlobDigests := []string{}
@@ -599,6 +609,29 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 
 				if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBootstrap, bootstrap); err != nil {
 					return errors.Wrap(err, "unpack nydus tar")
+				}
+
+				blobMetaPath := getBlobMetaPath(idx, ".blob.meta")
+				blobMetaFile, err := os.Create(blobMetaPath)
+				if err != nil {
+					return errors.Wrap(err, "create blob.meta file")
+				}
+				defer blobMetaFile.Close()
+
+				if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBlobMeta, blobMetaFile); err != nil {
+					return errors.Wrap(err, "unpack blob.meta using fixed algorithm")
+				}
+
+				blobMetaHeaderPath := getBlobMetaHeaderPath(idx, ".blob.meta.header")
+				blobMetaHeaderFile, err := os.Create(blobMetaHeaderPath)
+				if err != nil {
+					return errors.Wrap(err, "create blob.meta header file")
+				}
+
+				defer blobMetaHeaderFile.Close()
+
+				if _, err := UnpackEntry(layers[idx].ReaderAt, EntryBlobMetaHeader, blobMetaHeaderFile); err != nil {
+					return errors.Wrap(err, "unpack blob.meta.header")
 				}
 
 				return nil
@@ -637,13 +670,50 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 	}
 	defer bootstrapRa.Close()
 
-	files := append([]File{
+	files := []File{
 		{
 			Name:   EntryBootstrap,
 			Reader: content.NewReader(bootstrapRa),
 			Size:   bootstrapRa.Size(),
 		},
-	}, opt.AppendFiles...)
+	}
+
+	var metaRas []io.Closer
+
+	for idx := range layers {
+		digestHex := layers[idx].Digest.Hex()
+		blobMetaPath := getBlobMetaPath(idx, ".blob.meta")
+		if _, err := os.Stat(blobMetaPath); err == nil {
+			metaRa, err := local.OpenReader(blobMetaPath)
+			if err != nil {
+				return nil, errors.Wrap(err, "open blob.meta")
+			}
+
+			metaRas = append(metaRas, metaRa)
+
+			files = append(files, File{
+				Name:   fmt.Sprintf("%s.%s", digestHex, EntryBlobMeta),
+				Reader: content.NewReader(metaRa),
+				Size:   metaRa.Size(),
+			})
+		}
+
+		getBlobMetaHeaderPath := getBlobMetaHeaderPath(idx, ".blob.meta.header")
+		if _, err := os.Stat(getBlobMetaHeaderPath); err == nil {
+			metaHeaderRa, err := local.OpenReader(getBlobMetaHeaderPath)
+			if err != nil {
+				return nil, errors.Wrap(err, "open blob.meta.header")
+			}
+			metaRas = append(metaRas, metaHeaderRa)
+
+			files = append(files, File{
+				Name:   fmt.Sprintf("%s.%s", digestHex, EntryBlobMetaHeader),
+				Reader: content.NewReader(metaHeaderRa),
+				Size:   metaHeaderRa.Size(),
+			})
+		}
+	}
+	files = append(files, opt.AppendFiles...)
 	var rc io.ReadCloser
 
 	if opt.WithTar {
@@ -654,12 +724,16 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 			return nil, errors.Wrap(err, "open targe bootstrap")
 		}
 	}
-	defer rc.Close()
 
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err = io.CopyBuffer(dest, rc, *buffer); err != nil {
 		return nil, errors.Wrap(err, "copy merged bootstrap")
+	}
+
+	defer rc.Close()
+	for _, closer := range metaRas {
+		closer.Close()
 	}
 
 	return blobDigests, nil
