@@ -1041,6 +1041,12 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 	if err != nil {
 		return nil, errors.Wrap(err, "write image config")
 	}
+	// When manifests are merged, we need to put a special value for the config mediaType.
+	// This values must be one that containerd doesn't understand to ensure it doesn't try tu pull the nydus image
+	// but use the OCI one instead. And then if the nydus-snapshotter is used, it can pull the nydus image instead.
+	if opt.MergeManifest {
+		newConfigDesc.MediaType = ManifestConfigNydus
+	}
 	manifest.Config = *newConfigDesc
 	// Update the config gc label
 	manifestLabels[configGCLabelKey] = newConfigDesc.Digest.String()
