@@ -202,7 +202,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 
 	opts := []filesystem.NewFSOpt{
 		filesystem.WithManagers(fsManagers),
-		filesystem.WithNydusImageBinaryPath(cfg.DaemonConfig.NydusdPath),
+		filesystem.WithNydusdBinaryPath(cfg.DaemonConfig.NydusdPath),
 		filesystem.WithVerifier(verifier),
 		filesystem.WithRootMountpoint(config.GetRootMountpoint()),
 		filesystem.WithEnableStargz(cfg.Experimental.EnableStargz),

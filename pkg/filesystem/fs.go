@@ -41,16 +41,16 @@ import (
 )
 
 type Filesystem struct {
-	fusedevSharedDaemon  *daemon.Daemon
-	fscacheSharedDaemon  *daemon.Daemon
-	enabledManagers      map[string]*manager.Manager
-	cacheMgr             *cache.Manager
-	referrerMgr          *referrer.Manager
-	stargzResolver       *stargz.Resolver
-	tarfsMgr             *tarfs.Manager
-	verifier             *signature.Verifier
-	nydusImageBinaryPath string
-	rootMountpoint       string
+	fusedevSharedDaemon *daemon.Daemon
+	fscacheSharedDaemon *daemon.Daemon
+	enabledManagers     map[string]*manager.Manager
+	cacheMgr            *cache.Manager
+	referrerMgr         *referrer.Manager
+	stargzResolver      *stargz.Resolver
+	tarfsMgr            *tarfs.Manager
+	verifier            *signature.Verifier
+	nydusdBinaryPath    string
+	rootMountpoint      string
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -121,36 +121,75 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	}
 
 	// Try to bring all persisted and stopped nydusd up and remount Rafs
-	eg, _ := errgroup.WithContext(context.Background())
+	egRecover, _ := errgroup.WithContext(context.Background())
 	for _, d := range recoveringDaemons {
 		d := d
-		eg.Go(func() error {
+		egRecover.Go(func() error {
 			d.ClearVestige()
 			fsManager, err := fs.getManager(d.States.FsDriver)
 			if err != nil {
-				return errors.Wrapf(err, "get filesystem manager for daemon %s", d.States.ID)
+				log.L.Warnf("Failed to get filesystem manager for daemon %s, skipping recovery: %v", d.States.ID, err)
+				return nil
 			}
 			if err := fsManager.StartDaemon(d); err != nil {
-				return errors.Wrapf(err, "start daemon %s", d.ID())
+				log.L.Warnf("Failed to start daemon %s during recovery, skipping: %v", d.ID(), err)
+				return nil
 			}
 			if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
-				return errors.Wrapf(err, "wait for daemon %s", d.ID())
+				log.L.Warnf("Failed to wait for daemon %s to become running, skipping: %v", d.ID(), err)
+				return nil
 			}
 			if err := d.RecoverRafsInstances(); err != nil {
-				return errors.Wrapf(err, "recover mounts for daemon %s", d.ID())
+				log.L.Warnf("Failed to recover mounts for daemon %s, skipping: %v", d.ID(), err)
+				return nil
 			}
 			fs.TryRetainSharedDaemon(d)
 			return nil
 		})
 	}
-	if err := eg.Wait(); err != nil {
+	if err := egRecover.Wait(); err != nil {
 		return nil, err
 	}
 
-	for _, d := range liveDaemons {
-		fs.TryRetainSharedDaemon(d)
+	newNydusImageBinaryCommit, err := daemon.GetDaemonGitCommit(fs.nydusdBinaryPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get git commit from nydusd binary at path: %s", fs.nydusdBinaryPath)
 	}
 
+	egLive, _ := errgroup.WithContext(context.Background())
+	for _, d := range liveDaemons {
+		d := d
+		egLive.Go(func() error {
+			if d.Supervisor == nil {
+				log.L.Warnf("Daemon %s is skipped for hot upgrade because recover policy is not set to 'failover'", d.ID())
+				return nil
+			}
+			daemonInfo, err := d.GetDaemonInfo()
+			if err != nil {
+				log.L.Warnf("Failed to get daemon info from daemon %s, skipping: %v", d.ID(), err)
+				return nil
+			}
+			if newNydusImageBinaryCommit != daemonInfo.DaemonVersion().GitCommit {
+				fsManager, err := fs.getManager(d.States.FsDriver)
+				if err != nil {
+					log.L.Warnf("Failed to get filesystem manager for daemon %s, skipping: %v", d.ID(), err)
+					return nil
+				}
+				newDaemon, upgradeErr := fsManager.DoDaemonUpgrade(d, fs.nydusdBinaryPath, fsManager)
+				if upgradeErr != nil {
+					log.L.Warnf("Daemon %s hot upgrade failed, skipping: %v", d.ID(), upgradeErr)
+					return nil
+				}
+				fs.TryRetainSharedDaemon(newDaemon)
+			} else {
+				fs.TryRetainSharedDaemon(d)
+			}
+			return nil
+		})
+	}
+	if err := egLive.Wait(); err != nil {
+		return nil, err
+	}
 	return &fs, nil
 }
 
