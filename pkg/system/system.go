@@ -364,7 +364,8 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 // Provide minimal parameters since most of it can be recovered by nydusd states.
 // Create a new daemon in Manger to take over the service.
 func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, manager *manager.Manager) error {
-	if d.Supervisor != nil {
+	supervisor := d.Supervisor
+	if supervisor == nil {
 		return errors.New("should set recover policy to failover to enable hot upgrade")
 	}
 
@@ -374,7 +375,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 
 	newDaemon := daemon.Daemon{
 		States:     d.States,
-		Supervisor: d.Supervisor,
+		Supervisor: supervisor,
 	}
 	newDaemon.CloneRafsInstances(d)
 
@@ -392,7 +393,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 		return err
 	}
 
-	if err := d.Supervisor.SendStatesTimeout(time.Second * 10); err != nil {
+	if err := supervisor.SendStatesTimeout(time.Second * 10); err != nil {
 		return errors.Wrap(err, "Send states")
 	}
 
