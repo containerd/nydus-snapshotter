@@ -1095,7 +1095,7 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 }
 
 func ReconvertHookFunc() containerdReconverter.ConvertHookFunc {
-	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
+	return func(ctx context.Context, cs content.Store, _ ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		desc := newDesc
 		if !images.IsManifestType(desc.MediaType) {
 			return desc, nil
