@@ -20,9 +20,9 @@ package reconverter
 import (
 	"context"
 
-	"github.com/containerd/containerd/platforms"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/platforms"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -68,7 +68,7 @@ func WithIndexConvertFunc(fn ConvertFunc) Opt {
 }
 
 // Convert converts an image.
-func ReConvert(ctx context.Context, client containerd.Client, dstRef, srcRef string, opts ...Opt) (*images.Image, error) {
+func ReConvert(ctx context.Context, client *containerd.Client, dstRef, srcRef string, opts ...Opt) (*images.Image, error) {
 	var copts convertOpts
 	for _, o := range opts {
 		if err := o(&copts); err != nil {
@@ -86,7 +86,9 @@ func ReConvert(ctx context.Context, client containerd.Client, dstRef, srcRef str
 	if err != nil {
 		return nil, err
 	}
-	defer done(ctx)
+	defer func() {
+		_ = done(ctx)
+	}()
 
 	cs := client.ContentStore()
 	is := client.ImageService()
