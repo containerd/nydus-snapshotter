@@ -117,6 +117,12 @@ const (
 	FsDriverProxy    string = constant.FsDriverProxy
 )
 
+const (
+	FailoverPolicyNone   string = constant.FailoverPolicyNone
+	FailoverPolicyResend string = constant.FailoverPolicyResend
+	FailoverPolicyFlush  string = constant.FailoverPolicyFlush
+)
+
 type Experimental struct {
 	EnableStargz         bool        `toml:"enable_stargz"`
 	EnableReferrerDetect bool        `toml:"enable_referrer_detect"`
@@ -146,6 +152,7 @@ type DaemonConfig struct {
 	FsDriver         string `toml:"fs_driver"`
 	ThreadsNumber    int    `toml:"threads_number"`
 	LogRotationSize  int    `toml:"log_rotation_size"`
+	FailoverPolicy   string `toml:"failover_policy"`
 }
 
 type LoggingConfig struct {
@@ -302,6 +309,11 @@ func ValidateConfig(c *SnapshotterConfig) error {
 	}
 	if c.DaemonConfig.ThreadsNumber > 1024 {
 		return errors.Errorf("nydusd worker thread number %d is too big, max 1024", c.DaemonConfig.ThreadsNumber)
+	}
+	if c.DaemonConfig.FailoverPolicy != FailoverPolicyNone &&
+		c.DaemonConfig.FailoverPolicy != FailoverPolicyResend &&
+		c.DaemonConfig.FailoverPolicy != FailoverPolicyFlush {
+		return errors.Errorf("invalid failover policy %q", c.DaemonConfig.FailoverPolicy)
 	}
 
 	if c.RemoteConfig.AuthConfig.EnableCRIKeychain && c.RemoteConfig.AuthConfig.EnableKubeconfigKeychain {
