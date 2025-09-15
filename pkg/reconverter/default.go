@@ -25,9 +25,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/platforms"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
@@ -103,16 +103,17 @@ func (c *defaultConverter) convert(ctx context.Context, cs content.Store, desc o
 		err     error
 	)
 
-	if images.IsLayerType(desc.MediaType) {
+	switch {
+	case images.IsLayerType(desc.MediaType):
 		logrus.Debugf("case convert layer %s", desc.Digest.String())
 		newDesc, err = c.convertLayer(ctx, cs, desc)
-	} else if images.IsManifestType(desc.MediaType) {
+	case images.IsManifestType(desc.MediaType):
 		logrus.Debugf("case convert manifest %s", desc.Digest.String())
 		newDesc, err = c.convertManifest(ctx, cs, desc)
-	} else if images.IsIndexType(desc.MediaType) {
+	case images.IsIndexType(desc.MediaType):
 		logrus.Debugf("case convert index %s", desc.Digest.String())
 		newDesc, err = c.convertIndex(ctx, cs, desc)
-	} else if images.IsConfigType(desc.MediaType) {
+	case images.IsConfigType(desc.MediaType):
 		logrus.Debugf("case convert config %s", desc.Digest.String())
 		newDesc, err = c.convertConfig(ctx, cs, desc)
 	}
@@ -159,6 +160,8 @@ func (c *defaultConverter) convertLayer(ctx context.Context, cs content.Store, d
 	if c.layerConvertFunc != nil {
 		return c.layerConvertFunc(ctx, cs, desc)
 	}
+	// No conversion needed - returning nil descriptor with nil error is the correct pattern here
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -247,6 +250,8 @@ func (c *defaultConverter) convertManifest(ctx context.Context, cs content.Store
 	if modified {
 		return writeJSON(ctx, cs, &manifest, desc, labels)
 	}
+	// No modification needed - returning nil descriptor with nil error is the correct pattern here
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -319,6 +324,8 @@ func (c *defaultConverter) convertIndex(ctx context.Context, cs content.Store, d
 		index.Manifests = newManifestsClean
 		return writeJSON(ctx, cs, &index, desc, labels)
 	}
+	// No modification needed - returning nil descriptor with nil error is the correct pattern here
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -387,18 +394,18 @@ func (c *defaultConverter) convertConfig(ctx context.Context, cs content.Store, 
 		}
 	}
 
-	// 处理too many non-empty layers in History section
+	// Handle excessive non-empty layers in History section
 	if len(cfgAsOCI.RootFS.DiffIDs) < len(cfgAsOCI.History) {
 		cfgAsOCI.History = []ocispec.History{}
 	}
 
 	if modified {
-		// 处理history变化
-		historyJson, err := json.Marshal(cfgAsOCI.History)
+		// Process history changes
+		historyJSON, err := json.Marshal(cfgAsOCI.History)
 		if err != nil {
 			return nil, err
 		}
-		cfg["history"] = (*json.RawMessage)(&historyJson)
+		cfg["history"] = (*json.RawMessage)(&historyJSON)
 
 		// cfg may have dummy value for legacy `.config.Image` and `.container_config.Image`
 		// We should clear the ID if we changed the diff IDs.
@@ -407,6 +414,8 @@ func (c *defaultConverter) convertConfig(ctx context.Context, cs content.Store, 
 		}
 		return writeJSON(ctx, cs, &cfg, desc, labels)
 	}
+	// No modification needed - returning nil descriptor with nil error is the correct pattern here
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -493,10 +502,12 @@ func ConvertDockerMediaTypeToOCI(mt string) string {
 	case images.MediaTypeDockerSchema2LayerGzip:
 		return ocispec.MediaTypeImageLayerGzip
 	case images.MediaTypeDockerSchema2LayerForeignGzip:
+		//nolint:staticcheck // Converting from existing Docker format that may contain deprecated layer types
 		return ocispec.MediaTypeImageLayerNonDistributableGzip
 	case images.MediaTypeDockerSchema2Layer:
 		return ocispec.MediaTypeImageLayer
 	case images.MediaTypeDockerSchema2LayerForeign:
+		//nolint:staticcheck // Converting from existing Docker format that may contain deprecated layer types
 		return ocispec.MediaTypeImageLayerNonDistributable
 	case images.MediaTypeDockerSchema2Config:
 		return ocispec.MediaTypeImageConfig
@@ -515,10 +526,7 @@ func ClearGCLabels(labels map[string]string, dgst digest.Digest) {
 }
 
 func IsNydusLayerType(mt string) bool {
-	if strings.HasPrefix(mt, "application/vnd.oci.image.layer.nydus") {
-		return true
-	}
-	return false
+	return strings.HasPrefix(mt, "application/vnd.oci.image.layer.nydus")
 }
 
 func RemoveNydusAnnos(annos map[string]string) map[string]string {
