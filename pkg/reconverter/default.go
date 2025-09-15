@@ -91,6 +91,7 @@ type defaultConverter struct {
 	diffIDMap        map[digest.Digest]digest.Digest // key: old diffID, value: new diffID
 	ocilayerMap      map[string]bool                 // key: oci layer digest, value: true
 	diffIDMapMu      sync.RWMutex
+	ocilayerMapMu    sync.RWMutex
 	hooks            ConvertHooks
 }
 
@@ -227,7 +228,9 @@ func (c *defaultConverter) convertManifest(ctx context.Context, cs content.Store
 					c.diffIDMap[oldDiffID] = newDiffID
 					c.diffIDMapMu.Unlock()
 				}
+				c.ocilayerMapMu.Lock()
 				c.ocilayerMap[newL.Digest.String()] = true
+				c.ocilayerMapMu.Unlock()
 			}
 			return nil
 		})
@@ -355,6 +358,7 @@ func (c *defaultConverter) convertConfig(ctx context.Context, cs content.Store, 
 	if rootfs := cfgAsOCI.RootFS; rootfs.Type == "layers" {
 		rootfsModified := false
 		c.diffIDMapMu.RLock()
+		c.ocilayerMapMu.RLock()
 		for i, oldDiffID := range rootfs.DiffIDs {
 			if newDiffID, ok := c.diffIDMap[oldDiffID]; ok && newDiffID != oldDiffID {
 				rootfs.DiffIDs[i] = newDiffID
@@ -364,6 +368,7 @@ func (c *defaultConverter) convertConfig(ctx context.Context, cs content.Store, 
 				rootfs.DiffIDs = slices.Delete(rootfs.DiffIDs, i, i+1)
 			}
 		}
+		c.ocilayerMapMu.RUnlock()
 		c.diffIDMapMu.RUnlock()
 		if rootfsModified {
 			rootfsB, err := json.Marshal(rootfs)
