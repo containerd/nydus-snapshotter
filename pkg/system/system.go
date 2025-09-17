@@ -31,6 +31,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
+	"github.com/rs/xid"
 )
 
 const (
@@ -348,15 +349,12 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 			sourcePath := c.NydusdPath
 			destinationPath := manager.NydusdBinaryPath
 
-			if err = copyNydusdBinary(sourcePath, destinationPath); err != nil {
+			if err = upgradeNydusdWithSymlink(sourcePath, destinationPath); err != nil {
 				log.L.Errorf("Failed to copy nydusd binary from %s to %s: %v",
 					sourcePath, destinationPath, err)
 				statusCode = http.StatusInternalServerError
 				return
 			}
-
-			log.L.Infof("Successfully copy nydusd binary from %s to %s",
-				sourcePath, destinationPath)
 		}
 	}
 }
@@ -470,35 +468,73 @@ func buildNextAPISocket(cur string) (string, error) {
 	return nextSocket, nil
 }
 
-// copyNydusdBinary copies a file from sourcePath to destinationPath,
-// ensuring parent directories exist and setting 0755 permissions.
-// It overwrites the destination file if it already exists.
-func copyNydusdBinary(sourcePath, destinationPath string) error {
-	fileMode := os.FileMode(0755)
-
-	destDir := filepath.Dir(destinationPath)
-	if err := os.MkdirAll(destDir, fileMode); err != nil {
-		return fmt.Errorf("failed to create destination directory %s: %w", destDir, err)
+// upgradeNydusdWithSymlink atomically upgrades the nydusd binary using a symbolic link strategy.
+// It copies the new binary to a permanent, versioned directory and then atomically updates a symlink
+// to point to the new version. This allows for zero-downtime upgrades and avoids "text file busy" errors.
+func upgradeNydusdWithSymlink(newBinaryPath, symlinkPath string) error {
+	// Determine the directory for storing all actual binary files.
+	// This is typically a subdirectory within the same directory as the symlink.
+	symlinkDir := filepath.Dir(symlinkPath)
+	versionsDir := filepath.Join(symlinkDir, "nydusd-versions")
+	if err := os.MkdirAll(versionsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create versions directory %s: %w", versionsDir, err)
 	}
 
-	sourceFile, err := os.Open(sourcePath)
+	// Generate a unique name for the new binary file
+	// and determine its final destination path inside the versions directory.
+	versionedFileName := fmt.Sprintf("nydusd-%d", time.Now().UnixNano())
+	versionedBinaryPath := filepath.Join(versionsDir, versionedFileName)
+
+	// Copy the new binary file to its destination in the versions directory.
+	if err := copyFile(newBinaryPath, versionedBinaryPath); err != nil {
+		return fmt.Errorf("failed to copy new binary to versions directory: %w", err)
+	}
+	log.L.Infof("Successfully copied new binary to %s", versionedBinaryPath)
+
+	// Atomically update the symbolic link.
+	// To do this safely, we first create a temporary symlink and then use an atomic rename
+	// operation to replace the old symlink with the new one.
+	tempSymlinkPath := symlinkPath + ".tmp-" + xid.New().String()
+	if err := os.Symlink(versionedBinaryPath, tempSymlinkPath); err != nil {
+		return fmt.Errorf("failed to create temporary symlink %s: %w", tempSymlinkPath, err)
+	}
+
+	// os.Rename provides an atomic replacement of the symlink.
+	if err := os.Rename(tempSymlinkPath, symlinkPath); err != nil {
+		// Clean up the temporary symlink if the rename fails.
+		os.Remove(tempSymlinkPath)
+		return fmt.Errorf("failed to atomically update symlink %s: %w", symlinkPath, err)
+	}
+
+	log.L.Infof("Successfully updated symlink %s to point to %s", symlinkPath, versionedBinaryPath)
+	return nil
+}
+
+// copyFile is a utility function that copies a file from a source path to a destination path.
+// It ensures the destination directory exists and sets the destination file's permissions to 0755.
+// If the destination file already exists, it will be overwritten.
+func copyFile(src, dst string) error {
+	fileMode := os.FileMode(0755)
+
+	sourceFile, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open source file %s: %w", sourcePath, err)
+		return fmt.Errorf("failed to open source file %s: %w", src, err)
 	}
 	defer sourceFile.Close()
 
-	destinationFile, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fileMode)
+	destinationFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fileMode)
 	if err != nil {
-		return fmt.Errorf("failed to create destination file %s: %w", destinationPath, err)
+		return fmt.Errorf("failed to create destination file %s: %w", dst, err)
 	}
 	defer destinationFile.Close()
 
 	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
-		return fmt.Errorf("failed to copy file contents from %s to %s: %w", sourcePath, destinationPath, err)
+		return fmt.Errorf("failed to copy file contents from %s to %s: %w", src, dst, err)
 	}
 
-	if err := os.Chmod(destinationPath, fileMode); err != nil {
-		return fmt.Errorf("failed to set permissions for %s to %s: %w", destinationPath, fileMode.String(), err)
+	// Set permissions after copying, as the file mode in OpenFile can be affected by umask.
+	if err := os.Chmod(dst, fileMode); err != nil {
+		return fmt.Errorf("failed to set permissions for %s: %w", dst, err)
 	}
 
 	return nil
