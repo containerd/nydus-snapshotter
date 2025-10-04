@@ -44,10 +44,11 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			NydusdPath:       "/usr/local/bin/nydusd",
 			NydusImagePath:   "/usr/local/bin/nydus-image",
 			FsDriver:         "fusedev",
-			RecoverPolicy:    "restart",
+			RecoverPolicy:    "failover",
 			NydusdConfigPath: "/etc/nydus/nydusd-config.fusedev.json",
 			ThreadsNumber:    4,
 			LogRotationSize:  100,
+			FailoverPolicy:   "resend",
 		},
 		SnapshotsConfig: SnapshotConfig{
 			EnableNydusOverlayFS: false,
