@@ -9,6 +9,7 @@ package filesystem
 
 import (
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
+	"github.com/containerd/nydus-snapshotter/pkg/index"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
@@ -56,6 +57,17 @@ func WithReferrerManager(rm *referrer.Manager) NewFSOpt {
 		}
 
 		fs.referrerMgr = rm
+		return nil
+	}
+}
+
+func WithIndexManager(im *index.Manager) NewFSOpt {
+	return func(fs *Filesystem) error {
+		if im == nil {
+			return errors.New("index manager cannot be nil")
+		}
+
+		fs.indexMgr = im
 		return nil
 	}
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/index"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	racache "github.com/containerd/nydus-snapshotter/pkg/rafs"
@@ -46,6 +47,7 @@ type Filesystem struct {
 	enabledManagers     map[string]*manager.Manager
 	cacheMgr            *cache.Manager
 	referrerMgr         *referrer.Manager
+	indexMgr            *index.Manager
 	stargzResolver      *stargz.Resolver
 	tarfsMgr            *tarfs.Manager
 	verifier            *signature.Verifier

@@ -82,6 +82,9 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		case label.IsNydusDataLayer(labels):
 			logger.Debugf("found nydus data layer")
 			handler = skipHandler
+		case sn.fs.CheckIndexAlternative(ctx, labels):
+			logger.Debugf("found nydus alternative image in index")
+			handler = skipHandler
 		case sn.fs.CheckReferrer(ctx, labels):
 			logger.Debugf("found referenced nydus manifest")
 			handler = skipHandler
@@ -137,6 +140,17 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		if handler == nil {
 			if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
 				logger.Infof("Prepare active Nydus snapshot %s", key)
+				handler = remoteHandler(id, info.Labels)
+			}
+		}
+
+		if handler == nil && sn.fs.IndexDetectEnabled() {
+			if id, info, err := sn.findIndexAlternativeLayer(ctx, key); err == nil {
+				logger.Infof("Found nydus alternative image in index for image: %s", info.Labels[snpkg.TargetRefLabel])
+				metaPath := path.Join(sn.snapshotDir(id), "fs", "image.boot")
+				if err := sn.fs.TryFetchMetadataFromIndex(ctx, info.Labels, metaPath); err != nil {
+					return nil, "", errors.Wrap(err, "try fetch metadata")
+				}
 				handler = remoteHandler(id, info.Labels)
 			}
 		}
