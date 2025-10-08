@@ -92,6 +92,10 @@ func GetDaemonThreadsNumber() int {
 	return globalConfig.origin.DaemonConfig.ThreadsNumber
 }
 
+func GetDaemonFailoverPolicy() string {
+	return globalConfig.origin.DaemonConfig.FailoverPolicy
+}
+
 func GetLogToStdout() bool {
 	return globalConfig.origin.LoggingConfig.LogToStdout
 }

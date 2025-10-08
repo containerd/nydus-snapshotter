@@ -56,6 +56,7 @@ type ConfigState struct {
 	Mountpoint      string
 	SupervisorPath  string
 	ThreadNum       int
+	FailoverPolicy  string
 	// Where the configuration file resides, all rafs instances share the same configuration template
 	ConfigDir string
 }

@@ -53,3 +53,10 @@ const (
 	DefaultRotateLogLocalTime     = true
 	DefaultRotateLogCompress      = true
 )
+
+const (
+	FailoverPolicyNone    string = "none"
+	FailoverPolicyResend  string = "resend"
+	FailoverPolicyFlush   string = "flush"
+	DefaultFailoverPolicy string = FailoverPolicyResend
+)
