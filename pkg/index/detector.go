@@ -178,11 +178,6 @@ func (r *detector) fetchMetadata(ctx context.Context, ref string, desc ocispec.D
 		return nil
 	}
 
-	// Check if metafile already exists to avoid unnecessary fetch
-	if _, err := os.Stat(metadataPath); err == nil {
-		return nil
-	}
-
 	err := handle()
 	if err != nil && r.remote.RetryWithPlainHTTP(ref, err) {
 		return handle()

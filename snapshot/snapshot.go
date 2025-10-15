@@ -475,7 +475,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 
 	logger.Debugf("[Prepare] snapshot with labels %v", info.Labels)
 
-	processor, target, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func() string { return o.upperPath(s.ID) })
+	processor, target, commitLabels, err := chooseProcessor(ctx, logger, o, s, key, parent, info.Labels, func() string { return o.upperPath(s.ID) })
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +483,7 @@ func (o *snapshotter) Prepare(ctx context.Context, key, parent string, opts ...s
 	needCommit, mounts, err := processor()
 
 	if needCommit {
-		err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(info.Labels))...)
+		err := o.Commit(ctx, target, key, append(opts, snapshots.WithLabels(commitLabels))...)
 		if err == nil || errdefs.IsAlreadyExists(err) {
 			return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "target snapshot %q", target)
 		}

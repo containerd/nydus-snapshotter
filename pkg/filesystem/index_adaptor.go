@@ -9,9 +9,11 @@ package filesystem
 import (
 	"context"
 	"fmt"
+	"os"
 
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/containerd/log"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
@@ -36,10 +38,20 @@ func (fs *Filesystem) CheckIndexAlternative(ctx context.Context, labels map[stri
 		return false
 	}
 
-	log.G(ctx).WithField("ref", ref).WithField("digest", manifestDigest.String()).Debug("attempting index-based nydus detection")
+	logger := log.G(ctx).WithField("ref", ref).WithField("digest", manifestDigest.String())
+	logger.Debug("attempting index-based nydus detection")
+
+	// Early exit if the labels explicitly indicate the presence of a nydus index alternative
+	hasIndexAlternative, ok := labels[label.NydusIndexAlternative]
+	if ok && hasIndexAlternative == "true" {
+		logger.Debug("detected nydus alternative via label")
+		return true
+	}
+
 	if _, err := fs.indexMgr.CheckIndexAlternative(ctx, ref, manifestDigest); err != nil {
 		return false
 	}
+	logger.Debug("detected nydus alternative via index manifest")
 
 	return true
 }
@@ -54,6 +66,12 @@ func (fs *Filesystem) TryFetchMetadataFromIndex(ctx context.Context, labels map[
 	manifestDigest := digest.Digest(labels[snpkg.TargetManifestDigestLabel])
 	if err := manifestDigest.Validate(); err != nil {
 		return fmt.Errorf("invalid label %s=%s", snpkg.TargetManifestDigestLabel, manifestDigest)
+	}
+
+	// Early exit if the file already exists
+	if _, err := os.Stat(metadataPath); err == nil {
+		log.G(ctx).WithField("ref", ref).WithField("digest", manifestDigest.String()).WithField("metadataPath", metadataPath).Debugf("metadata file already exists")
+		return nil
 	}
 
 	if err := fs.indexMgr.TryFetchMetadata(ctx, ref, manifestDigest, metadataPath); err != nil {
