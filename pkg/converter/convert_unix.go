@@ -24,7 +24,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
-	"github.com/containerd/containerd/v2/core/images/converter"
+	containerdConverter "github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/containerd/v2/pkg/archive"
 	"github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/containerd/containerd/v2/pkg/labels"
@@ -41,7 +41,6 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
-	containerdReconverter "github.com/containerd/nydus-snapshotter/pkg/reconverter"
 )
 
 const EntryBlob = "image.blob"
@@ -948,7 +947,7 @@ func makeOCIBlobDesc(ctx context.Context, cs content.Store, uncompressedDigest, 
 
 // LayerConvertFunc returns a function which converts an OCI image layer to
 // a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
-func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
+func LayerConvertFunc(opt PackOption) containerdConverter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if ctx.Err() != nil {
 			// The context is already cancelled, no need to proceed.
@@ -1059,7 +1058,7 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 // ConvertHookFunc returns a function which will be used as a callback
 // called for each blob after conversion is done. The function only hooks
 // the index conversion and the manifest conversion.
-func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
+func ConvertHookFunc(opt MergeOption) containerdConverter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		// If the previous conversion did not occur, the `newDesc` may be nil.
 		if newDesc == nil {
@@ -1196,148 +1195,6 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 	}
 
 	return newManifestDesc, nil
-}
-
-func ReconvertHookFunc() containerdReconverter.ConvertHookFunc {
-	return func(ctx context.Context, cs content.Store, _ ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
-		desc := newDesc
-		if !images.IsManifestType(desc.MediaType) {
-			return desc, nil
-		}
-		if IsNydusBootstrap(*desc) {
-			return desc, nil
-		}
-		var err error
-		var labels map[string]string
-		switch desc.MediaType {
-		case ocispec.MediaTypeImageManifest, images.MediaTypeDockerSchema2Manifest:
-			var manifest ocispec.Manifest
-			labels, err = readJSON(ctx, cs, &manifest, *desc)
-			if err != nil {
-				return nil, errors.Wrap(err, "read manifest")
-			}
-
-			desc, err = writeJSON(ctx, cs, manifest, *desc, labels)
-			if err != nil {
-				return nil, errors.Wrap(err, "write manifest")
-			}
-			return desc, nil
-
-		case ocispec.MediaTypeImageIndex, images.MediaTypeDockerSchema2ManifestList:
-			var index ocispec.Index
-			labels, err = readJSON(ctx, cs, &index, *desc)
-			if err != nil {
-				return nil, errors.Wrap(err, "read manifest index")
-			}
-			for idx, maniDesc := range index.Manifests {
-				var manifest ocispec.Manifest
-				labels, err = readJSON(ctx, cs, &manifest, maniDesc)
-				if err != nil {
-					return nil, errors.Wrap(err, "read manifest")
-				}
-
-				newManiDesc, err := writeJSON(ctx, cs, manifest, maniDesc, labels)
-				if err != nil {
-					return nil, errors.Wrap(err, "write manifest")
-				}
-				index.Manifests[idx] = *newManiDesc
-			}
-			desc, err = writeJSON(ctx, cs, index, *desc, labels)
-			if err != nil {
-				return nil, errors.Wrap(err, "write manifest index")
-			}
-
-			return desc, nil
-
-		default:
-			return nil, errors.Errorf("unsupported media type %s", desc.MediaType)
-		}
-	}
-}
-
-func LayerReconvertFunc(opt UnpackOption) containerdReconverter.ConvertFunc {
-	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
-		if !images.IsLayerType(desc.MediaType) {
-			return nil, nil
-		}
-
-		// Skip the nydus bootstrap layer.
-		if IsNydusBootstrap(desc) {
-			logrus.Debugf("skip nydus bootstrap layer %s", desc.Digest.String())
-			return &desc, nil
-		}
-
-		ra, err := cs.ReaderAt(ctx, desc)
-		if err != nil {
-			return nil, errors.Wrap(err, "get reader")
-		}
-		defer ra.Close()
-
-		ref := fmt.Sprintf("convert-oci-from-%s", desc.Digest)
-		cw, err := content.OpenWriter(ctx, cs, content.WithRef(ref))
-		if err != nil {
-			return nil, errors.Wrap(err, "open blob writer")
-		}
-
-		var gw io.WriteCloser
-		var mediaType string
-		switch opt.Compressor {
-		case "gzip":
-			gw = gzip.NewWriter(cw)
-			mediaType = ocispec.MediaTypeImageLayerGzip
-		default:
-			gw, err = zstd.NewWriter(cw)
-			if err != nil {
-				return nil, errors.Wrap(err, "create zstd writer")
-			}
-			mediaType = ocispec.MediaTypeImageLayerZstd
-		}
-		var data bytes.Buffer
-		writer := io.Writer(&data)
-		uncompressedDgster := digest.SHA256.Digester()
-
-		err = Unpack(ctx, ra, writer, opt)
-		if err != nil {
-			return nil, errors.Wrap(err, "unpack nydus to tar")
-		}
-
-		compressed := io.MultiWriter(gw, uncompressedDgster.Hash())
-		// _, err = uncompressedDgster.Hash().Write(data.Bytes())
-
-		buffer := bufPool.Get().(*[]byte)
-		defer bufPool.Put(buffer)
-		if _, err = io.CopyBuffer(compressed, bytes.NewReader(data.Bytes()), *buffer); err != nil {
-			return nil, errors.Wrapf(err, "copy bootstrap targz into content store")
-		}
-		if err = gw.Close(); err != nil {
-			return nil, errors.Wrap(err, "close gzip writer")
-		}
-
-		uncompressedDigest := uncompressedDgster.Digest()
-		compressedDgst := cw.Digest()
-		if err = cw.Commit(ctx, 0, compressedDgst, content.WithLabels(map[string]string{
-			LayerAnnotationUncompressed: uncompressedDigest.String(),
-		})); err != nil {
-			if !errdefs.IsAlreadyExists(err) {
-				return nil, errors.Wrap(err, "commit to content store")
-			}
-		}
-		if err = cw.Close(); err != nil {
-			return nil, errors.Wrap(err, "close content store writer")
-		}
-
-		newDesc, err := makeOCIBlobDesc(ctx, cs, uncompressedDigest, compressedDgst, mediaType)
-		if err != nil {
-			return nil, err
-		}
-
-		if opt.Backend != nil {
-			if err := opt.Backend.Push(ctx, cs, *newDesc); err != nil {
-				return nil, errors.Wrap(err, "push to storage backend")
-			}
-		}
-		return newDesc, nil
-	}
 }
 
 // MergeLayers merges a list of nydus blob layer into a nydus bootstrap layer.
