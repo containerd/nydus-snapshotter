@@ -43,7 +43,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/backend"
 	"github.com/containerd/nydus-snapshotter/pkg/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/encryption"
-	containerdReconverter "github.com/containerd/nydus-snapshotter/pkg/reconverter"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -862,8 +861,8 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 		}
 	}()
 	// push target image
-	if err := exec.Command("ctr", "images", "push", targetImageRef, "--plain-http").Run(); err != nil {
-		t.Fatalf("failed to push image %s: %v", targetImageRef, err)
+	if output, err := exec.Command("ctr", "images", "push", "--plain-http", targetImageRef).CombinedOutput(); err != nil {
+		t.Fatalf("failed to push image %s: %v, output:\n%s", targetImageRef, err, string(output))
 		return
 	}
 	// check whether the converted image is valid
@@ -996,11 +995,11 @@ func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 		Backend: testOpt.backend,
 	}
 	reconvertFunc := converter.LayerReconvertFunc(*nydusReconvertOpts)
-	reconvertHook := containerdReconverter.ConvertHooks{
+	reconvertHook := containerdConverter.ConvertHooks{
 		PostConvertHook: converter.ReconvertHookFunc(),
 	}
-	reConvertFuncOpt := containerdReconverter.WithIndexConvertFunc(
-		containerdReconverter.IndexConvertFuncWithHook(
+	reConvertFuncOpt := containerdConverter.WithIndexConvertFunc(
+		containerdConverter.IndexConvertFuncWithHook(
 			reconvertFunc,
 			false,
 			platforms.DefaultStrict(),
@@ -1008,7 +1007,7 @@ func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 		),
 	)
 
-	if _, err = containerdReconverter.ReConvert(ctx, client, targetImageRef, srcImageRef, reConvertFuncOpt); err != nil {
+	if _, err = containerdConverter.Convert(ctx, client, targetImageRef, srcImageRef, reConvertFuncOpt); err != nil {
 		t.Fatal(err)
 		return
 	}
