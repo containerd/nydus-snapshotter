@@ -1174,39 +1174,55 @@ func LayerReconvertFunc(opt UnpackOption) containerdReconverter.ConvertFunc {
 		if err != nil {
 			return nil, errors.Wrap(err, "open blob writer")
 		}
+		defer cw.Close()
 
 		var gw io.WriteCloser
 		var mediaType string
-		switch opt.Compressor {
+		compressor := opt.Compressor
+		if compressor == "" {
+			compressor = "gzip"
+		}
+		switch compressor {
 		case "gzip":
 			gw = gzip.NewWriter(cw)
 			mediaType = ocispec.MediaTypeImageLayerGzip
-		default:
+		case "zstd":
 			gw, err = zstd.NewWriter(cw)
 			if err != nil {
 				return nil, errors.Wrap(err, "create zstd writer")
 			}
 			mediaType = ocispec.MediaTypeImageLayerZstd
+		case "uncompressed":
+			gw = cw
+			mediaType = ocispec.MediaTypeImageLayer
+		default:
+			return nil, errors.Errorf("unsupported compressor type: %s (support: gzip, zstd, uncompressed)", opt.Compressor)
 		}
-		var data bytes.Buffer
-		writer := io.Writer(&data)
+
 		uncompressedDgster := digest.SHA256.Digester()
+		pr, pw := io.Pipe()
 
-		err = Unpack(ctx, ra, writer, opt)
-		if err != nil {
-			return nil, errors.Wrap(err, "unpack nydus to tar")
-		}
+		// Unpack nydus blob to pipe writer in background
+		go func() {
+			defer pw.Close()
+			if err := Unpack(ctx, ra, pw, opt); err != nil {
+				pw.CloseWithError(errors.Wrap(err, "unpack nydus to tar"))
+			}
+		}()
 
+		// Stream data from pipe reader to compressed writer and digester
 		compressed := io.MultiWriter(gw, uncompressedDgster.Hash())
-		// _, err = uncompressedDgster.Hash().Write(data.Bytes())
-
 		buffer := bufPool.Get().(*[]byte)
 		defer bufPool.Put(buffer)
-		if _, err = io.CopyBuffer(compressed, bytes.NewReader(data.Bytes()), *buffer); err != nil {
-			return nil, errors.Wrapf(err, "copy bootstrap targz into content store")
+		if _, err = io.CopyBuffer(compressed, pr, *buffer); err != nil {
+			return nil, errors.Wrapf(err, "copy to compressed writer")
 		}
-		if err = gw.Close(); err != nil {
-			return nil, errors.Wrap(err, "close gzip writer")
+
+		// Close compressor writer if different from content writer
+		if gw != cw {
+			if err = gw.Close(); err != nil {
+				return nil, errors.Wrap(err, "close compressor writer")
+			}
 		}
 
 		uncompressedDigest := uncompressedDgster.Digest()
