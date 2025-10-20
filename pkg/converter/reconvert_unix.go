@@ -1,23 +1,15 @@
+//go:build !windows
+// +build !windows
+
 /*
-   Copyright The containerd Authors.
+ * Copyright (c) 2022. Nydus Developers. All rights reserved.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-*/
-
-package reconverter
+package converter
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +19,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/platforms"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -34,20 +27,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	// annotationSourceDigest indicates the source OCI image digest.
-	annotationSourceDigest = "containerd.io/snapshot/nydus-source-digest"
-	// annotationSourceReference indicates the source OCI image reference name.
-	annotationSourceReference = "containerd.io/snapshot/nydus-source-reference"
-	// annotationFsVersion indicates the fs version (rafs v5/v6) of nydus image.
-	annotationFsVersion = "containerd.io/snapshot/nydus-fs-version"
-	// annotationBuilderVersion indicates the nydus builder (nydus-image) version.
-	annotationBuilderVersion = "containerd.io/snapshot/nydus-builder-version"
-)
-
 // ConvertFunc returns a converted content descriptor.
 // When the content was not converted, ConvertFunc returns nil.
-type ConvertFunc func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error)
+type ConvertFunc = converter.ConvertFunc
 
 // DefaultIndexConvertFunc is the default convert func used by Convert.
 func DefaultIndexConvertFunc(layerConvertFunc ConvertFunc, docker2oci bool, platformMC platforms.MatchComparer) ConvertFunc {
@@ -61,29 +43,6 @@ func DefaultIndexConvertFunc(layerConvertFunc ConvertFunc, docker2oci bool, plat
 	return c.convert
 }
 
-// ConvertHookFunc is a callback function called during conversion of a blob.
-// orgDesc is the target descriptor to convert. newDesc is passed if conversion happens.
-type ConvertHookFunc func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error)
-
-// ConvertHooks is a configuration for hook callbacks called during blob conversion.
-type ConvertHooks struct {
-	// PostConvertHook is a callback function called for each blob after conversion is done.
-	PostConvertHook ConvertHookFunc
-}
-
-// IndexConvertFuncWithHook is the convert func used by Convert with hook functions support.
-func IndexConvertFuncWithHook(layerConvertFunc ConvertFunc, docker2oci bool, platformMC platforms.MatchComparer, hooks ConvertHooks) ConvertFunc {
-	c := &defaultConverter{
-		layerConvertFunc: layerConvertFunc,
-		docker2oci:       docker2oci,
-		platformMC:       platformMC,
-		diffIDMap:        make(map[digest.Digest]digest.Digest),
-		ocilayerMap:      make(map[string]bool),
-		hooks:            hooks,
-	}
-	return c.convert
-}
-
 type defaultConverter struct {
 	layerConvertFunc ConvertFunc
 	docker2oci       bool
@@ -92,7 +51,6 @@ type defaultConverter struct {
 	ocilayerMap      map[string]bool                 // key: oci layer digest, value: true
 	diffIDMapMu      sync.RWMutex
 	ocilayerMapMu    sync.RWMutex
-	hooks            ConvertHooks
 }
 
 // convert dispatches desc.MediaType and calls c.convert{Layer,Manifest,Index,Config}.
@@ -120,14 +78,6 @@ func (c *defaultConverter) convert(ctx context.Context, cs content.Store, desc o
 	}
 	if err != nil {
 		return nil, err
-	}
-
-	if c.hooks.PostConvertHook != nil {
-		if newDescPost, err := c.hooks.PostConvertHook(ctx, cs, desc, newDesc); err != nil {
-			return nil, err
-		} else if newDescPost != nil {
-			newDesc = newDescPost
-		}
 	}
 
 	if images.IsDockerType(desc.MediaType) {
@@ -457,46 +407,6 @@ func clearDockerV1DummyID(cfg DualConfig) (bool, error) {
 // Unmarshalled as map[string]*json.RawMessage to retain unknown fields on remarshalling.
 type DualConfig map[string]*json.RawMessage
 
-func readJSON(ctx context.Context, cs content.Store, x interface{}, desc ocispec.Descriptor) (map[string]string, error) {
-	info, err := cs.Info(ctx, desc.Digest)
-	if err != nil {
-		return nil, err
-	}
-	labels := info.Labels
-	b, err := content.ReadBlob(ctx, cs, desc)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(b, x); err != nil {
-		return nil, err
-	}
-	return labels, nil
-}
-
-func writeJSON(ctx context.Context, cs content.Store, x interface{}, oldDesc ocispec.Descriptor, labels map[string]string) (*ocispec.Descriptor, error) {
-	b, err := json.Marshal(x)
-	if err != nil {
-		return nil, err
-	}
-	dgst := digest.SHA256.FromBytes(b)
-	ref := fmt.Sprintf("converter-write-json-%s", dgst.String())
-	w, err := content.OpenWriter(ctx, cs, content.WithRef(ref))
-	if err != nil {
-		return nil, err
-	}
-	if err := content.Copy(ctx, w, bytes.NewReader(b), int64(len(b)), dgst, content.WithLabels(labels)); err != nil {
-		w.Close()
-		return nil, err
-	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-	newDesc := oldDesc
-	newDesc.Size = int64(len(b))
-	newDesc.Digest = dgst
-	return &newDesc, nil
-}
-
 // ConvertDockerMediaTypeToOCI converts a media type string
 func ConvertDockerMediaTypeToOCI(mt string) string {
 	switch mt {
@@ -528,42 +438,4 @@ func ClearGCLabels(labels map[string]string, dgst digest.Digest) {
 			delete(labels, k)
 		}
 	}
-}
-
-func IsNydusLayerType(mt string) bool {
-	return strings.HasPrefix(mt, "application/vnd.oci.image.layer.nydus")
-}
-
-func RemoveNydusAnnos(annos map[string]string) map[string]string {
-	for k := range annos {
-		if k == annotationFsVersion {
-			delete(annos, k)
-			continue
-		}
-		if k == annotationSourceReference {
-			delete(annos, k)
-			continue
-		}
-		if k == annotationSourceDigest {
-			delete(annos, k)
-			continue
-		}
-		if k == annotationBuilderVersion {
-			delete(annos, k)
-			continue
-		}
-	}
-	return annos
-}
-
-func Annotate(annotations map[string]string, appended map[string]string) map[string]string {
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-
-	for k, v := range appended {
-		annotations[k] = v
-	}
-
-	return annotations
 }

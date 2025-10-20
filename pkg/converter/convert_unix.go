@@ -41,7 +41,6 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/pkg/converter/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
-	containerdReconverter "github.com/containerd/nydus-snapshotter/pkg/reconverter"
 )
 
 const EntryBlob = "image.blob"
@@ -1198,7 +1197,7 @@ func convertManifest(ctx context.Context, cs content.Store, oldDesc ocispec.Desc
 	return newManifestDesc, nil
 }
 
-func ReconvertHookFunc() containerdReconverter.ConvertHookFunc {
+func ReconvertHookFunc() converter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, _ ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		desc := newDesc
 		if !images.IsManifestType(desc.MediaType) {
@@ -1255,7 +1254,7 @@ func ReconvertHookFunc() containerdReconverter.ConvertHookFunc {
 	}
 }
 
-func LayerReconvertFunc(opt UnpackOption) containerdReconverter.ConvertFunc {
+func LayerReconvertFunc(opt UnpackOption) ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if !images.IsLayerType(desc.MediaType) {
 			return nil, nil
@@ -1278,39 +1277,55 @@ func LayerReconvertFunc(opt UnpackOption) containerdReconverter.ConvertFunc {
 		if err != nil {
 			return nil, errors.Wrap(err, "open blob writer")
 		}
+		defer cw.Close()
 
 		var gw io.WriteCloser
 		var mediaType string
-		switch opt.Compressor {
+		compressor := opt.Compressor
+		if compressor == "" {
+			compressor = "gzip"
+		}
+		switch compressor {
 		case "gzip":
 			gw = gzip.NewWriter(cw)
 			mediaType = ocispec.MediaTypeImageLayerGzip
-		default:
+		case "zstd":
 			gw, err = zstd.NewWriter(cw)
 			if err != nil {
 				return nil, errors.Wrap(err, "create zstd writer")
 			}
 			mediaType = ocispec.MediaTypeImageLayerZstd
+		case "uncompressed":
+			gw = cw
+			mediaType = ocispec.MediaTypeImageLayer
+		default:
+			return nil, errors.Errorf("unsupported compressor type: %s (support: gzip, zstd, uncompressed)", opt.Compressor)
 		}
-		var data bytes.Buffer
-		writer := io.Writer(&data)
+
 		uncompressedDgster := digest.SHA256.Digester()
+		pr, pw := io.Pipe()
 
-		err = Unpack(ctx, ra, writer, opt)
-		if err != nil {
-			return nil, errors.Wrap(err, "unpack nydus to tar")
-		}
+		// Unpack nydus blob to pipe writer in background
+		go func() {
+			defer pw.Close()
+			if err := Unpack(ctx, ra, pw, opt); err != nil {
+				pw.CloseWithError(errors.Wrap(err, "unpack nydus to tar"))
+			}
+		}()
 
+		// Stream data from pipe reader to compressed writer and digester
 		compressed := io.MultiWriter(gw, uncompressedDgster.Hash())
-		// _, err = uncompressedDgster.Hash().Write(data.Bytes())
-
 		buffer := bufPool.Get().(*[]byte)
 		defer bufPool.Put(buffer)
-		if _, err = io.CopyBuffer(compressed, bytes.NewReader(data.Bytes()), *buffer); err != nil {
-			return nil, errors.Wrapf(err, "copy bootstrap targz into content store")
+		if _, err = io.CopyBuffer(compressed, pr, *buffer); err != nil {
+			return nil, errors.Wrapf(err, "copy to compressed writer")
 		}
-		if err = gw.Close(); err != nil {
-			return nil, errors.Wrap(err, "close gzip writer")
+
+		// Close compressor writer if different from content writer
+		if gw != cw {
+			if err = gw.Close(); err != nil {
+				return nil, errors.Wrap(err, "close compressor writer")
+			}
 		}
 
 		uncompressedDigest := uncompressedDgster.Digest()
@@ -1396,8 +1411,8 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	defer cw.Close()
 
 	gw := gzip.NewWriter(cw)
-	uncompressedDigest := digest.SHA256.Digester()
-	compressed := io.MultiWriter(gw, uncompressedDigest.Hash())
+	uncompressedDgst := digest.SHA256.Digester()
+	compressed := io.MultiWriter(gw, uncompressedDgst.Hash())
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err := io.CopyBuffer(compressed, pr, *buffer); err != nil {
@@ -1409,7 +1424,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 
 	compressedDgst := cw.Digest()
 	if err := cw.Commit(ctx, 0, compressedDgst, content.WithLabels(map[string]string{
-		LayerAnnotationUncompressed: uncompressedDigest.Digest().String(),
+		LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
 	})); err != nil {
 		if !errdefs.IsAlreadyExists(err) {
 			return nil, nil, errors.Wrap(err, "commit to content store")
@@ -1472,7 +1487,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		Size:      bootstrapInfo.Size,
 		MediaType: mediaType,
 		Annotations: map[string]string{
-			LayerAnnotationUncompressed: uncompressedDigest.Digest().String(),
+			LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
 			LayerAnnotationFSVersion:    opt.FsVersion,
 			// Use this annotation to identify nydus bootstrap layer.
 			LayerAnnotationNydusBootstrap: "true",
