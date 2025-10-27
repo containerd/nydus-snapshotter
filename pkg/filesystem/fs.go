@@ -669,8 +669,11 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 		daemon.WithLogToStdout(config.GetLogToStdout()),
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(fsManager.FsDriver),
-		daemon.WithFailoverPolicy(config.GetDaemonFailoverPolicy()),
 		daemon.WithDaemonMode(daemonMode),
+	}
+
+	if fsManager.FsDriver == config.FsDriverFusedev {
+		opts = append(opts, daemon.WithFailoverPolicy(config.GetDaemonFailoverPolicy()))
 	}
 
 	// For fscache driver, no need to provide mountpoint to nydusd daemon.
