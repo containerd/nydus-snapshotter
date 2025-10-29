@@ -14,36 +14,33 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/log"
+	"github.com/pkg/errors"
+
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
-	"github.com/containerd/nydus-snapshotter/pkg/rafs"
-
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
 	mgr "github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
-	"github.com/containerd/nydus-snapshotter/pkg/system"
-	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
-
-	"github.com/containerd/nydus-snapshotter/pkg/store"
-
-	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
-	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/snapshot"
+	"github.com/containerd/nydus-snapshotter/pkg/store"
+	"github.com/containerd/nydus-snapshotter/pkg/system"
+	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
 )
 
 var _ snapshots.Snapshotter = &snapshotter{}
@@ -154,6 +151,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			FsDriver:         config.FsDriverFusedev,
 			DaemonConfig:     daemonConfig,
 			CgroupMgr:        cgroupMgr,
+			DelegateNydusd:   cfg.DelegateNydusd,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "create fusedev manager")
