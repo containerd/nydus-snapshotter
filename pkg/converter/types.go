@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -83,6 +84,12 @@ type PackOption struct {
 	Timeout *time.Duration
 	// Whether the generated Nydus blobs should be encrypted.
 	Encrypt bool
+	// Pack to nydus blob from a directory.
+	FromDir string
+	// Path to specified nydus attributes configuration file.
+	AttributesPath string
+	// Path to outputted nydus external blob file.
+	ExternalBlobWriter io.Writer
 
 	// Features keeps a feature list supported by newer version of builder,
 	// It is detected automatically, so don't export it.
