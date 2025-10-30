@@ -31,6 +31,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/signals"
 )
 
 const (
@@ -155,10 +156,18 @@ func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager,
 
 func (sc *Controller) Run() error {
 	log.L.Infof("Start system controller API server on %s", sc.addr)
+	stopChan := signals.SetupSignalHandler()
 	listener, err := net.ListenUnix("unix", sc.addr)
 	if err != nil {
 		return errors.Wrapf(err, "listen to socket %s ", sc.addr)
 	}
+
+	go func() {
+		<-stopChan
+		if err := listener.Close(); err != nil {
+			log.L.Errorf("Failed to close listener %s, err: %v", sc.addr.String(), err)
+		}
+	}()
 
 	err = http.Serve(listener, sc.router)
 	if err != nil {
