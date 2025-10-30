@@ -8,6 +8,8 @@
 
 package constant
 
+import "time"
+
 const (
 	DaemonModeMultiple  string = "multiple"
 	DaemonModeDedicated string = "dedicated"
@@ -59,4 +61,11 @@ const (
 	FailoverPolicyResend  string = "resend"
 	FailoverPolicyFlush   string = "flush"
 	DefaultFailoverPolicy string = FailoverPolicyResend
+)
+
+const (
+	// Default interval to determine a hung IO.
+	DefaultHungIOInterval = 10 * time.Second
+	// Default interval for collecting metrics.
+	DefaultCollectInterval = 1 * time.Minute
 )

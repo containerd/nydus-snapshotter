@@ -9,6 +9,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"dario.cat/mergo"
 	"github.com/pelletier/go-toml"
@@ -213,7 +214,9 @@ type MirrorsConfig struct {
 }
 
 type MetricsConfig struct {
-	Address string `toml:"address"`
+	Address         string        `toml:"address"`
+	CollectInterval time.Duration `toml:"collect_interval"`
+	HungIOInterval  time.Duration `toml:"hung_io_interval"`
 }
 
 type DebugConfig struct {

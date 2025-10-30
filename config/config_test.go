@@ -84,7 +84,9 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			LogToStdout:         false,
 		},
 		MetricsConfig: MetricsConfig{
-			Address: ":9110",
+			Address:         ":9110",
+			CollectInterval: 2 * time.Minute,
+			HungIOInterval:  15 * time.Second,
 		},
 		CgroupConfig: CgroupConfig{
 			Enable:      true,
@@ -201,6 +203,10 @@ func TestMergeConfig(t *testing.T) {
 	A.Equal(snapshotterConfig1.DaemonConfig.NydusdConfigPath, constant.DefaultNydusDaemonConfigPath)
 	A.Equal(snapshotterConfig1.DaemonConfig.RecoverPolicy, RecoverPolicyRestart.String())
 	A.Equal(snapshotterConfig1.CacheManagerConfig.GCPeriod, constant.DefaultGCPeriod)
+
+	A.Equal(snapshotterConfig1.MetricsConfig.Address, "")
+	A.Equal(snapshotterConfig1.MetricsConfig.CollectInterval, constant.DefaultCollectInterval)
+	A.Equal(snapshotterConfig1.MetricsConfig.HungIOInterval, constant.DefaultHungIOInterval)
 
 	var snapshotterConfig2 SnapshotterConfig
 	snapshotterConfig2.Root = "/snapshotter/root"

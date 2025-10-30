@@ -52,6 +52,11 @@ func (c *SnapshotterConfig) FillUpWithDefaults() error {
 		cacheConfig.GCPeriod = constant.DefaultGCPeriod
 	}
 
+	// metrics configuration
+	metricsConfig := &c.MetricsConfig
+	metricsConfig.CollectInterval = constant.DefaultCollectInterval
+	metricsConfig.HungIOInterval = constant.DefaultHungIOInterval
+
 	return c.SetupNydusBinaryPaths()
 }
 
