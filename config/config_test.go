@@ -26,6 +26,8 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		Version:    1,
 		Root:       "/var/lib/containerd/io.containerd.snapshotter.v1.nydus",
 		Address:    "/run/containerd-nydus/containerd-nydus-grpc.sock",
+		UID:        0,
+		GID:        0,
 		DaemonMode: "dedicated",
 		Experimental: Experimental{
 			EnableStargz:         false,
@@ -35,6 +37,8 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		SystemControllerConfig: SystemControllerConfig{
 			Enable:  true,
 			Address: "/run/containerd-nydus/system.sock",
+			UID:     0,
+			GID:     0,
 			DebugConfig: DebugConfig{
 				ProfileDuration: 5,
 				PprofAddress:    "",
