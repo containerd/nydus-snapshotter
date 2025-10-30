@@ -31,6 +31,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/signals"
 )
 
 const (
@@ -61,6 +62,8 @@ type Controller struct {
 	managers []*manager.Manager
 	// httpSever *http.Server
 	addr   *net.UnixAddr
+	uid    int
+	gid    int
 	router *mux.Router
 }
 
@@ -125,7 +128,7 @@ type rafsInstanceInfo struct {
 	ImageID     string `json:"image_id"`
 }
 
-func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager, sock string) (*Controller, error) {
+func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager, sock string, uid, gid int) (*Controller, error) {
 	if err := os.MkdirAll(filepath.Dir(sock), os.ModePerm); err != nil {
 		return nil, err
 	}
@@ -145,6 +148,8 @@ func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager,
 		fs:       fs,
 		managers: managers,
 		addr:     addr,
+		uid:      uid,
+		gid:      gid,
 		router:   mux.NewRouter(),
 	}
 
@@ -155,10 +160,22 @@ func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager,
 
 func (sc *Controller) Run() error {
 	log.L.Infof("Start system controller API server on %s", sc.addr)
+	stopChan := signals.SetupSignalHandler()
 	listener, err := net.ListenUnix("unix", sc.addr)
 	if err != nil {
 		return errors.Wrapf(err, "listen to socket %s ", sc.addr)
 	}
+
+	if err := os.Chown(sc.addr.String(), sc.uid, sc.gid); err != nil {
+		return errors.Wrap(err, "chown socket")
+	}
+
+	go func() {
+		<-stopChan
+		if err := listener.Close(); err != nil {
+			log.L.Errorf("Failed to close listener %s, err: %v", sc.addr.String(), err)
+		}
+	}()
 
 	err = http.Serve(listener, sc.router)
 	if err != nil {
