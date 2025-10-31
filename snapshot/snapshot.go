@@ -180,8 +180,9 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 
 	metricServer, err := metrics.NewServer(
 		ctx,
-		config.GetMetricsHungIOInterval(),
 		metrics.WithProcessManagers(fsManagers),
+		metrics.WithHungIOInterval(cfg.MetricsConfig.HungIOInterval),
+		metrics.WithCollectInterval(cfg.MetricsConfig.CollectInterval),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create metrics server")
@@ -193,7 +194,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			return nil, errors.Wrap(err, "start metrics HTTP server")
 		}
 		go func() {
-			if err := metricServer.StartCollectMetrics(ctx, config.GetMetricsCollectInterval()); err != nil {
+			if err := metricServer.StartCollectMetrics(ctx); err != nil {
 				log.L.WithError(err).Errorf("Failed to start collecting metrics")
 			}
 		}()
@@ -212,7 +213,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	cacheConfig := &cfg.CacheManagerConfig
 	cacheMgr, err := cache.NewManager(cache.Opt{
 		Database: db,
-		Period:   config.GetCacheGCPeriod(),
+		Period:   cfg.CacheManagerConfig.GCPeriod,
 		CacheDir: cacheConfig.CacheDir,
 		Disabled: cacheConfig.Disable,
 	})

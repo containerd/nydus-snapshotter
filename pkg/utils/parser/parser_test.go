@@ -8,7 +8,6 @@ package parser
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -86,55 +85,5 @@ func TestMemoryLimitToBytes(t *testing.T) {
 		memoryLimitInBytes, err := MemoryConfigToBytes(test.MemoryLimit, totalMemoryBytes)
 		assert.NoError(t, err)
 		assert.Equal(t, memoryLimitInBytes, test.expected)
-	}
-}
-
-func TestParseDurationWithDefault(t *testing.T) {
-	testCases := []struct {
-		name             string
-		raw              string
-		defaultValue     time.Duration
-		expectedDuration time.Duration
-	}{
-		{
-			name:             "Valid input",
-			raw:              "10m",
-			defaultValue:     5 * time.Minute,
-			expectedDuration: 10 * time.Minute,
-		},
-		{
-			name:             "Invalid format",
-			raw:              "invalid_duration",
-			defaultValue:     5 * time.Minute,
-			expectedDuration: 5 * time.Minute,
-		},
-		{
-			name:             "Zero duration",
-			raw:              "0s",
-			defaultValue:     5 * time.Minute,
-			expectedDuration: 5 * time.Minute,
-		},
-		{
-			name:             "Negative duration",
-			raw:              "-1m",
-			defaultValue:     5 * time.Minute,
-			expectedDuration: 5 * time.Minute,
-		},
-		{
-			name:             "Empty string input",
-			raw:              "",
-			defaultValue:     1 * time.Hour,
-			expectedDuration: 1 * time.Hour,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Call the function under test
-			result := ParseDurationWithDefault(tc.raw, "test_param", tc.defaultValue)
-
-			// Assert the returned value
-			assert.Equal(t, tc.expectedDuration, result, "The returned duration should match the expected value")
-		})
 	}
 }

@@ -12,15 +12,11 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/containerd/log"
-	"github.com/pkg/errors"
-
-	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/containerd/nydus-snapshotter/internal/logging"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/parser"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -31,17 +27,14 @@ var (
 // - access configuration information without passing a configuration object
 // - avoid frequent generation of information from configuration information
 type GlobalConfig struct {
-	origin                 *SnapshotterConfig
-	SnapshotsDir           string
-	DaemonMode             DaemonMode
-	SocketRoot             string
-	ConfigRoot             string
-	RootMountpoint         string
-	DaemonThreadsNum       int
-	CacheGCPeriod          time.Duration
-	MetricsHungIOInterval  time.Duration
-	MetricsCollectInterval time.Duration
-	MirrorsConfig          MirrorsConfig
+	origin           *SnapshotterConfig
+	SnapshotsDir     string
+	DaemonMode       DaemonMode
+	SocketRoot       string
+	ConfigRoot       string
+	RootMountpoint   string
+	DaemonThreadsNum int
+	MirrorsConfig    MirrorsConfig
 }
 
 func IsFusedevSharedModeEnabled() bool {
@@ -74,18 +67,6 @@ func GetMirrorsConfigDir() string {
 
 func GetFsDriver() string {
 	return globalConfig.origin.DaemonConfig.FsDriver
-}
-
-func GetCacheGCPeriod() time.Duration {
-	return globalConfig.CacheGCPeriod
-}
-
-func GetMetricsHungIOInterval() time.Duration {
-	return globalConfig.MetricsHungIOInterval
-}
-
-func GetMetricsCollectInterval() time.Duration {
-	return globalConfig.MetricsCollectInterval
 }
 
 func GetLogDir() string {
@@ -196,15 +177,6 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.RootMountpoint = filepath.Join(c.Root, "mnt")
 
 	globalConfig.MirrorsConfig = c.RemoteConfig.MirrorsConfig
-
-	GCPeriod := parser.ParseDurationWithDefault(c.CacheManagerConfig.GCPeriod, "gc_period", constant.TwentyFourHoursDuration)
-	globalConfig.CacheGCPeriod = GCPeriod
-
-	hungIOInterval := parser.ParseDurationWithDefault(c.MetricsConfig.HungIOInterval, "hung_io_interval", constant.ThirtySecondsDuration)
-	globalConfig.MetricsHungIOInterval = hungIOInterval
-
-	collectInterval := parser.ParseDurationWithDefault(c.MetricsConfig.CollectInterval, "collect_interval", constant.OneMinuteDuration)
-	globalConfig.MetricsCollectInterval = collectInterval
 
 	m, err := parseDaemonMode(c.DaemonMode)
 	if err != nil {

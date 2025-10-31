@@ -9,6 +9,7 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -29,6 +30,8 @@ type Server struct {
 	snCollectors      []*collector.SnapshotterMetricsCollector
 	fsCollector       *collector.FsMetricsVecCollector
 	inflightCollector *collector.InflightMetricsVecCollector
+	hungIOInterval    time.Duration
+	collectInterval   time.Duration
 }
 
 func WithProcessManagers(managers []*manager.Manager) ServerOpt {
@@ -38,7 +41,7 @@ func WithProcessManagers(managers []*manager.Manager) ServerOpt {
 	}
 }
 
-func NewServer(ctx context.Context, hungIOInterval time.Duration, opts ...ServerOpt) (*Server, error) {
+func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	var s Server
 	for _, o := range opts {
 		if err := o(&s); err != nil {
@@ -47,7 +50,7 @@ func NewServer(ctx context.Context, hungIOInterval time.Duration, opts ...Server
 	}
 
 	s.fsCollector = collector.NewFsMetricsVecCollector()
-	s.inflightCollector = collector.NewInflightMetricsVecCollector(hungIOInterval)
+	s.inflightCollector = collector.NewInflightMetricsVecCollector(s.hungIOInterval)
 	for _, pm := range s.managers {
 		snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, pm.CacheDir(), os.Getpid())
 		if err != nil {
@@ -153,14 +156,14 @@ func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	}
 }
 
-func (s *Server) StartCollectMetrics(ctx context.Context, collectInterval time.Duration) error {
-	timer := time.NewTicker(collectInterval)
+func (s *Server) StartCollectMetrics(ctx context.Context) error {
+	timer := time.NewTicker(s.collectInterval)
 	// The timer period is the same as the interval for determining hung IOs.
 	//
 	// Since the elapsed time of hung IO is configuration dependent,
 	// e.g. timeout * retry times when the backend is a registry.
 	// Therefore, we cannot get complete hung IO data after 1 minute.
-	InflightTimer := time.NewTicker(s.inflightCollector.HungIOInterval)
+	InflightTimer := time.NewTicker(s.hungIOInterval)
 
 outer:
 	for {
@@ -181,4 +184,24 @@ outer:
 	}
 
 	return nil
+}
+
+func WithCollectInterval(interval time.Duration) ServerOpt {
+	return func(s *Server) error {
+		if interval < 0 {
+			return fmt.Errorf("collect interval (%v) must be positive", interval)
+		}
+		s.collectInterval = interval
+		return nil
+	}
+}
+
+func WithHungIOInterval(hungIOInterval time.Duration) ServerOpt {
+	return func(s *Server) error {
+		if hungIOInterval < 0 {
+			return fmt.Errorf("hung IO interval (%v) must be positive", hungIOInterval)
+		}
+		s.hungIOInterval = hungIOInterval
+		return nil
+	}
 }

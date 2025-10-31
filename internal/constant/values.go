@@ -37,7 +37,7 @@ const (
 	DefaultFsDriver = FsDriverFusedev
 
 	DefaultLogLevel string = "info"
-	DefaultGCPeriod string = "24h"
+	DefaultGCPeriod        = 24 * time.Hour
 
 	DefaultNydusDaemonConfigPath string = "/etc/nydus/nydusd-config.json"
 	NydusdBinaryName             string = "nydusd"
@@ -56,15 +56,8 @@ const (
 	DefaultRotateLogCompress      = true
 
 	// metrics configuration
-	DefaultHungIOInterval  string = "30s"
-	DefaultCollectInterval string = "1m"
-)
-
-const (
-	// Time Constants
-	TwentyFourHoursDuration = 24 * time.Hour
-	OneMinuteDuration       = 1 * time.Minute
-	ThirtySecondsDuration   = 30 * time.Second
+	DefaultHungIOInterval  = 10 * time.Second
+	DefaultCollectInterval = 1 * time.Minute
 )
 
 const (
