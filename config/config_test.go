@@ -9,7 +9,6 @@ package config
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/containerd/nydus-snapshotter/internal/constant"
 	"github.com/containerd/nydus-snapshotter/internal/flags"
@@ -71,7 +70,7 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 		},
 		CacheManagerConfig: CacheManagerConfig{
 			Disable:  false,
-			GCPeriod: "24h",
+			GCPeriod: constant.DefaultGCPeriod,
 			CacheDir: "",
 		},
 		LoggingConfig: LoggingConfig{
@@ -84,7 +83,9 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 			LogToStdout:         false,
 		},
 		MetricsConfig: MetricsConfig{
-			Address: ":9110",
+			Address:         ":9110",
+			HungIOInterval:  constant.DefaultHungIOInterval,
+			CollectInterval: constant.DefaultCollectInterval,
 		},
 		CgroupConfig: CgroupConfig{
 			Enable:      true,
@@ -113,7 +114,11 @@ func TestLoadSnapshotterTOMLConfig(t *testing.T) {
 	err = ProcessConfigurations(cfg)
 	A.NoError(err)
 
-	A.Equal(GetCacheGCPeriod(), time.Hour*24)
+	A.Equal(cfg.CacheManagerConfig.GCPeriod, constant.DefaultGCPeriod)
+
+	A.Equal(cfg.MetricsConfig.HungIOInterval, constant.DefaultHungIOInterval)
+
+	A.Equal(cfg.MetricsConfig.CollectInterval, constant.DefaultCollectInterval)
 }
 
 func TestSnapshotterConfig(t *testing.T) {
@@ -202,6 +207,9 @@ func TestMergeConfig(t *testing.T) {
 	A.Equal(snapshotterConfig1.DaemonConfig.RecoverPolicy, RecoverPolicyRestart.String())
 	A.Equal(snapshotterConfig1.CacheManagerConfig.GCPeriod, constant.DefaultGCPeriod)
 
+	A.Equal(snapshotterConfig1.MetricsConfig.HungIOInterval, constant.DefaultHungIOInterval)
+	A.Equal(snapshotterConfig1.MetricsConfig.CollectInterval, constant.DefaultCollectInterval)
+
 	var snapshotterConfig2 SnapshotterConfig
 	snapshotterConfig2.Root = "/snapshotter/root"
 
@@ -224,6 +232,8 @@ func TestProcessConfigurations(t *testing.T) {
 	err = ValidateConfig(&snapshotterConfig1)
 	A.NoError(err)
 
+	PrepareLogDir(&snapshotterConfig1)
+
 	err = ProcessConfigurations(&snapshotterConfig1)
 	A.NoError(err)
 
@@ -237,6 +247,8 @@ func TestProcessConfigurations(t *testing.T) {
 	A.NoError(err)
 	err = ValidateConfig(&snapshotterConfig2)
 	A.NoError(err)
+
+	PrepareLogDir(&snapshotterConfig2)
 
 	err = ProcessConfigurations(&snapshotterConfig2)
 	A.NoError(err)
