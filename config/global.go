@@ -12,13 +12,11 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/containerd/log"
-	"github.com/pkg/errors"
-
 	"github.com/containerd/nydus-snapshotter/internal/logging"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/mount"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -36,7 +34,6 @@ type GlobalConfig struct {
 	ConfigRoot       string
 	RootMountpoint   string
 	DaemonThreadsNum int
-	CacheGCPeriod    time.Duration
 	MirrorsConfig    MirrorsConfig
 }
 
@@ -70,10 +67,6 @@ func GetMirrorsConfigDir() string {
 
 func GetFsDriver() string {
 	return globalConfig.origin.DaemonConfig.FsDriver
-}
-
-func GetCacheGCPeriod() time.Duration {
-	return globalConfig.CacheGCPeriod
 }
 
 func GetLogDir() string {
@@ -172,9 +165,6 @@ func GetTarfsExportFlags() (bool, bool, bool) {
 }
 
 func ProcessConfigurations(c *SnapshotterConfig) error {
-	if c.LoggingConfig.LogDir == "" {
-		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
-	}
 	if c.CacheManagerConfig.CacheDir == "" {
 		c.CacheManagerConfig.CacheDir = filepath.Join(c.Root, "cache")
 	}
@@ -187,14 +177,6 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.RootMountpoint = filepath.Join(c.Root, "mnt")
 
 	globalConfig.MirrorsConfig = c.RemoteConfig.MirrorsConfig
-
-	if c.CacheManagerConfig.GCPeriod != "" {
-		d, err := time.ParseDuration(c.CacheManagerConfig.GCPeriod)
-		if err != nil {
-			return errors.Errorf("invalid GC period '%s'", c.CacheManagerConfig.GCPeriod)
-		}
-		globalConfig.CacheGCPeriod = d
-	}
 
 	m, err := parseDaemonMode(c.DaemonMode)
 	if err != nil {
@@ -209,6 +191,12 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 	globalConfig.DaemonMode = m
 
 	return nil
+}
+
+func PrepareLogDir(c *SnapshotterConfig) {
+	if c.LoggingConfig.LogDir == "" {
+		c.LoggingConfig.LogDir = filepath.Join(c.Root, logging.DefaultLogDirName)
+	}
 }
 
 func SetUpEnvironment(c *SnapshotterConfig) error {
