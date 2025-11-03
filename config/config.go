@@ -222,8 +222,12 @@ type DebugConfig struct {
 }
 
 type SystemControllerConfig struct {
-	Enable      bool        `toml:"enable"`
-	Address     string      `toml:"address"`
+	Enable  bool   `toml:"enable"`
+	Address string `toml:"address"`
+	// UID to set on the system controller socket
+	UID int `toml:"uid"`
+	// GID to set on the system controller socket
+	GID         int         `toml:"gid"`
 	DebugConfig DebugConfig `toml:"debug"`
 }
 
@@ -231,8 +235,12 @@ type SnapshotterConfig struct {
 	// Configuration format version
 	Version int `toml:"version"`
 	// Snapshotter's root work directory
-	Root       string `toml:"root"`
-	Address    string `toml:"address"`
+	Root    string `toml:"root"`
+	Address string `toml:"address"`
+	// UID to set on the snapshotter socket
+	UID int `toml:"uid"`
+	// GID to set on the snapshotter socket
+	GID        int    `toml:"gid"`
 	DaemonMode string `toml:"daemon_mode"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`

@@ -238,7 +238,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	if config.IsSystemControllerEnabled() {
-		systemController, err := system.NewSystemController(nydusFs, fsManagers, config.SystemControllerAddress())
+		systemController, err := system.NewSystemController(nydusFs, fsManagers, config.SystemControllerAddress(), cfg.SystemControllerConfig.UID, cfg.SystemControllerConfig.GID)
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
