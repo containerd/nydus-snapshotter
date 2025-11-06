@@ -24,7 +24,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
-	"github.com/containerd/containerd/v2/core/images/converter"
+	containerdConverter "github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/containerd/v2/pkg/archive"
 	"github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/containerd/containerd/v2/pkg/labels"
@@ -922,9 +922,32 @@ func makeBlobDesc(ctx context.Context, cs content.Store, opt PackOption, sourceD
 	return &targetDesc, nil
 }
 
+func makeOCIBlobDesc(ctx context.Context, cs content.Store, uncompressedDigest, targetDigest digest.Digest, mediaType string) (*ocispec.Descriptor, error) {
+	targetInfo, err := cs.Info(ctx, targetDigest)
+	if err != nil {
+		return nil, errors.Wrapf(err, "get target blob info %s", targetDigest)
+	}
+	if targetInfo.Labels == nil {
+		targetInfo.Labels = map[string]string{}
+	}
+
+	targetDesc := ocispec.Descriptor{
+		Digest:    targetDigest,
+		Size:      targetInfo.Size,
+		MediaType: mediaType,
+		Annotations: map[string]string{
+			// Use `containerd.io/uncompressed` to generate DiffID of
+			// layer defined in OCI spec.
+			LayerAnnotationUncompressed: uncompressedDigest.String(),
+		},
+	}
+
+	return &targetDesc, nil
+}
+
 // LayerConvertFunc returns a function which converts an OCI image layer to
 // a nydus blob layer, and set the media type to "application/vnd.oci.image.layer.nydus.blob.v1".
-func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
+func LayerConvertFunc(opt PackOption) containerdConverter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		if ctx.Err() != nil {
 			// The context is already cancelled, no need to proceed.
@@ -1035,7 +1058,7 @@ func LayerConvertFunc(opt PackOption) converter.ConvertFunc {
 // ConvertHookFunc returns a function which will be used as a callback
 // called for each blob after conversion is done. The function only hooks
 // the index conversion and the manifest conversion.
-func ConvertHookFunc(opt MergeOption) converter.ConvertHookFunc {
+func ConvertHookFunc(opt MergeOption) containerdConverter.ConvertHookFunc {
 	return func(ctx context.Context, cs content.Store, orgDesc ocispec.Descriptor, newDesc *ocispec.Descriptor) (*ocispec.Descriptor, error) {
 		// If the previous conversion did not occur, the `newDesc` may be nil.
 		if newDesc == nil {
@@ -1230,8 +1253,8 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	defer cw.Close()
 
 	gw := gzip.NewWriter(cw)
-	uncompressedDgst := digest.SHA256.Digester()
-	compressed := io.MultiWriter(gw, uncompressedDgst.Hash())
+	uncompressedDigest := digest.SHA256.Digester()
+	compressed := io.MultiWriter(gw, uncompressedDigest.Hash())
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
 	if _, err := io.CopyBuffer(compressed, pr, *buffer); err != nil {
@@ -1243,7 +1266,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 
 	compressedDgst := cw.Digest()
 	if err := cw.Commit(ctx, 0, compressedDgst, content.WithLabels(map[string]string{
-		LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
+		LayerAnnotationUncompressed: uncompressedDigest.Digest().String(),
 	})); err != nil {
 		if !errdefs.IsAlreadyExists(err) {
 			return nil, nil, errors.Wrap(err, "commit to content store")
@@ -1306,7 +1329,7 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		Size:      bootstrapInfo.Size,
 		MediaType: mediaType,
 		Annotations: map[string]string{
-			LayerAnnotationUncompressed: uncompressedDgst.Digest().String(),
+			LayerAnnotationUncompressed: uncompressedDigest.Digest().String(),
 			LayerAnnotationFSVersion:    opt.FsVersion,
 			// Use this annotation to identify nydus bootstrap layer.
 			LayerAnnotationNydusBootstrap: "true",

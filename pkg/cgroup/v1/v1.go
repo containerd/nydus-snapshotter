@@ -29,7 +29,7 @@ func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
 		},
 	}
 
-	controller, err := cgroup1.Load(cgroup1.Slice(slice, name), cgroup1.WithHiearchy(hierarchy))
+	controller, err := cgroup1.Load(cgroup1.Slice(slice, name), cgroup1.WithHierarchy(hierarchy))
 	if err != nil && err != cgroup1.ErrCgroupDeleted {
 		return Cgroup{}, err
 	}
@@ -53,7 +53,7 @@ func NewCgroup(slice, name string, memoryLimitInBytes int64) (Cgroup, error) {
 		}
 	}
 
-	controller, err = cgroup1.New(cgroup1.Slice(slice, name), specResources, cgroup1.WithHiearchy(hierarchy))
+	controller, err = cgroup1.New(cgroup1.Slice(slice, name), specResources, cgroup1.WithHierarchy(hierarchy))
 	if err != nil {
 		return Cgroup{}, errors.Wrapf(err, "create cgroup")
 	}
