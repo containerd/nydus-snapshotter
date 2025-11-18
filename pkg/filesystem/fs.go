@@ -306,6 +306,9 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 
 	defer func() {
 		if err != nil {
+			if umountErr := fs.Umount(ctx, snapshotID); umountErr != nil {
+				log.L.WithError(umountErr).Warnf("failed to umount snapshot %s during cleanup", snapshotID)
+			}
 			racache.RafsGlobalCache.Remove(snapshotID)
 		}
 	}()
@@ -433,11 +436,6 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			}
 			return errors.Wrapf(err, "create instance %s", snapshotID)
 		}
-	}
-
-	if err != nil {
-		_ = fs.Umount(ctx, snapshotID)
-		return err
 	}
 
 	return nil
