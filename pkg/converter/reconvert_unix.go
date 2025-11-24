@@ -195,7 +195,6 @@ func ReconvertHookFunc() converter.ConvertHookFunc {
 
 func LayerReconvertFunc(opt UnpackOption) converter.ConvertFunc {
 	return func(ctx context.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
-		fmt.Printf("Reconvert layer: mediaType=%s digest=%s, anno=%v", desc.MediaType, desc.Digest.String(), desc.Annotations)
 		logrus.Debugf("Reconvert layer: mediaType=%s digest=%s, anno=%v", desc.MediaType, desc.Digest.String(), desc.Annotations)
 		if !images.IsLayerType(desc.MediaType) {
 			return nil, nil

@@ -861,8 +861,8 @@ func testImageConvertBasic(testOpt *ConvertTestOption) {
 		}
 	}()
 	// push target image
-	if err := exec.Command("ctr", "images", "push", targetImageRef, "--plain-http").Run(); err != nil {
-		t.Fatalf("failed to push image %s: %v", targetImageRef, err)
+	if output, err := exec.Command("ctr", "images", "push", "--plain-http", targetImageRef).CombinedOutput(); err != nil {
+		t.Fatalf("failed to push image %s: %v, output:\n%s", targetImageRef, err, string(output))
 		return
 	}
 	// check whether the converted image is valid
