@@ -899,7 +899,7 @@ func testImageReConvertNoBackend(t *testing.T) {
 
 func testImageReConvertBasic(testOpt *ReConvertTestOption) {
 	const (
-		preSrcImageRef = "ccr.ccs.tencentyun.com/library/nginx:latest"
+		preSrcImageRef = "docker.io/library/nginx:latest"
 		srcImageRef    = "localhost:5000/nydus/nginx:nydus-latest"
 		targetImageRef = "localhost:5000/nydus/nginx:oci"
 	)
