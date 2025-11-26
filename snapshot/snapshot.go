@@ -971,7 +971,10 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 			options = append(options, "volatile")
 		}
 	} else if len(s.ParentIDs) == 1 {
-		return bindMount(o.upperPath(s.ID), "ro"), nil
+		parentPath := o.upperPath(s.ParentIDs[0])
+		// if we only have one parent then just return a bind mount
+		log.G(ctx).Debugf("bind mount on %s", parentPath)
+		return bindMount(parentPath, "ro"), nil
 	}
 
 	parentPaths := make([]string, len(s.ParentIDs))
