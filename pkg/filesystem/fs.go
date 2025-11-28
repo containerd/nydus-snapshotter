@@ -12,8 +12,11 @@ package filesystem
 
 import (
 	"context"
+	"io"
 	"os"
 	"path"
+	"path/filepath"
+	"sync"
 
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
 	"github.com/mohae/deepcopy"
@@ -53,6 +56,7 @@ type Filesystem struct {
 	verifier            *signature.Verifier
 	nydusdBinaryPath    string
 	rootMountpoint      string
+	snapshotMutexMap    sync.Map
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -268,6 +272,10 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 // this method will fork nydus daemon and manage it in the internal store, and indexed by snapshotID
 // It must set up all necessary resources during Mount procedure and revoke any step if necessary.
 func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[string]string, s *storage.Snapshot) (err error) {
+	mu := fs.getSnapshotMutex(snapshotID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	rafs := racache.RafsGlobalCache.Get(snapshotID)
 	if rafs != nil {
 		// Instance already exists, how could this happen? Can containerd handle this case?
@@ -300,6 +308,9 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 
 	defer func() {
 		if err != nil {
+			if umountErr := fs.Umount(ctx, snapshotID); umountErr != nil {
+				log.L.WithError(umountErr).Warnf("failed to umount snapshot %s during cleanup", snapshotID)
+			}
 			racache.RafsGlobalCache.Remove(snapshotID)
 		}
 	}()
@@ -314,6 +325,14 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		bootstrap, err := rafs.BootstrapFile()
 		if err != nil {
 			return errors.Wrapf(err, "find bootstrap file snapshot %s", snapshotID)
+		}
+
+		// Nydusd uses cache manager's directory to store blob caches. So cache
+		// manager knows where to find those blobs.
+		cacheDir := fs.cacheMgr.CacheDir()
+
+		if err := fs.copyBlobMetaFiles(bootstrap, cacheDir); err != nil {
+			log.L.Warnf("Failed to copy blob.meta files to cache: %v", err)
 		}
 
 		if useSharedDaemon {
@@ -333,9 +352,6 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			}
 		}
 
-		// Nydusd uses cache manager's directory to store blob caches. So cache
-		// manager knows where to find those blobs.
-		cacheDir := fs.cacheMgr.CacheDir()
 		// Fscache driver stores blob cache bitmap and blob header files here
 		workDir := rafs.FscacheWorkDir()
 		params := map[string]string{
@@ -424,12 +440,55 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		}
 	}
 
+	return nil
+}
+
+func (fs *Filesystem) getSnapshotMutex(snapshotID string) *sync.Mutex {
+	mu, _ := fs.snapshotMutexMap.LoadOrStore(snapshotID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
+func (fs *Filesystem) copyBlobMetaFiles(bootstrap, cacheDir string) error {
+	bootstrapDir := filepath.Dir(bootstrap)
+	pattern := filepath.Join(bootstrapDir, "*.blob.meta")
+	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		_ = fs.Umount(ctx, snapshotID)
-		return err
+		return errors.Wrap(err, "glob blob meta files")
+	}
+
+	for _, srcPath := range matches {
+		fileName := filepath.Base(srcPath)
+		dstPath := filepath.Join(cacheDir, fileName)
+
+		if err := os.Link(srcPath, dstPath); err != nil {
+			log.L.Warnf("Failed to create hardlink for %s: %v, falling back to copy", fileName, err)
+			if err := fs.copyFile(srcPath, dstPath); err != nil {
+				return errors.Wrapf(err, "copy blob meta file %s", fileName)
+			}
+			log.L.Debugf("Copied blob meta file: %s -> %s", srcPath, dstPath)
+		} else {
+			log.L.Debugf("Created hardlink for blob meta: %s -> %s", srcPath, dstPath)
+		}
 	}
 
 	return nil
+}
+
+func (fs *Filesystem) copyFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	_, err = io.Copy(destination, source)
+	return err
 }
 
 func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
@@ -672,6 +731,10 @@ func (fs *Filesystem) createDaemon(fsManager *manager.Manager, daemonMode config
 		daemon.WithNydusdThreadNum(config.GetDaemonThreadsNumber()),
 		daemon.WithFsDriver(fsManager.FsDriver),
 		daemon.WithDaemonMode(daemonMode),
+	}
+
+	if fsManager.FsDriver == config.FsDriverFusedev {
+		opts = append(opts, daemon.WithFailoverPolicy(config.GetDaemonFailoverPolicy()))
 	}
 
 	// For fscache driver, no need to provide mountpoint to nydusd daemon.

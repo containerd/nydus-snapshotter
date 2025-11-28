@@ -348,15 +348,12 @@ func (sc *Controller) upgradeDaemons() func(w http.ResponseWriter, r *http.Reque
 			sourcePath := c.NydusdPath
 			destinationPath := manager.NydusdBinaryPath
 
-			if err = copyNydusdBinary(sourcePath, destinationPath); err != nil {
+			if err = upgradeNydusdWithSymlink(sourcePath, destinationPath); err != nil {
 				log.L.Errorf("Failed to copy nydusd binary from %s to %s: %v",
 					sourcePath, destinationPath, err)
 				statusCode = http.StatusInternalServerError
 				return
 			}
-
-			log.L.Infof("Successfully copy nydusd binary from %s to %s",
-				sourcePath, destinationPath)
 		}
 	}
 }
@@ -470,36 +467,51 @@ func buildNextAPISocket(cur string) (string, error) {
 	return nextSocket, nil
 }
 
-// copyNydusdBinary copies a file from sourcePath to destinationPath,
-// ensuring parent directories exist and setting 0755 permissions.
-// It overwrites the destination file if it already exists.
-func copyNydusdBinary(sourcePath, destinationPath string) error {
-	fileMode := os.FileMode(0755)
+// upgradeNydusdWithSymlink atomically creates a symbolic link from destinationPath to sourcePath.
+// It uses atomic rename to avoid any gap period where the destination doesn't exist.
+// Running processes are not affected as they hold file descriptors to the original inode.
+func upgradeNydusdWithSymlink(sourcePath, destinationPath string) error {
+	// Ensure source file exists and is accessible
+	if _, err := os.Stat(sourcePath); err != nil {
+		return fmt.Errorf("source file %s does not exist or is not accessible: %w", sourcePath, err)
+	}
 
+	// Ensure destination directory exists
 	destDir := filepath.Dir(destinationPath)
-	if err := os.MkdirAll(destDir, fileMode); err != nil {
+	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("failed to create destination directory %s: %w", destDir, err)
 	}
 
-	sourceFile, err := os.Open(sourcePath)
+	// Use absolute path for source to avoid relative path issues
+	absSourcePath, err := filepath.Abs(sourcePath)
 	if err != nil {
-		return fmt.Errorf("failed to open source file %s: %w", sourcePath, err)
+		return fmt.Errorf("failed to get absolute path for %s: %w", sourcePath, err)
 	}
-	defer sourceFile.Close()
 
-	destinationFile, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fileMode)
+	// Get absolute path for destination to compare
+	absDestinationPath, err := filepath.Abs(destinationPath)
 	if err != nil {
-		return fmt.Errorf("failed to create destination file %s: %w", destinationPath, err)
-	}
-	defer destinationFile.Close()
-
-	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
-		return fmt.Errorf("failed to copy file contents from %s to %s: %w", sourcePath, destinationPath, err)
+		return fmt.Errorf("failed to get absolute path for %s: %w", destinationPath, err)
 	}
 
-	if err := os.Chmod(destinationPath, fileMode); err != nil {
-		return fmt.Errorf("failed to set permissions for %s to %s: %w", destinationPath, fileMode.String(), err)
+	// Check if source and destination are the same to avoid circular symlink
+	if absSourcePath == absDestinationPath {
+		return fmt.Errorf("source path and destination path are the same: %s", absSourcePath)
 	}
 
+	// Create a temporary symbolic link first
+	tempSymlinkPath := absDestinationPath + ".tmp"
+	if err := os.Symlink(absSourcePath, tempSymlinkPath); err != nil {
+		return fmt.Errorf("failed to create temporary symbolic link %s: %w", tempSymlinkPath, err)
+	}
+
+	// Atomically replace the destination with the temporary symlink
+	if err := os.Rename(tempSymlinkPath, absDestinationPath); err != nil {
+		// Clean up temporary symlink if rename fails
+		os.Remove(tempSymlinkPath)
+		return fmt.Errorf("failed to atomically replace symlink %s: %w", absDestinationPath, err)
+	}
+
+	log.L.Infof("Successfully created symbolic link from %s to %s", absDestinationPath, absSourcePath)
 	return nil
 }
