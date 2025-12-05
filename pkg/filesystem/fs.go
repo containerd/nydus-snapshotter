@@ -67,7 +67,9 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 			return nil, err
 		}
 	}
-
+	if config.GetDaemonMode() == config.DaemonModeNone {
+		return &fs, nil
+	}
 	recoveringDaemons := make(map[string]*daemon.Daemon, 0)
 	liveDaemons := make(map[string]*daemon.Daemon, 0)
 	for _, fsManager := range fs.enabledManagers {
