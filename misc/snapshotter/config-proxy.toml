@@ -6,6 +6,19 @@ address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
 # No nydusd daemon needed
 daemon_mode = "none"
 
+# Address of the containerd server. Used for lazy parent recovery (issue #680)
+# when the local BoltDB is missing snapshot entries that containerd knows about.
+# This is particularly important for proxy mode (Kata Containers) to recover
+# from scenarios where nydus's database gets wiped but containerd still has
+# snapshot references.
+# Different Kubernetes distributions use different socket paths:
+#   - Standard/vanilla k8s: /run/containerd/containerd.sock (default)
+#   - MicroK8s:             /var/snap/microk8s/common/run/containerd.sock
+#   - k3s:                  /run/k3s/containerd/containerd.sock
+#   - k0s:                  /run/k0s/containerd.sock
+#   - RKE2:                 /run/k3s/containerd/containerd.sock
+containerd_address = "/run/containerd/containerd.sock"
+
 [daemon]
 # Enable proxy mode
 fs_driver = "proxy"

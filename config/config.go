@@ -244,6 +244,12 @@ type SnapshotterConfig struct {
 	DaemonMode string `toml:"daemon_mode"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`
+	// ContainerdAddress is the address of the containerd server.
+	// When set, the snapshotter can query containerd for snapshot metadata
+	// to recover from desynchronization scenarios where the local BoltDB
+	// is missing snapshot entries that containerd knows about.
+	// Default: /run/containerd/containerd.sock
+	ContainerdAddress string `toml:"containerd_address"`
 
 	SystemControllerConfig SystemControllerConfig `toml:"system"`
 	MetricsConfig          MetricsConfig          `toml:"metrics"`
