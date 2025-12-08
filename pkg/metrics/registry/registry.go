@@ -33,6 +33,9 @@ func init() {
 		data.Fds,
 		data.RunTime,
 		data.Thread,
+		data.CacheBlobsDeleted,
+		data.CacheBlobsInUse,
+		data.CacheBlobDeletionErrors,
 	)
 
 	for _, m := range data.MetricHists {

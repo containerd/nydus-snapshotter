@@ -25,6 +25,7 @@ type Store interface {
 	CleanupDaemons(ctx context.Context) error
 
 	AddRafsInstance(r *rafs.Rafs) error
+	UpdateRafsInstance(r *rafs.Rafs) error
 	DeleteRafsInstance(snapshotID string) error
 	WalkRafsInstances(ctx context.Context, cb func(*rafs.Rafs) error) error
 
