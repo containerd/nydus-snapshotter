@@ -44,6 +44,9 @@ func init() {
 		data.CachePrefetchCumulativeTimeMillis,
 		data.CachePrefetchTotalDurationMillis,
 		data.CacheBufferedBackendSize,
+		data.CacheBlobsDeleted,
+		data.CacheBlobsInUse,
+		data.CacheBlobDeletionErrors,
 	)
 
 	for _, m := range data.MetricHists {

@@ -151,6 +151,10 @@ func (d *Daemon) AddRafsInstance(r *rafs.Rafs) {
 	r.DaemonID = d.ID()
 }
 
+func (d *Daemon) UpdateRafsInstance(r *rafs.Rafs) {
+	d.RafsCache.Add(r)
+}
+
 func (d *Daemon) RemoveRafsInstance(snapshotID string) {
 	d.RafsCache.Remove(snapshotID)
 	d.DecRef()

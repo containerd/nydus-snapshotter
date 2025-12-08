@@ -10,6 +10,7 @@ import (
 	"context"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -119,4 +120,33 @@ func (m *Manager) RemoveBlobCache(blobID string) error {
 		}
 	}
 	return nil
+}
+
+// extractBlobIDFromFilename extracts the blob ID from a cache filename
+// Cache files can have formats like:
+// - <blobID>
+// - <blobID>.blob.data
+// - <blobID>.chunk_map
+// - <blobID>.blob.meta
+// - <blobID>.image.disk
+// - <blobID>.layer.disk
+func ExtractBlobIDFromFilename(filename string) string {
+	// Remove known suffixes
+	suffixes := []string{
+		dataFileSuffix,
+		dataFileSuffix + chunkMapFileSuffix,
+		chunkMapFileSuffix,
+		metaFileSuffix,
+		imageDiskFileSuffix,
+		layerDiskFileSuffix,
+	}
+
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(filename, suffix) {
+			return strings.TrimSuffix(filename, suffix)
+		}
+	}
+
+	// If no suffix matches, assume it's already a blob ID
+	return filename
 }

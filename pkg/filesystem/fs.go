@@ -266,6 +266,31 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 			return err
 		}
 
+		sid := ""
+		if d.IsSharedDaemon() {
+			sid = rafs.SnapshotID
+		}
+
+		cacheMetrics, err := d.GetCacheMetrics(sid)
+		if err != nil {
+			return errors.Wrapf(err, "failed to get cache metric")
+		}
+		log.L.Debugf("Found %d underlying files for rafs instance %s", len(cacheMetrics.UnderlyingFiles), rafs.SnapshotID)
+
+		// Lock the daemon's RafsCache when modifying rafs fields to prevent
+		// race conditions with concurrent reads (e.g., during cache cleanup)
+		d.RafsCache.Lock()
+		rafs.UnderlyingFiles = cacheMetrics.UnderlyingFiles
+		d.RafsCache.Unlock()
+
+		fsManager, err := fs.getManager(rafs.GetFsDriver())
+		if err != nil {
+			return errors.Wrap(err, "failed to get manager")
+		}
+		err = fsManager.UpdateRafsInstance(rafs)
+		if err != nil {
+			return errors.Wrap(err, "failed to update rafs instance")
+		}
 		log.L.Debugf("Nydus remote snapshot %s is ready", snapshotID)
 	}
 
@@ -591,6 +616,24 @@ func (fs *Filesystem) RemoveCache(blobDigest string) error {
 	}
 
 	return fs.cacheMgr.RemoveBlobCache(blobID)
+}
+
+// WalkManagers iterates over all enabled managers and calls the provided function
+func (fs *Filesystem) WalkManagers(fn func(*manager.Manager) error) error {
+	for _, mgr := range fs.enabledManagers {
+		if err := fn(mgr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetCacheConfig returns the cache directory from the cache manager
+func (fs *Filesystem) GetCacheDir() (string, error) {
+	if fs.cacheMgr == nil {
+		return "", errors.New("cache manager is not initialized")
+	}
+	return fs.cacheMgr.CacheDir(), nil
 }
 
 // Try to stop all the running daemons if they are not referenced by any snapshots

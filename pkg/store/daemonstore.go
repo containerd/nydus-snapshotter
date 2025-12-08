@@ -51,6 +51,10 @@ func (s *DaemonRafsStore) AddRafsInstance(r *rafs.Rafs) error {
 	return s.db.AddRafsInstance(context.TODO(), r)
 }
 
+func (s *DaemonRafsStore) UpdateRafsInstance(r *rafs.Rafs) error {
+	return s.db.UpdateRafsInstance(context.TODO(), r)
+}
+
 func (s *DaemonRafsStore) DeleteRafsInstance(snapshotID string) error {
 	return s.db.DeleteRafsInstance(context.TODO(), snapshotID)
 }
