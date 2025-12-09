@@ -157,44 +157,47 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		return nil, err
 	}
 
-	newNydusImageBinaryCommit, err := daemon.GetDaemonGitCommit(fs.nydusdBinaryPath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get git commit from nydusd binary at path: %s", fs.nydusdBinaryPath)
-	}
+	// Only check nydusd binary commit when there are live daemons that may need hot upgrade.
+	if len(liveDaemons) > 0 {
+		newNydusImageBinaryCommit, err := daemon.GetDaemonGitCommit(fs.nydusdBinaryPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get git commit from nydusd binary at path: %s", fs.nydusdBinaryPath)
+		}
 
-	egLive, _ := errgroup.WithContext(context.Background())
-	for _, d := range liveDaemons {
-		d := d
-		egLive.Go(func() error {
-			if d.Supervisor == nil {
-				log.L.Warnf("Daemon %s is skipped for hot upgrade because recover policy is not set to 'failover'", d.ID())
-				return nil
-			}
-			daemonInfo, err := d.GetDaemonInfo()
-			if err != nil {
-				log.L.Warnf("Failed to get daemon info from daemon %s, skipping: %v", d.ID(), err)
-				return nil
-			}
-			if newNydusImageBinaryCommit != daemonInfo.DaemonVersion().GitCommit {
-				fsManager, err := fs.getManager(d.States.FsDriver)
+		egLive, _ := errgroup.WithContext(context.Background())
+		for _, d := range liveDaemons {
+			d := d
+			egLive.Go(func() error {
+				if d.Supervisor == nil {
+					log.L.Warnf("Daemon %s is skipped for hot upgrade because recover policy is not set to 'failover'", d.ID())
+					return nil
+				}
+				daemonInfo, err := d.GetDaemonInfo()
 				if err != nil {
-					log.L.Warnf("Failed to get filesystem manager for daemon %s, skipping: %v", d.ID(), err)
+					log.L.Warnf("Failed to get daemon info from daemon %s, skipping: %v", d.ID(), err)
 					return nil
 				}
-				newDaemon, upgradeErr := fsManager.DoDaemonUpgrade(d, fs.nydusdBinaryPath, fsManager)
-				if upgradeErr != nil {
-					log.L.Warnf("Daemon %s hot upgrade failed, skipping: %v", d.ID(), upgradeErr)
-					return nil
+				if newNydusImageBinaryCommit != daemonInfo.DaemonVersion().GitCommit {
+					fsManager, err := fs.getManager(d.States.FsDriver)
+					if err != nil {
+						log.L.Warnf("Failed to get filesystem manager for daemon %s, skipping: %v", d.ID(), err)
+						return nil
+					}
+					newDaemon, upgradeErr := fsManager.DoDaemonUpgrade(d, fs.nydusdBinaryPath, fsManager)
+					if upgradeErr != nil {
+						log.L.Warnf("Daemon %s hot upgrade failed, skipping: %v", d.ID(), upgradeErr)
+						return nil
+					}
+					fs.TryRetainSharedDaemon(newDaemon)
+				} else {
+					fs.TryRetainSharedDaemon(d)
 				}
-				fs.TryRetainSharedDaemon(newDaemon)
-			} else {
-				fs.TryRetainSharedDaemon(d)
-			}
-			return nil
-		})
-	}
-	if err := egLive.Wait(); err != nil {
-		return nil, err
+				return nil
+			})
+		}
+		if err := egLive.Wait(); err != nil {
+			return nil, err
+		}
 	}
 	return &fs, nil
 }
