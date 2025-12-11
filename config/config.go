@@ -9,6 +9,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"dario.cat/mergo"
 	"github.com/pelletier/go-toml"
@@ -186,8 +187,8 @@ type CacheManagerConfig struct {
 	Disable bool `toml:"disable"`
 	// Trigger GC gc_period after the specified period.
 	// Example format: 24h, 120min
-	GCPeriod string `toml:"gc_period"`
-	CacheDir string `toml:"cache_dir"`
+	GCPeriod time.Duration `toml:"gc_period"`
+	CacheDir string        `toml:"cache_dir"`
 }
 
 // Configure how nydus-snapshotter receive auth information
@@ -213,7 +214,12 @@ type MirrorsConfig struct {
 }
 
 type MetricsConfig struct {
+	// Address is the network address for the metrics server. Empty indicates the server is disabled.
 	Address string `toml:"address"`
+	// HungIOInterval defines the timeout for a single I/O operation to be considered "hung".
+	HungIOInterval time.Duration `toml:"hung_io_interval"`
+	// CollectInterval defines how often metrics are collected and reported.
+	CollectInterval time.Duration `toml:"collect_interval"`
 }
 
 type DebugConfig struct {

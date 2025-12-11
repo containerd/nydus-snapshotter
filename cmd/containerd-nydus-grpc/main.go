@@ -72,13 +72,7 @@ func main() {
 				return errors.Wrapf(err, "failed to validate configurations")
 			}
 
-			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
-				return errors.Wrap(err, "failed to process configurations")
-			}
-
-			if err := config.SetUpEnvironment(&snapshotterConfig); err != nil {
-				return errors.Wrap(err, "failed to setup environment")
-			}
+			config.PrepareLogDir(&snapshotterConfig)
 
 			ctx := logging.WithContext()
 			logConfig := &snapshotterConfig.LoggingConfig
@@ -92,6 +86,16 @@ func main() {
 
 			if err := logging.SetUp(logConfig.LogLevel, logConfig.LogToStdout, logConfig.LogDir, logRotateArgs); err != nil {
 				return errors.Wrap(err, "failed to setup logger")
+			}
+
+			log.L.Infof("Logger successfully set up. Proceeding to process nydus-snapshotter configurations")
+
+			if err := config.ProcessConfigurations(&snapshotterConfig); err != nil {
+				return errors.Wrap(err, "failed to process configurations")
+			}
+
+			if err := config.SetUpEnvironment(&snapshotterConfig); err != nil {
+				return errors.Wrap(err, "failed to setup environment")
 			}
 
 			log.L.Infof("Start nydus-snapshotter. Version: %s, PID: %d, FsDriver: %s, DaemonMode: %s",
