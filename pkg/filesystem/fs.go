@@ -539,7 +539,12 @@ func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
 	case config.FsDriverNodev, config.FsDriverProxy:
-		// Nothing to do
+		// For proxy mode, we still need to clean up the DB entry to prevent
+		// "already exists" errors on subsequent Mount() calls.
+		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
+			// Log but don't fail - the entry might not exist
+			log.L.Debugf("remove instance %s from DB: %v", snapshotID, err)
+		}
 	default:
 		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
