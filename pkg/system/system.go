@@ -281,6 +281,8 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 				i := daemonInfo{
 					ID:                    d.ID(),
 					Pid:                   d.Pid(),
+					APISock:               d.GetAPISock(),
+					SupervisorPath:        d.States.SupervisorPath,
 					HostMountpoint:        d.HostMountpoint(),
 					Reference:             int(d.GetRef()),
 					Instances:             instances,
