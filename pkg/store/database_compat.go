@@ -215,9 +215,10 @@ func (db *Database) tryUpgradeRecords(version string) error {
 
 		for _, d := range daemons {
 			if d.DaemonMode == "" {
-				if d.FsDriver == config.FsDriverFscache {
+				switch d.FsDriver {
+				case config.FsDriverFscache:
 					d.DaemonMode = config.DaemonModeShared
-				} else if d.FsDriver == config.FsDriverFusedev {
+				case config.FsDriverFusedev:
 					if d.Mountpoint == config.GetRootMountpoint() {
 						d.DaemonMode = config.DaemonModeShared
 					} else {

@@ -1084,17 +1084,20 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	}
 	lowerPaths = append(lowerPaths, lowerPathNydus)
 
-	if s.Kind == snapshots.KindActive {
+	switch s.Kind {
+	case snapshots.KindActive:
 		overlayOptions = append(overlayOptions,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
-	} else if s.Kind == snapshots.KindView {
+	case snapshots.KindView:
 		lowerPathNormal, err := o.lowerPath(s.ID)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to locate overlay lowerdir for view snapshot")
 		}
 		lowerPaths = append(lowerPaths, lowerPathNormal)
+	default:
+		// KindUnknown or KindCommitted - no additional options needed
 	}
 
 	lowerDirOption := fmt.Sprintf("lowerdir=%s", strings.Join(lowerPaths, ":"))

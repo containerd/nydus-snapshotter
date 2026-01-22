@@ -1,58 +1,19 @@
 # https://golangci-lint.run/usage/configuration#config-file
 
+version: "2"
+
 run:
   concurrency: 4
   timeout: 5m
   issues-exit-code: 1
   tests: true
 
-issues:
-  exclude-dirs:
-    - misc
-    # The package is ported from containerd project, let's skip it.
-    - pkg/remote/remotes
-
-linters-settings:
-  depguard:
-    rules:
-      main:
-        deny:
-          - pkg: "github.com/containerd/containerd/errdefs"
-            desc: The containerd errdefs package was migrated to a separate module. Use github.com/containerd/errdefs instead.
-          - pkg: "github.com/containerd/containerd/log"
-            desc: The containerd log package was migrated to a separate module. Use github.com/containerd/log instead.
-          - pkg: "github.com/containerd/containerd/platforms"
-            desc: The containerd platforms package was migrated to a separate module. Use github.com/containerd/platforms instead.
-          - pkg: "github.com/containerd/containerd/reference/docker"
-            desc: The containerd platforms package was migrated to a separate module. Use github.com/distribution/reference instead.
-  #   govet:
-  #     check-shadowing: true
-  #     enable:
-  #       - fieldalignment
-  funlen:
-    # Checks the number of lines in a function.
-    # If lower than 0, disable the check.
-    # Default: 60
-    lines: 100
-    # Checks the number of statements in a function.
-    # If lower than 0, disable the check.
-    # Default: 40
-    statements: 80
-  nilnil:
-    checked-types:
-      - ptr
-      - func
-      - iface
-      - map
-      - chan
-
 linters:
+  default: none
   enable:
     - depguard      # Checks for imports that shouldn't be used.
     - staticcheck
     - unconvert
-    - gofmt
-    - goimports
     - revive
     - ineffassign
     - govet
@@ -70,5 +31,76 @@ linters:
     # - funlen
     - exhaustive
     - errcheck
-  disable:
-    - gosec
+  exclusions:
+    paths:
+      - misc
+      # The package is ported from containerd project, let's skip it.
+      - pkg/remote/remotes
+  settings:
+    errcheck:
+      # Don't check errors for these functions (common cleanup patterns)
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (*net.UnixListener).Close
+        - (*net.UnixConn).Close
+        - (*http.Response).Body.Close
+        - (*io.PipeWriter).Close
+        - (*compress/gzip.Writer).Close
+        - os.RemoveAll
+        - os.Remove
+        - os.Setenv
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - golang.org/x/sys/unix.Close
+    exhaustive:
+      # Allow default case to be considered exhaustive
+      default-signifies-exhaustive: true
+    revive:
+      rules:
+        # Disable exported comment requirements (too strict for this codebase)
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+    depguard:
+      rules:
+        Main:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: "github.com/containerd/containerd/errdefs"
+              desc: The containerd errdefs package was migrated to a separate module. Use github.com/containerd/errdefs instead.
+            - pkg: "github.com/containerd/containerd/log"
+              desc: The containerd log package was migrated to a separate module. Use github.com/containerd/log instead.
+            - pkg: "github.com/containerd/containerd/platforms"
+              desc: The containerd platforms package was migrated to a separate module. Use github.com/containerd/platforms instead.
+            - pkg: "github.com/containerd/containerd/reference/docker"
+              desc: The containerd reference package was migrated to a separate module. Use github.com/distribution/reference instead.
+    #   govet:
+    #     check-shadowing: true
+    #     enable:
+    #       - fieldalignment
+    funlen:
+      # Checks the number of lines in a function.
+      # If lower than 0, disable the check.
+      # Default: 60
+      lines: 100
+      # Checks the number of statements in a function.
+      # If lower than 0, disable the check.
+      # Default: 40
+      statements: 80
+    nilnil:
+      checked-types:
+        - ptr
+        - func
+        - iface
+        - map
+        - chan
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

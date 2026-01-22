@@ -57,12 +57,15 @@ func (m *Manager) handleDaemonDeathEvent() {
 
 		d.ResetState()
 
-		if m.RecoverPolicy == config.RecoverPolicyRestart {
+		switch m.RecoverPolicy {
+		case config.RecoverPolicyRestart:
 			log.L.Infof("Restart daemon %s", ev.daemonID)
 			go m.doDaemonRestart(d)
-		} else if m.RecoverPolicy == config.RecoverPolicyFailover {
+		case config.RecoverPolicyFailover:
 			log.L.Infof("Do failover for daemon %s", ev.daemonID)
 			go m.doDaemonFailover(d)
+		default:
+			// RecoverPolicyNone or RecoverPolicyInvalid - do nothing
 		}
 	}
 }
