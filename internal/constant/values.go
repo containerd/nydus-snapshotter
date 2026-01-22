@@ -66,10 +66,3 @@ const (
 	FailoverPolicyFlush   string = "flush"
 	DefaultFailoverPolicy string = FailoverPolicyResend
 )
-
-const (
-	FailoverPolicyNone    string = "none"
-	FailoverPolicyResend  string = "resend"
-	FailoverPolicyFlush   string = "flush"
-	DefaultFailoverPolicy string = FailoverPolicyResend
-)
