@@ -203,13 +203,14 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 }
 
 func (fs *Filesystem) TryRetainSharedDaemon(d *daemon.Daemon) {
-	if d.States.FsDriver == config.FsDriverFscache {
+	switch d.States.FsDriver {
+	case config.FsDriverFscache:
 		if fs.fscacheSharedDaemon == nil {
 			log.L.Debug("retain fscache shared daemon")
 			fs.fscacheSharedDaemon = d
 			d.IncRef()
 		}
-	} else if d.States.FsDriver == config.FsDriverFusedev {
+	case config.FsDriverFusedev:
 		if fs.fusedevSharedDaemon == nil && d.HostMountpoint() == fs.rootMountpoint {
 			log.L.Debug("retain fusedev shared daemon")
 			fs.fusedevSharedDaemon = d
