@@ -33,6 +33,17 @@ func init() {
 		data.Fds,
 		data.RunTime,
 		data.Thread,
+		data.CachePartialHits,
+		data.CacheWholeHits,
+		data.CacheTotalRequests,
+		data.CacheEntriesCount,
+		data.CachePrefetchDataBytes,
+		data.CachePrefetchRequestsCount,
+		data.CachePrefetchWorkers,
+		data.CachePrefetchUnmergedChunks,
+		data.CachePrefetchCumulativeTimeMillis,
+		data.CachePrefetchTotalDurationMillis,
+		data.CacheBufferedBackendSize,
 	)
 
 	for _, m := range data.MetricHists {
