@@ -89,7 +89,7 @@ func (bb *Blob) ReadToc() (io.Reader, error) {
 		return nil, err
 	}
 	if h.Name != TocFileName {
-		return nil, fmt.Errorf("Failed to find toc from image %s blob %s", bb.ref, bb.digest)
+		return nil, fmt.Errorf("failed to find toc from image %s blob %s", bb.ref, bb.digest)
 	}
 	var buf bytes.Buffer
 	_, err = buf.ReadFrom(tr)
@@ -138,7 +138,7 @@ func parseFooter(p []byte) (tocOffset int64, ok bool) {
 	if err != nil {
 		return 0, false
 	}
-	extra := zr.Header.Extra
+	extra := zr.Extra
 	if len(extra) != 16+len("STARGZ") {
 		return 0, false
 	}

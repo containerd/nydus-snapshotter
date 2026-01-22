@@ -93,8 +93,12 @@ type CacheMetrics struct {
 	PrefetchDataAmount           uint64   `json:"prefetch_data_amount"`
 	PrefetchRequestsCount        uint64   `json:"prefetch_requests_count"`
 	PrefetchWorkers              uint     `json:"prefetch_workers"`
+	PrefetchUnmergedChunks       uint64   `json:"prefetch_unmerged_chunks"`
 	PrefetchCumulativeTimeMillis uint64   `json:"prefetch_cumulative_time_millis"`
 	PrefetchBeginTimeSecs        uint64   `json:"prefetch_begin_time_secs"`
+	PrefetchBeginTimeMillis      uint64   `json:"prefetch_begin_time_millis"`
 	PrefetchEndTimeSecs          uint64   `json:"prefetch_end_time_secs"`
+	PrefetchEndTimeMillis        uint64   `json:"prefetch_end_time_millis"`
 	BufferedBackendSize          uint64   `json:"buffered_backend_size"`
+	DataAllReady                 bool     `json:"data_all_ready"`
 }

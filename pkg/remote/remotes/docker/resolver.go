@@ -38,6 +38,7 @@ import (
 	remoteerrors "github.com/containerd/nydus-snapshotter/pkg/remote/remotes/errors"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var (
@@ -595,7 +596,10 @@ func (r *request) do(ctx context.Context) (*http.Response, error) {
 		httpSpan.SetStatus(err)
 		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
-	httpSpan.SetAttributes(tracing.HTTPStatusCodeAttributes(resp.StatusCode)...)
+	httpSpan.SetAttributes(
+		attribute.Int("http.response.status_code", resp.StatusCode),
+		attribute.Int("http.status_code", resp.StatusCode), // Deprecated: SemConv <= v1.21
+	)
 	log.G(ctx).WithFields(responseFields(resp)).Debug("fetch response received")
 	return resp, nil
 }

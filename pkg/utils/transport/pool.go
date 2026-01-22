@@ -43,7 +43,7 @@ func (r *Pool) Resolve(ref name.Reference, digest string, keychain authn.Keychai
 	r.trPoolMu.Lock()
 	defer r.trPoolMu.Unlock()
 	endpointURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s",
-		ref.Context().Registry.Scheme(),
+		ref.Context().Scheme(),
 		ref.Context().RegistryStr(),
 		ref.Context().RepositoryStr(),
 		digest)

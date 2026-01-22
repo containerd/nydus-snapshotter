@@ -196,14 +196,14 @@ func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) 
 	}
 
 	receiver := func() error {
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 
 		// After the listener is closed, Accept() wakes up
 		conn, err := listener.Accept()
 		if err != nil {
 			return errors.Wrapf(err, "Listener is closed")
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		data, fd, err := recv(conn.(*net.UnixConn))
 		if err != nil {
@@ -225,7 +225,7 @@ func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) 
 			case <-timer.C:
 				log.L.Warnf("Receiving state timeouts after %s", to)
 				// Wake up the blocking `Accept`
-				listener.Close()
+				_ = listener.Close()
 			case <-cancelTimer:
 			}
 
@@ -262,13 +262,13 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 	}
 
 	sender := func() error {
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 
 		conn, err := listener.Accept()
 		if err != nil {
 			return errors.Wrapf(err, "Listener is closed")
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// FIXME: It's possible that sending states happens before storing state to the storage.
 		data, fd, err := su.load()
@@ -292,7 +292,7 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 			case <-timer.C:
 				log.L.Warnf("Sending state timeouts after %s", to)
 				// Wake up the blocking `Accept()`
-				listener.Close()
+				_ = listener.Close()
 			case <-cancelTimer:
 			}
 

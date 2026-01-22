@@ -180,13 +180,27 @@ data:
     root = "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
     address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
     daemon_mode = "multiple"
-    enable_system_controller = true
-    # Enable by assigning an address, empty indicates metrics server is disabled
-    metrics_address = ":9110"
-    # Whether tp enable stargz support
-    enable_stargz = false
     # Whether snapshotter should try to clean up resources when it is closed
     cleanup_on_close = false
+    
+    [system]
+    # Snapshotter's debug and trace HTTP server interface
+    enable = true
+    # Unix domain socket path where system controller is listening on
+    address = "/run/containerd-nydus/system.sock"
+    
+    [metrics]
+    # Enable by assigning an address, empty indicates metrics server is disabled
+    address = ":9110"
+    # The maximum duration an I/O operation can be pending before it's considered hung.
+    hung_io_interval = "30s"
+    # The interval at which metrics are collected and updated.
+    collect_interval = "1m"
+    
+    [experimental]
+    # Whether tp enable stargz support
+    enable_stargz = false
+    
     [daemon]
     nydusd_path = "/usr/local/bin/nydusd"
     nydusimage_path = "/usr/local/bin/nydus-image"
@@ -200,6 +214,7 @@ data:
     nydusd_config = "/etc/nydus/nydusd.json"
     # The fuse or fscache IO working threads started by nydusd
     threads_number = 4
+    
     [log]
     # Snapshotter's log level
     level = "info"
@@ -211,6 +226,7 @@ data:
     # In unit MB(megabytes)
     log_rotation_max_size = 1
     log_to_stdout = false
+    
     [remote]
     convert_vpc_registry = false
     [remote.auth]
@@ -222,14 +238,17 @@ data:
     enable_cri_keychain = false
     # the target image service when using image proxy
     image_service_address = ""
+    
     [snapshot]
     enable_nydus_overlayfs = false
     # Whether to remove resources when a snapshot is removed
     sync_remove = false
+    
     [cache_manager]
     disable = false
     gc_period = "24h"
     cache_dir = ""
+    
     [image]
     public_key_file = ""
     validate_signature = false

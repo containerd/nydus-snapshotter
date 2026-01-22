@@ -56,9 +56,9 @@ func TestLoadConfig(t *testing.T) {
 	var cfg FuseDaemonConfig
 	err := json.Unmarshal(buf, &cfg)
 	require.Nil(t, err)
-	require.Equal(t, cfg.FSPrefetch.Enable, true)
-	require.Equal(t, cfg.FSPrefetch.MergingSize, 131072)
-	require.Equal(t, cfg.FSPrefetch.ThreadsCount, 10)
+	require.Equal(t, cfg.Enable, true)
+	require.Equal(t, cfg.MergingSize, 131072)
+	require.Equal(t, cfg.ThreadsCount, 10)
 	require.Equal(t, cfg.Device.Backend.Config.BlobURLScheme, "http")
 	require.Equal(t, cfg.Device.Backend.Config.SkipVerify, true)
 	require.Equal(t, cfg.Device.Backend.Config.Proxy.CheckInterval, 5)

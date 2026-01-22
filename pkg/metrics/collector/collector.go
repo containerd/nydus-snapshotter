@@ -56,3 +56,11 @@ func NewSnapshotterMetricsCollector(ctx context.Context, cacheDir string, pid in
 func NewSnapshotMetricsTimer(method SnapshotMethod) *prometheus.Timer {
 	return CollectSnapshotMetricsTimer(data.SnapshotEventElapsedHists, method)
 }
+
+func NewCacheMetricsCollector(m *types.CacheMetrics, imageRef, daemonID string) *CacheMetricsCollector {
+	return &CacheMetricsCollector{m, imageRef, daemonID}
+}
+
+func NewCacheMetricsVecCollector() *CacheMetricsVecCollector {
+	return &CacheMetricsVecCollector{}
+}

@@ -28,6 +28,7 @@ type BlobPrefetchConfig struct {
 	ThreadsCount  int  `json:"threads_count"`
 	MergingSize   int  `json:"merging_size"`
 	BandwidthRate int  `json:"bandwidth_rate"`
+	PrefetchAll   bool `json:"prefetch_all"`
 }
 
 type FscacheDaemonConfig struct {

@@ -9,6 +9,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"dario.cat/mergo"
 	"github.com/pelletier/go-toml"
@@ -187,8 +188,8 @@ type CacheManagerConfig struct {
 	Disable bool `toml:"disable"`
 	// Trigger GC gc_period after the specified period.
 	// Example format: 24h, 120min
-	GCPeriod string `toml:"gc_period"`
-	CacheDir string `toml:"cache_dir"`
+	GCPeriod time.Duration `toml:"gc_period"`
+	CacheDir string        `toml:"cache_dir"`
 }
 
 // Configure how nydus-snapshotter receive auth information
@@ -214,7 +215,12 @@ type MirrorsConfig struct {
 }
 
 type MetricsConfig struct {
+	// Address is the network address for the metrics server. Empty indicates the server is disabled.
 	Address string `toml:"address"`
+	// HungIOInterval defines the timeout for a single I/O operation to be considered "hung".
+	HungIOInterval time.Duration `toml:"hung_io_interval"`
+	// CollectInterval defines how often metrics are collected and reported.
+	CollectInterval time.Duration `toml:"collect_interval"`
 }
 
 type DebugConfig struct {
@@ -223,8 +229,12 @@ type DebugConfig struct {
 }
 
 type SystemControllerConfig struct {
-	Enable      bool        `toml:"enable"`
-	Address     string      `toml:"address"`
+	Enable  bool   `toml:"enable"`
+	Address string `toml:"address"`
+	// UID to set on the system controller socket
+	UID int `toml:"uid"`
+	// GID to set on the system controller socket
+	GID         int         `toml:"gid"`
 	DebugConfig DebugConfig `toml:"debug"`
 }
 
@@ -232,8 +242,12 @@ type SnapshotterConfig struct {
 	// Configuration format version
 	Version int `toml:"version"`
 	// Snapshotter's root work directory
-	Root       string `toml:"root"`
-	Address    string `toml:"address"`
+	Root    string `toml:"root"`
+	Address string `toml:"address"`
+	// UID to set on the snapshotter socket
+	UID int `toml:"uid"`
+	// GID to set on the snapshotter socket
+	GID        int    `toml:"gid"`
 	DaemonMode string `toml:"daemon_mode"`
 	// Clean up all the resources when snapshotter is closed
 	CleanupOnClose bool `toml:"cleanup_on_close"`

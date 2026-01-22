@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -183,6 +184,8 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	metricServer, err := metrics.NewServer(
 		ctx,
 		metrics.WithProcessManagers(fsManagers),
+		metrics.WithHungIOInterval(cfg.MetricsConfig.HungIOInterval),
+		metrics.WithCollectInterval(cfg.MetricsConfig.CollectInterval),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "create metrics server")
@@ -213,7 +216,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	cacheConfig := &cfg.CacheManagerConfig
 	cacheMgr, err := cache.NewManager(cache.Opt{
 		Database: db,
-		Period:   config.GetCacheGCPeriod(),
+		Period:   cfg.CacheManagerConfig.GCPeriod,
 		CacheDir: cacheConfig.CacheDir,
 		Disabled: cacheConfig.Disable,
 	})
@@ -245,7 +248,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	if config.IsSystemControllerEnabled() {
-		systemController, err := system.NewSystemController(nydusFs, fsManagers, config.SystemControllerAddress())
+		systemController, err := system.NewSystemController(nydusFs, fsManagers, config.SystemControllerAddress(), cfg.SystemControllerConfig.UID, cfg.SystemControllerConfig.GID)
 		if err != nil {
 			return nil, errors.Wrap(err, "create system controller")
 		}
@@ -764,6 +767,15 @@ func (o *snapshotter) findMetaLayer(ctx context.Context, key string) (string, sn
 }
 
 func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, key, parent string, opts []snapshots.Opt) (info *snapshots.Info, _ storage.Snapshot, err error) {
+	return o.createSnapshotWithRecovery(ctx, kind, key, parent, opts, false)
+}
+
+// createSnapshotWithRecovery attempts to create a snapshot and recovers from
+// "missing parent" errors by querying containerd for the parent's metadata and
+// recreating it in the local BoltDB. This handles the desynchronization
+// scenarios where nydus-snapshotter's BoltDB is missing entries that
+// containerd knows about.
+func (o *snapshotter) createSnapshotWithRecovery(ctx context.Context, kind snapshots.Kind, key, parent string, opts []snapshots.Opt, isRecovery bool) (info *snapshots.Info, _ storage.Snapshot, err error) {
 	ctx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return nil, storage.Snapshot{}, err
@@ -809,6 +821,37 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 
 	s, err := storage.CreateSnapshot(ctx, kind, key, parent, opts...)
 	if err != nil {
+		// Check if this is a "missing parent" error and we can attempt recovery
+		if !isRecovery && parent != "" && o.isMissingParentError(err) {
+			log.G(ctx).WithError(err).Warnf("Missing parent %q in local BoltDB, attempting lazy recovery from containerd", parent)
+
+			// Rollback current transaction before recovery
+			rollback = true
+			if rerr := t.Rollback(); rerr != nil {
+				log.G(ctx).WithError(rerr).Warn("failed to rollback transaction before recovery")
+			}
+			rollback = false // Don't rollback again in defer
+
+			// Clean up the temp directory we created
+			if td != "" {
+				if err1 := o.cleanupSnapshotDirectory(ctx, td); err1 != nil {
+					log.G(ctx).WithError(err1).Warn("failed to clean up temp snapshot directory during recovery")
+				}
+				td = ""
+			}
+
+			// Attempt to recover the parent
+			// The recovery function uses a fresh context internally
+			if recoverErr := o.recoverParentFromContainerd(ctx, parent); recoverErr != nil {
+				log.G(ctx).WithError(recoverErr).Errorf("Failed to recover parent %q from containerd", parent)
+				return nil, storage.Snapshot{}, errors.Wrapf(err, "create snapshot (recovery failed: %v)", recoverErr)
+			}
+
+			log.G(ctx).Infof("Successfully recovered parent %q from containerd, retrying snapshot creation", parent)
+			// Retry with recovery flag set to prevent infinite recursion
+			// Use the original context for the retry
+			return o.createSnapshotWithRecovery(ctx, kind, key, parent, opts, true)
+		}
 		return nil, storage.Snapshot{}, errors.Wrap(err, "create snapshot")
 	}
 
@@ -837,6 +880,123 @@ func (o *snapshotter) createSnapshot(ctx context.Context, kind snapshots.Kind, k
 	path = ""
 
 	return &base, s, nil
+}
+
+// isMissingParentError checks if the error is a "missing parent bucket" error
+// from the storage layer, which indicates the parent snapshot exists in containerd
+// but not in our local BoltDB.
+func (o *snapshotter) isMissingParentError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "missing parent") && strings.Contains(errStr, "bucket")
+}
+
+// recoverParentFromContainerd attempts to recover a missing parent snapshot.
+// This handles the desyncrhonization scenario where nydus-snapshotter's BoltDB
+// was wiped but containerd still has metadata references.
+//
+// For proxy mode (used by Kata Containers for guest image pulling), we create
+// a minimal placeholder snapshot since there's no actual filesystem data stored.
+// The real data will be pulled fresh by the guest.
+func (o *snapshotter) recoverParentFromContainerd(ctx context.Context, parent string) error {
+	log.G(ctx).Infof("Attempting lazy recovery for missing parent: %q", parent)
+
+	// For proxy mode (Kata guest pulling), create a minimal placeholder
+	// since there's no actual filesystem content to restore
+	fsDriver := config.GetFsDriver()
+	if fsDriver == config.FsDriverProxy {
+		log.G(ctx).Infof("Proxy mode detected - creating placeholder snapshot for %q", parent)
+		// Use the full parent key as-is since the storage layer uses this exact key
+		return o.createPlaceholderSnapshot(ctx, parent)
+	}
+
+	// For other modes (fusedev, fscache), we would need the actual parent metadata
+	// from containerd. Unfortunately, containerd's snapshot service for remote
+	// snapshotters calls back to us, creating a circular dependency when our DB is empty.
+	return errors.Errorf(
+		"lazy parent recovery not supported for fs_driver=%q. "+
+			"Please clean up containerd's stale snapshot references with: "+
+			"ctr snapshot --snapshotter nydus rm %s",
+		fsDriver, parent)
+}
+
+// createPlaceholderSnapshot creates a minimal committed snapshot entry in the local
+// BoltDB for recovery purposes. This is used in proxy mode where no actual filesystem
+// content is stored locally.
+func (o *snapshotter) createPlaceholderSnapshot(ctx context.Context, key string) error {
+	// Use a fresh context to avoid any transaction context pollution
+	cleanCtx := context.Background()
+
+	// First check if the snapshot already exists (from a previous partial recovery)
+	// nolint:dogsled
+	_, _, _, existErr := snapshot.GetSnapshotInfo(cleanCtx, o.ms, key)
+	if existErr == nil {
+		log.G(ctx).Infof("Placeholder snapshot %q already exists, skipping creation", key)
+		return nil
+	}
+
+	txCtx, t, err := o.ms.TransactionContext(cleanCtx, true)
+	if err != nil {
+		return errors.Wrap(err, "begin transaction for placeholder snapshot")
+	}
+	rollback := true
+	defer func() {
+		if rollback {
+			if rerr := t.Rollback(); rerr != nil {
+				log.G(ctx).WithError(rerr).Warn("failed to rollback placeholder transaction")
+			}
+		}
+	}()
+
+	// Prepare the snapshot directory
+	td, err := o.prepareDirectory(o.snapshotRoot(), snapshots.KindCommitted)
+	if err != nil {
+		return errors.Wrap(err, "prepare directory for placeholder snapshot")
+	}
+
+	// Create a placeholder with minimal labels indicating it was recovered
+	opts := []snapshots.Opt{
+		snapshots.WithLabels(map[string]string{
+			"nydus.recovered":    "true",
+			"nydus.recovered.at": fmt.Sprintf("%d", time.Now().Unix()),
+		}),
+	}
+
+	// Create as active first (no parent)
+	// Use a unique key to avoid conflicts with retries
+	activeKey := fmt.Sprintf("recovery-%d-%s", time.Now().UnixNano(), key)
+	s, err := storage.CreateSnapshot(txCtx, snapshots.KindActive, activeKey, "", opts...)
+	if err != nil {
+		if err1 := o.cleanupSnapshotDirectory(cleanCtx, td); err1 != nil {
+			log.G(ctx).WithError(err1).Warn("failed to clean up temp directory")
+		}
+		return errors.Wrapf(err, "create placeholder snapshot entry for %q", key)
+	}
+
+	// Move temp directory to final location
+	path := o.snapshotDir(s.ID)
+	if err = os.Rename(td, path); err != nil {
+		return errors.Wrap(err, "rename placeholder snapshot directory")
+	}
+
+	// Commit the active snapshot to create the final committed snapshot
+	// CommitActive(ctx, key, name) commits active snapshot `key` as committed snapshot `name`
+	if _, err := storage.CommitActive(txCtx, activeKey, key, snapshots.Usage{}, opts...); err != nil {
+		if err1 := o.cleanupSnapshotDirectory(cleanCtx, path); err1 != nil {
+			log.G(ctx).WithError(err1).Warn("failed to clean up snapshot directory")
+		}
+		return errors.Wrapf(err, "commit placeholder snapshot %q", key)
+	}
+
+	rollback = false
+	if err = t.Commit(); err != nil {
+		return errors.Wrap(err, "commit placeholder transaction")
+	}
+
+	log.G(ctx).Infof("Successfully created placeholder snapshot %q for lazy recovery", key)
+	return nil
 }
 
 func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID string, pInfo snapshots.Info) error {
@@ -961,17 +1121,20 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	}
 	lowerPaths = append(lowerPaths, lowerPathNydus)
 
-	if s.Kind == snapshots.KindActive {
+	switch s.Kind {
+	case snapshots.KindActive:
 		overlayOptions = append(overlayOptions,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
-	} else if s.Kind == snapshots.KindView {
+	case snapshots.KindView:
 		lowerPathNormal, err := o.lowerPath(s.ID)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to locate overlay lowerdir for view snapshot")
 		}
 		lowerPaths = append(lowerPaths, lowerPathNormal)
+	default:
+		// KindUnknown or KindCommitted - no additional options needed
 	}
 
 	lowerDirOption := fmt.Sprintf("lowerdir=%s", strings.Join(lowerPaths, ":"))
@@ -1008,7 +1171,10 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 			options = append(options, "volatile")
 		}
 	} else if len(s.ParentIDs) == 1 {
-		return bindMount(o.upperPath(s.ID), "ro"), nil
+		parentPath := o.upperPath(s.ParentIDs[0])
+		// if we only have one parent then just return a bind mount
+		log.G(ctx).Debugf("bind mount on %s", parentPath)
+		return bindMount(parentPath, "ro"), nil
 	}
 
 	parentPaths := make([]string, len(s.ParentIDs))

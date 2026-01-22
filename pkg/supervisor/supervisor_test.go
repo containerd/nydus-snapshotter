@@ -53,7 +53,7 @@ func TestSupervisor(t *testing.T) {
 	nydusdSendFd := func() error {
 		conn, err := net.DialUnix("unix", nil, addr)
 		assert.Nil(t, err)
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		err = send(conn, sentData, int(tmpFile.Fd()))
 		assert.Nil(t, err)

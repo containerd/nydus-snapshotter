@@ -15,10 +15,6 @@ import (
 )
 
 var (
-	imageRefLabel = "image_ref"
-)
-
-var (
 	FsTotalRead = ttl.NewGaugeVecWithTTL(
 		prometheus.GaugeOpts{
 			Name: "nydusd_total_read_bytes",

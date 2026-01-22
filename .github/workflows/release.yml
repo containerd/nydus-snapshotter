@@ -62,7 +62,7 @@ jobs:
       - name: install gnu gcc linker
         run: |
           if [ "${{ matrix.build-linker }}" != "static" ]; then
-            sudo apt-get install -qq gcc-${{ matrix.build-linker }}-linux-gnu
+            sudo apt-get update && sudo apt-get install -qq gcc-${{ matrix.build-linker }}-linux-gnu
           fi
       - name: build nydus-snapshotter and optimizer
         run: |

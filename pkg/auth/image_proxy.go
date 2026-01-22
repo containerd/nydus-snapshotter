@@ -88,7 +88,7 @@ func FromCRI(host, ref string) (*PassKeyChain, error) {
 	for _, cred := range Credentials {
 		if username, secret, err := cred(host, refSpec); err != nil {
 			return nil, err
-		} else if !(username == "" && secret == "") {
+		} else if username != "" || secret != "" {
 			u = username
 			p = secret
 

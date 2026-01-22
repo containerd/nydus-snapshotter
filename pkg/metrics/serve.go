@@ -9,6 +9,7 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -22,21 +23,41 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 )
 
-// Default interval to determine a hung IO.
-const defaultHungIOInterval = 10 * time.Second
-
 type ServerOpt func(*Server) error
 
 type Server struct {
 	managers          []*manager.Manager
 	snCollectors      []*collector.SnapshotterMetricsCollector
 	fsCollector       *collector.FsMetricsVecCollector
+	cacheCollector    *collector.CacheMetricsVecCollector
 	inflightCollector *collector.InflightMetricsVecCollector
+	hungIOInterval    time.Duration
+	collectInterval   time.Duration
 }
 
 func WithProcessManagers(managers []*manager.Manager) ServerOpt {
 	return func(s *Server) error {
 		s.managers = append(s.managers, managers...)
+		return nil
+	}
+}
+
+func WithCollectInterval(interval time.Duration) ServerOpt {
+	return func(s *Server) error {
+		if interval < 0 {
+			return fmt.Errorf("collect interval (%v) must be positive", interval)
+		}
+		s.collectInterval = interval
+		return nil
+	}
+}
+
+func WithHungIOInterval(hungIOInterval time.Duration) ServerOpt {
+	return func(s *Server) error {
+		if hungIOInterval < 0 {
+			return fmt.Errorf("hung IO interval (%v) must be positive", hungIOInterval)
+		}
+		s.hungIOInterval = hungIOInterval
 		return nil
 	}
 }
@@ -50,8 +71,8 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 	}
 
 	s.fsCollector = collector.NewFsMetricsVecCollector()
-	// TODO(tangbin): make hung IO interval configurable
-	s.inflightCollector = collector.NewInflightMetricsVecCollector(defaultHungIOInterval)
+	s.inflightCollector = collector.NewInflightMetricsVecCollector(s.hungIOInterval)
+	s.cacheCollector = collector.NewCacheMetricsVecCollector()
 	for _, pm := range s.managers {
 		snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, pm.CacheDir(), os.Getpid())
 		if err != nil {
@@ -126,6 +147,47 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 	}
 }
 
+func (s *Server) CollectCacheMetrics(ctx context.Context) {
+	var cacheMetricsVec []collector.CacheMetricsCollector
+
+	for _, pm := range s.managers {
+		daemons := pm.ListDaemons()
+		for _, d := range daemons {
+			// Skip daemons that are not serving
+			if d.State() != types.DaemonStateRunning {
+				continue
+			}
+
+			for _, i := range d.RafsCache.List() {
+				var sid string
+
+				if d.IsSharedDaemon() {
+					sid = i.SnapshotID
+				} else {
+					sid = ""
+				}
+
+				cacheMetrics, err := d.GetCacheMetrics(sid)
+				if err != nil {
+					log.G(ctx).Errorf("failed to get cache metric: %v", err)
+					continue
+				}
+
+				cacheMetricsVec = append(cacheMetricsVec, collector.CacheMetricsCollector{
+					Metrics:  cacheMetrics,
+					ImageRef: i.ImageID,
+					DaemonID: d.ID(),
+				})
+			}
+		}
+	}
+
+	if cacheMetricsVec != nil {
+		s.cacheCollector.MetricsVec = cacheMetricsVec
+		s.cacheCollector.Collect()
+	}
+}
+
 func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	inflightMetricsVec := make([]*types.InflightMetrics, 0, 16)
 	for _, pm := range s.managers {
@@ -158,20 +220,20 @@ func (s *Server) CollectInflightMetrics(ctx context.Context) {
 }
 
 func (s *Server) StartCollectMetrics(ctx context.Context) error {
-	// TODO(renzhen): make collect interval time configurable
-	timer := time.NewTicker(time.Duration(1) * time.Minute)
+	timer := time.NewTicker(s.collectInterval)
 	// The timer period is the same as the interval for determining hung IOs.
 	//
 	// Since the elapsed time of hung IO is configuration dependent,
 	// e.g. timeout * retry times when the backend is a registry.
 	// Therefore, we cannot get complete hung IO data after 1 minute.
-	InflightTimer := time.NewTicker(s.inflightCollector.HungIOInterval)
+	InflightTimer := time.NewTicker(s.hungIOInterval)
 
 outer:
 	for {
 		select {
 		case <-timer.C:
 			s.CollectFsMetrics(ctx)
+			s.CollectCacheMetrics(ctx)
 			s.CollectDaemonResourceMetrics(ctx)
 			// Collect snapshotter metrics.
 			for _, snCollector := range s.snCollectors {

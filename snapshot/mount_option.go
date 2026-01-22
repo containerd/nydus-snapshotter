@@ -254,7 +254,8 @@ func (o *snapshotter) prepareKataVirtualVolume(blockType, source, volumeType, fs
 		FSType:     fsType,
 		Options:    options,
 	}
-	if blockType == label.NydusImageBlockInfo || blockType == label.NydusLayerBlockInfo {
+	switch blockType {
+	case label.NydusImageBlockInfo, label.NydusLayerBlockInfo:
 		dmverityInfo := labels[blockType]
 		if len(dmverityInfo) > 0 {
 			dmverity, err := parseTarfsDmVerityInfo(dmverityInfo)
@@ -263,7 +264,7 @@ func (o *snapshotter) prepareKataVirtualVolume(blockType, source, volumeType, fs
 			}
 			volume.DmVerity = &dmverity
 		}
-	} else if blockType == label.NydusProxyMode {
+	case label.NydusProxyMode:
 		volume.ImagePull = &ImagePullVolume{Metadata: labels}
 	}
 
@@ -336,15 +337,15 @@ func (d *DmVerityInfo) Validate() error {
 	}
 
 	if d.BlockNum == 0 || d.BlockNum > uint64(^uint32(0)) {
-		return fmt.Errorf("Zero block count for DmVerity device %s", d.Hash)
+		return fmt.Errorf("zero block count for DmVerity device %s", d.Hash)
 	}
 
 	if !validateBlockSize(d.Blocksize) || !validateBlockSize(d.Hashsize) {
-		return fmt.Errorf("Unsupported verity block size: data_block_size = %d, hash_block_size = %d", d.Blocksize, d.Hashsize)
+		return fmt.Errorf("unsupported verity block size: data_block_size = %d, hash_block_size = %d", d.Blocksize, d.Hashsize)
 	}
 
 	if d.Offset%d.Hashsize != 0 || d.Offset < d.Blocksize*d.BlockNum {
-		return fmt.Errorf("Invalid hashvalue offset %d for DmVerity device %s", d.Offset, d.Hash)
+		return fmt.Errorf("invalid hashvalue offset %d for DmVerity device %s", d.Offset, d.Hash)
 	}
 
 	return nil
@@ -357,14 +358,14 @@ func (d *DmVerityInfo) validateHashType() error {
 	case "sha1":
 		return d.validateHash(40, "sha1")
 	default:
-		return fmt.Errorf("Unsupported hash algorithm %s for DmVerity device %s", d.HashType, d.Hash)
+		return fmt.Errorf("unsupported hash algorithm %s for DmVerity device %s", d.HashType, d.Hash)
 	}
 }
 
 func (d *DmVerityInfo) validateHash(expectedLen int, hashType string) error {
 	_, err := hex.DecodeString(d.Hash)
 	if len(d.Hash) != expectedLen || err != nil {
-		return fmt.Errorf("Invalid hash value %s:%s for DmVerity device with %s", hashType, d.Hash, hashType)
+		return fmt.Errorf("invalid hash value %s:%s for DmVerity device with %s", hashType, d.Hash, hashType)
 	}
 	return nil
 }

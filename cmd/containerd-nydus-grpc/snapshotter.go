@@ -38,6 +38,8 @@ func Start(ctx context.Context, cfg *config.SnapshotterConfig) error {
 	stopSignal := signals.SetupSignalHandler()
 	opt := ServeOptions{
 		ListeningSocketPath: cfg.Address,
+		ListeningSocketUID:  cfg.UID,
+		ListeningSocketGID:  cfg.GID,
 		EnableCRIKeychain:   cfg.RemoteConfig.AuthConfig.EnableCRIKeychain,
 		ImageServiceAddress: cfg.RemoteConfig.AuthConfig.ImageServiceAddress,
 	}
@@ -53,6 +55,8 @@ func Start(ctx context.Context, cfg *config.SnapshotterConfig) error {
 
 type ServeOptions struct {
 	ListeningSocketPath string
+	ListeningSocketUID  int
+	ListeningSocketGID  int
 	EnableCRIKeychain   bool
 	ImageServiceAddress string
 }
@@ -70,6 +74,10 @@ func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, 
 	listener, err := net.Listen("unix", options.ListeningSocketPath)
 	if err != nil {
 		return errors.Wrapf(err, "listen socket %q", options.ListeningSocketPath)
+	}
+
+	if err := os.Chown(options.ListeningSocketPath, options.ListeningSocketUID, options.ListeningSocketGID); err != nil {
+		return errors.Wrap(err, "chown socket")
 	}
 
 	if options.EnableCRIKeychain {
