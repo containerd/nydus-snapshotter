@@ -643,15 +643,6 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		log.L.Infof("[Remove] snapshot with key %s snapshot id %s", key, id)
 	}
 
-	if info.Kind == snapshots.KindCommitted {
-		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
-		go func() {
-			if err := o.fs.RemoveCache(blobDigest); err != nil {
-				log.L.WithError(err).Errorf("Failed to remove cache %s", blobDigest)
-			}
-		}()
-	}
-
 	_, _, err = storage.Remove(ctx, key)
 	if err != nil {
 		return errors.Wrapf(err, "failed to remove key %s", key)
