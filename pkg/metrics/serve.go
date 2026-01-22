@@ -29,6 +29,7 @@ type Server struct {
 	managers          []*manager.Manager
 	snCollectors      []*collector.SnapshotterMetricsCollector
 	fsCollector       *collector.FsMetricsVecCollector
+	cacheCollector    *collector.CacheMetricsVecCollector
 	inflightCollector *collector.InflightMetricsVecCollector
 	hungIOInterval    time.Duration
 	collectInterval   time.Duration
@@ -71,6 +72,7 @@ func NewServer(ctx context.Context, opts ...ServerOpt) (*Server, error) {
 
 	s.fsCollector = collector.NewFsMetricsVecCollector()
 	s.inflightCollector = collector.NewInflightMetricsVecCollector(s.hungIOInterval)
+	s.cacheCollector = collector.NewCacheMetricsVecCollector()
 	for _, pm := range s.managers {
 		snCollector, err := collector.NewSnapshotterMetricsCollector(ctx, pm.CacheDir(), os.Getpid())
 		if err != nil {
@@ -145,6 +147,47 @@ func (s *Server) CollectFsMetrics(ctx context.Context) {
 	}
 }
 
+func (s *Server) CollectCacheMetrics(ctx context.Context) {
+	var cacheMetricsVec []collector.CacheMetricsCollector
+
+	for _, pm := range s.managers {
+		daemons := pm.ListDaemons()
+		for _, d := range daemons {
+			// Skip daemons that are not serving
+			if d.State() != types.DaemonStateRunning {
+				continue
+			}
+
+			for _, i := range d.RafsCache.List() {
+				var sid string
+
+				if d.IsSharedDaemon() {
+					sid = i.SnapshotID
+				} else {
+					sid = ""
+				}
+
+				cacheMetrics, err := d.GetCacheMetrics(sid)
+				if err != nil {
+					log.G(ctx).Errorf("failed to get cache metric: %v", err)
+					continue
+				}
+
+				cacheMetricsVec = append(cacheMetricsVec, collector.CacheMetricsCollector{
+					Metrics:  cacheMetrics,
+					ImageRef: i.ImageID,
+					DaemonID: d.ID(),
+				})
+			}
+		}
+	}
+
+	if cacheMetricsVec != nil {
+		s.cacheCollector.MetricsVec = cacheMetricsVec
+		s.cacheCollector.Collect()
+	}
+}
+
 func (s *Server) CollectInflightMetrics(ctx context.Context) {
 	inflightMetricsVec := make([]*types.InflightMetrics, 0, 16)
 	for _, pm := range s.managers {
@@ -190,6 +233,7 @@ outer:
 		select {
 		case <-timer.C:
 			s.CollectFsMetrics(ctx)
+			s.CollectCacheMetrics(ctx)
 			s.CollectDaemonResourceMetrics(ctx)
 			// Collect snapshotter metrics.
 			for _, snCollector := range s.snCollectors {

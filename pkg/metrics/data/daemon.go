@@ -12,12 +12,6 @@ import (
 )
 
 var (
-	nydusdEventLabel   = "nydusd_event"
-	nydusdVersionLabel = "version"
-	daemonIDLabel      = "daemon_id"
-)
-
-var (
 	NydusdEventCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "nydusd_lifetime_event_counts",

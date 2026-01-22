@@ -12,7 +12,6 @@ import (
 
 var (
 	defaultDurationBuckets = []float64{.5, 1, 5, 10, 50, 100, 150, 200, 250, 300, 350, 400, 600, 1000}
-	snapshotEventLabel     = "snapshot_operation"
 )
 
 var (
