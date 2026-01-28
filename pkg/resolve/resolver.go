@@ -42,7 +42,7 @@ func (r *Resolver) Resolve(ref, digest string, labels map[string]string) (io.Rea
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse ref %q (%q)", sref, digest)
 	}
-	keychain := auth.GetRegistryKeyChain(host, ref, labels)
+	keychain := auth.GetRegistryKeyChain(ref, labels)
 
 	var tr http.RoundTripper
 	url, tr, err := r.res.Resolve(nref, digest, keychain)

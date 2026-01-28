@@ -8,14 +8,13 @@ package auth
 
 import (
 	"encoding/base64"
+	stderrors "errors"
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
-
-	"github.com/containerd/nydus-snapshotter/pkg/label"
-	distribution "github.com/distribution/reference"
+	"github.com/containerd/log"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -60,59 +59,59 @@ func (kc PassKeyChain) TokenBase() bool {
 	return kc.Username == "" && kc.Password != ""
 }
 
-// FromLabels finds image pull username and secret from snapshot labels.
-// Returned `nil` means no valid username and secret is passed, it should
-// not override input nydusd configuration.
-func FromLabels(labels map[string]string) *PassKeyChain {
-	u, found := labels[label.NydusImagePullUsername]
-	if !found || u == "" {
-		return nil
-	}
-
-	p, found := labels[label.NydusImagePullSecret]
-	if !found || p == "" {
-		return nil
-	}
-
-	return &PassKeyChain{
-		Username: u,
-		Password: p,
-	}
-}
-
 // GetRegistryKeyChain get image pull keychain from (ordered):
 // 1. username and secrets labels
 // 2. cri request
 // 3. docker config
 // 4. k8s docker config secret
-func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyChain {
-	kc := FromLabels(labels)
+func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
+	authRequest := &AuthRequest{
+		Ref:    ref,
+		Labels: labels,
+	}
+
+	errs := []error{}
+	kc, err := NewLabelsProvider().GetCredentials(authRequest)
 	if kc != nil {
 		return kc
 	}
+	if err != nil {
+		errs = append(errs, errors.Wrap(err, "get credentials from labels"))
+	}
 
-	// TODO: Handle error
-	kc, _ = FromCRI(host, ref)
+	kc, err = NewCRIProvider().GetCredentials(authRequest)
 	if kc != nil {
 		return kc
 	}
+	if err != nil {
+		errs = append(errs, errors.Wrap(err, "get credentials from CRI"))
+	}
 
-	kc = FromDockerConfig(host)
+	kc, err = NewDockerProvider().GetCredentials(authRequest)
 	if kc != nil {
 		return kc
 	}
+	if err != nil {
+		errs = append(errs, errors.Wrap(err, "get credentials from Docker config"))
+	}
 
-	return FromKubeSecretDockerConfig(host)
+	kc, err = NewKubeSecretProvider().GetCredentials(authRequest)
+	if kc != nil {
+		return kc
+	}
+	if err != nil {
+		errs = append(errs, errors.Wrap(err, "get credentials from labels"))
+	}
+
+	// Only output the errors if we did not manage to get a keychain
+	if len(errs) > 0 {
+		log.L.WithError(stderrors.Join(errs...)).WithField("ref", ref).Warn("Could not get registry credentials.")
+	}
+	return nil
 }
 
 func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {
-	named, err := distribution.ParseDockerRef(ref)
-	if err != nil {
-		return nil, errors.Wrapf(err, "parse ref %s", ref)
-	}
-
-	host := distribution.Domain(named)
-	keychain := GetRegistryKeyChain(host, ref, labels)
+	keychain := GetRegistryKeyChain(ref, labels)
 
 	return keychain, nil
 }
