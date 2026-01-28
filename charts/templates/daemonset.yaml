@@ -1,8 +1,10 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: nydus-snapshotter
+  name: {{ include "nydus-snapshotter.fullname" . }}
   namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nydus-snapshotter.labels" . | nindent 4 }}
 spec:
   updateStrategy:
     rollingUpdate:
@@ -10,15 +12,20 @@ spec:
     type: RollingUpdate
   selector:
     matchLabels:
-      app.kubernetes.io/instance: nydus-snapshotter
-      app.kubernetes.io/name: nydus-snapshotter
+      {{- include "nydus-snapshotter.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include "nydus-snapshotter.snapshotterConfig" . | sha256sum }}
       labels:
-        app.kubernetes.io/instance: nydus-snapshotter
-        app.kubernetes.io/name: nydus-snapshotter
+        {{- include "nydus-snapshotter.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: nydus-snapshotter-sa
+      serviceAccountName: {{ include "nydus-snapshotter.serviceAccountName" . }}
+      runtimeClassName: runc-overlayfs
+      {{- if .Values.image.imagePullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.image.imagePullSecret }}
+      {{- end }}
       {{- if .Values.affinity }}
       affinity:
         {{- toYaml .Values.affinity | nindent 8 }}
@@ -27,12 +34,236 @@ spec:
       hostPID: true
       {{- if .Values.snapshotter.daemonset.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.snapshotter.daemonset.nodeSelector | trim | nindent 8 }}
+        {{- toYaml .Values.snapshotter.daemonset.nodeSelector | nindent 8 }}
       {{- end }}
+      {{- if .Values.snapshotter.daemonset.tolerations }}
       tolerations:
-        {{- toYaml .Values.snapshotter.daemonset.tolerations | trim | nindent 8 }}
+        {{- toYaml .Values.snapshotter.daemonset.tolerations | nindent 8 }}
+      {{- end }}
+      {{- if .Values.snapshotter.hostSetup.enabled }}
+      initContainers:
+        # Init container to configure containerd for nydus snapshotter
+        - name: init-containerd-config
+          image: {{ include "nydus-snapshotter.image" . }}
+          imagePullPolicy: {{ .Values.image.imagePullPolicy }}
+          securityContext:
+            privileged: true
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              etcContainerd="{{ .Values.snapshotter.hostSetup.containerdConfigPath }}"
+              nydusProxyConfig="{{ dir .Values.snapshotter.hostSetup.containerdConfigPath }}/nydus-proxy.toml"
+              restartMarker="/run/containerd-nydus/.containerd-restart-required"
+              desiredProxyConfig="$(mktemp)"
+              configChanged=0
+
+              install_if_needed() {
+                src="$1"
+                dst="$2"
+                mode="$3"
+                dst_dir="$(dirname "$dst")"
+                tmp="${dst}.tmp.$$"
+
+                mkdir -p "$dst_dir"
+                if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+                  return 0
+                fi
+
+                install -m "$mode" "$src" "$tmp"
+                mv -f "$tmp" "$dst"
+              }
+              
+              echo "=== Installing nydus binaries ==="
+              mkdir -p /opt/nydus/bin
+              install_if_needed /nydus-static/nydusd /opt/nydus/bin/nydusd 755
+              install_if_needed /nydus-static/nydusctl /opt/nydus/bin/nydusctl 755
+              install_if_needed /nydus-static/nydus-image /opt/nydus/bin/nydus-image 755
+              install_if_needed /nydus-static/nydus-overlayfs /opt/nydus/bin/nydus-overlayfs 755
+              install_if_needed /nydus-static/nydus-overlayfs /host/usr/local/sbin/nydus-overlayfs 755
+              
+              mkdir -p /etc/nydus
+              install_if_needed /nydus-static/configs/nydusd-config.json /etc/nydus/nydusd-config.json 644
+              
+              echo "=== Configuring containerd ==="
+              cat > "$desiredProxyConfig" <<'EOF'
+              version = 2
+
+              [proxy_plugins]
+                [proxy_plugins.nydus]
+                  address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+                  type = "snapshot"
+
+              [plugins."io.containerd.grpc.v1.cri".containerd]
+                snapshotter = "nydus"
+                discard_unpacked_layers = false
+                disable_snapshot_annotations = false
+
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                  snapshotter = "overlayfs"
+
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus]
+                  runtime_type = "io.containerd.runc.v2"
+                  snapshotter = "nydus"
+
+                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus.options]
+                    NoPivotRoot = false
+                    NoNewKeyring = false
+                    SystemdCgroup = true
+              EOF
+
+              if ! cmp -s "$desiredProxyConfig" "$nydusProxyConfig"; then
+                cp "$desiredProxyConfig" "$nydusProxyConfig"
+                configChanged=1
+              fi
+              rm -f "$desiredProxyConfig"
+
+              if ! grep -Fq "$nydusProxyConfig" "$etcContainerd"; then
+                tmpContainerd="$(mktemp)"
+                awk -v import_path="$nydusProxyConfig" '
+                  NR == 1 && $0 ~ /^version = / {
+                    print
+                    print "imports = [\"" import_path "\"]"
+                    next
+                  }
+                  { print }
+                ' "$etcContainerd" > "$tmpContainerd"
+                cp "$tmpContainerd" "$etcContainerd"
+                rm -f "$tmpContainerd"
+                configChanged=1
+              fi
+
+              if [ "$configChanged" -eq 0 ]; then
+                echo "containerd config is already up to date."
+                rm -f "$restartMarker"
+                exit 0
+              fi
+              touch "$restartMarker"
+              echo "containerd config updated; restart deferred until nydus socket is ready."
+          volumeMounts:
+            - name: etc-containerd
+              mountPath: {{ dir .Values.snapshotter.hostSetup.containerdConfigPath }}
+            - name: nydus-bin
+              mountPath: /opt/nydus
+            - name: host-usr-local-sbin
+              mountPath: /host/usr/local/sbin
+            - name: host-etc-nydus
+              mountPath: /etc/nydus
+            - name: nydus-run
+              mountPath: /run/containerd-nydus/
+      {{- end }}
       containers:
         - name: nydus-snapshotter
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              set -euo pipefail
+
+              install_if_needed() {
+                local src="$1"
+                local dst="$2"
+                local mode="$3"
+                local dst_dir
+                local tmp
+
+                dst_dir="$(dirname "$dst")"
+                tmp="${dst}.tmp.$$"
+
+                mkdir -p "$dst_dir"
+                if [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+                  return 0
+                fi
+
+                install -m "$mode" "$src" "$tmp"
+                mv -f "$tmp" "$dst"
+              }
+
+              mkdir -p /opt/nydus/bin
+              install_if_needed /nydus-static/nydusd /opt/nydus/bin/nydusd 755
+              install_if_needed /nydus-static/nydusctl /opt/nydus/bin/nydusctl 755
+              install_if_needed /nydus-static/nydus-image /opt/nydus/bin/nydus-image 755
+              install_if_needed /nydus-static/nydus-overlayfs /opt/nydus/bin/nydus-overlayfs 755
+              install_if_needed /nydus-static/nydus-overlayfs /host/usr/local/sbin/nydus-overlayfs 755
+
+              mkdir -p /etc/nydus
+              install_if_needed /nydus-static/configs/nydusd-config.json /etc/nydus/nydusd-config.json 644
+
+              host_setup_enabled="${NYDUS_HOST_SETUP_ENABLED:-false}"
+              containerd_socket="${NYDUS_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}"
+              restart_marker="${NYDUS_RESTART_MARKER:-/run/containerd-nydus/.containerd-restart-required}"
+              nydus_socket="/run/containerd-nydus/containerd-nydus-grpc.sock"
+
+              wait_for_nydus_socket() {
+                for _ in $(seq 1 60); do
+                  if [[ -S "${nydus_socket}" ]]; then
+                    return 0
+                  fi
+                  sleep 1
+                done
+                return 1
+              }
+
+              wait_for_containerd() {
+                for _ in $(seq 1 60); do
+                  if ctr --address "${containerd_socket}" version >/dev/null 2>&1; then
+                    return 0
+                  fi
+                  sleep 1
+                done
+                return 1
+              }
+
+              wait_for_nydus_plugin() {
+                for _ in $(seq 1 60); do
+                  if ctr --address "${containerd_socket}" snapshots --snapshotter nydus ls >/dev/null 2>&1; then
+                    return 0
+                  fi
+                  sleep 1
+                done
+                return 1
+              }
+
+              printf "Executing nydus-snapshotter...\n\n"
+
+              if [[ "${host_setup_enabled}" != "true" ]]; then
+                exec ./containerd-nydus-grpc "$@"
+              fi
+
+              ./containerd-nydus-grpc "$@" &
+              pid=$!
+
+              cleanup() {
+                kill "${pid}" 2>/dev/null || true
+                wait "${pid}" 2>/dev/null || true
+              }
+
+              if ! wait_for_nydus_socket; then
+                printf "ERROR: nydus socket did not become ready in time\n" >&2
+                cleanup
+                exit 1
+              fi
+
+              if [[ -f "${restart_marker}" ]] || ! ctr --address "${containerd_socket}" snapshots --snapshotter nydus ls >/dev/null 2>&1; then
+                printf "Reloading host containerd to activate the nydus snapshotter...\n"
+                chroot /proc/1/root bash -c "systemctl restart containerd"
+
+                if ! wait_for_containerd; then
+                  printf "ERROR: containerd did not become ready in time\n" >&2
+                  cleanup
+                  exit 1
+                fi
+              fi
+
+              if ! wait_for_nydus_plugin; then
+                printf "ERROR: containerd did not load the nydus snapshotter\n" >&2
+                cleanup
+                exit 1
+              fi
+
+              rm -f "${restart_marker}"
+              wait "${pid}"
+            - bash
           args:
             - "--root"
             - "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
@@ -40,11 +271,11 @@ spec:
             - "/nydus-snapshotter/configs/config.toml"
           securityContext:
             privileged: true
-          image: {{ .Values.image.repository }}/{{ .Values.snapshotter.daemonset.image.name }}:{{ .Values.snapshotter.daemonset.image.tag }}
+          image: {{ include "nydus-snapshotter.image" . }}
           imagePullPolicy: {{ .Values.image.imagePullPolicy }}
           {{- if .Values.snapshotter.daemonset.resources }}
           resources:
-            {{- toYaml .Values.snapshotter.daemonset.resources | trim | nindent 12 }}
+            {{- toYaml .Values.snapshotter.daemonset.resources | nindent 12 }}
           {{- end }}
           startupProbe:
             exec:
@@ -52,29 +283,62 @@ spec:
                 - /bin/bash
                 - -c
                 - |-
-                  status=$(ctr plugin ls | grep nydus | awk '{print $4}')
-                  if [[ $status == "ok" ]]; then
-                    echo "nydus is healthy" && true;
-                  else
-                    echo "nydus is unhealthy" && false
+                  if [[ ! -S /run/containerd-nydus/containerd-nydus-grpc.sock ]] || ! pgrep -f containerd-nydus-grpc > /dev/null; then
+                    echo "nydus snapshotter process is not ready"
+                    exit 1
                   fi
-            failureThreshold: 10
-            initialDelaySeconds: 2
+                  {{- if .Values.snapshotter.hostSetup.enabled }}
+                  if ! ctr --address {{ .Values.snapshotter.hostSetup.containerdSocketPath | quote }} snapshots --snapshotter nydus ls > /dev/null 2>&1; then
+                    echo "containerd has not loaded the nydus snapshotter yet"
+                    exit 1
+                  fi
+                  {{- end }}
+                  echo "nydus is healthy"
+            failureThreshold: 45
+            initialDelaySeconds: 5
             periodSeconds: 2
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |-
+                  if [[ ! -S /run/containerd-nydus/containerd-nydus-grpc.sock ]] || ! pgrep -f containerd-nydus-grpc > /dev/null; then
+                    exit 1
+                  fi
+                  {{- if .Values.snapshotter.hostSetup.enabled }}
+                  ctr --address {{ .Values.snapshotter.hostSetup.containerdSocketPath | quote }} snapshots --snapshotter nydus ls > /dev/null 2>&1
+                  {{- else }}
+                  exit 0
+                  {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          env:
+            - name: NYDUS_HOST_SETUP_ENABLED
+              value: {{ ternary "true" "false" .Values.snapshotter.hostSetup.enabled | quote }}
+            - name: NYDUS_CONTAINERD_SOCKET
+              value: {{ .Values.snapshotter.hostSetup.containerdSocketPath | quote }}
+            - name: NYDUS_RESTART_MARKER
+              value: "/run/containerd-nydus/.containerd-restart-required"
           volumeMounts:
             - name: dev
               mountPath: /dev
             - name: nydus
               mountPath: /var/lib/containerd/io.containerd.snapshotter.v1.nydus
               mountPropagation: Bidirectional
-            - name: etc-containerd
-              mountPath: /etc/containerd
             - name: nydus-run
               mountPath: /run/containerd-nydus/
+            {{- if .Values.snapshotter.hostSetup.enabled }}
             - name: containerd-socket
-              mountPath: /run/containerd/containerd.sock
+              mountPath: {{ dir .Values.snapshotter.hostSetup.containerdSocketPath }}
+            {{- end }}
             - name: nydus-bin
               mountPath: /opt/nydus
+            - name: host-usr-local-sbin
+              mountPath: /host/usr/local/sbin
+            - name: host-etc-nydus
+              mountPath: /etc/nydus
             - name: nydus-snapshotter-config
               mountPath: /nydus-snapshotter/configs
               readOnly: true
@@ -91,18 +355,28 @@ spec:
           hostPath:
             path: /run/containerd-nydus/
             type: DirectoryOrCreate
+        {{- if .Values.snapshotter.hostSetup.enabled }}
         - name: etc-containerd
           hostPath:
-            path: /etc/containerd
+            path: {{ dir .Values.snapshotter.hostSetup.containerdConfigPath }}
             type: Directory
         - name: containerd-socket
           hostPath:
-            path: /run/containerd/containerd.sock
-            type: Socket
+            path: {{ dir .Values.snapshotter.hostSetup.containerdSocketPath }}
+            type: Directory
+        {{- end }}
         - name: nydus-bin
           hostPath:
             path: /opt/nydus
             type: DirectoryOrCreate
+        - name: host-usr-local-sbin
+          hostPath:
+            path: /usr/local/sbin
+            type: Directory
+        - name: host-etc-nydus
+          hostPath:
+            path: /etc/nydus
+            type: DirectoryOrCreate
         - name: nydus-snapshotter-config
           configMap:
-            name: nydus-snapshotter-config
+            name: {{ include "nydus-snapshotter.configmapName" . }}

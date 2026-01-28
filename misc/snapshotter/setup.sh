@@ -1,65 +1,84 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
-ret=$(yq -oj '.proxy_plugins.nydus' /etc/containerd/config.toml)
-
-need_start_containerd=false
-
-ret=$(yq -oj '.plugins."io.containerd.grpc.v1.cri".containerd.disable_snapshot_annotations' /etc/containerd/config.toml)
-if [[ ${ret} == "null" || ${ret} == "true" ]]; then
-  echo "disable_snapshot_annotations is null or true, setting it to false"
-  dasel put -r toml -f /etc/containerd/config.toml -t bool -v false  'plugins.io\.containerd\.grpc\.v1\.cri.containerd.disable_snapshot_annotations'
-  need_start_containerd=true
-fi
-
-if [[ ${ret} != "null" ]]; then
-  echo "Nydus snapshotter has been configured!"
-else
-  echo "Added nydus-snapshotter to Containerd's configuration file"
-
-  echo '
-# Added by nydus-snapshotter automatically, nydus-snapshotter will not remove the table even being uninstalled!
-[proxy_plugins.nydus]
-  type = "snapshot"
-  # The "address" field specifies through which socket snapshotter and containerd communicate.
-  address = "/run/containerd-nydus/containerd-nydus-grpc.sock"' >> /etc/containerd/config.toml
-    
-  need_start_containerd=true
-fi
-
-ret=$(yq -oj '.plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus' /etc/containerd/config.toml)
-if [[ ${ret} != "null" ]]; then
-    echo "Runtime handler has been configured!"
-else
-    echo "Added runc-nydus runtime handler to Containerd's configuration file"
-    
-    echo '
-# Added by nydus-snapshotter automatically, nydus-snapshotter will not remove the table even being uninstalled!
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus]
-  runtime_type = "io.containerd.runc.v2"
-  snapshotter = "nydus"
-  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus.options]
-    NoPivotRoot = false
-    NoNewKeyring = false
-    SystemdCgroup = false' >> /etc/containerd/config.toml
-
-   need_start_containerd=true
-fi
-
-if [[ $need_start_containerd == "true" ]]; then
-  echo "Restart Containerd service" 
-  chroot /proc/1/root bash -c "systemctl restart containerd"
-else
-  echo "No need to restart containerd on host"
-fi
-
-pushd /nydus-static
 mkdir -p /opt/nydus/bin
-install -m 755 nydusd nydusctl nydus-image /opt/nydus/bin
-popd
+install -m 755 /nydus-static/nydusd /nydus-static/nydusctl /nydus-static/nydus-image /opt/nydus/bin/
 
-mkdir -p /etc/nydus && cp /nydus-static/configs/nydusd-config.json /etc/nydus/nydusd-config.json
+mkdir -p /etc/nydus
+install -m 644 /nydus-static/configs/nydusd-config.json /etc/nydus/nydusd-config.json
+
+host_setup_enabled="${NYDUS_HOST_SETUP_ENABLED:-false}"
+containerd_socket="${NYDUS_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}"
+restart_marker="${NYDUS_RESTART_MARKER:-/run/containerd-nydus/.containerd-restart-required}"
+nydus_socket="/run/containerd-nydus/containerd-nydus-grpc.sock"
+
+wait_for_nydus_socket() {
+    for _ in $(seq 1 60); do
+        if [[ -S "${nydus_socket}" ]]; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+wait_for_containerd() {
+    for _ in $(seq 1 60); do
+        if ctr --address "${containerd_socket}" version >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+wait_for_nydus_plugin() {
+    for _ in $(seq 1 60); do
+        if ctr --address "${containerd_socket}" snapshots --snapshotter nydus ls >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
 
 printf "Executing nydus-snapshotter...\n\n"
-exec ./containerd-nydus-grpc --nydusd-config /etc/nydus/nydusd-config.json --nydusd /opt/nydus/bin/nydusd --nydus-image /opt/nydus/bin/nydus-image --log-to-stdout "$@"
+
+if [[ "${host_setup_enabled}" != "true" ]]; then
+    exec ./containerd-nydus-grpc "$@"
+fi
+
+./containerd-nydus-grpc "$@" &
+pid=$!
+
+cleanup() {
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+}
+
+if ! wait_for_nydus_socket; then
+    printf "ERROR: nydus socket did not become ready in time\n" >&2
+    cleanup
+    exit 1
+fi
+
+if [[ -f "${restart_marker}" ]] || ! ctr --address "${containerd_socket}" snapshots --snapshotter nydus ls >/dev/null 2>&1; then
+    printf "Reloading host containerd to activate the nydus snapshotter...\n"
+    chroot /proc/1/root bash -c "systemctl restart containerd"
+
+    if ! wait_for_containerd; then
+        printf "ERROR: containerd did not become ready in time\n" >&2
+        cleanup
+        exit 1
+    fi
+fi
+
+if ! wait_for_nydus_plugin; then
+    printf "ERROR: containerd did not load the nydus snapshotter\n" >&2
+    cleanup
+    exit 1
+fi
+
+rm -f "${restart_marker}"
+wait "${pid}"

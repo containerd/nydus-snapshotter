@@ -1,5 +1,7 @@
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: nydus-snapshotter-cluster-role
-rules: 
+  name: {{ include "nydus-snapshotter.clusterRoleName" . }}
+  labels:
+    {{- include "nydus-snapshotter.labels" . | nindent 4 }}
+rules: []

@@ -10,9 +10,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build --mount=type=cache,target=/g
 GOPROXY=${GOPROXY} go install github.com/mikefarah/yq/v4@v4.44.3
 
 FROM debian:bookworm
-ARG NYDUS_VER=v2.3.0
+ARG NYDUS_VER=v2.3.9
 
-RUN apt update && apt -y install jq curl wget procps && \ 
+RUN apt update && apt -y install jq curl wget procps && \
 apt-get clean autoclean && apt-get autoremove --yes && rm -rf /var/lib/{apt,dpkg,cache,log}/
 
 COPY --from=builder /nydus-snapshotter/bin/containerd-nydus-grpc /nydus-snapshotter/containerd-nydus-grpc
@@ -31,6 +31,12 @@ install -D -m 755 /tmp/containerd/bin/ctr /usr/local/bin/ && \
 rm -rf containerd-2.1.1-linux-amd64.tar.gz /tmp/containerd
 
 RUN wget https://github.com/TomWright/dasel/releases/download/v2.8.1/dasel_linux_amd64 && install -D -m 755 dasel_linux_amd64 /usr/local/bin/dasel
+
+# Install toml-cli for TOML configuration management
+RUN wget https://github.com/gnprice/toml-cli/releases/download/v0.2.3/toml-0.2.3-x86_64-linux.tar.gz && \
+    tar xzf toml-0.2.3-x86_64-linux.tar.gz && \
+    install -D -m 755 toml-0.2.3-x86_64-linux/toml /usr/local/bin/toml && \
+    rm -rf toml-0.2.3-x86_64-linux.tar.gz toml-0.2.3-x86_64-linux
 
 COPY misc/snapshotter/setup.sh /setup.sh
 RUN chmod +x /setup.sh

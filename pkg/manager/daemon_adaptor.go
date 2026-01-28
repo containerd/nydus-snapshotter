@@ -31,19 +31,19 @@ import (
 
 const endpointGetBackend string = "/api/v1/daemons/%s/backend"
 
-// Spawn a nydusd daemon to serve the daemon instance.
-//
-// When returning from `StartDaemon()` with out error:
-//   - `d.States.ProcessID` will be set to the pid of the nydusd daemon.
-//   - `d.State()` may return any validate state, please call `d.WaitUntilState()` to
-//     ensure the daemon has reached specified state.
-//   - `d` may have not been inserted into daemonStates and store yet.
-func (m *Manager) StartDaemon(d *daemon.Daemon) error {
+// StartDaemonProcess spawns a nydusd process and returns the daemon pid.
+// When delegation is enabled, the returned pid is the actual host-side nydusd pid,
+// not the transient systemd-run pid.
+func (m *Manager) StartDaemonProcess(d *daemon.Daemon, bin string, upgrade bool) (int, error) {
 	var nydusdPid int
 	if m.delegateNydusd {
+		serviceUnit := ""
+		if upgrade {
+			serviceUnit = buildUpgradeServiceUnitName(d.ID())
+		}
 		if err := executeInMntNamespace("/proc/1/ns/mnt", func() error {
 			var err error
-			cmd, err := m.BuildDaemonCommand(d, "", false)
+			cmd, err := m.BuildDaemonCommand(d, bin, upgrade, serviceUnit)
 			if err != nil {
 				return errors.Wrapf(err, "create command for daemon %s", d.ID())
 			}
@@ -53,7 +53,11 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 				return errors.Wrapf(err, "start delegatee %s", d.ID())
 			}
 
-			nydusdPid, err = parseNydusdPid(string(o))
+			if serviceUnit != "" {
+				nydusdPid, err = parseNydusdPidFromServiceUnit(serviceUnit)
+			} else {
+				nydusdPid, err = parseNydusdPid(string(o))
+			}
 			if err != nil {
 				return errors.Wrapf(err, "parse nydusd pid for delegatee %s", d.ID())
 			}
@@ -61,20 +65,36 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 			log.L.Infof("Delegatee nydusd %s started with pid %d", d.ID(), nydusdPid)
 			return nil
 		}); err != nil {
-			return errors.Wrapf(err, "start daemon %s", d.ID())
+			return 0, errors.Wrapf(err, "start daemon %s", d.ID())
 		}
 	} else {
 		var err error
-		cmd, err := m.BuildDaemonCommand(d, "", false)
+		cmd, err := m.BuildDaemonCommand(d, bin, upgrade, "")
 		if err != nil {
-			return errors.Wrapf(err, "create command for daemon %s", d.ID())
+			return 0, errors.Wrapf(err, "create command for daemon %s", d.ID())
 		}
 
 		if err := cmd.Start(); err != nil {
-			return err
+			return 0, err
 		}
 
 		nydusdPid = cmd.Process.Pid
+	}
+
+	return nydusdPid, nil
+}
+
+// Spawn a nydusd daemon to serve the daemon instance.
+//
+// When returning from `StartDaemon()` with out error:
+//   - `d.States.ProcessID` will be set to the pid of the nydusd daemon.
+//   - `d.State()` may return any validate state, please call `d.WaitUntilState()` to
+//     ensure the daemon has reached specified state.
+//   - `d` may have not been inserted into daemonStates and store yet.
+func (m *Manager) StartDaemon(d *daemon.Daemon) error {
+	nydusdPid, err := m.StartDaemonProcess(d, "", false)
+	if err != nil {
+		return err
 	}
 
 	d.Lock()
@@ -107,7 +127,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	// TODO: Is it right to commit daemon before nydusd successfully started?
 	// And it brings extra latency of accessing DB. Only write daemon record to
 	// DB when nydusd is started?
-	err := m.UpdateDaemon(d)
+	err = m.UpdateDaemon(d)
 	if err != nil {
 		// Nothing we can do, just ignore it for now
 		log.L.Errorf("Fail to update daemon info (%+v) to DB: %v", d, err)
@@ -152,7 +172,7 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 }
 
 // Build commandline according to nydusd daemon configuration.
-func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool) (*exec.Cmd, error) {
+func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool, serviceUnit string) (*exec.Cmd, error) {
 	var cmdOpts []command.Opt
 	var imageReference string
 
@@ -252,6 +272,9 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 	log.L.Infof("nydusd command: %s %s", nydusdPath, strings.Join(args, " "))
 	if m.delegateNydusd {
 		delegateeCmdFlags := []string{"--description", "nydusd"}
+		if serviceUnit != "" {
+			delegateeCmdFlags = append(delegateeCmdFlags, "--unit", serviceUnit)
+		}
 		args = append([]string{nydusdPath}, args...)
 		args = append(delegateeCmdFlags, args...)
 		cmd = exec.Command("systemd-run", args...)
@@ -264,6 +287,10 @@ func (m *Manager) BuildDaemonCommand(d *daemon.Daemon, bin string, upgrade bool)
 	}
 
 	return cmd, nil
+}
+
+func buildUpgradeServiceUnitName(daemonID string) string {
+	return fmt.Sprintf("nydusd-upgrade-%s-%x.service", daemonID, time.Now().UnixNano())
 }
 
 // executeInMntNamespace runs a function in the specified namespace and ensures thread isolation
@@ -302,7 +329,10 @@ func parseNydusdPid(data string) (int, error) {
 	// The new-born nydusd is not a direct child of nydus-snapshotter we we can't get its PID directly from the exec command.
 	output := strings.TrimSpace(data)
 	serviceUnit := strings.TrimPrefix(output, "Running as unit:")
+	return parseNydusdPidFromServiceUnit(strings.TrimSpace(serviceUnit))
+}
 
+func parseNydusdPidFromServiceUnit(serviceUnit string) (int, error) {
 	// systemctl show --property=MainPID run-rc28cf5fdc45c497cbe6736aea1e2701e.service
 	// MainPID=1037947
 	cmd := exec.Command("systemctl", "show", "--property=MainPID", strings.TrimSpace(serviceUnit))
@@ -310,7 +340,7 @@ func parseNydusdPid(data string) (int, error) {
 	if err != nil {
 		return 0, errors.Wrapf(err, "get nydusd MainPID from delegatee")
 	}
-	output = strings.TrimSpace(string(o))
+	output := strings.TrimSpace(string(o))
 	tokens := strings.Split(output, "=")
 	if len(tokens) != 2 {
 		return 0, errors.Errorf("unexpected output %q from systemctl show", output)

@@ -1,0 +1,527 @@
+name: Helm Chart E2E Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      nydus_version_old:
+        description: 'Old Nydus version for upgrade test'
+        required: false
+        default: 'v2.3.9'
+      nydus_version_new:
+        description: 'New Nydus version for upgrade test'
+        required: false
+        default: 'v2.4.0'
+
+env:
+  HELM_RELEASE: nydus-snapshotter
+  HELM_NAMESPACE: nydus-system
+  WORKLOAD_NAMESPACE: nydus-test
+  NGINX_POD_NAME: nginx-nydus-test
+  NGINX_IMAGE: ghcr.io/dragonflyoss/image-service/nginx:nydus-nightly-v6
+  NGINX_HOST_PORT: "83"
+  KIND_CLUSTER_NAME: nydus-helm-test
+  IMAGE_REPOSITORY: local
+  IMAGE_NAME: helm-nydus
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Lint Helm chart
+        run: helm lint charts/
+
+      - name: Template Helm chart
+        run: helm template test-release charts/ --debug
+
+  helm-install-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: 'go.sum'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.0
+
+      - name: Install kind
+        run: |
+          curl -fsSL -o kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+          kind version
+
+      - name: Build static binaries
+        run: make static
+
+      - name: Build Helm test image
+        run: |
+          docker build -f docker/Dockerfile --build-arg NYDUS_VER=v2.4.0 -t ${IMAGE_REPOSITORY}/${IMAGE_NAME}:e2e .
+
+      - name: Create kind config
+        run: |
+          if [ -e /dev/fuse ]; then
+            cat > /tmp/kind-config.yaml <<'EOF'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+              extraMounts:
+                - hostPath: /dev/fuse
+                  containerPath: /dev/fuse
+            - role: worker
+              extraMounts:
+                - hostPath: /dev/fuse
+                  containerPath: /dev/fuse
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".containerd]
+                snapshotter = "overlayfs"
+                disable_snapshot_annotations = false
+          EOF
+          else
+            cat > /tmp/kind-config.yaml <<'EOF'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+            - role: worker
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".containerd]
+                snapshotter = "overlayfs"
+                disable_snapshot_annotations = false
+          EOF
+          fi
+
+      - name: Create kind cluster
+        run: |
+          kind create cluster --name "${KIND_CLUSTER_NAME}" --config /tmp/kind-config.yaml --wait 120s
+
+      - name: Load Helm test image into kind
+        run: |
+          kind load docker-image ${IMAGE_REPOSITORY}/${IMAGE_NAME}:e2e --name "${KIND_CLUSTER_NAME}"
+
+      - name: Install Helm chart
+        run: |
+          helm install "${HELM_RELEASE}" charts/ \
+            --namespace "${HELM_NAMESPACE}" \
+            --create-namespace \
+            --set image.repository="${IMAGE_REPOSITORY}" \
+            --set snapshotter.daemonset.image.name="${IMAGE_NAME}" \
+            --set snapshotter.daemonset.image.tag=e2e \
+            --set snapshotter.hostSetup.enabled=true \
+            --wait \
+            --timeout 5m
+
+      - name: Wait for snapshotter ready
+        run: |
+          set -euo pipefail
+
+          sleep 30
+
+          for i in $(seq 1 12); do
+            ready="$(kubectl get pods -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null || true)"
+            if [[ "${ready}" == *"true"* ]]; then
+              kubectl get pods -n "${HELM_NAMESPACE}"
+              break
+            fi
+            echo "Waiting for snapshotter pods... attempt ${i}/12"
+            kubectl get pods -n "${HELM_NAMESPACE}" || true
+            sleep 10
+          done
+
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/name=nydus-snapshotter \
+            -n "${HELM_NAMESPACE}" \
+            --timeout=2m
+
+      - name: Verify snapshotter installation
+        run: |
+          set -euo pipefail
+
+          WORKER_CONTAINER="${KIND_CLUSTER_NAME}-worker"
+          SNAPSHOTTER_POD="$(kubectl get pod -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter -o jsonpath='{.items[0].metadata.name}')"
+          SNAPSHOTTER_NODE="$(kubectl get pod -n "${HELM_NAMESPACE}" "${SNAPSHOTTER_POD}" -o jsonpath='{.spec.nodeName}')"
+          CONFIG_CONTENT="$(kubectl get configmap -n "${HELM_NAMESPACE}" nydus-snapshotter-config -o go-template='{{index .data "config.toml"}}')"
+
+          kubectl get runtimeclass runc-nydus
+          kubectl get runtimeclass runc-overlayfs
+          test "${SNAPSHOTTER_NODE}" = "${KIND_CLUSTER_NAME}-worker"
+
+          grep -F 'delegate_nydusd = true' <<<"${CONFIG_CONTENT}"
+          grep -F 'enable_nydus_overlayfs = true' <<<"${CONFIG_CONTENT}"
+          grep -F 'nydusd_path = "/opt/nydus/bin/nydusd"' <<<"${CONFIG_CONTENT}"
+
+          docker exec "${WORKER_CONTAINER}" ctr --address /run/containerd/containerd.sock snapshots --snapshotter nydus ls
+          docker exec "${WORKER_CONTAINER}" sh -lc 'grep -n "imports\\|snapshotter\\|proxy_plugins\\|runc-nydus" /etc/containerd/config.toml /etc/containerd/nydus-proxy.toml'
+
+      - name: Deploy nginx nydus workload
+        run: |
+          set -euo pipefail
+
+          WORKER_NODE="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -Ev 'control-plane|master' | head -n 1)"
+
+          kubectl create namespace "${WORKLOAD_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+          cat > /tmp/nginx-nydus.yaml <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${NGINX_POD_NAME}
+            namespace: ${WORKLOAD_NAMESPACE}
+          spec:
+            runtimeClassName: runc-nydus
+            nodeName: ${WORKER_NODE}
+            restartPolicy: Always
+            containers:
+              - name: nginx
+                image: ${NGINX_IMAGE}
+                ports:
+                  - containerPort: 80
+                    hostPort: ${NGINX_HOST_PORT}
+                readinessProbe:
+                  httpGet:
+                    path: /
+                    port: 80
+                  periodSeconds: 5
+                  failureThreshold: 12
+          EOF
+
+          kubectl apply -f /tmp/nginx-nydus.yaml
+          kubectl wait --for=condition=Ready -n "${WORKLOAD_NAMESPACE}" pod/"${NGINX_POD_NAME}" --timeout=240s
+
+      - name: Verify nginx uses nydus snapshotter
+        run: |
+          set -euo pipefail
+
+          WORKER_CONTAINER="${KIND_CLUSTER_NAME}-worker"
+          CONTAINER_REF="$(kubectl get pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}" -o jsonpath='{.status.containerStatuses[0].containerID}')"
+          CONTAINER_ID="${CONTAINER_REF#containerd://}"
+          SNAPSHOTTER_NAME="$(docker exec "${WORKER_CONTAINER}" sh -lc "crictl inspect ${CONTAINER_ID} | sed -n 's/.*\\\"snapshotter\\\": \\\"\\([^\\\"]*\\)\\\".*/\\1/p' | head -n 1")"
+
+          kubectl get pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}" -o jsonpath='{.spec.runtimeClassName}' | grep '^runc-nydus$'
+          test "${SNAPSHOTTER_NAME}" = "nydus"
+          docker exec "${WORKER_CONTAINER}" sh -lc "curl -fsS -o /dev/null -I http://127.0.0.1:${NGINX_HOST_PORT}"
+
+      - name: Stop snapshotter and verify nginx stays healthy
+        run: |
+          set -euo pipefail
+
+          WORKER_CONTAINER="${KIND_CLUSTER_NAME}-worker"
+
+          kubectl patch ds nydus-snapshotter -n "${HELM_NAMESPACE}" --type=merge \
+            -p '{"spec":{"template":{"spec":{"nodeSelector":{"nydus-test/disable":"true"}}}}}'
+
+          for _ in $(seq 1 60); do
+            pods="$(kubectl get pods -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter --no-headers 2>/dev/null | wc -l | tr -d " ")"
+            if [ "${pods}" = "0" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          pods="$(kubectl get pods -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter --no-headers 2>/dev/null | wc -l | tr -d " ")"
+          test "${pods}" = "0"
+          kubectl get pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}" -o jsonpath='{.status.phase}' | grep '^Running$'
+          docker exec "${WORKER_CONTAINER}" sh -lc "curl -fsS -o /dev/null -I http://127.0.0.1:${NGINX_HOST_PORT}"
+
+      - name: Recover snapshotter and verify nginx stays healthy
+        run: |
+          set -euo pipefail
+
+          WORKER_CONTAINER="${KIND_CLUSTER_NAME}-worker"
+
+          kubectl patch ds nydus-snapshotter -n "${HELM_NAMESPACE}" --type=merge \
+            -p '{"spec":{"template":{"spec":{"nodeSelector":{}}}}}'
+
+          kubectl rollout status ds/nydus-snapshotter -n "${HELM_NAMESPACE}" --timeout=240s
+          kubectl wait --for=condition=Ready -n "${WORKLOAD_NAMESPACE}" pod/"${NGINX_POD_NAME}" --timeout=180s
+          docker exec "${WORKER_CONTAINER}" sh -lc "curl -fsS -o /dev/null -I http://127.0.0.1:${NGINX_HOST_PORT}"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          set +e
+          kubectl get pods -A -o wide
+          kubectl get ds -A
+          kubectl describe pod -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter
+          kubectl logs -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter --all-containers
+          kubectl describe pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}"
+          kubectl logs -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}"
+          docker exec "${KIND_CLUSTER_NAME}-worker" ctr --address /run/containerd/containerd.sock snapshots --snapshotter nydus ls || true
+          docker exec "${KIND_CLUSTER_NAME}-worker" sh -lc 'crictl ps -a; crictl pods' || true
+          docker exec "${KIND_CLUSTER_NAME}-worker" sh -lc 'cat /etc/containerd/config.toml; echo; cat /etc/containerd/nydus-proxy.toml' || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name "${KIND_CLUSTER_NAME}" || true
+
+  hot-upgrade-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Golang
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache-dependency-path: 'go.sum'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.0
+
+      - name: Install kind
+        run: |
+          curl -fsSL -o kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+          kind version
+
+      - name: Set Nydus versions
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "NYDUS_VERSION_OLD=${{ github.event.inputs.nydus_version_old }}" >> "${GITHUB_ENV}"
+            echo "NYDUS_VERSION_NEW=${{ github.event.inputs.nydus_version_new }}" >> "${GITHUB_ENV}"
+          else
+            echo "NYDUS_VERSION_OLD=v2.3.9" >> "${GITHUB_ENV}"
+            echo "NYDUS_VERSION_NEW=v2.4.0" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Build static binaries
+        run: make static
+
+      - name: Build old and new Helm images
+        run: |
+          docker build -f docker/Dockerfile --build-arg NYDUS_VER="${NYDUS_VERSION_OLD}" -t ${IMAGE_REPOSITORY}/${IMAGE_NAME}:old .
+          docker build -f docker/Dockerfile --build-arg NYDUS_VER="${NYDUS_VERSION_NEW}" -t ${IMAGE_REPOSITORY}/${IMAGE_NAME}:new .
+
+      - name: Create kind config
+        run: |
+          if [ -e /dev/fuse ]; then
+            cat > /tmp/kind-config.yaml <<'EOF'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+              extraMounts:
+                - hostPath: /dev/fuse
+                  containerPath: /dev/fuse
+            - role: worker
+              extraMounts:
+                - hostPath: /dev/fuse
+                  containerPath: /dev/fuse
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".containerd]
+                snapshotter = "overlayfs"
+                disable_snapshot_annotations = false
+          EOF
+          else
+            cat > /tmp/kind-config.yaml <<'EOF'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+            - role: worker
+          containerdConfigPatches:
+            - |-
+              [plugins."io.containerd.grpc.v1.cri".containerd]
+                snapshotter = "overlayfs"
+                disable_snapshot_annotations = false
+          EOF
+          fi
+
+      - name: Create kind cluster
+        run: |
+          kind create cluster --name "${KIND_CLUSTER_NAME}" --config /tmp/kind-config.yaml --wait 120s
+
+      - name: Load old image into kind
+        run: |
+          kind load docker-image ${IMAGE_REPOSITORY}/${IMAGE_NAME}:old --name "${KIND_CLUSTER_NAME}"
+
+      - name: Install Helm chart with old image
+        run: |
+          helm install "${HELM_RELEASE}" charts/ \
+            --namespace "${HELM_NAMESPACE}" \
+            --create-namespace \
+            --set image.repository="${IMAGE_REPOSITORY}" \
+            --set snapshotter.daemonset.image.name="${IMAGE_NAME}" \
+            --set snapshotter.daemonset.image.tag=old \
+            --set snapshotter.hostSetup.enabled=true \
+            --wait \
+            --timeout 5m
+
+      - name: Wait for old snapshotter ready
+        run: |
+          set -euo pipefail
+
+          sleep 30
+
+          for i in $(seq 1 12); do
+            ready="$(kubectl get pods -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter -o jsonpath='{.items[*].status.containerStatuses[*].ready}' 2>/dev/null || true)"
+            if [[ "${ready}" == *"true"* ]]; then
+              kubectl get pods -n "${HELM_NAMESPACE}"
+              break
+            fi
+            echo "Waiting for snapshotter pods... attempt ${i}/12"
+            kubectl get pods -n "${HELM_NAMESPACE}" || true
+            sleep 10
+          done
+
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/name=nydus-snapshotter \
+            -n "${HELM_NAMESPACE}" \
+            --timeout=2m
+
+          docker exec "${KIND_CLUSTER_NAME}-worker" ctr --address /run/containerd/containerd.sock snapshots --snapshotter nydus ls
+
+      - name: Deploy nginx nydus workload
+        run: |
+          set -euo pipefail
+
+          WORKER_NODE="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -Ev 'control-plane|master' | head -n 1)"
+
+          kubectl create namespace "${WORKLOAD_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+          cat > /tmp/nginx-nydus.yaml <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ${NGINX_POD_NAME}
+            namespace: ${WORKLOAD_NAMESPACE}
+          spec:
+            runtimeClassName: runc-nydus
+            nodeName: ${WORKER_NODE}
+            restartPolicy: Always
+            containers:
+              - name: nginx
+                image: ${NGINX_IMAGE}
+                ports:
+                  - containerPort: 80
+                    hostPort: ${NGINX_HOST_PORT}
+                readinessProbe:
+                  httpGet:
+                    path: /
+                    port: 80
+                  periodSeconds: 5
+                  failureThreshold: 12
+          EOF
+
+          kubectl apply -f /tmp/nginx-nydus.yaml
+          kubectl wait --for=condition=Ready -n "${WORKLOAD_NAMESPACE}" pod/"${NGINX_POD_NAME}" --timeout=240s
+
+      - name: Inject new nydusd onto worker hostPath
+        run: |
+          set -euo pipefail
+
+          SNAPSHOTTER_POD="$(kubectl get pod -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter -o jsonpath='{.items[0].metadata.name}')"
+
+          docker rm -f nydusd-extract >/dev/null 2>&1 || true
+          docker create --name nydusd-extract ${IMAGE_REPOSITORY}/${IMAGE_NAME}:new >/dev/null
+          docker cp nydusd-extract:/nydus-static/nydusd /tmp/new-nydusd
+          docker rm -f nydusd-extract >/dev/null
+
+          kubectl exec -i -n "${HELM_NAMESPACE}" "${SNAPSHOTTER_POD}" -c nydus-snapshotter -- \
+            sh -c 'cat > /opt/nydus/bin/new-nydusd && chmod 755 /opt/nydus/bin/new-nydusd' < /tmp/new-nydusd
+
+          kubectl exec -n "${HELM_NAMESPACE}" "${SNAPSHOTTER_POD}" -c nydus-snapshotter -- /opt/nydus/bin/new-nydusd --version
+          docker exec "${KIND_CLUSTER_NAME}-worker" ls -l /opt/nydus/bin/new-nydusd
+
+      - name: Record pre-upgrade state
+        run: |
+          echo "PRE_UPGRADE_POD=$(kubectl get pod -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter -o jsonpath='{.items[0].metadata.name}')" >> "${GITHUB_ENV}"
+          echo "PRE_NGINX_RESTARTS=$(kubectl get pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}" -o jsonpath='{.status.containerStatuses[0].restartCount}')" >> "${GITHUB_ENV}"
+
+      - name: Helm upgrade with new nydusd_path
+        run: |
+          helm upgrade "${HELM_RELEASE}" charts/ \
+            --namespace "${HELM_NAMESPACE}" \
+            --reuse-values \
+            --set snapshotter.config.daemon.nydusd_path=/opt/nydus/bin/new-nydusd \
+            --wait \
+            --timeout 5m
+
+      - name: Verify hot-upgrade result
+        run: |
+          set -euo pipefail
+
+          WORKER_CONTAINER="${KIND_CLUSTER_NAME}-worker"
+          CONFIG_CONTENT="$(kubectl get configmap -n "${HELM_NAMESPACE}" nydus-snapshotter-config -o go-template='{{index .data "config.toml"}}')"
+          NEW_POD="$(kubectl get pod -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter -o jsonpath='{.items[0].metadata.name}')"
+          POST_NGINX_RESTARTS="$(kubectl get pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}" -o jsonpath='{.status.containerStatuses[0].restartCount}')"
+          CONTAINER_REF="$(kubectl get pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}" -o jsonpath='{.status.containerStatuses[0].containerID}')"
+          CONTAINER_ID="${CONTAINER_REF#containerd://}"
+          SNAPSHOTTER_NAME="$(docker exec "${WORKER_CONTAINER}" sh -lc "crictl inspect ${CONTAINER_ID} | sed -n 's/.*\\\"snapshotter\\\": \\\"\\([^\\\"]*\\)\\\".*/\\1/p' | head -n 1")"
+
+          grep -F 'nydusd_path = "/opt/nydus/bin/new-nydusd"' <<<"${CONFIG_CONTENT}"
+          test "${NEW_POD}" != "${PRE_UPGRADE_POD}"
+          kubectl rollout status ds/nydus-snapshotter -n "${HELM_NAMESPACE}" --timeout=240s
+          kubectl wait --for=condition=Ready -n "${WORKLOAD_NAMESPACE}" pod/"${NGINX_POD_NAME}" --timeout=180s
+          test "${POST_NGINX_RESTARTS}" = "${PRE_NGINX_RESTARTS}"
+          test "${SNAPSHOTTER_NAME}" = "nydus"
+
+          docker exec "${WORKER_CONTAINER}" sh -lc "curl -fsS -o /dev/null -I http://127.0.0.1:${NGINX_HOST_PORT}"
+          docker exec "${WORKER_CONTAINER}" sh -lc "ps -ef | grep '/opt/nydus/bin/new-nydusd' | grep -v grep"
+          docker exec "${WORKER_CONTAINER}" sh -lc "grep -F 'nydusd command: /opt/nydus/bin/new-nydusd fuse --upgrade' /var/lib/containerd/io.containerd.snapshotter.v1.nydus/logs/nydus-snapshotter.log"
+
+          if docker exec "${WORKER_CONTAINER}" sh -lc "grep -F 'hot upgrade failed' /var/lib/containerd/io.containerd.snapshotter.v1.nydus/logs/nydus-snapshotter.log"; then
+            echo "Detected hot upgrade failure in snapshotter logs" >&2
+            exit 1
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          set +e
+          kubectl get pods -A -o wide
+          kubectl get ds -A
+          kubectl describe pod -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter
+          kubectl logs -n "${HELM_NAMESPACE}" -l app.kubernetes.io/name=nydus-snapshotter --all-containers
+          kubectl describe pod -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}"
+          kubectl logs -n "${WORKLOAD_NAMESPACE}" "${NGINX_POD_NAME}"
+          docker exec "${KIND_CLUSTER_NAME}-worker" cat /var/lib/containerd/io.containerd.snapshotter.v1.nydus/logs/nydus-snapshotter.log || true
+          docker exec "${KIND_CLUSTER_NAME}-worker" ctr --address /run/containerd/containerd.sock snapshots --snapshotter nydus ls || true
+          docker exec "${KIND_CLUSTER_NAME}-worker" sh -lc 'crictl ps -a; crictl pods' || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f /tmp/new-nydusd
+          kind delete cluster --name "${KIND_CLUSTER_NAME}" || true

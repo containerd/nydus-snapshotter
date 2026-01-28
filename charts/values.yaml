@@ -1,24 +1,33 @@
 image:
-  repository: ghcr.io/containerd
-  imagePullPolicy: Always
+  repository: ccr.ccs.tencentyun.com/nydus
+  imagePullPolicy: IfNotPresent
   imagePullSecret: ""
 
 nameOverride: ""
 fullnameOverride: ""
 
-rbac:
-  serviceAccount:
-    create: true
-    node:
-      name: csi-vepfs-node-sa
-    controller:
-      name: csi-vepfs-controller-sa
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
 
 snapshotter:
+  # Host bootstrap behavior for nydus-snapshotter.
+  # When enabled, an initContainer mutates host containerd config and restarts
+  # containerd. This is invasive and can disrupt control-plane or kind nodes.
+  # Keep it enabled when the chart is responsible for wiring containerd to the
+  # nydus snapshotter. Disable it only when nodes are already preconfigured.
+  hostSetup:
+    enabled: true
+    containerdConfigPath: "/etc/containerd/config.toml"
+    containerdSocketPath: "/run/containerd/containerd.sock"
+
   daemonset:
     image:
-      name: nydus-snapshotter
-      tag: v0.16.0
+      name: helm-nydus
+      tag: test23
     resources:
       limits:
         cpu: 1
@@ -28,16 +37,126 @@ snapshotter:
         memory: 200Mi
     tolerations:
       - operator: Exists
-    nodeSelector:
-  configuration:
+    nodeSelector: {}
 
-## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
-# affinity -- Affinity for pod assignment
+  # Structured snapshotter config rendered into config.toml when `configuration` is empty.
+  # Prefer config.toml-native keys, for example:
+  #   --set snapshotter.config.daemon.fs_driver=fusedev
+  #   --set snapshotter.config.metrics.address=:9110
+  # Backward-compatible flat keys such as `snapshotter.config.logLevel` are still accepted.
+  config:
+    version: 1
+    root: "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
+    address: "/run/containerd-nydus/containerd-nydus-grpc.sock"
+    uid: 0
+    gid: 0
+    daemon_mode: "dedicated"
+    cleanup_on_close: false
+    delegate_nydusd: true
+
+    system:
+      enable: true
+      address: "/run/containerd-nydus/system.sock"
+      uid: 0
+      gid: 0
+      debug:
+        daemon_cpu_profile_duration_secs: 5
+        pprof_address: ""
+
+    daemon:
+      nydusd_config: "/etc/nydus/nydusd-config.json"
+      nydusd_path: "/opt/nydus/bin/nydusd"
+      nydusimage_path: "/opt/nydus/bin/nydus-image"
+      fs_driver: "fusedev"
+      recover_policy: "failover"
+      threads_number: 4
+      log_rotation_size: 100
+      failover_policy: "resend"
+
+    cgroup:
+      enable: true
+      memory_limit: ""
+
+    log:
+      log_to_stdout: false
+      level: "info"
+      dir: ""
+      log_rotation_compress: true
+      log_rotation_local_time: true
+      log_rotation_max_age: 7
+      log_rotation_max_backups: 5
+      log_rotation_max_size: 100
+
+    metrics:
+      address: ":9110"
+      hung_io_interval: "10s"
+      collect_interval: "1m"
+
+    remote:
+      convert_vpc_registry: false
+      skip_ssl_verify: false
+      mirrors_config:
+        dir: ""
+      auth:
+        enable_kubeconfig_keychain: false
+        kubeconfig_path: ""
+        enable_cri_keychain: false
+        image_service_address: ""
+        enable_kubelet_credential_providers: false
+        credential_provider_config: ""
+        credential_provider_bin_dir: ""
+        credential_renewal_interval: "0s"
+
+    snapshot:
+      enable_nydus_overlayfs: true
+      nydus_overlayfs_path: "nydus-overlayfs"
+      enable_kata_volume: false
+      sync_remove: false
+
+    cache_manager:
+      disable: false
+      gc_period: "24h"
+      cache_dir: ""
+
+    image:
+      public_key_file: ""
+      validate_signature: false
+
+    experimental:
+      enable_stargz: false
+      enable_referrer_detect: false
+      enable_index_detect: false
+      enable_backend_source: false
+      tarfs:
+        enable_tarfs: false
+        mount_tarfs_on_host: false
+        tarfs_hint: false
+        max_concurrent_proc: 0
+        export_mode: ""
+
+  # Custom snapshotter configuration (config.toml content)
+  # If set, this takes precedence over the structured 'config' options above
+  configuration: ""
+
+# Default scheduling keeps the DaemonSet away from control-plane nodes and
+# virtual-kubelet style nodes while still allowing regular nodes without an
+# instance-type label.
 affinity:
   nodeAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:
       nodeSelectorTerms:
         - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+            - key: node-role.kubernetes.io/master
+              operator: DoesNotExist
+            - key: node.kubernetes.io/instance-type
+              operator: DoesNotExist
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+            - key: node-role.kubernetes.io/master
+              operator: DoesNotExist
             - key: node.kubernetes.io/instance-type
               operator: NotIn
               values:
