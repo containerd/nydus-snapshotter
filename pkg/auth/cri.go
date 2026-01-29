@@ -13,11 +13,9 @@ import (
 
 	"github.com/containerd/containerd/v2/defaults"
 	"github.com/containerd/containerd/v2/pkg/dialer"
-	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/log"
 	"github.com/containerd/stargz-snapshotter/service/keychain/cri"
 	"github.com/containerd/stargz-snapshotter/service/resolver"
-	distribution "github.com/distribution/reference"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -27,9 +25,55 @@ import (
 
 const DefaultImageServiceAddress = "/run/containerd/containerd.sock"
 
+// TODO: embed in CRIProvider
 // Should be concurrency safe
-var Credentials []resolver.Credential = make([]resolver.Credential, 0, 8)
+var credentials []resolver.Credential = make([]resolver.Credential, 0, 8)
 
+// CRIProvider retrieves credentials from CRI image pull requests.
+type CRIProvider struct{}
+
+// NewCRIProvider creates a new CRI-based auth provider.
+func NewCRIProvider() *CRIProvider {
+	return &CRIProvider{}
+}
+
+func (p *CRIProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
+	if len(credentials) == 0 {
+		return nil, errors.New("no Credentials parsers")
+	}
+
+	if req == nil || req.Ref == "" {
+		return nil, errors.New("ref not found")
+	}
+
+	refSpec, host, err := parseReference(req.Ref)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parse reference %s", req.Ref)
+	}
+
+	var u, s string
+	var keychain *PassKeyChain
+
+	for _, cred := range credentials {
+		if username, secret, err := cred(host, refSpec); err != nil {
+			return nil, err
+		} else if username != "" || secret != "" {
+			u = username
+			s = secret
+
+			keychain = &PassKeyChain{
+				Username: u,
+				Password: s,
+			}
+
+			return keychain, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no credentials found for host: %s", host)
+}
+
+// newCRIConn creates a gRPC connection to the CRI service.
 // This function is borrowed from stargz
 func newCRIConn(criAddr string) (*grpc.ClientConn, error) {
 	// TODO: make gRPC options configurable from config.toml
@@ -48,6 +92,8 @@ func newCRIConn(criAddr string) (*grpc.ClientConn, error) {
 	return grpc.NewClient(dialer.DialAddress(criAddr), gopts...)
 }
 
+// AddImageProxy sets up a CRI image proxy that intercepts credentials.
+// This should be called once at startup to enable CRI credential capture.
 // from stargz-snapshotter/cmd/containerd-stargz-grpc/main.go#main
 func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress string) {
 	criAddr := DefaultImageServiceAddress
@@ -66,49 +112,7 @@ func AddImageProxy(ctx context.Context, rpc *grpc.Server, imageServiceAddress st
 
 	runtime.RegisterImageServiceServer(rpc, criServer)
 
-	Credentials = append(Credentials, criCred)
+	credentials = append(credentials, criCred)
 
 	log.G(ctx).WithField("target-image-service", criAddr).Info("setup image proxy keychain")
-}
-
-func FromCRI(host, ref string) (*PassKeyChain, error) {
-	if Credentials == nil {
-		return nil, errors.New("No Credentials parsers")
-	}
-
-	refSpec, err := parseReference(ref)
-	if err != nil {
-		log.L.WithError(err).Error("parse ref failed")
-		return nil, errors.Wrapf(err, "parse image reference %s", ref)
-	}
-
-	var u, p string
-	var keychain *PassKeyChain
-
-	for _, cred := range Credentials {
-		if username, secret, err := cred(host, refSpec); err != nil {
-			return nil, err
-		} else if username != "" || secret != "" {
-			u = username
-			p = secret
-
-			keychain = &PassKeyChain{
-				Username: u,
-				Password: p,
-			}
-
-			break
-		}
-	}
-
-	return keychain, nil
-}
-
-// from stargz-snapshotter/service/keychain/cri/cri.go
-func parseReference(ref string) (reference.Spec, error) {
-	namedRef, err := distribution.ParseDockerRef(ref)
-	if err != nil {
-		return reference.Spec{}, fmt.Errorf("failed to parse image reference %q: %w", ref, err)
-	}
-	return reference.Parse(namedRef.String())
 }
