@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026. Ant Group. All rights reserved.
+ * Copyright (c) 2026. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

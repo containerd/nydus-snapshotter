@@ -100,7 +100,7 @@ func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
 		return kc
 	}
 	if err != nil {
-		errs = append(errs, errors.Wrap(err, "get credentials from labels"))
+		errs = append(errs, errors.Wrap(err, "get credentials from Kubernetes secrets"))
 	}
 
 	// Only output the errors if we did not manage to get a keychain

@@ -8,6 +8,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/containerd/containerd/v2/defaults"
@@ -69,7 +70,7 @@ func (p *CRIProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
 		}
 	}
 
-	return nil, errors.New("no credentials found for host " + host)
+	return nil, fmt.Errorf("no credentials found for host: %s", host)
 }
 
 // newCRIConn creates a gRPC connection to the CRI service.

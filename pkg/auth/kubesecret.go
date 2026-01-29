@@ -51,7 +51,7 @@ func (p *KubeSecretProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, er
 
 	passKey := kubeSecretListener.GetCredentialsStore(host)
 	if passKey == nil {
-		return nil, errors.New("no kube secret credentials found for host " + host)
+		return nil, fmt.Errorf("no kube secret credentials found for host: %s", host)
 	}
 
 	return passKey, nil

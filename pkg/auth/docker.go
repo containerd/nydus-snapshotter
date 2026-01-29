@@ -7,6 +7,7 @@
 package auth
 
 import (
+	"fmt"
 	"os"
 
 	dockerconfig "github.com/docker/cli/cli/config"
@@ -57,7 +58,7 @@ func (p *DockerProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error)
 
 	// Do not return partially empty auth. It makes caller life easier.
 	if len(authConfig.Username) == 0 || len(authConfig.Password) == 0 {
-		return nil, errors.New("auth config not complete for host" + host)
+		return nil, fmt.Errorf("auth config not complete for host: %s", host)
 	}
 
 	return &PassKeyChain{
