@@ -7,10 +7,12 @@
 package auth
 
 import (
+	"fmt"
 	"os"
 
 	dockerconfig "github.com/docker/cli/cli/config"
-	"github.com/sirupsen/logrus"
+	"github.com/docker/cli/cli/config/configfile"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -18,10 +20,28 @@ const (
 	convertedDockerHost = "registry-1.docker.io"
 )
 
-// FromDockerConfig finds auth for a given host in docker's config.json settings.
-func FromDockerConfig(host string) *PassKeyChain {
-	if len(host) == 0 {
-		return nil
+// DockerProvider retrieves credentials from Docker's config.json.
+type DockerProvider struct {
+	dockerConfig *configfile.ConfigFile
+}
+
+// NewDockerProvider creates a new Docker config-based auth provider.
+func NewDockerProvider() *DockerProvider {
+	return &DockerProvider{
+		dockerConfig: dockerconfig.LoadDefaultConfigFile(os.Stderr),
+	}
+}
+
+// GetCredentials retrieves credentials from Docker's config.json.
+// Returns nil if no credentials are found for the registry.
+func (p *DockerProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
+	if req == nil || req.Ref == "" {
+		return nil, errors.New("ref not found")
+	}
+
+	_, host, err := parseReference(req.Ref)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parse reference %s", req.Ref)
 	}
 
 	// The host of docker hub image will be converted to `registry-1.docker.io` in:
@@ -31,20 +51,18 @@ func FromDockerConfig(host string) *PassKeyChain {
 		host = dockerHost
 	}
 
-	config := dockerconfig.LoadDefaultConfigFile(os.Stderr)
-	authConfig, err := config.GetAuthConfig(host)
+	authConfig, err := p.dockerConfig.GetAuthConfig(host)
 	if err != nil {
-		logrus.WithError(err).Infof("no auth from docker config for host %s", host)
-		return nil
+		return nil, errors.Wrapf(err, "no auth from docker config for host %s", host)
 	}
 
-	// Do not return empty auth. It makes caller life easier.
+	// Do not return partially empty auth. It makes caller life easier.
 	if len(authConfig.Username) == 0 || len(authConfig.Password) == 0 {
-		return nil
+		return nil, fmt.Errorf("auth config not complete for host: %s", host)
 	}
 
 	return &PassKeyChain{
 		Username: authConfig.Username,
 		Password: authConfig.Password,
-	}
+	}, nil
 }

@@ -37,9 +37,9 @@ func TestFromImagePull(t *testing.T) {
 	tagImage := "docker.io/library/busybox:latest"
 
 	// should return nil if no proxy
-	kc, err := FromCRI("docker.io", tagImage)
+	kc, err := NewCRIProvider().GetCredentials(&AuthRequest{Ref: tagImage})
 	assertions.Nil(kc)
-	assertions.NoError(err)
+	assertions.Error(err)
 
 	// Mocking the end CRI request consumer.
 	mockRPC := grpc.NewServer()
@@ -70,9 +70,9 @@ func TestFromImagePull(t *testing.T) {
 	defer proxyRPC.Stop()
 
 	// should return empty kc before pulling
-	kc, err = FromCRI("docker.io", tagImage)
+	kc, err = NewCRIProvider().GetCredentials(&AuthRequest{Ref: tagImage})
 	assertions.Nil(kc)
-	assertions.NoError(err)
+	assertions.Error(err)
 
 	gopts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -95,15 +95,15 @@ func TestFromImagePull(t *testing.T) {
 	assertions.NoError(err)
 
 	// get correct kc after pulling
-	kc, err = FromCRI("docker.io", tagImage)
+	kc, err = NewCRIProvider().GetCredentials(&AuthRequest{Ref: tagImage})
 	assertions.Equal("test", kc.Username)
 	assertions.Equal("passwd", kc.Password)
 	assertions.NoError(err)
 
 	// get empty kc with wrong tag
-	kc, err = FromCRI("docker.io", "docker.io/library/busybox:another")
+	kc, err = NewCRIProvider().GetCredentials(&AuthRequest{Ref: "docker.io/library/busybox:another"})
 	assertions.Nil(kc)
-	assertions.NoError(err)
+	assertions.Error(err)
 
 	image2 := "ghcr.io/busybox:latest"
 
@@ -119,7 +119,7 @@ func TestFromImagePull(t *testing.T) {
 	assertions.NoError(err)
 
 	// get correct kc after pulling
-	kc, err = FromCRI("ghcr.io", image2)
+	kc, err = NewCRIProvider().GetCredentials(&AuthRequest{Ref: image2})
 	assertions.NoError(err)
 	assertions.Equal(kc.Username, "test_1")
 	assertions.Equal(kc.Password, "passwd_1")
@@ -138,7 +138,7 @@ func TestFromImagePull(t *testing.T) {
 	assertions.NoError(err)
 
 	// get correct kc after pulling
-	kc, err = FromCRI("docker.io", digestImage)
+	kc, err = NewCRIProvider().GetCredentials(&AuthRequest{Ref: digestImage})
 	assertions.NoError(err)
 	assertions.Equal("digest", kc.Username)
 	assertions.Equal("dpwd", kc.Password)

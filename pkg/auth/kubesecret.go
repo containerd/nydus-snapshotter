@@ -7,8 +7,6 @@ import (
 	"os"
 	"sync"
 
-	"k8s.io/client-go/tools/clientcmd"
-
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -18,12 +16,46 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
+	// TODO: embed in KubeSecretProvider
 	kubeSecretListener *KubeSecretListener
 	configMu           sync.Mutex
 )
+
+// KubeSecretProvider implements AuthProvider for Kubernetes secrets.
+type KubeSecretProvider struct{}
+
+// NewKubeSecretProvider creates a new Kubernetes secret-based auth provider.
+func NewKubeSecretProvider() *KubeSecretProvider {
+	return &KubeSecretProvider{}
+}
+
+// GetCredentials retrieves credentials from Kubernetes secrets.
+// Returns nil if no credentials are found or the listener is not initialized.
+func (p *KubeSecretProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
+	if kubeSecretListener == nil {
+		return nil, errors.New("no secret listener initialized")
+	}
+
+	if req == nil || req.Ref == "" {
+		return nil, errors.New("ref not found")
+	}
+
+	_, host, err := parseReference(req.Ref)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parse reference %s", req.Ref)
+	}
+
+	passKey := kubeSecretListener.GetCredentialsStore(host)
+	if passKey == nil {
+		return nil, fmt.Errorf("no kube secret credentials found for host: %s", host)
+	}
+
+	return passKey, nil
+}
 
 type KubeSecretListener struct {
 	dockerConfigs map[string]*configfile.ConfigFile
@@ -161,7 +193,6 @@ func (kubelistener *KubeSecretListener) GetCredentialsStore(host string) *PassKe
 		// Find the auth for the host.
 		authConfig, err := dockerConfig.GetAuthConfig(host)
 		if err != nil {
-			logrus.WithError(err).Errorf("failed to get auth config for host %s", host)
 			continue
 		}
 		if len(authConfig.Username) != 0 && len(authConfig.Password) != 0 {
@@ -170,13 +201,6 @@ func (kubelistener *KubeSecretListener) GetCredentialsStore(host string) *PassKe
 				Password: authConfig.Password,
 			}
 		}
-	}
-	return nil
-}
-
-func FromKubeSecretDockerConfig(host string) *PassKeyChain {
-	if kubeSecretListener != nil {
-		return kubeSecretListener.GetCredentialsStore(host)
 	}
 	return nil
 }
