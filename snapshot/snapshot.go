@@ -439,13 +439,45 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 
 	if treatAsProxyDriver(info.Labels) {
 		log.L.Warnf("[Mounts] treat as proxy mode for the prepared snapshot by other snapshotter possibly: id = %s, labels = %v", id, info.Labels)
-		return o.mountProxy(ctx, *snap)
+		mountLabels := o.getLabelsWithCRIImageRef(ctx, info.Labels, info.Parent)
+		if _, ok := mountLabels[label.CRIImageRef]; !ok {
+			log.L.Warnf("[Mounts] No CRIImageRef found in snapshot %s or its parents - guest pull may fail", key)
+		}
+		return o.mountProxy(ctx, mountLabels, *snap)
 	}
 
 	if needRemoteMounts {
 		return o.mountRemote(ctx, info.Labels, *snap, metaSnapshotID, key)
 	}
 
+	// Handle the case where the snapshotter is in proxy mode and the snapshot has
+	// CRIImageRef label but not nydus-proxy-mode label. This can happen when:
+	// 1. The image was unpacked before the containerd fix that adds proper labels
+	// 2. Containerd detected that existing snapshots had incorrect labels (e.g., a
+	//    digest instead of a pullable image reference) and updated them to contain
+	//    the correct CRIImageRef value needed for guest-side image pulling
+	// In this case, we should still use mountProxy instead of mountNative.
+	isProxyDriver := config.GetFsDriver() == config.FsDriverProxy
+	_, hasCRIImageRef := info.Labels[label.CRIImageRef]
+
+	// For container layers (KindActive), CRIImageRef is on parent image layers,
+	// not the container layer itself. Check parent chain for CRIImageRef.
+	if !hasCRIImageRef && info.Parent != "" && isProxyDriver {
+		hasCRIImageRef = o.findCRIImageRefInParentChain(ctx, info.Parent) != ""
+	}
+
+	log.G(ctx).Debugf("[Mounts] Before mountNative check - isProxyDriver=%t, hasCRIImageRef=%t, needRemoteMounts=%t, treatAsProxyDriver=%t",
+		isProxyDriver, hasCRIImageRef, needRemoteMounts, treatAsProxyDriver(info.Labels))
+
+	if isProxyDriver && hasCRIImageRef {
+		// Even though treatAsProxyDriver returned false and needRemoteMounts is false,
+		// we're in proxy mode with a proper image reference, so use mountProxy
+		log.G(ctx).Infof("[Mounts] Snapshot has CRIImageRef in proxy mode, using mountProxy instead of mountNative for key=%s", key)
+		mountLabels := o.getLabelsWithCRIImageRef(ctx, info.Labels, info.Parent)
+		return o.mountProxy(ctx, mountLabels, *snap)
+	}
+
+	log.G(ctx).Debugf("[Mounts] Falling through to mountNative for key=%s", key)
 	return o.mountNative(ctx, info.Labels, *snap)
 }
 
@@ -1005,8 +1037,44 @@ func overlayMount(options []string) []mount.Mount {
 	}
 }
 
+// findCRIImageRefInParentChain walks up the parent chain to find CRIImageRef label.
+// This is needed because container layers don't have the CRIImageRef label directly -
+// it's only on the image layers. Returns the CRIImageRef value if found, empty string otherwise.
+func (o *snapshotter) findCRIImageRefInParentChain(ctx context.Context, parentKey string) string {
+	for parentKey != "" {
+		if _, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, parentKey); err == nil {
+			if ref, ok := pInfo.Labels[label.CRIImageRef]; ok {
+				return ref
+			}
+			parentKey = pInfo.Parent
+		} else {
+			log.L.Warnf("[findCRIImageRefInParentChain] Failed to get parent %s info: %v", parentKey, err)
+			break
+		}
+	}
+	return ""
+}
+
+// getLabelsWithCRIImageRef returns a copy of labels with CRIImageRef populated.
+// If CRIImageRef is not in the provided labels, it walks the parent chain to find it.
+func (o *snapshotter) getLabelsWithCRIImageRef(ctx context.Context, labels map[string]string, parentKey string) map[string]string {
+	result := make(map[string]string)
+	for k, v := range labels {
+		result[k] = v
+	}
+
+	if _, ok := result[label.CRIImageRef]; !ok && parentKey != "" {
+		if ref := o.findCRIImageRefInParentChain(ctx, parentKey); ref != "" {
+			log.L.Infof("[getLabelsWithCRIImageRef] using CRIImageRef from parent snapshot: %s", ref)
+			result[label.CRIImageRef] = ref
+		}
+	}
+
+	return result
+}
+
 // Handle proxy mount which the snapshot has been prepared by other snapshotter, mainly used for pause image in containerd
-func (o *snapshotter) mountProxy(ctx context.Context, s storage.Snapshot) ([]mount.Mount, error) {
+func (o *snapshotter) mountProxy(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
 	var overlayOptions []string
 	if s.Kind == snapshots.KindActive {
 		overlayOptions = append(overlayOptions,
@@ -1028,9 +1096,13 @@ func (o *snapshotter) mountProxy(ctx context.Context, s storage.Snapshot) ([]mou
 	lowerDirOption := fmt.Sprintf("lowerdir=%s", strings.Join(parentPaths, ":"))
 	overlayOptions = append(overlayOptions, lowerDirOption)
 	log.G(ctx).Infof("proxy mount options %v", overlayOptions)
+	annotations := labels
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 	options, err := o.mountWithProxyVolume(rafs.Rafs{
 		FsDriver:    config.GetFsDriver(),
-		Annotations: make(map[string]string),
+		Annotations: annotations,
 	})
 	if err != nil {
 		return []mount.Mount{}, errors.Wrapf(err, "create kata volume for proxy")

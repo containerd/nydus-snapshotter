@@ -58,7 +58,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	}
 
 	proxyHandler := func() (bool, []mount.Mount, error) {
-		mounts, err := sn.mountProxy(ctx, s)
+		mounts, err := sn.mountProxy(ctx, labels, s)
 		return false, mounts, err
 	}
 
