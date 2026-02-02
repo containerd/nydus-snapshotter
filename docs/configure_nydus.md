@@ -4,13 +4,15 @@ Nydus-snapshotter can receive a toml file as its configurations to start providi
 
 ## Authentication
 
-As [containerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports 3 main ways to access registries with custom configurations. You can use configuration file to enable them.
+As [containerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports multiple ways to access registries with custom configurations. You can use configuration file to enable them.
 
 The snapshotter will try to get image pull keychain in the following order if such way is enabled:
 
-1. intercept CRI request and extract private registry auth
-2. docker config (default enabled)
-3. k8s docker config secret
+1. snapshot labels (username and password)
+2. intercept CRI request and extract private registry auth
+3. docker config (default enabled)
+4. kubelet credential provider plugins
+5. k8s docker config secret
 
 ### dockerconfig-based authentication
 
@@ -58,7 +60,7 @@ kubeconfig_path = "/path/to/.kubeconfig"
 If no `kubeconfig_path` is specified, snapshotter searches kubeconfig files from `$KUBECONFIG` or `~/.kube/config`.
 
 Please note that kubeconfig-based authentication requires additional privilege (i.e. kubeconfig to list/watch secrets) to the node.
-And this doesn't work if `kubelet` retrieve credentials from somewhere not API server (e.g. [credential provider](https://kubernetes.io/docs/tasks/kubelet-credential-provider/kubelet-credential-provider/)).
+And this doesn't work if `kubelet` retrieves credentials from somewhere not API server (e.g. [credential provider](https://kubernetes.io/docs/tasks/kubelet-credential-provider/kubelet-credential-provider/)). For that use case, see the kubelet credential provider section below.
 
 #### use ServiceAccount
 
@@ -126,11 +128,169 @@ $ kubectl create --namespace nydus-system secret generic regcred \
 
 The Nydus snapshotter will get the new secret and parse the authorization. If your new Pod uses a private registry, then this authentication information will be used to pull the image from the private registry.
 
+### kubelet credential provider
+
+Nydus snapshotter supports [Kubernetes kubelet credential provider plugins](https://kubernetes.io/docs/tasks/kubelet-credential-provider/kubelet-credential-provider/), which allow dynamic credential retrieval from external sources like cloud provider identity services, secrets managers, or custom authentication systems.
+
+> **Note:** This implementation supports **exec-based credential provider plugins** (GA since [Kubernetes v1.26](https://kubernetes.io/blog/2022/12/22/kubelet-credential-providers/)) but does **not** support the newer [service account token integration](https://kubernetes.io/blog/2025/05/07/kubernetes-v1-33-wi-for-image-pulls/) feature introduced in Kubernetes v1.33 (alpha) / v1.34 (beta). If you need service account token injection for credential providers, use the standard kubelet credential provider configuration directly with containerd.
+
+This authentication method is particularly useful when:
+
+- Credentials are rotated frequently and managed by external systems
+- Using cloud provider-managed registries (ECR, GCR, ACR) with instance/workload identity
+- Integrating with enterprise secrets management systems
+- Kubelet already uses credential providers for other container runtimes
+
+#### Configuration
+
+Enable kubelet credential providers in your nydus-snapshotter configuration:
+
+```toml
+[remote.auth]
+enable_kubelet_credential_providers = true
+credential_provider_config = "/etc/nydus/credential-provider-config.yaml"
+credential_provider_bin_dir = "/usr/local/bin/credential-providers"
+```
+
+**Configuration parameters:**
+
+- `enable_kubelet_credential_providers`: Enable kubelet credential provider support (default: `false`)
+- `credential_provider_config`: Path to the credential provider configuration file
+- `credential_provider_bin_dir`: Directory containing credential provider plugin binaries
+
+#### Credential Provider Configuration
+
+Create a credential provider configuration file following the [Kubernetes spec](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1/#kubelet-config-k8s-io-v1-CredentialProviderConfig):
+
+```yaml
+apiVersion: kubelet.config.k8s.io/v1
+kind: CredentialProviderConfig
+providers:
+  # Example: AWS ECR credential provider
+  - name: ecr-credential-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "*.dkr.ecr.*.amazonaws.com"
+      - "*.dkr.ecr.*.amazonaws.com.cn"
+      - "*.dkr.ecr-fips.*.amazonaws.com"
+    defaultCacheDuration: "12h"
+    args:
+      - get-credentials
+
+  # Example: GCP GCR credential provider
+  - name: gcr-credential-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "gcr.io"
+      - "*.gcr.io"
+    defaultCacheDuration: "1h"
+
+  # Example: Custom credential provider
+  - name: custom-provider
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+    matchImages:
+      - "private-registry.example.com"
+      - "*.private-registry.example.com"
+    defaultCacheDuration: "30m"
+    env:
+      - name: CUSTOM_ENV_VAR
+        value: "custom-value"
+    args:
+      - "--region"
+      - "us-east-1"
+```
+
+#### Plugin Installation
+
+1. **Install credential provider binaries** in the directory specified by `credential_provider_bin_dir`:
+
+```bash
+# Example: Installing AWS ECR credential provider
+mkdir -p /usr/local/bin/credential-providers
+wget https://artifacts.k8s.io/binaries/cloud-provider-aws/v1.30.0/linux/amd64/ecr-credential-provider
+chmod +x ecr-credential-provider
+mv ecr-credential-provider /usr/local/bin/credential-providers/
+```
+
+2. **Ensure plugins are executable** and accessible by the nydus-snapshotter process.
+
+3. **Configure match patterns** in your credential provider config to match your registry URLs. Patterns support wildcards:
+   - `*.dkr.ecr.*.amazonaws.com` matches any ECR registry
+   - `gcr.io` matches exact host
+   - `*.gcr.io` matches any subdomain of gcr.io
+
+#### How It Works
+
+When nydus-snapshotter needs credentials for an image:
+
+1. The snapshotter checks if any configured provider's `matchImages` patterns match the image URL
+2. For each matching provider (in order), the snapshotter executes the plugin binary
+3. The plugin receives a JSON request on stdin with the image URL (without pod service account token)
+4. The plugin returns credentials as a JSON response on stdout
+5. The valid credential with the best registry match is used
+6. NOT SUPPORTED YET: Credentials are cached according to `defaultCacheDuration`
+
+**Note:** Unlike kubelet's native implementation (v1.33+), nydus-snapshotter does not inject pod service account tokens into the credential provider request. Plugins must retrieve credentials using other methods (instance metadata, environment variables, local credential files, etc.).
+
+#### Plugin Protocol
+
+Credential provider plugins communicate via stdin/stdout using JSON:
+
+**Request:**
+
+```json
+{
+  "kind": "CredentialProviderRequest",
+  "apiVersion": "credentialprovider.kubelet.k8s.io/v1",
+  "image": "123456789.dkr.ecr.us-east-1.amazonaws.com/my-image:latest"
+}
+```
+
+**Response:**
+
+```json
+{
+  "kind": "CredentialProviderResponse",
+  "apiVersion": "credentialprovider.kubelet.k8s.io/v1",
+  "cacheKeyType": "Image",
+  "cacheDuration": "12h",
+  "auth": {
+    "123456789.dkr.ecr.us-east-1.amazonaws.com": {
+      "username": "AWS",
+      "password": "<token>"
+    }
+  }
+}
+```
+
+Set `auth` to `null` if no credentials are available for the requested image.
+
+#### Troubleshooting
+
+- **Plugin execution failures are logged** but don't stop the authentication chain - the snapshotter will try the next provider
+- **Check logs** for plugin execution errors: `level=warning msg="failed to execute credential provider plugin"`
+- **Verify plugin permissions**: Plugins must be executable (`chmod +x`)
+- **Test plugins manually**: Execute plugins with a test request to verify they work
+- **Cache duration**: Set appropriate `defaultCacheDuration` based on your credential rotation policy
+
+#### Example: AWS ECR
+
+For AWS ECR, you can use the official [ECR credential provider](https://github.com/kubernetes/cloud-provider-aws/tree/master/cmd/ecr-credential-provider):
+
+```toml
+[remote.auth]
+enable_kubelet_credential_providers = true
+credential_provider_config = "/etc/nydus/ecr-credential-provider.yaml"
+credential_provider_bin_dir = "/usr/local/bin"
+```
+
+The ECR credential provider uses the instance IAM role to retrieve temporary credentials.
+
 ## Metrics
 
 Nydusd records metrics in its own format. The metrics are exported via a HTTP server on top of unix domain socket. Nydus-snapshotter fetches the metrics and convert them in to Prometheus format which is exported via a network address. Nydus-snapshotter by default does not fetch metrics from nydusd. You can enable the nydusd metrics download by assigning a network address to `metrics.address` in nydus-snapshotter's toml [configuration file](../misc/snapshotter/config.toml).
 
-Once this entry is enabled, not only nydusd metrics, but also some information about the nydus-snapshotter 
+Once this entry is enabled, not only nydusd metrics, but also some information about the nydus-snapshotter
 runtime and snapshot related events are exported in Prometheus format as well.
 
 ## Diagnose

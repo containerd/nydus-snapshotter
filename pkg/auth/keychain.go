@@ -63,7 +63,8 @@ func (kc PassKeyChain) TokenBase() bool {
 // 1. username and secrets labels
 // 2. cri request
 // 3. docker config
-// 4. k8s docker config secret
+// 4. kubelet credential helpers
+// 5. k8s docker config secret
 func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
 	authRequest := &AuthRequest{
 		Ref:    ref,
@@ -93,6 +94,16 @@ func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
 	}
 	if err != nil {
 		errs = append(errs, errors.Wrap(err, "get credentials from Docker config"))
+	}
+
+	if kubeletProvider != nil {
+		kc, err = kubeletProvider.GetCredentials(authRequest)
+		if kc != nil {
+			return kc
+		}
+		if err != nil {
+			errs = append(errs, errors.Wrap(err, "get credentials from Kubelet credential helpers"))
+		}
 	}
 
 	kc, err = NewKubeSecretProvider().GetCredentials(authRequest)

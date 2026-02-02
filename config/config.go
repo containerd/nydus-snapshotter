@@ -199,6 +199,10 @@ type AuthConfig struct {
 	// CRI proxy mode
 	EnableCRIKeychain   bool   `toml:"enable_cri_keychain"`
 	ImageServiceAddress string `toml:"image_service_address"`
+	// Kubelet credential provider plugins
+	EnableKubeletCredentialProviders bool   `toml:"enable_kubelet_credential_providers"`
+	CredentialProviderConfig         string `toml:"credential_provider_config"`
+	CredentialProviderBinDir         string `toml:"credential_provider_bin_dir"`
 }
 
 // Configure remote storage like container registry
