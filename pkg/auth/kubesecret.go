@@ -41,7 +41,7 @@ func (p *KubeSecretProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, er
 	}
 
 	if req == nil || req.Ref == "" {
-		return nil, errors.New("ref not found")
+		return nil, errors.New("ref not found in request")
 	}
 
 	_, host, err := parseReference(req.Ref)

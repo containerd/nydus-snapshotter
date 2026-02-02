@@ -36,7 +36,7 @@ func NewDockerProvider() *DockerProvider {
 // Returns nil if no credentials are found for the registry.
 func (p *DockerProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
 	if req == nil || req.Ref == "" {
-		return nil, errors.New("ref not found")
+		return nil, errors.New("ref not found in request")
 	}
 
 	_, host, err := parseReference(req.Ref)
