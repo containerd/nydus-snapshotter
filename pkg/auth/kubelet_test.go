@@ -264,7 +264,7 @@ func TestValidateCredentialProvider(t *testing.T) {
 				return &provider
 			},
 			wantErr:     true,
-			errContains: "cannot contain path separators",
+			errContains: "cannot contain spaces, path separators",
 		},
 		{
 			name: "provider name with space",
@@ -274,7 +274,7 @@ func TestValidateCredentialProvider(t *testing.T) {
 				return &provider
 			},
 			wantErr:     true,
-			errContains: "cannot contain path separators",
+			errContains: "cannot contain spaces, path separators",
 		},
 		{
 			name: "provider name is dot",
@@ -284,7 +284,7 @@ func TestValidateCredentialProvider(t *testing.T) {
 				return &provider
 			},
 			wantErr:     true,
-			errContains: "cannot contain path separators",
+			errContains: "cannot contain spaces, path separators",
 		},
 		{
 			name: "empty API version",
@@ -559,6 +559,25 @@ func TestKubeletProviderGetCredentials(t *testing.T) {
 			wantUsername: "nested-user",
 			wantPassword: "nested-pass",
 		},
+		{
+			name: "only first plugin matches - verifies no loop variable pointer bug",
+			setup: func(t *testing.T) *KubeletProvider {
+				// Create two plugins with different matchImages and credentials
+				createMockPlugin(t, binDir, "first-match-plugin", credentialMap{"registry.first.com": {"first-user", "first-pass"}})
+				createMockPlugin(t, binDir, "second-no-match-plugin", credentialMap{"registry.second.com": {"second-user", "second-pass"}})
+				cfg := filepath.Join(binDir, "first-match-config.yaml")
+				createMockProviderConfig(t, cfg, []kubeletconfigv1.CredentialProvider{
+					createMockCredentialProvider("first-match-plugin", []string{"*.first.com"}),
+					createMockCredentialProvider("second-no-match-plugin", []string{"*.second.com"}),
+				})
+				provider, err := NewKubeletProvider(cfg, binDir)
+				require.NoError(t, err)
+				return provider
+			},
+			request:      &AuthRequest{Ref: "registry.first.com/image:tag"},
+			wantUsername: "first-user",
+			wantPassword: "first-pass",
+		},
 	}
 
 	for _, tt := range tests {
@@ -744,7 +763,7 @@ func TestURLsMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			matched, err := URLsMatchStr(tt.globURL, tt.targetURL)
+			matched, err := urlsMatchStr(tt.globURL, tt.targetURL)
 			if tt.wantError {
 				assert.Error(t, err)
 				return

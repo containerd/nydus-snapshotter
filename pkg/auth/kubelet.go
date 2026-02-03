@@ -98,19 +98,19 @@ func NewKubeletProvider(configPath, binDir string) (*KubeletProvider, error) {
 
 	// Validate and register credential providers
 	// Heavily inspired by kubelet's validateCredentialProviderConfig function
-	credProviderNames := make(map[string]bool)
-	for _, credProvider := range config.Providers {
-		if err := validateCredentialProvider(&credProvider); err != nil {
-			return nil, errors.Wrapf(err, "failed to validate credential provider %s", credProvider.Name)
+	credProviderNames := make(map[string]any)
+	for i := range config.Providers {
+		if err := validateCredentialProvider(&config.Providers[i]); err != nil {
+			return nil, errors.Wrapf(err, "failed to validate credential provider %s", config.Providers[i].Name)
 		}
 
 		// Check for duplicate provider names
-		if credProviderNames[credProvider.Name] {
-			return nil, fmt.Errorf("duplicate provider name: %s", credProvider.Name)
+		if _, ok := credProviderNames[config.Providers[i].Name]; ok {
+			return nil, fmt.Errorf("duplicate provider name: %s", config.Providers[i].Name)
 		}
-		credProviderNames[credProvider.Name] = true
-		provider.plugins = append(provider.plugins, &credProvider)
-		log.L.WithField("name", credProvider.Name).Info("registered kubelet credential provider plugin")
+		credProviderNames[config.Providers[i].Name] = nil
+		provider.plugins = append(provider.plugins, &config.Providers[i])
+		log.L.WithField("name", config.Providers[i].Name).Info("registered kubelet credential provider plugin")
 	}
 
 	return provider, nil
@@ -125,7 +125,7 @@ func validateCredentialProvider(p *kubeletconfigv1.CredentialProvider) error {
 
 	// Provider name must not contain path separators or special characters
 	if strings.ContainsAny(p.Name, " /\\") || p.Name == "." || p.Name == ".." {
-		return fmt.Errorf("invalid provider name %q: cannot contain path separators or be '.' or '..'", p.Name)
+		return fmt.Errorf("invalid provider name %q: cannot contain spaces, path separators, or be '.' or '..'", p.Name)
 	}
 
 	// Validate API version
@@ -179,11 +179,17 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 		return nil, errors.New("ref not found in request")
 	}
 
+	// Normalize the reference to handle short refs like "nginx:latest" -> "docker.io/library/nginx:latest"
+	refSpec, _, err := parseReference(req.Ref)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse image reference")
+	}
+
 	// Collect all available credentials from all matching plugins
 	allCredentials := make(map[string]*PassKeyChain)
 
 	for _, plugin := range p.plugins {
-		if !isImageAllowed(plugin, req.Ref) {
+		if !isImageAllowed(plugin, refSpec.String()) {
 			continue
 		}
 
@@ -191,7 +197,7 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 		// "If one of the strings matches the requested image from the kubelet, the plugin will be invoked and given a chance to provide credentials"
 		// So each matching plugin should have a chance to fetch credentials
 		// TODO: parallelize?
-		resp, err := p.execPlugin(context.Background(), plugin, req.Ref)
+		resp, err := p.execPlugin(context.Background(), plugin, refSpec.String())
 		if err != nil {
 			log.L.WithError(err).WithField("plugin", plugin.Name).Warn("failed to execute credential provider plugin")
 			continue
@@ -222,7 +228,7 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 	matchingRegistries := make([]string, 0, len(allCredentials))
 	for registry := range allCredentials {
 		// Check if this registry key matches the requested image
-		matched, err := URLsMatchStr(registry, req.Ref)
+		matched, err := urlsMatchStr(registry, refSpec.String())
 		if err == nil && matched {
 			matchingRegistries = append(matchingRegistries, registry)
 		}
@@ -246,7 +252,15 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 // Inspired from https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/plugin/plugin.go#L603
 func isImageAllowed(plugin *kubeletconfigv1.CredentialProvider, image string) bool {
 	for _, matchImage := range plugin.MatchImages {
-		if matched, _ := URLsMatchStr(matchImage, image); matched {
+		matched, err := urlsMatchStr(matchImage, image)
+		if err != nil {
+			log.L.WithError(err).
+				WithField("plugin", plugin.Name).
+				WithField("matchImage", matchImage).
+				Warn("invalid matchImage pattern in credential provider config")
+			continue
+		}
+		if matched {
 			return true
 		}
 	}
@@ -317,11 +331,11 @@ The following functions are ported from k8s.io/kubernetes/pkg/credentialprovider
 Since they are in `k8s.io/kubernetes`, we can't import them directly.
 */
 
-// ParseSchemelessURL parses a schemeless url and returns a url.URL
+// parseSchemelessURL parses a schemeless url and returns a url.URL
 // url.Parse require a scheme, but ours don't have schemes.  Adding a
 // scheme to make url.Parse happy, then clear out the resulting scheme.
 // Ported: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/keyring.go#L220
-func ParseSchemelessURL(schemelessURL string) (*url.URL, error) {
+func parseSchemelessURL(schemelessURL string) (*url.URL, error) {
 	parsed, err := url.Parse("https://" + schemelessURL)
 	if err != nil {
 		return nil, err
@@ -331,9 +345,9 @@ func ParseSchemelessURL(schemelessURL string) (*url.URL, error) {
 	return parsed, nil
 }
 
-// SplitURL splits the host name into parts, as well as the port
+// splitURL splits the host name into parts, as well as the port
 // Ported: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/keyring.go#L231
-func SplitURL(url *url.URL) (parts []string, port string) {
+func splitURL(url *url.URL) (parts []string, port string) {
 	host, port, err := net.SplitHostPort(url.Host)
 	if err != nil {
 		// could not parse port
@@ -342,21 +356,21 @@ func SplitURL(url *url.URL) (parts []string, port string) {
 	return strings.Split(host, "."), port
 }
 
-// URLsMatchStr is wrapper for URLsMatch, operating on strings instead of URLs.
+// urlsMatchStr is wrapper for urlsMatch, operating on strings instead of URLs.
 // Ported: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/keyring.go#L241
-func URLsMatchStr(glob string, target string) (bool, error) {
-	globURL, err := ParseSchemelessURL(glob)
+func urlsMatchStr(glob string, target string) (bool, error) {
+	globURL, err := parseSchemelessURL(glob)
 	if err != nil {
 		return false, err
 	}
-	targetURL, err := ParseSchemelessURL(target)
+	targetURL, err := parseSchemelessURL(target)
 	if err != nil {
 		return false, err
 	}
-	return URLsMatch(globURL, targetURL)
+	return urlsMatch(globURL, targetURL)
 }
 
-// URLsMatch checks whether the given target url matches the glob url, which may have
+// urlsMatch checks whether the given target url matches the glob url, which may have
 // glob wild cards in the host name.
 //
 // Examples:
@@ -366,9 +380,9 @@ func URLsMatchStr(glob string, target string) (bool, error) {
 //
 // Note that we don't support wildcards in ports and paths yet.
 // Ported: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/keyring.go#L262
-func URLsMatch(globURL *url.URL, targetURL *url.URL) (bool, error) {
-	globURLParts, globPort := SplitURL(globURL)
-	targetURLParts, targetPort := SplitURL(targetURL)
+func urlsMatch(globURL *url.URL, targetURL *url.URL) (bool, error) {
+	globURLParts, globPort := splitURL(globURL)
+	targetURLParts, targetPort := splitURL(targetURL)
 	if globPort != targetPort {
 		// port doesn't match
 		return false, nil

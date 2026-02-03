@@ -4,7 +4,7 @@ Nydus-snapshotter can receive a toml file as its configurations to start providi
 
 ## Authentication
 
-As [containerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports multiple ways to access registries with custom configurations. You can use configuration file to enable them.
+As [containerd#3731](https://github.com/containerd/containerd/issues/3731) discussed, containerd doesn't share credentials with third-party snapshotters now. Like [stargz snapshotter](https://github.com/containerd/stargz-snapshotter/blob/main/docs/overview.md#authentication), nydus-snapshotter supports multiple ways to access registries with custom configurations. You can use configuration file to enable them.
 
 The snapshotter will try to get image pull keychain in the following order if such way is enabled:
 
