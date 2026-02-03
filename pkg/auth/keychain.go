@@ -73,45 +73,45 @@ func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
 
 	errs := []error{}
 	kc, err := NewLabelsProvider().GetCredentials(authRequest)
-	if kc != nil {
-		return kc
-	}
 	if err != nil {
 		errs = append(errs, errors.Wrap(err, "get credentials from labels"))
 	}
-
-	kc, err = NewCRIProvider().GetCredentials(authRequest)
 	if kc != nil {
 		return kc
 	}
+
+	kc, err = NewCRIProvider().GetCredentials(authRequest)
 	if err != nil {
 		errs = append(errs, errors.Wrap(err, "get credentials from CRI"))
 	}
-
-	kc, err = NewDockerProvider().GetCredentials(authRequest)
 	if kc != nil {
 		return kc
 	}
+
+	kc, err = NewDockerProvider().GetCredentials(authRequest)
 	if err != nil {
 		errs = append(errs, errors.Wrap(err, "get credentials from Docker config"))
+	}
+	if kc != nil {
+		return kc
 	}
 
 	if kubeletProvider != nil {
 		kc, err = kubeletProvider.GetCredentials(authRequest)
-		if kc != nil {
-			return kc
-		}
 		if err != nil {
 			errs = append(errs, errors.Wrap(err, "get credentials from Kubelet credential helpers"))
+		}
+		if kc != nil {
+			return kc
 		}
 	}
 
 	kc, err = NewKubeSecretProvider().GetCredentials(authRequest)
-	if kc != nil {
-		return kc
-	}
 	if err != nil {
 		errs = append(errs, errors.Wrap(err, "get credentials from Kubernetes secrets"))
+	}
+	if kc != nil {
+		return kc
 	}
 
 	// Only output the errors if we did not manage to get a keychain
