@@ -23,7 +23,7 @@ func NewLabelsProvider() *LabelsProvider {
 // Returns nil if labels don't contain valid credentials.
 func (p *LabelsProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
 	if req.Labels == nil {
-		return nil, errors.New("labels not found")
+		return nil, errors.New("labels not found in request")
 	}
 
 	u, found := req.Labels[label.NydusImagePullUsername]

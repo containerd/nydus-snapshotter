@@ -43,7 +43,7 @@ func (p *CRIProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
 	}
 
 	if req == nil || req.Ref == "" {
-		return nil, errors.New("ref not found")
+		return nil, errors.New("ref not found in request")
 	}
 
 	refSpec, host, err := parseReference(req.Ref)
