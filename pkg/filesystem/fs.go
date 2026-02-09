@@ -38,10 +38,10 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	racache "github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
-	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 )
 
 type Filesystem struct {

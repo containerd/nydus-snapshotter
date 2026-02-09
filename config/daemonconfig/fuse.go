@@ -60,12 +60,16 @@ func LoadFuseConfig(p string) (*FuseDaemonConfig, error) {
 	return &cfg, nil
 }
 
-func (c *FuseDaemonConfig) Supplement(host, repo, _ string, params map[string]string) {
+func (c *FuseDaemonConfig) Supplement(host, repo, snapshotID string, params map[string]string) {
 	if host != "" {
 		c.Device.Backend.Config.Host = host
 	}
 	if repo != "" {
 		c.Device.Backend.Config.Repo = repo
+	}
+	// Temporary fix while https://github.com/containerd/nydus-snapshotter/issues/712 is being addressed
+	if snapshotID != "" {
+		c.Device.ID = "/" + snapshotID
 	}
 	c.Device.Cache.Config.WorkDir = params[CacheDir]
 }
