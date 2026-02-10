@@ -107,6 +107,17 @@ exec::kubectl create --namespace "$NAMESPACE" secret generic regcred \
 if [ "$AUTH_TYPE" == "cri" ]; then
   exec::docker exec kind-control-plane sh -c 'echo " --image-service-endpoint=unix:///run/containerd-nydus/containerd-nydus-grpc.sock" >> /etc/default/kubelet'
   exec::docker exec kind-control-plane sh -c 'systemctl daemon-reload && systemctl restart kubelet'
+  # The API server may become briefly unavailable after the kubelet
+  # restart. Wait for it to recover before issuing kubectl commands.
+  log::info "Waiting for API server to recover"
+  for _ in $(seq 1 10); do
+    kubectl get --raw /healthz &>/dev/null && break
+    sleep 2
+  done
+  kubectl get --raw /healthz &>/dev/null || {
+    log::error "API server did not recover within 20s"
+    exit 1
+  }
 fi
 
 exec::kubectl apply -f tests/e2e/k8s/test-pod.yaml
