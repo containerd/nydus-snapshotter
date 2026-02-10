@@ -127,6 +127,7 @@ const (
 type Experimental struct {
 	EnableStargz         bool        `toml:"enable_stargz"`
 	EnableReferrerDetect bool        `toml:"enable_referrer_detect"`
+	EnableIndexDetect    bool        `toml:"enable_index_detect"`
 	TarfsConfig          TarfsConfig `toml:"tarfs"`
 	EnableBackendSource  bool        `toml:"enable_backend_source"`
 }

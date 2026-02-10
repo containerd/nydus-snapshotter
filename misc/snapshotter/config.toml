@@ -3,7 +3,7 @@ version = 1
 root = "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
 # The snapshotter's GRPC server socket, containerd will connect to plugin on this socket
 address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-# The nydus daemon mode can be one of the following options: multiple, dedicated, shared, or none. 
+# The nydus daemon mode can be one of the following options: multiple, dedicated, shared, or none.
 # If `daemon_mode` option is not specified, the default value is multiple.
 daemon_mode = "dedicated"
 # Whether snapshotter should try to clean up resources when it is closed
@@ -27,7 +27,7 @@ pprof_address = ""
 nydusd_config = "/etc/nydus/nydusd-config.fusedev.json"
 nydusd_path = "/usr/local/bin/nydusd"
 nydusimage_path = "/usr/local/bin/nydus-image"
-# The fs driver can be one of the following options: fusedev, fscache, blockdev, proxy, or nodev. 
+# The fs driver can be one of the following options: fusedev, fscache, blockdev, proxy, or nodev.
 # If `fs_driver` option is not specified, the default value is fusedev.
 fs_driver = "fusedev"
 # How to process when daemon dies: "none", "restart" or "failover"
@@ -118,6 +118,10 @@ enable_stargz = false
 # The option enables trying to fetch the Nydus image associated with the OCI image and run it.
 # Also see https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers
 enable_referrer_detect = false
+# Whether to enable index detection support
+# The option enables trying to fetch the Nydus image present in the same OCI index as the original OCI image and run it.
+# Also see https://github.com/containerd/nydus-snapshotter/blob/main/docs/index-detection.md
+enable_index_detect = false
 # Whether to enable authentication support
 # The option enables nydus snapshot to provide backend information to nydusd.
 enable_backend_source = false

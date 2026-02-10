@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
+	"github.com/containerd/nydus-snapshotter/pkg/converter"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/remote"
 
@@ -25,7 +26,6 @@ import (
 
 // Containerd restricts the max size of manifest index to 8M, follow it.
 const maxManifestIndexSize = 0x800000
-const metadataNameInLayer = "image/image.boot"
 
 type referrer struct {
 	remote *remote.Remote
@@ -120,7 +120,7 @@ func (r *referrer) fetchMetadata(ctx context.Context, ref string, desc ocispec.D
 		}
 		defer rc.Close()
 
-		if err := remote.Unpack(rc, metadataNameInLayer, metadataPath); err != nil {
+		if err := remote.Unpack(rc, converter.BootstrapFileNameInLayer, metadataPath); err != nil {
 			os.Remove(metadataPath)
 			return errors.Wrap(err, "unpack metadata from layer")
 		}
@@ -128,7 +128,11 @@ func (r *referrer) fetchMetadata(ctx context.Context, ref string, desc ocispec.D
 		return nil
 	}
 
-	// TODO: check metafile already exists
+	// Check if metafile already exists to avoid unnecessary fetch
+	if _, err := os.Stat(metadataPath); err == nil {
+		return nil
+	}
+
 	err := handle()
 	if err != nil && r.remote.RetryWithPlainHTTP(ref, err) {
 		return handle()

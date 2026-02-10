@@ -23,9 +23,9 @@ rules:
       - get
       - list
       - watch
-  - apiGroups: 
+  - apiGroups:
     - ""
-    resources: 
+    resources:
     - nodes
     verbs:
     - get
@@ -200,6 +200,7 @@ data:
     [experimental]
     # Whether tp enable stargz support
     enable_stargz = false
+    enable_index_detect = true
     
     [daemon]
     nydusd_path = "/usr/local/bin/nydusd"
