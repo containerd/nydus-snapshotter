@@ -328,6 +328,9 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 	log.L.Infof("[Cleanup] unused cache blobs %v", cleanup)
 
 	for _, blob := range cleanup {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		// Add sha256: prefix to make it a valid blob digest
 		if err := o.fs.RemoveCache("sha256:" + blob); err != nil {
 			log.L.WithError(err).Warnf("failed to remove cache blob %s", blob)
