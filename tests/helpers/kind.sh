@@ -15,6 +15,7 @@ readonly root
 
 
 KIND_VERSION=v0.23.0
+KUBE_VERSION=v1.30.2
 NYDUS_VERSION=v2.3.0
 DOCKER_USER=testuser
 DOCKER_PASSWORD=testpassword
@@ -47,7 +48,7 @@ cp -r misc/snapshotter/* ./
 
 log::info "Building... docker image"
 pwd
-exec::docker build --build-arg NYDUS_VER="$NYDUS_VERSION" -t local-dev:e2e .
+exec::docker build --build-arg NYDUS_VER="$NYDUS_VERSION" --build-arg KUBE_VER="$KUBE_VERSION" -t local-dev:e2e .
 
 # Start local registry, and configure docker
 log::info "Starting registry"
@@ -66,7 +67,7 @@ docker::login "$DOCKER_USER" "$DOCKER_PASSWORD" "$registry_url"
 # Install dependencies
 log::info "Installing host dependencies"
 install::kind "$KIND_VERSION"
-install::kubectl
+install::kubectl "$KUBE_VERSION"
 install::nydus "$NYDUS_VERSION"
 
 # Convert a nydus image and push it
@@ -80,7 +81,7 @@ exec::nydusify convert \
 # Create fresh cluster
 log::info "Creating new cluster"
 exec::kind delete cluster 2>/dev/null || true
-exec::kind create cluster
+exec::kind create cluster --config tests/e2e/k8s/kind.yaml --image "kindest/node:$KUBE_VERSION"
 exec::kind load docker-image local-dev:e2e
 
 # Deploy nydus
@@ -106,6 +107,17 @@ exec::kubectl create --namespace "$NAMESPACE" secret generic regcred \
 if [ "$AUTH_TYPE" == "cri" ]; then
   exec::docker exec kind-control-plane sh -c 'echo " --image-service-endpoint=unix:///run/containerd-nydus/containerd-nydus-grpc.sock" >> /etc/default/kubelet'
   exec::docker exec kind-control-plane sh -c 'systemctl daemon-reload && systemctl restart kubelet'
+  # The API server may become briefly unavailable after the kubelet
+  # restart. Wait for it to recover before issuing kubectl commands.
+  log::info "Waiting for API server to recover"
+  for _ in $(seq 1 10); do
+    kubectl get --raw /healthz &>/dev/null && break
+    sleep 2
+  done
+  kubectl get --raw /healthz &>/dev/null || {
+    log::error "API server did not recover within 20s"
+    exit 1
+  }
 fi
 
 exec::kubectl apply -f tests/e2e/k8s/test-pod.yaml
