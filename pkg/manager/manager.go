@@ -146,6 +146,10 @@ func (m *Manager) AddRafsInstance(r *rafs.Rafs) error {
 	return m.store.AddRafsInstance(r)
 }
 
+func (m *Manager) UpdateRafsInstance(r *rafs.Rafs) error {
+	return m.store.UpdateRafsInstance(r)
+}
+
 func (m *Manager) RemoveRafsInstance(snapshotID string) error {
 	return m.store.DeleteRafsInstance(snapshotID)
 }

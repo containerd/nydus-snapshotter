@@ -35,6 +35,7 @@ import (
 	mgr "github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/data"
 	"github.com/containerd/nydus-snapshotter/pkg/pprof"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
 	"github.com/containerd/nydus-snapshotter/pkg/system"
@@ -325,6 +326,26 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 			log.L.WithError(err).Warnf("failed to remove directory %s", dir)
 		}
 	}
+
+	cleanup, err = o.cleanupUnusedCacheBlobs(ctx)
+	if err != nil {
+		return err
+	}
+	log.L.Infof("[Cleanup] unused cache blobs %v", cleanup)
+
+	for _, blob := range cleanup {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Add sha256: prefix to make it a valid blob digest
+		if err := o.fs.RemoveCache("sha256:" + blob); err != nil {
+			log.L.WithError(err).Warnf("failed to remove cache blob %s", blob)
+			data.CacheBlobDeletionErrors.Inc()
+		} else {
+			data.CacheBlobsDeleted.Inc()
+		}
+	}
+
 	return nil
 }
 
@@ -636,15 +657,6 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	default:
 		// For example: remove snapshot with key sha256:c33c40022c8f333e7f199cd094bd56758bc479ceabf1e490bb75497bf47c2ebf
 		log.L.Infof("[Remove] snapshot with key %s snapshot id %s", key, id)
-	}
-
-	if info.Kind == snapshots.KindCommitted {
-		blobDigest := info.Labels[snpkg.TargetLayerDigestLabel]
-		go func() {
-			if err := o.fs.RemoveCache(blobDigest); err != nil {
-				log.L.WithError(err).Errorf("Failed to remove cache %s", blobDigest)
-			}
-		}()
 	}
 
 	_, _, err = storage.Remove(ctx, key)
@@ -1258,6 +1270,85 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	}
 
 	return nil
+}
+
+func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, error) {
+	// Get a write transaction to ensure no other write transaction can be entered
+	// while the cleanup is scanning.
+	_, t, err := o.ms.TransactionContext(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err)
+		}
+	}()
+
+	// Collect all used blob IDs from all daemons
+	usedBlobIDs := make(map[string]bool)
+	if err := o.fs.WalkManagers(func(mgr *mgr.Manager) error {
+		for _, d := range mgr.ListDaemons() {
+			// Get all rafs instances for this daemon
+			for _, rafs := range d.RafsCache.List() {
+				// Extract blob IDs from underlying files and mark as used
+				for _, filePath := range rafs.UnderlyingFiles {
+					// Extract blob ID from the file path
+					filename := filepath.Base(filePath)
+					blobID := cache.ExtractBlobIDFromFilename(filename)
+					if blobID != "" {
+						usedBlobIDs[blobID] = true
+					}
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "walk managers to collect used blobs")
+	}
+
+	log.L.Debugf("[cleanupUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))
+
+	// Update metrics for blobs in use
+	data.CacheBlobsInUse.Set(float64(len(usedBlobIDs)))
+
+	cacheDir, err := o.fs.GetCacheDir()
+	if err != nil {
+		return nil, errors.Wrap(err, "get cache directory")
+	}
+
+	// List all files in cache directory
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read cache directory %s", cacheDir)
+	}
+
+	// Track which blob IDs we've already processed to avoid duplicate RemoveCache calls
+	storedBlobIDs := map[string]interface{}{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		blobID := cache.ExtractBlobIDFromFilename(entry.Name())
+		if blobID == "" {
+			log.L.Debugf("[cleanupUnusedCacheBlobs] skipping file with unknown format: %s", entry.Name())
+			continue
+		}
+
+		storedBlobIDs[blobID] = nil
+	}
+	log.L.Debugf("[cleanupUnusedCacheBlobs] found %d stored blob IDs", len(storedBlobIDs))
+
+	var unusedBlobIDs []string
+	for blobID := range storedBlobIDs {
+		if _, ok := usedBlobIDs[blobID]; !ok {
+			unusedBlobIDs = append(unusedBlobIDs, blobID)
+		}
+	}
+
+	return unusedBlobIDs, nil
 }
 
 func (o *snapshotter) snapshotRoot() string {
