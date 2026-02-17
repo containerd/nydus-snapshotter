@@ -321,7 +321,7 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 		}
 	}
 
-	cleanup, err = o.cleanupUnusedCacheBlobs(ctx)
+	cleanup, err = o.getUnusedCacheBlobs(ctx)
 	if err != nil {
 		return err
 	}
@@ -1253,7 +1253,7 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	return nil
 }
 
-func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, error) {
+func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error) {
 	// Get a write transaction to ensure no other write transaction can be entered
 	// while the cleanup is scanning.
 	_, t, err := o.ms.TransactionContext(ctx, true)
@@ -1289,7 +1289,7 @@ func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, er
 		return nil, errors.Wrap(err, "walk managers to collect used blobs")
 	}
 
-	log.L.Debugf("[cleanupUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))
+	log.L.Debugf("[getUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))
 
 	// Update metrics for blobs in use
 	data.CacheBlobsInUse.Set(float64(len(usedBlobIDs)))
@@ -1314,13 +1314,13 @@ func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, er
 
 		blobID := cache.ExtractBlobIDFromFilename(entry.Name())
 		if blobID == "" {
-			log.L.Debugf("[cleanupUnusedCacheBlobs] skipping file with unknown format: %s", entry.Name())
+			log.L.Debugf("[getUnusedCacheBlobs] skipping file with unknown format: %s", entry.Name())
 			continue
 		}
 
 		storedBlobIDs[blobID] = nil
 	}
-	log.L.Debugf("[cleanupUnusedCacheBlobs] found %d stored blob IDs", len(storedBlobIDs))
+	log.L.Debugf("[getUnusedCacheBlobs] found %d stored blob IDs", len(storedBlobIDs))
 
 	var unusedBlobIDs []string
 	for blobID := range storedBlobIDs {
