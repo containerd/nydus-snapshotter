@@ -110,12 +110,13 @@ func (rs *Cache) SetIntances(instances map[string]*Rafs) {
 
 // The whole struct will be persisted
 type Rafs struct {
-	Seq         uint64
-	ImageID     string // Usually is the image reference
-	DaemonID    string
-	FsDriver    string
-	SnapshotID  string // Given by containerd
-	SnapshotDir string
+	Seq             uint64
+	ImageID         string // Usually is the image reference
+	DaemonID        string
+	FsDriver        string
+	SnapshotID      string // Given by containerd
+	SnapshotDir     string
+	UnderlyingFiles []string // Underlying cache blob files
 	// 1. A host kernel EROFS/TARFS mountpoint
 	// 2. Absolute path to each rafs instance root directory.
 	Mountpoint  string
@@ -125,11 +126,12 @@ type Rafs struct {
 func NewRafs(snapshotID, imageID, fsDriver string) (*Rafs, error) {
 	snapshotDir := path.Join(config.GetSnapshotsRootDir(), snapshotID)
 	rafs := &Rafs{
-		FsDriver:    fsDriver,
-		ImageID:     imageID,
-		SnapshotID:  snapshotID,
-		SnapshotDir: snapshotDir,
-		Annotations: make(map[string]string),
+		FsDriver:        fsDriver,
+		ImageID:         imageID,
+		SnapshotID:      snapshotID,
+		SnapshotDir:     snapshotDir,
+		Annotations:     make(map[string]string),
+		UnderlyingFiles: []string{},
 	}
 
 	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
