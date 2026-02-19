@@ -19,6 +19,10 @@ func NewLabelsProvider() *LabelsProvider {
 	return &LabelsProvider{}
 }
 
+func (p *LabelsProvider) String() string {
+	return "labels"
+}
+
 // GetCredentials retrieves credentials from snapshot labels.
 // Returns nil if labels don't contain valid credentials.
 func (p *LabelsProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {

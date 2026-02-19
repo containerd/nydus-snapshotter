@@ -37,6 +37,10 @@ func NewCRIProvider() *CRIProvider {
 	return &CRIProvider{}
 }
 
+func (p *CRIProvider) String() string {
+	return "cri"
+}
+
 func (p *CRIProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
 	if len(credentials) == 0 {
 		return nil, errors.New("no Credentials parsers")

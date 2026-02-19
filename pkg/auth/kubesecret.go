@@ -33,6 +33,14 @@ func NewKubeSecretProvider() *KubeSecretProvider {
 	return &KubeSecretProvider{}
 }
 
+// CanRenew implements RenewableProvider. KubeSecret credentials can be
+// refreshed because the underlying informer watches for secret changes.
+func (p *KubeSecretProvider) CanRenew() bool { return true }
+
+func (p *KubeSecretProvider) String() string {
+	return "kubesecret"
+}
+
 // GetCredentials retrieves credentials from Kubernetes secrets.
 // Returns nil if no credentials are found or the listener is not initialized.
 func (p *KubeSecretProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {

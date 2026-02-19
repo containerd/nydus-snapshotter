@@ -171,6 +171,14 @@ func validateCredentialProvider(p *kubeletconfigv1.CredentialProvider) error {
 	return nil
 }
 
+// CanRenew implements RenewableProvider. Kubelet credentials can be
+// refreshed by re-executing the credential provider plugins.
+func (p *KubeletProvider) CanRenew() bool { return true }
+
+func (p *KubeletProvider) String() string {
+	return "kubelet"
+}
+
 // GetCredentials retrieves credentials using kubelet credential provider plugins.
 // When multiple credentials are available, it returns the one with the most specific
 // registry path match (e.g., "gcr.io/etcd-development" before "gcr.io").
@@ -199,7 +207,7 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 		// TODO: parallelize?
 		resp, err := p.execPlugin(context.Background(), plugin, refSpec.String())
 		if err != nil {
-			log.L.WithError(err).WithField("plugin", plugin.Name).Warn("failed to execute credential provider plugin")
+			log.L.WithError(err).WithFields(map[string]any{"plugin": plugin.Name, "ref": req.Ref}).Warn("failed to execute credential provider plugin")
 			continue
 		}
 
@@ -234,7 +242,7 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 		}
 	}
 
-	log.L.Debugf("Total credentials: %d, Matching registries: %d", len(allCredentials), len(matchingRegistries))
+	log.L.WithField("ref", req.Ref).Debugf("Total credentials: %d, Matching registries: %d", len(allCredentials), len(matchingRegistries))
 
 	if len(matchingRegistries) == 0 {
 		return nil, errors.New("no matching registries found")
@@ -242,7 +250,7 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 
 	// Sort in reverse alphabetical order - longer/more specific paths sort first
 	sort.Sort(sort.Reverse(sort.StringSlice(matchingRegistries)))
-	log.L.Debugf("Selected registry after sorting: %s", matchingRegistries[0])
+	log.L.WithField("ref", req.Ref).Debugf("Selected registry after sorting: %s", matchingRegistries[0])
 
 	// Return the credential with the most specific match
 	return allCredentials[matchingRegistries[0]], nil
