@@ -112,6 +112,7 @@ type BackendConfig struct {
 }
 
 type DeviceConfig struct {
+	ID      string `json:"id,omitempty"`
 	Backend struct {
 		BackendType string        `json:"type"`
 		Config      BackendConfig `json:"config"`

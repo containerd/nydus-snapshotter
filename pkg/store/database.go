@@ -287,6 +287,14 @@ func (db *Database) AddRafsInstance(_ context.Context, instance *rafs.Rafs) erro
 	})
 }
 
+func (db *Database) UpdateRafsInstance(_ context.Context, instance *rafs.Rafs) error {
+	return db.db.Update(func(tx *bolt.Tx) error {
+		bucket := getInstancesBucket(tx)
+
+		return updateObject(bucket, instance.SnapshotID, instance)
+	})
+}
+
 func (db *Database) DeleteRafsInstance(_ context.Context, snapshotID string) error {
 	return db.db.Update(func(tx *bolt.Tx) error {
 		bucket := getInstancesBucket(tx)

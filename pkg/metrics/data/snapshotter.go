@@ -79,4 +79,25 @@ var (
 			Help: "Thread counts of snapshotter.",
 		},
 	)
+
+	CacheBlobsDeleted = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "snapshotter_cache_blobs_deleted_total",
+			Help: "Total number of cache blobs deleted during cleanup.",
+		},
+	)
+
+	CacheBlobsInUse = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "snapshotter_cache_blobs_in_use",
+			Help: "Number of cache blobs currently in use by running daemons.",
+		},
+	)
+
+	CacheBlobDeletionErrors = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "snapshotter_cache_blob_deletion_errors_total",
+			Help: "Total number of errors encountered while deleting cache blobs.",
+		},
+	)
 )

@@ -44,6 +44,9 @@ func init() {
 		data.CachePrefetchCumulativeTimeMillis,
 		data.CachePrefetchTotalDurationMillis,
 		data.CacheBufferedBackendSize,
+		data.CacheBlobsDeleted,
+		data.CacheBlobsInUse,
+		data.CacheBlobDeletionErrors,
 		data.CredentialRenewals,
 		data.CredentialStoreEntries,
 	)
