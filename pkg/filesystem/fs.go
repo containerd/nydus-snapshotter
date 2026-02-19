@@ -29,6 +29,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
@@ -549,6 +550,14 @@ func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
 		}
 	default:
 		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
+	}
+
+	// Evict cached credentials for this image ref so the renewal
+	// goroutine stops refreshing them once the image is no longer in use.
+	if rafs.ImageID == "" {
+		log.L.Warnf("no image ID found for RAFS linked to snapshot %s", snapshotID)
+	} else {
+		auth.RemoveCredentials(rafs.ImageID)
 	}
 
 	return nil
