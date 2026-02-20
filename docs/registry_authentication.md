@@ -218,7 +218,7 @@ Set `auth` to `null` if no credentials are available for the requested image.
 
 For providers that issue short-lived tokens (such as the kubelet credential provider with cloud IAM backends), nydus-snapshotter can automatically renew credentials in the background before they expire.
 
-When enabled, the snapshotter maintains an in-memory store of credentials currently in use. A background goroutine periodically re-fetches credentials from the provider that originally issued them. On snapshotter restart, the store is re-seeded from the set of images already active in the RAFS cache.
+When enabled, a background goroutine periodically reconciles the set of active RAFS instances against an in-memory credential store, renewing credentials for images currently in use and evicting entries for images that are no longer mounted. On each renewal tick the goroutine re-queries the renewable providers (Docker config, kubelet credential providers, Kubernetes secrets) in priority order.
 
 Only providers that support renewal participate: Docker config, kubelet credential providers, and Kubernetes secret-based providers. CRI-based and label-based credentials are not renewed.
 

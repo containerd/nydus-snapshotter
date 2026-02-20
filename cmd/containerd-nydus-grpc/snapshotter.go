@@ -17,7 +17,6 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/signals"
 	"github.com/containerd/nydus-snapshotter/snapshot"
 
@@ -61,17 +60,7 @@ func Start(ctx context.Context, cfg *config.SnapshotterConfig) error {
 	}
 
 	if interval := cfg.RemoteConfig.AuthConfig.CredentialRenewalInterval; interval > 0 {
-		// Collect unique image refs from recovered RAFS instances so the
-		// renewal store is seeded on restart.
-		seen := make(map[string]any)
-		var existingRefs []string
-		for _, r := range rafs.RafsGlobalCache.List() {
-			if _, ok := seen[r.ImageID]; !ok && r.ImageID != "" {
-				seen[r.ImageID] = nil
-				existingRefs = append(existingRefs, r.ImageID)
-			}
-		}
-		auth.InitCredentialRenewal(ctx, interval, existingRefs)
+		auth.InitCredentialRenewal(ctx, interval)
 	}
 
 	return Serve(ctx, rs, opt, stopSignal)
