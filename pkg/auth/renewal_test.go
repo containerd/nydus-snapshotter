@@ -61,7 +61,7 @@ func (p *trackingProvider) GetCredentials(_ *AuthRequest) (*PassKeyChain, error)
 		return nil, fmt.Errorf("simulated failure")
 	}
 	if p.nilNext.Load() {
-		return nil, nil
+		return nil, fmt.Errorf("no credentials available")
 	}
 	return &PassKeyChain{
 		Username: fmt.Sprintf("user-v%d", n),

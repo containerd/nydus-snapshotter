@@ -33,5 +33,4 @@ var (
 		[]string{imageRefLabel},
 		ttl.DefaultTTL,
 	)
-
 )
