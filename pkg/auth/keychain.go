@@ -59,20 +59,25 @@ func (kc PassKeyChain) TokenBase() bool {
 	return kc.Username == "" && kc.Password != ""
 }
 
-// buildProviders returns the ordered list of auth providers.
-// Priority: labels > CRI > docker > kubelet > kubesecret.
-// It is a variable so tests can substitute a different builder.
-var buildProviders = func() []AuthProvider {
-	providers := []AuthProvider{
-		NewLabelsProvider(),
-		NewCRIProvider(),
-		NewDockerProvider(),
-	}
+// renewableProviders returns the ordered list of providers used exclusively
+// by the renewal goroutine. CRI and Labels are excluded: CRI caches
+// credentials globally and would keep returning them at renewal time,
+// preventing the renewable providers from being reached; Labels are only
+// available at pull time via snapshot labels and are not accessible during
+// renewal. It is a variable so tests can substitute a different builder.
+var renewableProviders = func() []AuthProvider {
+	providers := []AuthProvider{NewDockerProvider()}
 	if kubeletProvider != nil {
 		providers = append(providers, kubeletProvider)
 	}
-	providers = append(providers, NewKubeSecretProvider())
-	return providers
+	return append(providers, NewKubeSecretProvider())
+}
+
+// buildProviders returns the full ordered list of auth providers.
+// Priority: labels > CRI > docker > kubelet > kubesecret.
+// It is a variable so tests can substitute a different builder.
+var buildProviders = func() []AuthProvider {
+	return append([]AuthProvider{NewLabelsProvider(), NewCRIProvider()}, renewableProviders()...)
 }
 
 // GetRegistryKeyChain retrieves image pull credentials from the first provider
@@ -100,21 +105,28 @@ func getRegistryKeyChainFromProviders(ref string, labels map[string]string, prov
 			return kc
 		}
 	}
+	return fetchFromProviders(&AuthRequest{Ref: ref, Labels: labels}, providers)
+}
 
-	authRequest := &AuthRequest{Ref: ref, Labels: labels}
+// fetchFromProviders walks providers in order and returns credentials from the
+// first one that succeeds. If the winning provider is renewable and the renewal
+// store is active, the credentials are cached for periodic renewal.
+func fetchFromProviders(req *AuthRequest, providers []AuthProvider) *PassKeyChain {
+	logger := log.L.WithField("ref", req.Ref)
 
 	var errs []error
 	for _, provider := range providers {
-		logger.Info(fmt.Sprintf("Trying to get credentials from %s", provider))
-		kc, err := provider.GetCredentials(authRequest)
+		logger.Debugf("Trying to get credentials from %s", provider)
+		kc, err := provider.GetCredentials(req)
 		if err != nil {
 			errs = append(errs, errors.Wrapf(err, "get credentials from %T", provider))
 		}
 		if kc != nil {
+			logger.Infof("Got credentials from provider %s", provider)
 			// Cache in the renewal store when the provider supports renewal.
 			if renewalStore != nil {
 				if rp, ok := provider.(RenewableProvider); ok && rp.CanRenew() {
-					renewalStore.Add(ref, provider, kc)
+					renewalStore.Add(req.Ref, kc)
 				}
 			}
 			return kc
