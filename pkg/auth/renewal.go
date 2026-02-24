@@ -57,10 +57,10 @@ func renewLoop(ctx context.Context, interval time.Duration, store *credentialSto
 // - entry not in store, live in RAFS: add
 // - entry not in store, not live in RAFS: nothing
 func (s *credentialStore) reconcile(interval time.Duration) {
-	live := make(map[string]any)
+	live := make(map[string]struct{})
 	for _, r := range rafs.RafsGlobalCache.List() {
 		if r.ImageID != "" {
-			live[r.ImageID] = nil
+			live[r.ImageID] = struct{}{}
 		}
 	}
 
