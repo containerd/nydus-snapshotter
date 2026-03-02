@@ -163,7 +163,9 @@ func (s *credentialStore) Remove(ref string) {
 
 	log.L.WithField("ref", ref).Debug("removing credential entry from store")
 	delete(s.entries, ref)
-	data.CredentialStoreEntries.WithLabelValues(ref).Set(0)
+	data.CredentialStoreEntries.DeleteLabelValues(ref)
+	data.CredentialRenewals.DeleteLabelValues(ref, "success")
+	data.CredentialRenewals.DeleteLabelValues(ref, "failure")
 }
 
 // Entries returns a snapshot of all current entries.

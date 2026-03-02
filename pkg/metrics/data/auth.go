@@ -7,7 +7,6 @@
 package data
 
 import (
-	"github.com/containerd/nydus-snapshotter/pkg/metrics/types/ttl"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -23,14 +22,12 @@ var (
 	)
 
 	// CredentialStoreEntries tracks the number of credentials currently held
-	// in the renewal store per image ref. Uses TTL so evicted refs disappear
-	// from the metric automatically.
-	CredentialStoreEntries = ttl.NewGaugeVecWithTTL(
+	// in the renewal store per image ref.
+	CredentialStoreEntries = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "snapshotter_credential_store_entries",
 			Help: "Number of credentials currently tracked in the renewal store per image ref.",
 		},
 		[]string{imageRefLabel},
-		ttl.DefaultTTL,
 	)
 )
