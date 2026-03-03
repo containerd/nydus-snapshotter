@@ -25,6 +25,15 @@ type AuthProvider interface {
 	// GetCredentials retrieves credentials for the given request.
 	// Returns nil if no credentials are available.
 	GetCredentials(req *AuthRequest) (*PassKeyChain, error)
+	String() string
+}
+
+// RenewableProvider extends AuthProvider with credential renewal capability.
+// Providers that can refresh credentials implement this interface.
+type RenewableProvider interface {
+	AuthProvider
+	// CanRenew reports whether this provider can renew credentials.
+	CanRenew() bool
 }
 
 // parseReference returns the reference.Spec and host for the given reference

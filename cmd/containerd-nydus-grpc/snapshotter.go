@@ -59,6 +59,10 @@ func Start(ctx context.Context, cfg *config.SnapshotterConfig) error {
 		}
 	}
 
+	if interval := cfg.RemoteConfig.AuthConfig.CredentialRenewalInterval; interval > 0 {
+		auth.InitCredentialRenewal(ctx, interval)
+	}
+
 	return Serve(ctx, rs, opt, stopSignal)
 }
 

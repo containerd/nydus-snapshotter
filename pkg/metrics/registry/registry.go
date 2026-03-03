@@ -47,6 +47,8 @@ func init() {
 		data.CacheBlobsDeleted,
 		data.CacheBlobsInUse,
 		data.CacheBlobDeletionErrors,
+		data.CredentialRenewals,
+		data.CredentialStoreEntries,
 	)
 
 	for _, m := range data.MetricHists {

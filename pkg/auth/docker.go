@@ -32,6 +32,14 @@ func NewDockerProvider() *DockerProvider {
 	}
 }
 
+// CanRenew implements RenewableProvider. Docker credentials can be
+// refreshed by re-reading the config file. Works well with docker credential helpers.
+func (p *DockerProvider) CanRenew() bool { return true }
+
+func (p *DockerProvider) String() string {
+	return "docker"
+}
+
 // GetCredentials retrieves credentials from Docker's config.json.
 // Returns nil if no credentials are found for the registry.
 func (p *DockerProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
