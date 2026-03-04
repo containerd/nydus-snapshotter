@@ -103,52 +103,32 @@ func TestRenewableProviderTypeAssertion(t *testing.T) {
 
 func TestCredentialStoreGet(t *testing.T) {
 	tests := []struct {
-		name     string
-		lifetime time.Duration
-		setup    func(s *credentialStore)
-		ref      string
-		wantNil  bool
-		wantUser string
+		name    string
+		ref     string
+		wantNil bool
 	}{
 		{
-			name:     "returns cached entry",
-			lifetime: 5 * time.Minute,
-			setup: func(s *credentialStore) {
-				s.Add("ref", &PassKeyChain{Username: "user", Password: "pass"})
-			},
-			ref:      "ref",
-			wantUser: "user",
-		},
-		{
-			name:     "returns nil for missing ref",
-			lifetime: 5 * time.Minute,
-			setup:    func(_ *credentialStore) {},
-			ref:      "nonexistent",
-			wantNil:  true,
-		},
-		{
-			name:     "returns nil for expired entry",
-			lifetime: 1 * time.Millisecond,
-			setup: func(s *credentialStore) {
-				s.Add("ref", &PassKeyChain{Username: "user", Password: "pass"})
-				time.Sleep(5 * time.Millisecond)
-			},
-			ref:     "ref",
+			name:    "returns nil for missing ref",
+			ref:     "nonexistent",
 			wantNil: true,
+		},
+		{
+			name: "returns keychain for present ref",
+			ref:  "ref",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := newCredentialStore(tt.lifetime)
-			tt.setup(store)
+			store := newCredentialStore(5 * time.Minute)
+			store.Add("ref", &PassKeyChain{Username: "user", Password: "pass"})
 
 			got := store.Get(tt.ref)
 			if tt.wantNil {
 				assert.Nil(t, got)
 			} else {
 				require.NotNil(t, got)
-				assert.Equal(t, tt.wantUser, got.Username)
+				assert.Equal(t, "user", got.Username)
 			}
 		})
 	}
@@ -279,7 +259,7 @@ func TestRenewEntry(t *testing.T) {
 			store.Add(ref, &PassKeyChain{Username: "original", Password: "original"})
 			renewalStore = store
 
-			renewEntry(ref)
+			store.renewEntry(ref)
 
 			assert.Equal(t, tt.wantCall, tt.provider.calls.Load())
 			got := store.Get(ref)

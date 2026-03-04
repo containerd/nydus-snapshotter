@@ -220,7 +220,9 @@ For providers that issue short-lived tokens (such as the kubelet credential prov
 
 When enabled, a background goroutine periodically reconciles the set of active RAFS instances against an in-memory credential store, renewing credentials for images currently in use and evicting entries for images that are no longer mounted. On each renewal tick the goroutine re-queries the renewable providers (Docker config, kubelet credential providers, Kubernetes secrets) in priority order.
 
-Only providers that support renewal participate: Docker config, kubelet credential providers, and Kubernetes secret-based providers. CRI-based and label-based credentials are not renewed.
+Only providers that support renewal participate: Docker config, kubelet credential providers, and Kubernetes secret-based providers. CRI-based and label-based credentials are not renewed. The kubelet provider being
+expiration aware, it will only renew tokens when they are about to expire.
+Entries are evicted when the corresponding RAFS instance is no longer mounted; the credential store itself does not expire entries.
 
 ### Configuration
 
@@ -233,8 +235,6 @@ credential_renewal_interval = "30m"
 Set `credential_renewal_interval` to at most one third of your token lifetime. This ensures at least two renewal attempts before a token expires, so a single transient failure (network blip, metadata service hiccup) does not cause an auth outage. For example, if ECR tokens are valid for 12 hours, use an interval of 4 hours or less.
 
 > **Future improvement:** The current configuration conflates two concerns into a single interval: how frequently the renewal loop runs, and how early before expiry a token should be renewed. A future version may separate these into a `credential_renewal_check_interval` (the loop cadence, kept short) and a `credential_renewal_lead_time` (how far before expiry to trigger renewal, e.g. 2 hours before a 12-hour token expires). This would allow fine-grained control without the lifetime/3 approximation.
-
-The credential store considers an entry expired if it has not been successfully renewed within two renewal intervals. If the first renewal attempt fails, the existing credentials remain in use until the next attempt succeeds or the entry expires.
 
 ### Metrics
 

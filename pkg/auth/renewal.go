@@ -25,18 +25,18 @@ var renewalStore *credentialStore
 // entries from live RAFS instances, and starts a background goroutine that
 // reconciles and renews credentials at the given interval.
 func InitCredentialRenewal(ctx context.Context, interval time.Duration) {
-	renewalStore = newCredentialStore(2 * interval)
+	renewalStore = newCredentialStore(interval)
 	// Reconcile existing credentials a first time.
-	renewalStore.reconcile(interval)
+	renewalStore.reconcile()
 
 	log.G(ctx).WithField("interval", interval).Info("credential renewal initialized")
-	go renewLoop(ctx, interval, renewalStore)
+	go renewLoop(ctx, renewalStore)
 }
 
 // renewLoop is the background goroutine that periodically reconciles and
 // renews credentials.
-func renewLoop(ctx context.Context, interval time.Duration, store *credentialStore) {
-	ticker := time.NewTicker(interval)
+func renewLoop(ctx context.Context, store *credentialStore) {
+	ticker := time.NewTicker(store.renewInterval)
 	defer ticker.Stop()
 
 	for {
@@ -44,7 +44,7 @@ func renewLoop(ctx context.Context, interval time.Duration, store *credentialSto
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			store.reconcile(interval)
+			store.reconcile()
 		}
 	}
 }
@@ -54,9 +54,9 @@ func renewLoop(ctx context.Context, interval time.Duration, store *credentialSto
 // 4 different situations are possible:
 // - entry in store, live in RAFS: renew
 // - entry in store, not live in RAFS: evict
-// - entry not in store, live in RAFS: add
 // - entry not in store, not live in RAFS: nothing
-func (s *credentialStore) reconcile(interval time.Duration) {
+// - entry not in store, live in RAFS: add
+func (s *credentialStore) reconcile() {
 	live := make(map[string]struct{})
 	for _, r := range rafs.RafsGlobalCache.List() {
 		if r.ImageID != "" {
@@ -66,8 +66,9 @@ func (s *credentialStore) reconcile(interval time.Duration) {
 
 	for _, entry := range s.Entries() {
 		if _, inRAFS := live[entry.ref]; inRAFS {
-			renewEntry(entry.ref)
-		} else if time.Since(entry.renewedAt) >= interval/2 {
+			log.L.WithField("ref", entry.ref).Debug("renewing credential entry")
+			s.renewEntry(entry.ref)
+		} else if time.Since(entry.renewedAt) >= s.renewInterval/2 {
 			s.Remove(entry.ref)
 		}
 		// Grace period: the entry was added recently (within interval/2) but
@@ -82,7 +83,7 @@ func (s *credentialStore) reconcile(interval time.Duration) {
 
 	for ref := range live {
 		if s.Get(ref) == nil {
-			renewEntry(ref)
+			s.renewEntry(ref)
 		}
 	}
 }
@@ -90,8 +91,8 @@ func (s *credentialStore) reconcile(interval time.Duration) {
 // renewEntry fetches fresh credentials for ref from the renewable provider
 // list. fetchFromProviders writes to the renewal store on success, so
 // renewEntry only needs to update metrics.
-func renewEntry(ref string) {
-	kc := fetchFromProviders(&AuthRequest{Ref: ref}, renewableProviders())
+func (s *credentialStore) renewEntry(ref string) {
+	kc := fetchFromProviders(&AuthRequest{Ref: ref, ValidUntil: time.Now().Add(s.renewInterval)}, renewableProviders())
 	if kc != nil {
 		data.CredentialRenewals.WithLabelValues(ref, "success").Inc()
 	} else {
@@ -115,15 +116,15 @@ type credentialEntry struct {
 // credentialStore is a concurrency-safe in-memory store for renewable
 // credentials keyed by image ref.
 type credentialStore struct {
-	mu       sync.RWMutex
-	entries  map[string]*credentialEntry
-	lifetime time.Duration // how long an entry is considered valid
+	mu            sync.RWMutex
+	entries       map[string]*credentialEntry
+	renewInterval time.Duration
 }
 
-func newCredentialStore(lifetime time.Duration) *credentialStore {
+func newCredentialStore(renewInterval time.Duration) *credentialStore {
 	return &credentialStore{
-		entries:  make(map[string]*credentialEntry),
-		lifetime: lifetime,
+		entries:       make(map[string]*credentialEntry),
+		renewInterval: renewInterval,
 	}
 }
 
@@ -141,16 +142,13 @@ func (s *credentialStore) Add(ref string, kc *PassKeyChain) {
 	data.CredentialStoreEntries.WithLabelValues(ref).Set(1)
 }
 
-// Get returns the cached keychain for ref, or nil if missing or expired.
+// Get returns the cached keychain for ref, or nil if not present.
 func (s *credentialStore) Get(ref string) *PassKeyChain {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	entry, ok := s.entries[ref]
 	if !ok {
-		return nil
-	}
-	if time.Since(entry.renewedAt) > s.lifetime {
 		return nil
 	}
 	return entry.keychain
