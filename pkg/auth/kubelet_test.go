@@ -29,66 +29,76 @@ type credentialMap map[string]struct{ username, password string }
 
 // setupKubeletProvider creates a temporary directory with mock credential provider
 // plugins and configuration file for testing.
-func setupKubeletProvider(t *testing.T) (configPath, binDir string, cleanup func()) {
+func setupKubeletProvider(t *testing.T) (configPath, binDir string) {
 	t.Helper()
 
 	// Create temporary directories
-	tmpDir, err := os.MkdirTemp("", "kubelet-test-")
-	require.NoError(t, err)
+	tmpDir := t.TempDir()
 
 	binDir = filepath.Join(tmpDir, "bin")
-	err = os.Mkdir(binDir, 0755)
+	err := os.Mkdir(binDir, 0755)
 	require.NoError(t, err)
 
 	configPath = filepath.Join(tmpDir, "credential-config.yaml")
 
-	cleanup = func() {
-		os.RemoveAll(tmpDir)
-	}
+	return configPath, binDir
+}
 
-	return configPath, binDir, cleanup
+// buildAuthSection builds a JSON auth map for a mock plugin response.
+func buildAuthSection(registries credentialMap) string {
+	if len(registries) == 0 {
+		return "null"
+	}
+	auth := "{"
+	first := true
+	for registry, creds := range registries {
+		if !first {
+			auth += ","
+		}
+		auth += fmt.Sprintf(`"%s":{"username":"%s","password":"%s"}`,
+			registry, creds.username, creds.password)
+		first = false
+	}
+	return auth + "}"
 }
 
 // createMockPlugin creates a mock credential provider plugin that returns
 // credentials based on the input image. If registries is empty, return null auth.
+// Uses a 10m cacheDuration so results are cached by default.
 func createMockPlugin(t *testing.T, binDir, pluginName string, registries credentialMap) {
 	t.Helper()
+	createMockPluginWithTTL(t, binDir, pluginName, registries, "10m")
+}
 
-	pluginPath := filepath.Join(binDir, pluginName)
-
-	// Build the auth section
-	authEntries := "null"
-	if len(registries) > 0 {
-		authEntries = "{"
-		first := true
-		for registry, creds := range registries {
-			if !first {
-				authEntries += ","
-			}
-			authEntries += fmt.Sprintf(`"%s":{"username":"%s","password":"%s"}`,
-				registry, creds.username, creds.password)
-			first = false
-		}
-		authEntries += "}"
-	}
+// createMockPluginWithTTL is like createMockPlugin but lets the caller control
+// the cacheDuration field in the response (e.g. "0s" to disable caching).
+func createMockPluginWithTTL(t *testing.T, binDir, pluginName string, registries credentialMap, cacheDuration string) {
+	t.Helper()
 
 	script := fmt.Sprintf(`#!/bin/bash
 cat > /dev/null
 cat <<'EOF'
-{"kind":"CredentialProviderResponse","apiVersion":"credentialprovider.kubelet.k8s.io/v1","cacheKeyType":"Image","cacheDuration":"10m","auth":%s}
+{"kind":"CredentialProviderResponse","apiVersion":"credentialprovider.kubelet.k8s.io/v1","cacheKeyType":"Image","cacheDuration":%q,"auth":%s}
 EOF
-`, authEntries)
+`, cacheDuration, buildAuthSection(registries))
 
-	err := os.WriteFile(pluginPath, []byte(script), 0755)
+	err := os.WriteFile(filepath.Join(binDir, pluginName), []byte(script), 0755)
 	require.NoError(t, err)
 }
 
 // createMockCredentialProvider creates a CredentialProvider with the given parameters.
+// Uses 10m as the default cache duration.
 func createMockCredentialProvider(name string, matchImages []string) kubeletconfigv1.CredentialProvider {
+	return createMockCredentialProviderWithTTL(name, matchImages, 10*time.Minute)
+}
+
+// createMockCredentialProviderWithTTL is like createMockCredentialProvider but
+// lets the caller control the DefaultCacheDuration.
+func createMockCredentialProviderWithTTL(name string, matchImages []string, defaultTTL time.Duration) kubeletconfigv1.CredentialProvider {
 	return kubeletconfigv1.CredentialProvider{
 		Name:                 name,
 		APIVersion:           "credentialprovider.kubelet.k8s.io/v1",
-		DefaultCacheDuration: &metav1.Duration{Duration: 10 * time.Minute},
+		DefaultCacheDuration: &metav1.Duration{Duration: defaultTTL},
 		MatchImages:          matchImages,
 	}
 }
@@ -122,8 +132,7 @@ func setupMockProvider(t *testing.T, binDir, pluginName, configPath string, regi
 }
 
 func TestNewKubeletProvider(t *testing.T) {
-	configPath, binDir, cleanup := setupKubeletProvider(t)
-	defer cleanup()
+	configPath, binDir := setupKubeletProvider(t)
 
 	tests := []struct {
 		name        string
@@ -397,8 +406,7 @@ func TestKubeletProviderGetCredentials(t *testing.T) {
 	oldProvider := kubeletProvider
 	defer func() { kubeletProvider = oldProvider }()
 
-	configPath, binDir, cleanup := setupKubeletProvider(t)
-	defer cleanup()
+	configPath, binDir := setupKubeletProvider(t)
 
 	tests := []struct {
 		name         string
@@ -614,8 +622,7 @@ func TestInitKubeletProvider(t *testing.T) {
 	oldProvider := kubeletProvider
 	defer func() { kubeletProvider = oldProvider }()
 
-	configPath, binDir, cleanup := setupKubeletProvider(t)
-	defer cleanup()
+	configPath, binDir := setupKubeletProvider(t)
 
 	tests := []struct {
 		name        string
@@ -771,6 +778,144 @@ func TestURLsMatch(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantMatch, matched)
+		})
+	}
+}
+
+// --- evictExpired ---
+
+func TestKubeletProviderEvictExpired(t *testing.T) {
+	now := time.Now()
+	provider := &KubeletProvider{
+		registries: map[string]*kubeletCredential{
+			"valid.com":   {keychain: &PassKeyChain{}, expiresAt: now.Add(10 * time.Minute)},
+			"expired.com": {keychain: &PassKeyChain{}, expiresAt: now.Add(-1 * time.Minute)},
+			"zero.com":    {keychain: &PassKeyChain{}, expiresAt: time.Time{}},
+		},
+	}
+
+	provider.evictExpired()
+
+	assert.Len(t, provider.registries, 1)
+	assert.Contains(t, provider.registries, "valid.com")
+	assert.NotContains(t, provider.registries, "expired.com")
+	assert.NotContains(t, provider.registries, "zero.com")
+}
+
+// TestKubeletProviderValidUntil verifies that ValidUntil causes the provider to
+// bypass a cached credential that won't survive until the requested time, while
+// still serving from cache when the cached credential is valid long enough.
+func TestKubeletProviderValidUntil(t *testing.T) {
+	_, binDir := setupKubeletProvider(t)
+
+	pluginName := "valid-until-plugin"
+	cfgPath := filepath.Join(binDir, "valid-until-config.yaml")
+	pluginPath := filepath.Join(binDir, pluginName)
+
+	// Plugin returns a 10-minute TTL; cached expiresAt ≈ now+10m.
+	createMockPluginWithTTL(t, binDir, pluginName,
+		credentialMap{"registry.example.com": {testUser, testPass}}, "10m")
+	createMockProviderConfig(t, cfgPath, []kubeletconfigv1.CredentialProvider{
+		createMockCredentialProvider(pluginName, []string{"registry.example.com"}),
+	})
+
+	provider, err := NewKubeletProvider(cfgPath, binDir)
+	require.NoError(t, err)
+
+	ref := "registry.example.com/image:tag"
+
+	// First call: executes the plugin and caches the result (expiresAt ≈ now+10m).
+	kc, err := provider.GetCredentials(&AuthRequest{Ref: ref})
+	require.NoError(t, err)
+	require.NotNil(t, kc)
+	assert.Equal(t, testUser, kc.Username)
+
+	// Remove the plugin binary; any re-execution attempt will now fail.
+	require.NoError(t, os.Remove(pluginPath))
+
+	// ValidUntil within the cached TTL (now+5m < expiresAt ≈ now+10m): cache hit.
+	kc2, err := provider.GetCredentials(&AuthRequest{Ref: ref, ValidUntil: time.Now().Add(5 * time.Minute)})
+	require.NoError(t, err, "credential is valid long enough; expected cache hit")
+	require.NotNil(t, kc2)
+	assert.Equal(t, testUser, kc2.Username)
+
+	// ValidUntil beyond the cached TTL (now+20m > expiresAt ≈ now+10m): cache
+	// bypassed, re-exec attempted → fails because the binary is gone.
+	_, err = provider.GetCredentials(&AuthRequest{Ref: ref, ValidUntil: time.Now().Add(20 * time.Minute)})
+	require.Error(t, err, "cached credential won't last long enough; expected plugin re-exec and failure")
+
+	// Cache is still intact (failed re-exec didn't evict it): zero ValidUntil succeeds.
+	kc3, err := provider.GetCredentials(&AuthRequest{Ref: ref})
+	require.NoError(t, err, "cache should be unaffected by the failed re-exec attempt")
+	require.NotNil(t, kc3)
+	assert.Equal(t, testUser, kc3.Username)
+}
+
+// TestKubeletProviderRegistryCache verifies caching behaviour by removing the
+// plugin binary after the first successful call. The second call either
+// succeeds (cache hit) or fails (no cache), proving whether the result was
+// stored.
+func TestKubeletProviderRegistryCache(t *testing.T) {
+	tests := []struct {
+		name             string
+		pluginName       string
+		cfgName          string
+		responseTTL      string        // cacheDuration field in the plugin response
+		defaultTTL       time.Duration // DefaultCacheDuration in the provider config
+		wantCachedOnNext bool          // whether second call should succeed from cache
+	}{
+		{
+			name:             "positive TTL caches result",
+			pluginName:       "cache-hit-plugin",
+			cfgName:          "cache-hit-config.yaml",
+			responseTTL:      "10m",
+			defaultTTL:       10 * time.Minute,
+			wantCachedOnNext: true,
+		},
+		{
+			name:             "zero TTL does not cache",
+			pluginName:       "zero-ttl-plugin",
+			cfgName:          "zero-ttl-config.yaml",
+			responseTTL:      "0s",
+			defaultTTL:       0,
+			wantCachedOnNext: false,
+		},
+	}
+
+	_, binDir := setupKubeletProvider(t)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pluginPath := filepath.Join(binDir, tt.pluginName)
+			cfg := filepath.Join(binDir, tt.cfgName)
+
+			createMockPluginWithTTL(t, binDir, tt.pluginName,
+				credentialMap{"registry.example.com": {testUser, testPass}}, tt.responseTTL)
+			createMockProviderConfig(t, cfg, []kubeletconfigv1.CredentialProvider{
+				createMockCredentialProviderWithTTL(tt.pluginName, []string{"registry.example.com"}, tt.defaultTTL),
+			})
+
+			provider, err := NewKubeletProvider(cfg, binDir)
+			require.NoError(t, err)
+
+			// First call: executes the plugin.
+			kc, err := provider.GetCredentials(&AuthRequest{Ref: "registry.example.com/image:tag"})
+			require.NoError(t, err)
+			require.NotNil(t, kc)
+			assert.Equal(t, testUser, kc.Username)
+
+			// Remove the plugin so any subsequent exec attempt fails.
+			require.NoError(t, os.Remove(pluginPath))
+
+			// Second call: served from cache (hit) or re-executes the gone plugin (miss).
+			kc2, err := provider.GetCredentials(&AuthRequest{Ref: "registry.example.com/image:tag"})
+			if tt.wantCachedOnNext {
+				require.NoError(t, err, "expected cache hit; plugin binary is gone")
+				require.NotNil(t, kc2)
+				assert.Equal(t, testUser, kc2.Username)
+			} else {
+				require.Error(t, err, "expected miss: result should not have been cached")
+			}
 		})
 	}
 }

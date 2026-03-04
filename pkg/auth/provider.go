@@ -7,6 +7,8 @@
 package auth
 
 import (
+	"time"
+
 	"github.com/containerd/containerd/v2/pkg/reference"
 	distribution "github.com/distribution/reference"
 	"github.com/pkg/errors"
@@ -18,6 +20,10 @@ type AuthRequest struct {
 	Ref string
 	// Labels are snapshot labels that may contain credentials
 	Labels map[string]string
+	// ValidUntil, when non-zero, instructs providers to return a credential
+	// that remains valid at least until this time. Providers that do not
+	// have a notion of expiration will ignore this..
+	ValidUntil time.Time
 }
 
 // AuthProvider manage how credentials are retrieved for different sources
