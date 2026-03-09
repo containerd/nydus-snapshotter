@@ -11,6 +11,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/containerd/log"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -98,14 +99,18 @@ func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
 // getRegistryKeyChainFromProviders is the testable core of GetRegistryKeyChain.
 func getRegistryKeyChainFromProviders(ref string, labels map[string]string, providers []AuthProvider) *PassKeyChain {
 	logger := log.L.WithField("ref", ref)
-	// Serve from the renewal store if available and not expired.
+
+	authReq := &AuthRequest{Ref: ref, Labels: labels}
+	// Serve from the renewal store if available.
 	if renewalStore != nil {
 		if kc := renewalStore.Get(ref); kc != nil {
 			logger.Debug("serving credentials from renewal store")
 			return kc
 		}
+		// If not available, request credentials valid until the next renewal tick.
+		authReq.ValidUntil = time.Now().Add(renewalStore.renewInterval)
 	}
-	return fetchFromProviders(&AuthRequest{Ref: ref, Labels: labels}, providers)
+	return fetchFromProviders(authReq, providers)
 }
 
 // fetchFromProviders walks providers in order and returns credentials from the
