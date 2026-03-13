@@ -181,6 +181,10 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		fsManagers = append(fsManagers, proxyManager)
 	}
 
+	if interval := cfg.RemoteConfig.AuthConfig.CredentialRenewalInterval; interval > 0 {
+		startCredentialRenewal(ctx, interval, fsManagers)
+	}
+
 	metricServer, err := metrics.NewServer(
 		ctx,
 		metrics.WithProcessManagers(fsManagers),
