@@ -25,6 +25,7 @@ import (
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
@@ -496,6 +497,42 @@ func (d *Daemon) GetInflightMetrics() (*types.InflightMetrics, error) {
 	}
 
 	return c.GetInflightMetrics()
+}
+
+// UpdateAuthConfig updates the registry auth for the given rafs instance.
+// It rewrites the daemon config file on disk and, for basic auth, issues a
+// PUT /api/v1/config to hot-reload the credential in the running nydusd.
+// Bearer tokens are only persisted to disk (nydusd does not support runtime
+// token updates).
+func (d *Daemon) UpdateAuthConfig(snapshotID string, kc *auth.PassKeyChain) error {
+	var configFile, apiID string
+	if d.IsSharedDaemon() {
+		configFile = d.ConfigFile(snapshotID)
+		apiID = "/" + snapshotID
+	} else {
+		configFile = d.ConfigFile("")
+		apiID = "/"
+	}
+
+	cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, configFile)
+	if err != nil {
+		return errors.Wrap(err, "load daemon config for auth update")
+	}
+	cfg.FillAuth(kc)
+	if err := cfg.DumpFile(configFile); err != nil {
+		return errors.Wrap(err, "write updated daemon config")
+	}
+
+	if kc.TokenBase() {
+		log.L.WithField("daemon", d.ID()).Warn("bearer token updated on disk only; nydusd API does not support runtime token reload")
+		return nil
+	}
+
+	client, err := d.GetClient()
+	if err != nil {
+		return errors.Wrap(err, "get client for auth update")
+	}
+	return client.UpdateConfig(apiID, map[string]string{"registry_auth": kc.ToBase64()})
 }
 
 func (d *Daemon) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {

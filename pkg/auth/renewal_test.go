@@ -7,7 +7,6 @@
 package auth
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -206,9 +205,9 @@ func TestCredentialStoreConcurrency(t *testing.T) {
 	wg.Wait()
 }
 
-// --- renewEntry ---
+// --- RenewCredential ---
 
-func TestRenewEntry(t *testing.T) {
+func TestRenewCredential(t *testing.T) {
 	const ref = "docker.io/library/nginx:latest"
 
 	tests := []struct {
@@ -216,6 +215,7 @@ func TestRenewEntry(t *testing.T) {
 		provider *trackingProvider
 		wantUser string
 		wantCall int32
+		wantNil  bool
 	}{
 		{
 			name:     "updates store on success",
@@ -224,24 +224,14 @@ func TestRenewEntry(t *testing.T) {
 			wantCall: 1,
 		},
 		{
-			name: "leaves existing entry unchanged on failure",
+			name: "returns nil on failure",
 			provider: func() *trackingProvider {
 				p := &trackingProvider{}
 				p.failNext.Store(true)
 				return p
 			}(),
-			wantUser: "original",
 			wantCall: 1,
-		},
-		{
-			name: "leaves existing entry unchanged when provider returns nil",
-			provider: func() *trackingProvider {
-				p := &trackingProvider{}
-				p.nilNext.Store(true)
-				return p
-			}(),
-			wantUser: "original",
-			wantCall: 1,
+			wantNil:  true,
 		},
 	}
 
@@ -254,19 +244,95 @@ func TestRenewEntry(t *testing.T) {
 				renewalStore = oldStore
 			}()
 			renewableProviders = func() []AuthProvider { return []AuthProvider{tt.provider} }
+			renewalStore = newCredentialStore(5 * time.Minute)
 
-			store := newCredentialStore(5 * time.Minute)
-			store.Add(ref, &PassKeyChain{Username: "original", Password: "original"})
-			renewalStore = store
-
-			store.renewEntry(ref)
+			got := RenewCredential(ref)
 
 			assert.Equal(t, tt.wantCall, tt.provider.calls.Load())
-			got := store.Get(ref)
-			require.NotNil(t, got)
-			assert.Equal(t, tt.wantUser, got.Username)
+			if tt.wantNil {
+				assert.Nil(t, got)
+			} else {
+				require.NotNil(t, got)
+				assert.Equal(t, tt.wantUser, got.Username)
+			}
 		})
 	}
+}
+
+// --- EvictStaleCredentials ---
+
+func TestEvictStaleCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		stored   []string
+		live     map[string]struct{}
+		wantRefs []string
+	}{
+		{
+			name:     "evicts refs not in live set",
+			stored:   []string{"ref-a", "ref-b", "ref-c"},
+			live:     map[string]struct{}{"ref-a": {}, "ref-c": {}},
+			wantRefs: []string{"ref-a", "ref-c"},
+		},
+		{
+			name:     "evicts all when live set is empty",
+			stored:   []string{"ref-a", "ref-b"},
+			live:     map[string]struct{}{},
+			wantRefs: nil,
+		},
+		{
+			name:     "keeps all when all are live",
+			stored:   []string{"ref-a", "ref-b"},
+			live:     map[string]struct{}{"ref-a": {}, "ref-b": {}},
+			wantRefs: []string{"ref-a", "ref-b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldStore := renewalStore
+			defer func() { renewalStore = oldStore }()
+
+			// Use a tiny interval so grace period (interval/2) is effectively zero.
+			renewalStore = newCredentialStore(time.Millisecond)
+			for _, ref := range tt.stored {
+				renewalStore.Add(ref, &PassKeyChain{Username: "u", Password: "p"})
+			}
+			time.Sleep(time.Millisecond)
+
+			EvictStaleCredentials(tt.live)
+
+			entries := renewalStore.Entries()
+			gotRefs := make([]string, 0, len(entries))
+			for _, e := range entries {
+				gotRefs = append(gotRefs, e.ref)
+			}
+			assert.ElementsMatch(t, tt.wantRefs, gotRefs)
+		})
+	}
+}
+
+func TestEvictStaleCredentials_GracePeriod(t *testing.T) {
+	oldStore := renewalStore
+	defer func() { renewalStore = oldStore }()
+
+	// Grace period is interval/2 = 2.5 minutes. A freshly added entry
+	// should survive eviction even when not in the live set.
+	renewalStore = newCredentialStore(5 * time.Minute)
+	renewalStore.Add("recent-ref", &PassKeyChain{Username: "u", Password: "p"})
+
+	EvictStaleCredentials(map[string]struct{}{})
+
+	assert.NotNil(t, renewalStore.Get("recent-ref"), "entry within grace period should not be evicted")
+}
+
+func TestEvictStaleCredentials_NilStore(t *testing.T) {
+	oldStore := renewalStore
+	defer func() { renewalStore = oldStore }()
+	renewalStore = nil
+
+	// Should not panic.
+	EvictStaleCredentials(map[string]struct{}{"ref": {}})
 }
 
 // --- getRegistryKeyChainFromProviders ---
@@ -346,26 +412,4 @@ func TestGetRegistryKeyChainFromProviders(t *testing.T) {
 			}
 		})
 	}
-}
-
-// --- InitCredentialRenewal ---
-
-// TestInitCredentialRenewalLifecycle verifies that the renewal goroutine
-// starts, ticks, and stops cleanly on context cancellation. The RAFS cache
-// is empty in the test environment so reconcile is a no-op each tick.
-func TestInitCredentialRenewalLifecycle(t *testing.T) {
-	oldStore := renewalStore
-	defer func() { renewalStore = oldStore }()
-
-	ctx, cancel := context.WithCancel(t.Context())
-
-	InitCredentialRenewal(ctx, 30*time.Millisecond)
-	require.NotNil(t, renewalStore)
-
-	// Let it tick a few times without error.
-	time.Sleep(100 * time.Millisecond)
-
-	cancel()
-	// Give goroutine time to observe cancellation.
-	time.Sleep(60 * time.Millisecond)
 }
