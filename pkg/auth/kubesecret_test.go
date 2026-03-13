@@ -46,7 +46,8 @@ func TestGetCredentialsStore(t *testing.T) {
 	err := kubeSecretListener.addDockerConfig(dockerConfigKey, obj)
 	assert.Nil(err)
 
-	auth := FromKubeSecretDockerConfig(extraHost)
+	auth, err := NewKubeSecretProvider().GetCredentials(&AuthRequest{Ref: extraHost + "/foo:bar"})
+	assert.NoError(err)
 	assert.Equal(auth.Username, registryUser)
 	assert.Equal(auth.Password, registryPass)
 

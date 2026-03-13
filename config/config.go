@@ -200,6 +200,14 @@ type AuthConfig struct {
 	// CRI proxy mode
 	EnableCRIKeychain   bool   `toml:"enable_cri_keychain"`
 	ImageServiceAddress string `toml:"image_service_address"`
+	// Kubelet credential provider plugins
+	EnableKubeletCredentialProviders bool   `toml:"enable_kubelet_credential_providers"`
+	CredentialProviderConfig         string `toml:"credential_provider_config"`
+	CredentialProviderBinDir         string `toml:"credential_provider_bin_dir"`
+	// Periodic credential renewal interval. When set to a positive duration,
+	// the snapshotter caches credentials from configured renewable providers and
+	// refreshes them at this interval. Set to 0 (default) to disable.
+	CredentialRenewalInterval time.Duration `toml:"credential_renewal_interval"`
 }
 
 // Configure remote storage like container registry

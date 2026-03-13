@@ -87,6 +87,9 @@ kubeconfig_path = ""
 enable_cri_keychain = false
 # the target image service when using image proxy
 #image_service_address = "/run/containerd/containerd.sock"
+# Periodically renew cached credentials from renewable providers.
+# Set to a positive duration (e.g., "10m", "1h") to enable. 0 disables.
+credential_renewal_interval = "0s"
 
 [snapshot]
 # Let containerd use nydus-overlayfs mount helper

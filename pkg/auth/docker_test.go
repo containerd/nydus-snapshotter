@@ -70,25 +70,24 @@ func TestDockerCred(t *testing.T) {
 	}()
 
 	// Empty host should get empty auth
-	auth := FromDockerConfig("")
+	auth, err := NewDockerProvider().GetCredentials(&AuthRequest{Ref: ""})
 	assert.Nil(auth)
+	assert.Error(err)
 
 	// Unmatching host should get empty auth
-	auth = FromDockerConfig("foo")
+	auth, err = NewDockerProvider().GetCredentials(&AuthRequest{Ref: "foo"})
 	assert.Nil(auth)
+	assert.Error(err)
 
-	auth = FromDockerConfig(dockerHost)
+	auth, err = NewDockerProvider().GetCredentials(&AuthRequest{Ref: convertedDockerHost + "/foo:bar"})
 	assert.NotNil(auth)
+	assert.NoError(err)
 	assert.Equal(auth.Username, dockerUser)
 	assert.Equal(auth.Password, dockerPass)
 
-	auth = FromDockerConfig(convertedDockerHost)
+	auth, err = NewDockerProvider().GetCredentials(&AuthRequest{Ref: extraHost + "/foo:bar"})
 	assert.NotNil(auth)
-	assert.Equal(auth.Username, dockerUser)
-	assert.Equal(auth.Password, dockerPass)
-
-	auth = FromDockerConfig(extraHost)
-	assert.NotNil(auth)
+	assert.NoError(err)
 	assert.Equal(auth.Username, extraUser)
 	assert.Equal(auth.Password, extraPass)
 }

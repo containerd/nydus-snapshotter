@@ -8,14 +8,14 @@ package auth
 
 import (
 	"encoding/base64"
+	stderrors "errors"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/containerd/nydus-snapshotter/pkg/label"
-	distribution "github.com/distribution/reference"
+	"github.com/containerd/log"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -60,59 +60,92 @@ func (kc PassKeyChain) TokenBase() bool {
 	return kc.Username == "" && kc.Password != ""
 }
 
-// FromLabels finds image pull username and secret from snapshot labels.
-// Returned `nil` means no valid username and secret is passed, it should
-// not override input nydusd configuration.
-func FromLabels(labels map[string]string) *PassKeyChain {
-	u, found := labels[label.NydusImagePullUsername]
-	if !found || u == "" {
-		return nil
+// renewableProviders returns the ordered list of providers used exclusively
+// by the renewal goroutine. CRI and Labels are excluded: CRI caches
+// credentials globally and would keep returning them at renewal time,
+// preventing the renewable providers from being reached; Labels are only
+// available at pull time via snapshot labels and are not accessible during
+// renewal. It is a variable so tests can substitute a different builder.
+var renewableProviders = func() []AuthProvider {
+	providers := []AuthProvider{NewDockerProvider()}
+	if kubeletProvider != nil {
+		providers = append(providers, kubeletProvider)
 	}
-
-	p, found := labels[label.NydusImagePullSecret]
-	if !found || p == "" {
-		return nil
-	}
-
-	return &PassKeyChain{
-		Username: u,
-		Password: p,
-	}
+	return append(providers, NewKubeSecretProvider())
 }
 
-// GetRegistryKeyChain get image pull keychain from (ordered):
-// 1. username and secrets labels
-// 2. cri request
-// 3. docker config
-// 4. k8s docker config secret
-func GetRegistryKeyChain(host, ref string, labels map[string]string) *PassKeyChain {
-	kc := FromLabels(labels)
-	if kc != nil {
-		return kc
+// buildProviders returns the full ordered list of auth providers.
+// Priority: labels > CRI > docker > kubelet > kubesecret.
+// It is a variable so tests can substitute a different builder.
+var buildProviders = func() []AuthProvider {
+	return append([]AuthProvider{NewLabelsProvider(), NewCRIProvider()}, renewableProviders()...)
+}
+
+// GetRegistryKeyChain retrieves image pull credentials from the first provider
+// that returns a result, checked in priority order:
+// 1. credential renewal store (if enabled)
+// 2. username and secrets labels
+// 3. cri request
+// 4. docker config
+// 5. kubelet credential helpers
+// 6. k8s docker config secret
+//
+// When a renewable provider returns credentials and the renewal store is
+// enabled, the credentials are cached for periodic renewal.
+func GetRegistryKeyChain(ref string, labels map[string]string) *PassKeyChain {
+	return getRegistryKeyChainFromProviders(ref, labels, buildProviders())
+}
+
+// getRegistryKeyChainFromProviders is the testable core of GetRegistryKeyChain.
+func getRegistryKeyChainFromProviders(ref string, labels map[string]string, providers []AuthProvider) *PassKeyChain {
+	logger := log.L.WithField("ref", ref)
+
+	authReq := &AuthRequest{Ref: ref, Labels: labels}
+	// Serve from the renewal store if available.
+	if renewalStore != nil {
+		if kc := renewalStore.Get(ref); kc != nil {
+			logger.Debug("serving credentials from renewal store")
+			return kc
+		}
+		// If not available, request credentials valid until the next renewal tick.
+		authReq.ValidUntil = time.Now().Add(renewalStore.renewInterval)
+	}
+	return fetchFromProviders(authReq, providers)
+}
+
+// fetchFromProviders walks providers in order and returns credentials from the
+// first one that succeeds. If the winning provider is renewable and the renewal
+// store is active, the credentials are cached for periodic renewal.
+func fetchFromProviders(req *AuthRequest, providers []AuthProvider) *PassKeyChain {
+	logger := log.L.WithField("ref", req.Ref)
+
+	var errs []error
+	for _, provider := range providers {
+		logger.Debugf("Trying to get credentials from %s", provider)
+		kc, err := provider.GetCredentials(req)
+		if err != nil {
+			errs = append(errs, errors.Wrapf(err, "get credentials from %T", provider))
+		}
+		if kc != nil {
+			logger.Infof("Got credentials from provider %s", provider)
+			// Cache in the renewal store when the provider supports renewal.
+			if renewalStore != nil {
+				if rp, ok := provider.(RenewableProvider); ok && rp.CanRenew() {
+					renewalStore.Add(req.Ref, kc)
+				}
+			}
+			return kc
+		}
 	}
 
-	// TODO: Handle error
-	kc, _ = FromCRI(host, ref)
-	if kc != nil {
-		return kc
+	if len(errs) > 0 {
+		logger.WithError(stderrors.Join(errs...)).Warn("Could not get registry credentials.")
 	}
-
-	kc = FromDockerConfig(host)
-	if kc != nil {
-		return kc
-	}
-
-	return FromKubeSecretDockerConfig(host)
+	return nil
 }
 
 func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {
-	named, err := distribution.ParseDockerRef(ref)
-	if err != nil {
-		return nil, errors.Wrapf(err, "parse ref %s", ref)
-	}
-
-	host := distribution.Domain(named)
-	keychain := GetRegistryKeyChain(host, ref, labels)
+	keychain := GetRegistryKeyChain(ref, labels)
 
 	return keychain, nil
 }

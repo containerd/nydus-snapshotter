@@ -50,6 +50,15 @@ func Start(ctx context.Context, cfg *config.SnapshotterConfig) error {
 		}
 	}
 
+	if cfg.RemoteConfig.AuthConfig.EnableKubeletCredentialProviders {
+		if err := auth.InitKubeletProvider(
+			cfg.RemoteConfig.AuthConfig.CredentialProviderConfig,
+			cfg.RemoteConfig.AuthConfig.CredentialProviderBinDir,
+		); err != nil {
+			return errors.Wrap(err, "failed to initialize kubelet credential provider")
+		}
+	}
+
 	return Serve(ctx, rs, opt, stopSignal)
 }
 
