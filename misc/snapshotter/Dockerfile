@@ -14,11 +14,11 @@ RUN apk add -q --no-cache curl && \
     && rm -rf /nydus-overlayfs
 
 FROM base AS kubectl-sourcer
-ARG TARGETARCH=amd64
+ARG TARGETARCH
+ARG KUBE_VER=v1.30.2
 
 RUN apk add -q --no-cache curl && \
-    KUBE_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt) && \
-    curl -fsSL -o /usr/bin/kubectl "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
+    curl -fsSL -o /usr/bin/kubectl https://dl.k8s.io/release/${KUBE_VER}/bin/linux/${TARGETARCH}/kubectl && \
     chmod +x /usr/bin/kubectl
 
 FROM base

@@ -13,6 +13,11 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+rbac:
+  clusterRole:
+    # Optional RBAC rules for the chart-managed ClusterRole.
+    rules: []
+
 snapshotter:
   # Host bootstrap behavior for nydus-snapshotter.
   # When enabled, an initContainer mutates host containerd config and restarts
@@ -27,7 +32,7 @@ snapshotter:
   daemonset:
     image:
       name: helm-nydus
-      tag: test23
+      tag: v1.0
     resources:
       limits:
         cpu: 1

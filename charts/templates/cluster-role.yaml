@@ -4,4 +4,10 @@ metadata:
   name: {{ include "nydus-snapshotter.clusterRoleName" . }}
   labels:
     {{- include "nydus-snapshotter.labels" . | nindent 4 }}
+{{- $rules := .Values.rbac.clusterRole.rules | default (list) }}
+{{- if $rules }}
+rules:
+  {{- toYaml $rules | nindent 2 }}
+{{- else }}
 rules: []
+{{- end }}

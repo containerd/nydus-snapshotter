@@ -73,6 +73,144 @@ spec:
                 install -m "$mode" "$src" "$tmp"
                 mv -f "$tmp" "$dst"
               }
+
+              ensure_containerd_import() {
+                config_path="$1"
+                import_path="$2"
+                tmp_config="$(mktemp)"
+
+                awk -v import_path="$import_path" '
+                  {
+                    lines[NR] = $0
+                  }
+                  function leading_ws(s) {
+                    match(s, /^[[:space:]]*/)
+                    return substr(s, 1, RLENGTH)
+                  }
+                  function parse_import_block(block,    rest, value) {
+                    importCount = 0
+                    rest = block
+                    while (match(rest, /"[^"]*"/)) {
+                      value = substr(rest, RSTART + 1, RLENGTH - 2)
+                      imports[++importCount] = value
+                      rest = substr(rest, RSTART + RLENGTH)
+                    }
+                  }
+                  function print_import_block(indent,    i) {
+                    print indent "imports = ["
+                    for (i = 1; i <= importCount; i++) {
+                      print indent "  \"" imports[i] "\","
+                    }
+                    print indent "]"
+                  }
+                  END {
+                    leadingPreamble = 0
+                    firstTable = 0
+                    for (i = 1; i <= NR; i++) {
+                      if (firstTable == 0 && lines[i] ~ /^[[:space:]]*\[/) {
+                        firstTable = i
+                      }
+                      if (leadingPreamble == i - 1 && lines[i] ~ /^[[:space:]]*($|#)/) {
+                        leadingPreamble = i
+                      }
+                    }
+
+                    scanLimit = NR
+                    if (firstTable != 0) {
+                      scanLimit = firstTable - 1
+                    }
+
+                    versionLine = 0
+                    importsStart = 0
+                    importsEnd = 0
+                    importBlock = ""
+                    inImports = 0
+
+                    for (i = 1; i <= scanLimit; i++) {
+                      line = lines[i]
+                      if (versionLine == 0 && line ~ /^[[:space:]]*version[[:space:]]*=/) {
+                        versionLine = i
+                      }
+                      if (!inImports && line ~ /^[[:space:]]*imports[[:space:]]*=[[:space:]]*\[/) {
+                        importsStart = i
+                        inImports = 1
+                      }
+                      if (inImports) {
+                        if (importBlock != "") {
+                          importBlock = importBlock "\n"
+                        }
+                        importBlock = importBlock line
+                        if (line ~ /\]/) {
+                          importsEnd = i
+                          break
+                        }
+                      }
+                    }
+
+                    if (importsStart != 0 && importsEnd == 0) {
+                      print "failed to parse root imports array in " FILENAME > "/dev/stderr"
+                      exit 1
+                    }
+
+                    if (importsStart != 0) {
+                      importIndent = leading_ws(lines[importsStart])
+                      parse_import_block(importBlock)
+
+                      importPathSeen = 0
+                      for (i = 1; i <= importCount; i++) {
+                        if (imports[i] == import_path) {
+                          importPathSeen = 1
+                          break
+                        }
+                      }
+                      if (!importPathSeen) {
+                        imports[++importCount] = import_path
+                      }
+
+                      for (i = 1; i < importsStart; i++) {
+                        print lines[i]
+                      }
+                      if (importPathSeen) {
+                        for (i = importsStart; i <= importsEnd; i++) {
+                          print lines[i]
+                        }
+                      } else {
+                        print_import_block(importIndent)
+                      }
+                      for (i = importsEnd + 1; i <= NR; i++) {
+                        print lines[i]
+                      }
+                    } else {
+                      insertAfter = versionLine
+                      if (insertAfter == 0 && firstTable != 0) {
+                        insertAfter = firstTable - 1
+                      }
+                      if (insertAfter == 0) {
+                        insertAfter = leadingPreamble
+                      }
+
+                      for (i = 1; i <= insertAfter; i++) {
+                        print lines[i]
+                      }
+                      print "imports = ["
+                      print "  \"" import_path "\","
+                      print "]"
+                      for (i = insertAfter + 1; i <= NR; i++) {
+                        print lines[i]
+                      }
+                    }
+                  }
+                ' "$config_path" > "$tmp_config"
+
+                if cmp -s "$tmp_config" "$config_path"; then
+                  rm -f "$tmp_config"
+                  return 1
+                fi
+
+                cp "$tmp_config" "$config_path"
+                rm -f "$tmp_config"
+                return 0
+              }
               
               echo "=== Installing nydus binaries ==="
               mkdir -p /opt/nydus/bin
@@ -118,18 +256,7 @@ spec:
               fi
               rm -f "$desiredProxyConfig"
 
-              if ! grep -Fq "$nydusProxyConfig" "$etcContainerd"; then
-                tmpContainerd="$(mktemp)"
-                awk -v import_path="$nydusProxyConfig" '
-                  NR == 1 && $0 ~ /^version = / {
-                    print
-                    print "imports = [\"" import_path "\"]"
-                    next
-                  }
-                  { print }
-                ' "$etcContainerd" > "$tmpContainerd"
-                cp "$tmpContainerd" "$etcContainerd"
-                rm -f "$tmpContainerd"
+              if ensure_containerd_import "$etcContainerd" "$nydusProxyConfig"; then
                 configChanged=1
               fi
 
@@ -372,7 +499,7 @@ spec:
         - name: host-usr-local-sbin
           hostPath:
             path: /usr/local/sbin
-            type: Directory
+            type: DirectoryOrCreate
         - name: host-etc-nydus
           hostPath:
             path: /etc/nydus

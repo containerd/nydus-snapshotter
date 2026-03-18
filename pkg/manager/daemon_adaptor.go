@@ -7,6 +7,7 @@
 package manager
 
 import (
+	stderrors "errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,9 +28,22 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
 const endpointGetBackend string = "/api/v1/daemons/%s/backend"
+
+var (
+	errSystemdMainPIDNotReady = stderrors.New("systemd MainPID is still 0")
+
+	systemdShowMainPID = func(serviceUnit string) ([]byte, error) {
+		cmd := exec.Command("systemctl", "show", "--property=MainPID", strings.TrimSpace(serviceUnit))
+		return cmd.CombinedOutput()
+	}
+
+	systemdMainPIDPollAttempts uint = 100
+	systemdMainPIDPollDelay         = 100 * time.Millisecond
+)
 
 // StartDaemonProcess spawns a nydusd process and returns the daemon pid.
 // When delegation is enabled, the returned pid is the actual host-side nydusd pid,
@@ -293,10 +307,18 @@ func buildUpgradeServiceUnitName(daemonID string) string {
 	return fmt.Sprintf("nydusd-upgrade-%s-%x.service", daemonID, time.Now().UnixNano())
 }
 
-// executeInMntNamespace runs a function in the specified namespace and ensures thread isolation
-func executeInMntNamespace(mntNamespacePath string, fn func() error) error {
+// executeInMntNamespace runs fn in the specified mount namespace on a dedicated
+// OS thread and restores the original namespace before returning.
+func executeInMntNamespace(mntNamespacePath string, fn func() error) (retErr error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+
+	currentNSPath := fmt.Sprintf("/proc/self/task/%d/ns/mnt", unix.Gettid())
+	currentNS, err := os.Open(currentNSPath)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open current mnt namespace %q", currentNSPath)
+	}
+	defer currentNS.Close()
 
 	// Detach from the shared fs of the rest of the Go process in order to
 	// be able to CLONE_NEWNS.
@@ -314,46 +336,135 @@ func executeInMntNamespace(mntNamespacePath string, fn func() error) error {
 		return errors.Wrapf(err, "failed to enter the namespace %q", mntNamespacePath)
 	}
 
+	defer func() {
+		if err := unix.Setns(int(currentNS.Fd()), unix.CLONE_NEWNS); err != nil {
+			restoreErr := errors.Wrap(err, "failed to restore original mnt namespace")
+			if retErr != nil {
+				retErr = stderrors.Join(retErr, restoreErr)
+			} else {
+				retErr = restoreErr
+			}
+		}
+	}()
+
 	if err := fn(); err != nil {
 		log.L.WithError(err).Errorf("failed to execute in the mnt namespace %s", mntNamespacePath)
 		return err
 	}
 
-	return err
+	return nil
 }
 
 func parseNydusdPid(data string) (int, error) {
-	// Parse the output of `systemd-run` command, which looks like:
-	// Running as unit: run-rc28cf5fdc45c497cbe6736aea1e2701e.service
-	// So we can get the service unit name from it, which can be used to query the nydusd PID in the host pid namespace.
-	// The new-born nydusd is not a direct child of nydus-snapshotter we we can't get its PID directly from the exec command.
-	output := strings.TrimSpace(data)
-	serviceUnit := strings.TrimPrefix(output, "Running as unit:")
-	return parseNydusdPidFromServiceUnit(strings.TrimSpace(serviceUnit))
+	// Parse the output of `systemd-run` to get the transient service unit name,
+	// which can then be used to query the nydusd PID in the host pid namespace.
+	// The new-born nydusd is not a direct child of nydus-snapshotter so we can't
+	// get its PID directly from the exec command.
+	serviceUnit, err := parseSystemdRunServiceUnit(data)
+	if err != nil {
+		return 0, err
+	}
+
+	return parseNydusdPidFromServiceUnit(serviceUnit)
+}
+
+func parseSystemdRunServiceUnit(data string) (string, error) {
+	const runningAsUnitPrefix = "Running as unit:"
+
+	for _, line := range strings.Split(data, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, runningAsUnitPrefix) {
+			continue
+		}
+
+		serviceUnit := strings.TrimSpace(strings.TrimPrefix(line, runningAsUnitPrefix))
+		if serviceUnit == "" {
+			return "", errors.Errorf("empty service unit in systemd-run output %q", strings.TrimSpace(data))
+		}
+
+		return serviceUnit, nil
+	}
+
+	return "", errors.Errorf("failed to find service unit in systemd-run output %q", strings.TrimSpace(data))
 }
 
 func parseNydusdPidFromServiceUnit(serviceUnit string) (int, error) {
-	// systemctl show --property=MainPID run-rc28cf5fdc45c497cbe6736aea1e2701e.service
-	// MainPID=1037947
-	cmd := exec.Command("systemctl", "show", "--property=MainPID", strings.TrimSpace(serviceUnit))
-	o, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, errors.Wrapf(err, "get nydusd MainPID from delegatee")
-	}
-	output := strings.TrimSpace(string(o))
-	tokens := strings.Split(output, "=")
-	if len(tokens) != 2 {
-		return 0, errors.Errorf("unexpected output %q from systemctl show", output)
-	}
+	serviceUnit = strings.TrimSpace(serviceUnit)
 
-	if tokens[0] != "MainPID" {
-		return 0, errors.Errorf("unexpected property %q from systemctl show", tokens[0])
-	}
+	var nydusdPid int
+	err := retry.Do(func() error {
+		// systemctl show --property=MainPID run-rc28cf5fdc45c497cbe6736aea1e2701e.service
+		// MainPID=1037947
+		o, err := systemdShowMainPID(serviceUnit)
+		if err != nil {
+			return retry.Unrecoverable(errors.Wrapf(err, "get nydusd MainPID from delegatee"))
+		}
 
-	nydusdPid, err := strconv.Atoi(tokens[1])
+		nydusdPid, err = parseSystemdMainPID(string(o))
+		if err != nil {
+			if stderrors.Is(err, errSystemdMainPIDNotReady) {
+				return err
+			}
+			return retry.Unrecoverable(err)
+		}
+
+		return nil
+	},
+		retry.Attempts(systemdMainPIDPollAttempts),
+		retry.LastErrorOnly(true),
+		retry.Delay(systemdMainPIDPollDelay),
+		retry.DelayType(retry.FixedDelay),
+	)
 	if err != nil {
-		return 0, errors.Wrapf(err, "parse nydusd pid %q from systemctl show", tokens[1])
+		if stderrors.Is(err, errSystemdMainPIDNotReady) {
+			return 0, errors.Errorf(
+				"timed out waiting for positive MainPID for delegatee %s after %s",
+				serviceUnit,
+				time.Duration(systemdMainPIDPollAttempts-1)*systemdMainPIDPollDelay,
+			)
+		}
+		return 0, err
 	}
 
 	return nydusdPid, nil
+}
+
+func parseSystemdMainPID(data string) (int, error) {
+	const mainPIDPrefix = "MainPID="
+
+	output := strings.TrimSpace(data)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, mainPIDPrefix) {
+			continue
+		}
+
+		pidValue := strings.TrimSpace(strings.TrimPrefix(line, mainPIDPrefix))
+		if pidValue == "" {
+			return 0, errors.Errorf("empty MainPID in systemctl show output %q", output)
+		}
+
+		nydusdPid, err := strconv.Atoi(pidValue)
+		if err != nil {
+			return 0, errors.Wrapf(err, "parse nydusd pid %q from systemctl show", pidValue)
+		}
+		if nydusdPid == 0 {
+			return 0, errSystemdMainPIDNotReady
+		}
+		if nydusdPid < 0 {
+			return 0, errors.Errorf("unexpected MainPID %q from systemctl show", pidValue)
+		}
+
+		return nydusdPid, nil
+	}
+
+	return 0, errors.Errorf("failed to find MainPID in systemctl show output %q", output)
 }

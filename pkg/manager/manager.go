@@ -61,7 +61,7 @@ type Opt struct {
 	FsDriver         string
 	NydusdBinaryPath string
 	RecoverPolicy    config.DaemonRecoverPolicy
-	DelegateNydusd   bool   // If true, the manager will not start nydusd daemons, but only manage them.
+	DelegateNydusd   bool   // If true, the manager delegates nydusd daemon processes (for example to systemd): it may initiate them but does not own their lifecycle directly.
 	RootDir          string // Nydus-snapshotter work directory
 }
 
