@@ -1,0 +1,92 @@
+version = 1
+root = "/var/lib/containerd/io.containerd.snapshotter.v1.nydus"
+address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+uid = 0
+gid = 0
+daemon_mode = "dedicated"
+cleanup_on_close = false
+delegate_nydusd = true
+
+[system]
+enable = true
+address = "/run/containerd-nydus/system.sock"
+uid = 0
+gid = 0
+
+[system.debug]
+daemon_cpu_profile_duration_secs = 5
+pprof_address = ""
+
+[daemon]
+nydusd_config = "/etc/nydus/nydusd-config.json"
+nydusd_path = "/opt/nydus/bin/nydusd"
+nydusimage_path = "/opt/nydus/bin/nydus-image"
+fs_driver = "fusedev"
+recover_policy = "failover"
+threads_number = 4
+log_rotation_size = 100
+failover_policy = "resend"
+
+[cgroup]
+enable = true
+memory_limit = ""
+
+[log]
+log_to_stdout = false
+level = "info"
+dir = ""
+log_rotation_compress = true
+log_rotation_local_time = true
+log_rotation_max_age = 7
+log_rotation_max_backups = 5
+log_rotation_max_size = 100
+
+[metrics]
+address = ":9110"
+hung_io_interval = "10s"
+collect_interval = "1m"
+
+[remote]
+convert_vpc_registry = false
+skip_ssl_verify = false
+
+[remote.mirrors_config]
+dir = ""
+
+[remote.auth]
+enable_kubeconfig_keychain = false
+kubeconfig_path = ""
+enable_cri_keychain = false
+image_service_address = ""
+enable_kubelet_credential_providers = false
+credential_provider_config = ""
+credential_provider_bin_dir = ""
+credential_renewal_interval = "0s"
+
+[snapshot]
+enable_nydus_overlayfs = true
+nydus_overlayfs_path = "nydus-overlayfs"
+enable_kata_volume = false
+sync_remove = false
+
+[cache_manager]
+disable = false
+gc_period = "24h"
+cache_dir = ""
+
+[image]
+public_key_file = ""
+validate_signature = false
+
+[experimental]
+enable_stargz = false
+enable_referrer_detect = false
+enable_index_detect = false
+enable_backend_source = false
+
+[experimental.tarfs]
+enable_tarfs = false
+mount_tarfs_on_host = false
+tarfs_hint = false
+max_concurrent_proc = 0
+export_mode = ""

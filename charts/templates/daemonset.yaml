@@ -74,10 +74,10 @@ spec:
                 mv -f "$tmp" "$dst"
               }
 
-              ensure_containerd_import() {
-                config_path="$1"
-                import_path="$2"
-                tmp_config="$(mktemp)"
+                      ensure_containerd_import() {
+                        config_path="$1"
+                        import_path="$2"
+                        tmp_config="$(mktemp)"
 
                 awk -v import_path="$import_path" '
                   {
@@ -207,24 +207,87 @@ spec:
                   return 1
                 fi
 
-                cp "$tmp_config" "$config_path"
-                rm -f "$tmp_config"
-                return 0
-              }
-              
-              echo "=== Installing nydus binaries ==="
-              mkdir -p /opt/nydus/bin
-              install_if_needed /nydus-static/nydusd /opt/nydus/bin/nydusd 755
-              install_if_needed /nydus-static/nydusctl /opt/nydus/bin/nydusctl 755
-              install_if_needed /nydus-static/nydus-image /opt/nydus/bin/nydus-image 755
-              install_if_needed /nydus-static/nydus-overlayfs /opt/nydus/bin/nydus-overlayfs 755
-              install_if_needed /nydus-static/nydus-overlayfs /host/usr/local/sbin/nydus-overlayfs 755
-              
-              mkdir -p /etc/nydus
-              install_if_needed /nydus-static/configs/nydusd-config.json /etc/nydus/nydusd-config.json 644
-              
-              echo "=== Configuring containerd ==="
-              cat > "$desiredProxyConfig" <<'EOF'
+                        cp "$tmp_config" "$config_path"
+                        rm -f "$tmp_config"
+                        return 0
+                      }
+
+                      detect_containerd_config_version() {
+                        config_path="$1"
+                        config_version=""
+
+                        if [ ! -f "$config_path" ]; then
+                          printf '2\n'
+                          return 0
+                        fi
+
+                        config_version="$(
+                          awk '
+                            /^[[:space:]]*\[/ { exit }
+                            /^[[:space:]]*version[[:space:]]*=/ {
+                              line = $0
+                              sub(/^[[:space:]]*version[[:space:]]*=[[:space:]]*/, "", line)
+                              sub(/[[:space:]]*(#.*)?$/, "", line)
+                              gsub(/["\047]/, "", line)
+                              print line
+                              exit
+                            }
+                          ' "$config_path"
+                        )"
+
+                        case "$config_version" in
+                          1|2|3)
+                            printf '%s\n' "$config_version"
+                            return 0
+                            ;;
+                        esac
+
+                        if grep -q "io.containerd.cri.v1.images" "$config_path" || grep -q "io.containerd.cri.v1.runtime" "$config_path"; then
+                          printf '3\n'
+                        elif grep -q "io.containerd.grpc.v1.cri" "$config_path"; then
+                          printf '2\n'
+                        elif grep -Eq '^[[:space:]]*\[plugins\.cri([.]|])' "$config_path"; then
+                          printf '1\n'
+                        else
+                          printf '2\n'
+                        fi
+                      }
+
+                      write_nydus_proxy_config() {
+                        config_version="$1"
+                        output_path="$2"
+
+                        case "$config_version" in
+                          1)
+              cat > "$output_path" <<'EOF'
+              version = 1
+
+              [proxy_plugins]
+                [proxy_plugins.nydus]
+                  address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+                  type = "snapshot"
+
+              [plugins.cri.containerd]
+                default_runtime_name = "nydus"
+                snapshotter = "nydus"
+                discard_unpacked_layers = false
+                disable_snapshot_annotations = false
+
+                [plugins.cri.containerd.runtimes.runc]
+                  snapshotter = "overlayfs"
+
+                [plugins.cri.containerd.runtimes.nydus]
+                  runtime_type = "io.containerd.runc.v2"
+                  snapshotter = "nydus"
+
+                  [plugins.cri.containerd.runtimes.nydus.options]
+                    NoPivotRoot = false
+                    NoNewKeyring = false
+                    SystemdCgroup = true
+              EOF
+                            ;;
+                          2)
+              cat > "$output_path" <<'EOF'
               version = 2
 
               [proxy_plugins]
@@ -233,6 +296,7 @@ spec:
                   type = "snapshot"
 
               [plugins."io.containerd.grpc.v1.cri".containerd]
+                default_runtime_name = "nydus"
                 snapshotter = "nydus"
                 discard_unpacked_layers = false
                 disable_snapshot_annotations = false
@@ -240,15 +304,68 @@ spec:
                 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
                   snapshotter = "overlayfs"
 
-                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus]
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nydus]
                   runtime_type = "io.containerd.runc.v2"
                   snapshotter = "nydus"
 
-                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc-nydus.options]
+                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nydus.options]
                     NoPivotRoot = false
                     NoNewKeyring = false
                     SystemdCgroup = true
               EOF
+                            ;;
+                          3)
+              cat > "$output_path" <<'EOF'
+              version = 3
+
+              [proxy_plugins]
+                [proxy_plugins.nydus]
+                  address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+                  type = "snapshot"
+
+              [plugins.'io.containerd.cri.v1.images']
+                snapshotter = "nydus"
+                disable_snapshot_annotations = false
+                discard_unpacked_layers = false
+
+              [plugins.'io.containerd.cri.v1.runtime'.containerd]
+                default_runtime_name = "nydus"
+
+                [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
+                  snapshotter = "overlayfs"
+
+                [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.nydus]
+                  runtime_type = "io.containerd.runc.v2"
+                  snapshotter = "nydus"
+
+                  [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.nydus.options]
+                    NoPivotRoot = false
+                    NoNewKeyring = false
+                    SystemdCgroup = true
+              EOF
+                            ;;
+                          *)
+                            echo "unsupported containerd config version: $config_version" >&2
+                            return 1
+                            ;;
+                        esac
+                      }
+
+                      echo "=== Installing nydus binaries ==="
+              mkdir -p /opt/nydus/bin
+              install_if_needed /nydus-static/nydusd /opt/nydus/bin/nydusd 755
+              install_if_needed /nydus-static/nydusctl /opt/nydus/bin/nydusctl 755
+              install_if_needed /nydus-static/nydus-image /opt/nydus/bin/nydus-image 755
+              install_if_needed /nydus-static/nydus-overlayfs /opt/nydus/bin/nydus-overlayfs 755
+              install_if_needed /nydus-static/nydus-overlayfs /host/usr/local/sbin/nydus-overlayfs 755
+
+              mkdir -p /etc/nydus
+              install_if_needed /nydus-static/configs/nydusd-config.json /etc/nydus/nydusd-config.json 644
+
+                      echo "=== Configuring containerd ==="
+                      containerdConfigVersion="$(detect_containerd_config_version "$etcContainerd")"
+                      echo "Detected containerd config version: $containerdConfigVersion"
+                      write_nydus_proxy_config "$containerdConfigVersion" "$desiredProxyConfig"
 
               if ! cmp -s "$desiredProxyConfig" "$nydusProxyConfig"; then
                 cp "$desiredProxyConfig" "$nydusProxyConfig"
@@ -364,6 +481,14 @@ spec:
                 kill "${pid}" 2>/dev/null || true
                 wait "${pid}" 2>/dev/null || true
               }
+
+              terminate() {
+                printf "Stopping nydus-snapshotter...\n"
+                cleanup
+                exit 0
+              }
+
+              trap terminate TERM INT
 
               if ! wait_for_nydus_socket; then
                 printf "ERROR: nydus socket did not become ready in time\n" >&2
