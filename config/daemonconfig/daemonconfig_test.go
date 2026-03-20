@@ -126,6 +126,7 @@ func TestSerializeWithSecretFilter(t *testing.T) {
   "digest_validate": true,
   "iostats_files": true,
   "enable_xattr": true,
+  "amplify_io": 1048576,
   "fs_prefetch": {
     "enable": true,
     "threads_count": 10,
@@ -152,4 +153,6 @@ func TestSerializeWithSecretFilter(t *testing.T) {
 	require.Equal(t, newCfg.Device.Backend.Config.BlobURLScheme, cfg.Device.Backend.Config.BlobURLScheme)
 	require.Equal(t, newCfg.Device.Backend.Config.Auth, "")
 	require.NotEqual(t, newCfg.Device.Backend.Config.Auth, cfg.Device.Backend.Config.Auth)
+	require.NotNil(t, newCfg.AmplifyIo)
+	require.Equal(t, *newCfg.AmplifyIo, *cfg.AmplifyIo)
 }
