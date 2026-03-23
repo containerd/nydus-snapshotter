@@ -47,6 +47,8 @@ const (
 	endpointStart = "/api/v1/daemon/start"
 	// Request nydus daemon to exit
 	endpointExit = "/api/v1/daemon/exit"
+	// Update daemon configuration at runtime.
+	endpointConfig = "/api/v1/config"
 
 	// --- V2 API begins
 	// Add/remove blobs managed by the blob cache manager.
@@ -71,6 +73,8 @@ type NydusdClient interface {
 	GetFsMetrics(sid string) (*types.FsMetrics, error)
 	GetInflightMetrics() (*types.InflightMetrics, error)
 	GetCacheMetrics(sid string) (*types.CacheMetrics, error)
+
+	UpdateConfig(id string, params map[string]string) error
 
 	TakeOver() error
 	SendFd() error
@@ -320,6 +324,19 @@ func (c *nydusdClient) GetCacheMetrics(sid string) (*types.CacheMetrics, error) 
 	}
 
 	return &m, nil
+}
+
+func (c *nydusdClient) UpdateConfig(id string, params map[string]string) error {
+	body, err := json.Marshal(params)
+	if err != nil {
+		return errors.Wrap(err, "marshal config params")
+	}
+
+	q := query{}
+	q.Add("id", id)
+	url := c.url(endpointConfig, q)
+
+	return c.request(http.MethodPut, url, bytes.NewBuffer(body), nil)
 }
 
 func (c *nydusdClient) TakeOver() error {
