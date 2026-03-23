@@ -1,0 +1,14 @@
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "nydus-snapshotter.clusterRoleBindingName" . }}
+  labels:
+    {{- include "nydus-snapshotter.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "nydus-snapshotter.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "nydus-snapshotter.clusterRoleName" . }}
+  apiGroup: rbac.authorization.k8s.io
