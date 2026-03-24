@@ -325,10 +325,10 @@ func (p *KubeletProvider) bestMatchedCred(image string) *kubeletCredential {
 }
 
 // resolveCacheDuration picks the effective TTL from a plugin response:
-// the per-response CacheDuration takes precedence if it is positive,
+// the per-response CacheDuration takes precedence,
 // otherwise the plugin's DefaultCacheDuration is used.
 func resolveCacheDuration(resp *credentialproviderv1.CredentialProviderResponse, plugin *kubeletconfigv1.CredentialProvider) time.Duration {
-	if resp.CacheDuration != nil && resp.CacheDuration.Duration > 0 {
+	if resp.CacheDuration != nil && resp.CacheDuration.Duration >= 0 {
 		return resp.CacheDuration.Duration
 	}
 	return plugin.DefaultCacheDuration.Duration
