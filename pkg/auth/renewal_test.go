@@ -326,6 +326,56 @@ func TestEvictStaleCredentials_GracePeriod(t *testing.T) {
 	assert.NotNil(t, renewalStore.Get("recent-ref"), "entry within grace period should not be evicted")
 }
 
+func TestGetStoredCredential(t *testing.T) {
+	tests := []struct {
+		name      string
+		initStore bool
+		addEntry  bool
+		wantNil   bool
+	}{
+		{
+			name:      "returns keychain when present",
+			initStore: true,
+			addEntry:  true,
+		},
+		{
+			name:      "returns nil when not present",
+			initStore: true,
+			wantNil:   true,
+		},
+		{
+			name:    "returns nil when store is nil",
+			wantNil: true,
+		},
+	}
+
+	const ref = "docker.io/library/nginx:latest"
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldStore := renewalStore
+			defer func() { renewalStore = oldStore }()
+
+			if tt.initStore {
+				renewalStore = newCredentialStore(5 * time.Minute)
+				if tt.addEntry {
+					renewalStore.Add(ref, &PassKeyChain{Username: "user", Password: "pass"})
+				}
+			} else {
+				renewalStore = nil
+			}
+
+			got := GetStoredCredential(ref)
+			if tt.wantNil {
+				assert.Nil(t, got)
+			} else {
+				require.NotNil(t, got)
+				assert.Equal(t, "user", got.Username)
+			}
+		})
+	}
+}
+
 func TestEvictStaleCredentials_NilStore(t *testing.T) {
 	oldStore := renewalStore
 	defer func() { renewalStore = oldStore }()

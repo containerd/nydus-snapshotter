@@ -25,6 +25,15 @@ func InitCredentialStore(interval time.Duration) {
 	renewalStore = newCredentialStore(interval)
 }
 
+// GetStoredCredential returns the cached keychain for ref from the global
+// store, or nil if not present or the store is not initialized.
+func GetStoredCredential(ref string) *PassKeyChain {
+	if renewalStore == nil {
+		return nil
+	}
+	return renewalStore.Get(ref)
+}
+
 // RenewCredential fetches fresh credentials for ref from the renewable
 // provider list and caches them in the global store. Returns the keychain
 // on success or nil on failure. Emits renewal metrics.
