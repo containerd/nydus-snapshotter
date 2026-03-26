@@ -47,7 +47,7 @@ type KubeletProvider struct {
 	plugins []*kubeletconfigv1.CredentialProvider
 	binDir  string
 	mu      sync.RWMutex
-	cache   map[string]*kubeletCredential // registry glob -> cached credential
+	cache   map[string]*kubeletCredential // cache key (image or registry or global) -> cached credential
 }
 
 // kubeletCredential pairs a PassKeyChain with its provider-reported expiry.
@@ -256,6 +256,12 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 
 		keychains := make(map[string]*PassKeyChain, len(resp.Auth))
 		for registryGlob, authConfig := range resp.Auth {
+			// First plugin wins for overlapping auth keys, matching the kubelet spec:
+			// "If providers return overlapping auth keys, the value from the provider
+			// earlier in this list is used."
+			if _, exists := allKeychains[registryGlob]; exists {
+				continue
+			}
 			kc := &PassKeyChain{
 				Username: authConfig.Username,
 				Password: authConfig.Password,

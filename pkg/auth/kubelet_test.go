@@ -502,7 +502,9 @@ func TestKubeletProviderGetCredentials(t *testing.T) {
 			errContains: "no matching registries found",
 		},
 		{
-			name: "multiple plugins credentials collected",
+			// Per the kubelet spec: "If providers return overlapping auth keys,
+			// the value from the provider earlier in this list is used."
+			name: "multiple plugins credentials collected - first plugin wins",
 			setup: func(t *testing.T) *KubeletProvider {
 				createMockPlugin(t, binDir, "first-plugin", credentialMap{"registry.example.com": {"first-user", "first-pass"}})
 				createMockPlugin(t, binDir, "second-plugin", credentialMap{"registry.example.com": {"second-user", "second-pass"}})
@@ -516,8 +518,8 @@ func TestKubeletProviderGetCredentials(t *testing.T) {
 				return provider
 			},
 			request:      &AuthRequest{Ref: "registry.example.com/image:tag"},
-			wantUsername: "second-user",
-			wantPassword: "second-pass",
+			wantUsername: "first-user",
+			wantPassword: "first-pass",
 		},
 		{
 			name: "most specific registry path wins - specific over general",
