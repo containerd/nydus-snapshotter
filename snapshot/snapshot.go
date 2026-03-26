@@ -181,10 +181,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		fsManagers = append(fsManagers, proxyManager)
 	}
 
-	if interval := cfg.RemoteConfig.AuthConfig.CredentialRenewalInterval; interval > 0 {
-		startCredentialRenewal(ctx, interval, fsManagers)
-	}
-
 	metricServer, err := metrics.NewServer(
 		ctx,
 		metrics.WithProcessManagers(fsManagers),
@@ -249,6 +245,13 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "initialize filesystem thin layer")
+	}
+
+	// Start credential renewal after NewFileSystem, which calls Manager.Recover()
+	// and populates the daemon caches from the DB. Starting earlier would cause
+	// the initial reconciliation to see empty managers on restart.
+	if interval := cfg.RemoteConfig.AuthConfig.CredentialRenewalInterval; interval > 0 {
+		startCredentialRenewal(ctx, interval, fsManagers)
 	}
 
 	if config.IsSystemControllerEnabled() {
