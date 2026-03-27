@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeletconfigv1 "k8s.io/kubelet/config/v1"
+	credentialproviderv1 "k8s.io/kubelet/pkg/apis/credentialprovider/v1"
 	"sigs.k8s.io/yaml"
 )
 
@@ -74,13 +76,20 @@ func createMockPlugin(t *testing.T, binDir, pluginName string, registries creden
 // the cacheDuration field in the response (e.g. "0s" to disable caching).
 func createMockPluginWithTTL(t *testing.T, binDir, pluginName string, registries credentialMap, cacheDuration string) {
 	t.Helper()
+	createMockPluginFull(t, binDir, pluginName, registries, cacheDuration, "Image")
+}
+
+// createMockPluginFull creates a mock plugin with full control over cacheDuration
+// and cacheKeyType fields in the response.
+func createMockPluginFull(t *testing.T, binDir, pluginName string, registries credentialMap, cacheDuration, cacheKeyType string) {
+	t.Helper()
 
 	script := fmt.Sprintf(`#!/bin/bash
 cat > /dev/null
 cat <<'EOF'
-{"kind":"CredentialProviderResponse","apiVersion":"credentialprovider.kubelet.k8s.io/v1","cacheKeyType":"Image","cacheDuration":%q,"auth":%s}
+{"kind":"CredentialProviderResponse","apiVersion":"credentialprovider.kubelet.k8s.io/v1","cacheKeyType":%q,"cacheDuration":%q,"auth":%s}
 EOF
-`, cacheDuration, buildAuthSection(registries))
+`, cacheKeyType, cacheDuration, buildAuthSection(registries))
 
 	err := os.WriteFile(filepath.Join(binDir, pluginName), []byte(script), 0755)
 	require.NoError(t, err)
@@ -493,7 +502,9 @@ func TestKubeletProviderGetCredentials(t *testing.T) {
 			errContains: "no matching registries found",
 		},
 		{
-			name: "multiple plugins credentials collected",
+			// Per the kubelet spec: "If providers return overlapping auth keys,
+			// the value from the provider earlier in this list is used."
+			name: "multiple plugins credentials collected - first plugin wins",
 			setup: func(t *testing.T) *KubeletProvider {
 				createMockPlugin(t, binDir, "first-plugin", credentialMap{"registry.example.com": {"first-user", "first-pass"}})
 				createMockPlugin(t, binDir, "second-plugin", credentialMap{"registry.example.com": {"second-user", "second-pass"}})
@@ -507,8 +518,8 @@ func TestKubeletProviderGetCredentials(t *testing.T) {
 				return provider
 			},
 			request:      &AuthRequest{Ref: "registry.example.com/image:tag"},
-			wantUsername: "second-user",
-			wantPassword: "second-pass",
+			wantUsername: "first-user",
+			wantPassword: "first-pass",
 		},
 		{
 			name: "most specific registry path wins - specific over general",
@@ -787,19 +798,19 @@ func TestURLsMatch(t *testing.T) {
 func TestKubeletProviderEvictExpired(t *testing.T) {
 	now := time.Now()
 	provider := &KubeletProvider{
-		registries: map[string]*kubeletCredential{
-			"valid.com":   {keychain: &PassKeyChain{}, expiresAt: now.Add(10 * time.Minute)},
-			"expired.com": {keychain: &PassKeyChain{}, expiresAt: now.Add(-1 * time.Minute)},
-			"zero.com":    {keychain: &PassKeyChain{}, expiresAt: time.Time{}},
+		cache: map[string]*kubeletCredential{
+			"valid.com":   {keychains: map[string]*PassKeyChain{"valid.com": {}}, expiresAt: now.Add(10 * time.Minute)},
+			"expired.com": {keychains: map[string]*PassKeyChain{"expired.com": {}}, expiresAt: now.Add(-1 * time.Minute)},
+			"zero.com":    {keychains: map[string]*PassKeyChain{"zero.com": {}}, expiresAt: time.Time{}},
 		},
 	}
 
 	provider.evictExpired()
 
-	assert.Len(t, provider.registries, 1)
-	assert.Contains(t, provider.registries, "valid.com")
-	assert.NotContains(t, provider.registries, "expired.com")
-	assert.NotContains(t, provider.registries, "zero.com")
+	assert.Len(t, provider.cache, 1)
+	assert.Contains(t, provider.cache, "valid.com")
+	assert.NotContains(t, provider.cache, "expired.com")
+	assert.NotContains(t, provider.cache, "zero.com")
 }
 
 // TestKubeletProviderValidUntil verifies that ValidUntil causes the provider to
@@ -932,6 +943,162 @@ func TestKubeletProviderRegistryCache(t *testing.T) {
 			} else {
 				require.Error(t, err, "expected miss: result should not have been cached")
 			}
+		})
+	}
+}
+
+// TestKubeletProviderCacheKeyType verifies that the cache key is determined by
+// the cacheKeyType field in the plugin response, following the kubelet behavior.
+func TestKubeletProviderCacheKeyType(t *testing.T) {
+	_, binDir := setupKubeletProvider(t)
+
+	tests := []struct {
+		name         string
+		cacheKeyType string
+		// firstRef is the image used for the first call (populates the cache).
+		firstRef string
+		// secondRef is the image used for the second call (after plugin removal).
+		// Must share the same registry or be anything for Global.
+		secondRef string
+		// wantCacheHit indicates whether the second call should succeed from cache.
+		wantCacheHit bool
+	}{
+		{
+			name:         "Image: same image hits cache",
+			cacheKeyType: "Image",
+			firstRef:     "registry.example.com/image:tag",
+			secondRef:    "registry.example.com/image:tag",
+			wantCacheHit: true,
+		},
+		{
+			name:         "Image: different image misses cache",
+			cacheKeyType: "Image",
+			firstRef:     "registry.example.com/image-a:tag",
+			secondRef:    "registry.example.com/image-b:tag",
+			wantCacheHit: false,
+		},
+		{
+			name:         "Registry: same registry different image hits cache",
+			cacheKeyType: "Registry",
+			firstRef:     "registry.example.com/image-a:tag",
+			secondRef:    "registry.example.com/image-b:tag",
+			wantCacheHit: true,
+		},
+		{
+			name:         "Registry: different registry misses cache",
+			cacheKeyType: "Registry",
+			firstRef:     "registry.example.com/image:tag",
+			secondRef:    "other.example.com/image:tag",
+			wantCacheHit: false,
+		},
+		{
+			name:         "Global: any image hits cache",
+			cacheKeyType: "Global",
+			firstRef:     "registry.example.com/image:tag",
+			secondRef:    "other.example.com/different:tag",
+			wantCacheHit: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pluginName := "ckt-" + strings.ReplaceAll(strings.ToLower(tt.name[:10]), " ", "-")
+			cfgName := pluginName + "-config.yaml"
+
+			createMockPluginFull(t, binDir, pluginName,
+				credentialMap{
+					"registry.example.com": {testUser, testPass},
+					"other.example.com":    {testUser, testPass},
+				}, "10m", tt.cacheKeyType)
+			cfg := filepath.Join(binDir, cfgName)
+			createMockProviderConfig(t, cfg, []kubeletconfigv1.CredentialProvider{
+				createMockCredentialProviderWithTTL(pluginName,
+					[]string{"*.example.com"}, 10*time.Minute),
+			})
+
+			provider, err := NewKubeletProvider(cfg, binDir)
+			require.NoError(t, err)
+
+			// First call: execute the plugin and populate the cache.
+			kc, err := provider.GetCredentials(&AuthRequest{Ref: tt.firstRef})
+			require.NoError(t, err)
+			require.NotNil(t, kc)
+
+			// Remove the plugin binary so any re-exec attempt fails.
+			require.NoError(t, os.Remove(filepath.Join(binDir, pluginName)))
+
+			// Second call: should hit or miss the cache depending on cacheKeyType.
+			kc2, err := provider.GetCredentials(&AuthRequest{Ref: tt.secondRef})
+			if tt.wantCacheHit {
+				require.NoError(t, err, "expected cache hit")
+				require.NotNil(t, kc2)
+				assert.Equal(t, testUser, kc2.Username)
+			} else {
+				require.Error(t, err, "expected cache miss")
+			}
+		})
+	}
+}
+
+// --- computeCacheKey ---
+
+func TestComputeCacheKey(t *testing.T) {
+	tests := []struct {
+		name         string
+		cacheKeyType credentialproviderv1.PluginCacheKeyType
+		image        string
+		want         string
+	}{
+		{
+			name:         "Image returns full image",
+			cacheKeyType: credentialproviderv1.ImagePluginCacheKeyType,
+			image:        "registry.example.com/org/app:latest",
+			want:         "registry.example.com/org/app:latest",
+		},
+		{
+			name:         "Registry returns host only",
+			cacheKeyType: credentialproviderv1.RegistryPluginCacheKeyType,
+			image:        "registry.example.com/org/app:latest",
+			want:         "registry.example.com",
+		},
+		{
+			name:         "Global returns global key",
+			cacheKeyType: credentialproviderv1.GlobalPluginCacheKeyType,
+			image:        "registry.example.com/org/app:latest",
+			want:         "<global>",
+		},
+		{
+			name:         "unknown returns empty",
+			cacheKeyType: "Unknown",
+			image:        "registry.example.com/org/app:latest",
+			want:         "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := computeCacheKey(tt.cacheKeyType, tt.image)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// --- parseRegistry ---
+
+func TestParseRegistry(t *testing.T) {
+	tests := []struct {
+		image string
+		want  string
+	}{
+		{"registry.example.com/org/app:latest", "registry.example.com"},
+		{"localhost:5000/myimage", "localhost:5000"},
+		{"docker.io/library/nginx:latest", "docker.io"},
+		{"singlepart", "singlepart"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			assert.Equal(t, tt.want, parseRegistry(tt.image))
 		})
 	}
 }
