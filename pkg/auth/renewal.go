@@ -7,97 +7,65 @@
 package auth
 
 import (
-	"context"
 	"sync"
 	"time"
 
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics/data"
-	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 )
 
 // renewalStore is the global credential store. It is nil when credential
 // renewal is disabled (the default).
 var renewalStore *credentialStore
 
-// InitCredentialRenewal initializes the credential renewal subsystem.
-// It creates the global store, runs an initial reconciliation pass to seed
-// entries from live RAFS instances, and starts a background goroutine that
-// reconciles and renews credentials at the given interval.
-func InitCredentialRenewal(ctx context.Context, interval time.Duration) {
+// InitCredentialStore creates the global credential store without starting
+// any background goroutine. The caller is responsible for driving renewal
+// (e.g., from snapshot/renewal.go).
+func InitCredentialStore(interval time.Duration) {
 	renewalStore = newCredentialStore(interval)
-	// Reconcile existing credentials a first time.
-	renewalStore.reconcile()
-
-	log.G(ctx).WithField("interval", interval).Info("credential renewal initialized")
-	go renewLoop(ctx, renewalStore)
 }
 
-// renewLoop is the background goroutine that periodically reconciles and
-// renews credentials.
-func renewLoop(ctx context.Context, store *credentialStore) {
-	ticker := time.NewTicker(store.renewInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			store.reconcile()
-		}
+// GetStoredCredential returns the cached keychain for ref from the global
+// store, or nil if not present or the store is not initialized.
+func GetStoredCredential(ref string) *PassKeyChain {
+	if renewalStore == nil {
+		return nil
 	}
+	return renewalStore.Get(ref)
 }
 
-// reconcile reconciles the credential store against the live RAFS instance
-// list and renews all entries that should be active.
-// 4 different situations are possible:
-// - entry in store, live in RAFS: renew
-// - entry in store, not live in RAFS: evict
-// - entry not in store, not live in RAFS: nothing
-// - entry not in store, live in RAFS: add
-func (s *credentialStore) reconcile() {
-	live := make(map[string]struct{})
-	for _, r := range rafs.RafsGlobalCache.List() {
-		if r.ImageID != "" {
-			live[r.ImageID] = struct{}{}
-		}
-	}
-
-	for _, entry := range s.Entries() {
-		if _, inRAFS := live[entry.ref]; inRAFS {
-			log.L.WithField("ref", entry.ref).Debug("renewing credential entry")
-			s.renewEntry(entry.ref)
-		} else if time.Since(entry.renewedAt) >= s.renewInterval/2 {
-			s.Remove(entry.ref)
-		}
-		// Grace period: the entry was added recently (within interval/2) but
-		// has no RAFS entry yet. There is a possible race between a concurrent
-		// image pull and this renewal tick: GetRegistryKeyChain adds the ref to the
-		// store on the first layer fetch, but the RAFS entry is only created later
-		// when the mount completes. Evicting here would cause redundant provider
-		// lookups for every remaining layer fetch in the pull. We leave the
-		// entry intact; the next tick will either find it in RAFS (normal) or
-		// evict it (pull abandoned or failed).
-	}
-
-	for ref := range live {
-		if s.Get(ref) == nil {
-			s.renewEntry(ref)
-		}
-	}
-}
-
-// renewEntry fetches fresh credentials for ref from the renewable provider
-// list. fetchFromProviders writes to the renewal store on success, so
-// renewEntry only needs to update metrics.
-func (s *credentialStore) renewEntry(ref string) {
-	kc := fetchFromProviders(&AuthRequest{Ref: ref, ValidUntil: time.Now().Add(s.renewInterval)}, renewableProviders())
+// RenewCredential fetches fresh credentials for ref from the renewable
+// provider list and caches them in the global store. Returns the keychain
+// on success or nil on failure. Emits renewal metrics.
+func RenewCredential(ref string) *PassKeyChain {
+	kc := fetchFromProviders(
+		&AuthRequest{Ref: ref, ValidUntil: time.Now().Add(renewalStore.renewInterval)},
+		renewableProviders(),
+	)
 	if kc != nil {
 		data.CredentialRenewals.WithLabelValues(ref, "success").Inc()
 	} else {
 		log.L.WithField("ref", ref).Warn("credential renewal returned no credentials from any provider")
 		data.CredentialRenewals.WithLabelValues(ref, "failure").Inc()
+	}
+	return kc
+}
+
+// EvictStaleCredentials removes store entries whose ref is not present in
+// liveRefs. Entries added recently (within interval/2) are kept to avoid
+// racing with a concurrent image pull: GetRegistryKeyChain adds the ref to
+// the store on the first layer fetch, but the RAFS entry is only created
+// later when the mount completes. Evicting here would cause redundant
+// provider lookups for every remaining layer fetch in the pull.
+func EvictStaleCredentials(liveRefs map[string]struct{}) {
+	if renewalStore == nil {
+		return
+	}
+	grace := renewalStore.renewInterval / 2
+	for _, entry := range renewalStore.Entries() {
+		if _, live := liveRefs[entry.ref]; !live && time.Since(entry.renewedAt) >= grace {
+			renewalStore.Remove(entry.ref)
+		}
 	}
 }
 
