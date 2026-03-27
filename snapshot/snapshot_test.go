@@ -224,3 +224,49 @@ func TestMountNative(t *testing.T) {
 		})
 	}
 }
+
+func TestMountNativeConfigVolatile(t *testing.T) {
+	snapshotterRoot := "/var/lib/containerd/snapshotter"
+	s := &snapshotter{
+		root:                    snapshotterRoot,
+		enableOverlayfsVolatile: true,
+	}
+
+	ctx := context.Background()
+
+	t.Run("active snapshot gets volatile from config", func(t *testing.T) {
+		snap := storage.Snapshot{
+			ID:        "snap1",
+			Kind:      snapshots.KindActive,
+			ParentIDs: []string{"parent1", "parent2"},
+		}
+		mounts, err := s.mountNative(ctx, nil, snap)
+		require.NoError(t, err)
+		require.Len(t, mounts, 1)
+		assert.Contains(t, mounts[0].Options, "volatile")
+	})
+
+	t.Run("view snapshot does not get volatile from config", func(t *testing.T) {
+		snap := storage.Snapshot{
+			ID:        "snap2",
+			Kind:      snapshots.KindView,
+			ParentIDs: []string{"parent1", "parent2"},
+		}
+		mounts, err := s.mountNative(ctx, nil, snap)
+		require.NoError(t, err)
+		require.Len(t, mounts, 1)
+		assert.NotContains(t, mounts[0].Options, "volatile")
+	})
+
+	t.Run("committed snapshot does not get volatile from config", func(t *testing.T) {
+		snap := storage.Snapshot{
+			ID:        "snap3",
+			Kind:      snapshots.KindCommitted,
+			ParentIDs: []string{"parent1", "parent2"},
+		}
+		mounts, err := s.mountNative(ctx, nil, snap)
+		require.NoError(t, err)
+		require.Len(t, mounts, 1)
+		assert.NotContains(t, mounts[0].Options, "volatile")
+	})
+}

@@ -181,6 +181,10 @@ type SnapshotConfig struct {
 	NydusOverlayFSPath   string `toml:"nydus_overlayfs_path"`
 	EnableKataVolume     bool   `toml:"enable_kata_volume"`
 	SyncRemove           bool   `toml:"sync_remove"`
+	// EnableOverlayfsVolatile globally enables the "volatile" overlayfs mount option
+	// on all writable snapshots. This skips sync on the upper layer, improving
+	// write performance for ephemeral container filesystems at the cost of crash consistency.
+	EnableOverlayfsVolatile bool `toml:"enable_overlayfs_volatile"`
 }
 
 // Configure cache manager that manages the cache files lifecycle
