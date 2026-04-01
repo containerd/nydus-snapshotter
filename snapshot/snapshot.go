@@ -52,16 +52,17 @@ import (
 var _ snapshots.Snapshotter = &snapshotter{}
 
 type snapshotter struct {
-	root                 string
-	nydusdPath           string
-	ms                   *storage.MetaStore // Storing snapshots' state, parentage and other metadata
-	fs                   *filesystem.Filesystem
-	cgroupManager        *cgroup.Manager
-	enableNydusOverlayFS bool
-	nydusOverlayFSPath   string
-	enableKataVolume     bool
-	syncRemove           bool
-	cleanupOnClose       bool
+	root                    string
+	nydusdPath              string
+	ms                      *storage.MetaStore // Storing snapshots' state, parentage and other metadata
+	fs                      *filesystem.Filesystem
+	cgroupManager           *cgroup.Manager
+	enableNydusOverlayFS    bool
+	nydusOverlayFSPath      string
+	enableKataVolume        bool
+	syncRemove              bool
+	cleanupOnClose          bool
+	enableOverlayfsVolatile bool
 }
 
 func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
@@ -300,16 +301,17 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	return &snapshotter{
-		root:                 cfg.Root,
-		nydusdPath:           cfg.DaemonConfig.NydusdPath,
-		ms:                   ms,
-		syncRemove:           syncRemove,
-		fs:                   nydusFs,
-		cgroupManager:        cgroupMgr,
-		enableNydusOverlayFS: cfg.SnapshotsConfig.EnableNydusOverlayFS,
-		nydusOverlayFSPath:   cfg.SnapshotsConfig.NydusOverlayFSPath,
-		enableKataVolume:     cfg.SnapshotsConfig.EnableKataVolume,
-		cleanupOnClose:       cfg.CleanupOnClose,
+		root:                    cfg.Root,
+		nydusdPath:              cfg.DaemonConfig.NydusdPath,
+		ms:                      ms,
+		syncRemove:              syncRemove,
+		fs:                      nydusFs,
+		cgroupManager:           cgroupMgr,
+		enableNydusOverlayFS:    cfg.SnapshotsConfig.EnableNydusOverlayFS,
+		nydusOverlayFSPath:      cfg.SnapshotsConfig.NydusOverlayFSPath,
+		enableKataVolume:        cfg.SnapshotsConfig.EnableKataVolume,
+		enableOverlayfsVolatile: cfg.SnapshotsConfig.EnableOverlayfsVolatile,
+		cleanupOnClose:          cfg.CleanupOnClose,
 	}, nil
 }
 
@@ -1093,7 +1095,7 @@ func (o *snapshotter) mountProxy(ctx context.Context, s storage.Snapshot) ([]mou
 // `s` and `id` can represent a different layer, it's useful when View an image
 func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string, s storage.Snapshot, id, key string) ([]mount.Mount, error) {
 	var overlayOptions []string
-	if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
+	if _, ok := labels[label.OverlayfsVolatileOpt]; ok || o.enableOverlayfsVolatile {
 		overlayOptions = append(overlayOptions, "volatile")
 	}
 
@@ -1163,7 +1165,7 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
 			fmt.Sprintf("upperdir=%s", o.upperPath(s.ID)),
 		)
-		if _, ok := labels[label.OverlayfsVolatileOpt]; ok {
+		if _, ok := labels[label.OverlayfsVolatileOpt]; ok || o.enableOverlayfsVolatile {
 			options = append(options, "volatile")
 		}
 	} else if len(s.ParentIDs) == 1 {

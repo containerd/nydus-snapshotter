@@ -100,6 +100,11 @@ nydus_overlayfs_path = "nydus-overlayfs"
 enable_kata_volume = false
 # Whether to remove resources when a snapshot is removed
 sync_remove = false
+# Globally enable the "volatile" overlayfs mount option on all writable snapshots.
+# This skips sync on the upper layer, improving write performance for ephemeral
+# container filesystems. Safe for most workloads where the writable layer does not
+# need to survive a crash.
+enable_overlayfs_volatile = false
 
 [cache_manager]
 # Disable or enable recyclebin
