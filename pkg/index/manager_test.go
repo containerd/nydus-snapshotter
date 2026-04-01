@@ -24,7 +24,7 @@ func TestCheckIndexAlternative(t *testing.T) {
 	}
 
 	t.Run("cache hit, nydus present", func(t *testing.T) {
-		manager := NewManager(false)
+		manager := NewManager(false, false)
 		manager.cache.Add(manifestDigest, *expectedDesc)
 
 		result, err := manager.CheckIndexAlternative(context.Background(), ref, manifestDigest)
@@ -34,7 +34,7 @@ func TestCheckIndexAlternative(t *testing.T) {
 	})
 
 	t.Run("cache hit, no nydus", func(t *testing.T) {
-		manager := NewManager(false)
+		manager := NewManager(false, false)
 		manager.cache.Add(manifestDigest, nil)
 
 		_, err := manager.CheckIndexAlternative(context.Background(), ref, manifestDigest)

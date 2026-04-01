@@ -47,9 +47,12 @@ type Remote struct {
 	// withPlainHTTP attempts to request the remote registry using http instead
 	// of https.
 	withPlainHTTP bool
+	// skipHTTPFallback prevents automatic fallback from HTTPS to plain HTTP
+	// when connection errors occur.
+	skipHTTPFallback bool
 }
 
-func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
+func New(keyChain *auth.PassKeyChain, insecure, skipHTTPFallback bool) *Remote {
 	// nolint:unparam
 	credFunc := func(string) (string, string, error) {
 		if keyChain == nil {
@@ -88,12 +91,16 @@ func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
 	}
 
 	return &Remote{
-		resolverFunc:  resolverFunc,
-		withPlainHTTP: false,
+		resolverFunc:     resolverFunc,
+		withPlainHTTP:    false,
+		skipHTTPFallback: skipHTTPFallback,
 	}
 }
 
 func (remote *Remote) RetryWithPlainHTTP(ref string, err error) bool {
+	if remote.skipHTTPFallback {
+		return false
+	}
 	retry := err != nil && (isErrHTTPResponseToHTTPSClient(err) || isErrConnectionRefused(err))
 	if !retry {
 		return false

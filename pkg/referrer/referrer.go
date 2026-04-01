@@ -31,9 +31,9 @@ type referrer struct {
 	remote *remote.Remote
 }
 
-func newReferrer(keyChain *auth.PassKeyChain, insecure bool) *referrer {
+func newReferrer(keyChain *auth.PassKeyChain, insecure, skipHTTPFallback bool) *referrer {
 	return &referrer{
-		remote: remote.New(keyChain, insecure),
+		remote: remote.New(keyChain, insecure, skipHTTPFallback),
 	}
 }
 

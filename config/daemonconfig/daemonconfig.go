@@ -83,6 +83,7 @@ type BackendConfig struct {
 	BlobURLScheme      string         `json:"blob_url_scheme,omitempty"`
 	BlobRedirectedHost string         `json:"blob_redirected_host,omitempty"`
 	Mirrors            []MirrorConfig `json:"mirrors,omitempty"`
+	SkipHTTPFallback   bool           `json:"skip_http_fallback,omitempty"`
 
 	// Shared by oss and s3 backend configs
 	EndPoint        string `json:"endpoint,omitempty"`

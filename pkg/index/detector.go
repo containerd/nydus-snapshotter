@@ -32,9 +32,9 @@ type detector struct {
 	remote *remote.Remote
 }
 
-func newDetector(keyChain *auth.PassKeyChain, insecure bool) *detector {
+func newDetector(keyChain *auth.PassKeyChain, insecure, skipHTTPFallback bool) *detector {
 	return &detector{
-		remote: remote.New(keyChain, insecure),
+		remote: remote.New(keyChain, insecure, skipHTTPFallback),
 	}
 }
 

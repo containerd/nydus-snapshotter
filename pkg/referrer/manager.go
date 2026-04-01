@@ -19,16 +19,18 @@ import (
 )
 
 type Manager struct {
-	insecure bool
-	cache    *lru.Cache
-	sg       singleflight.Group
+	insecure         bool
+	skipHTTPFallback bool
+	cache            *lru.Cache
+	sg               singleflight.Group
 }
 
-func NewManager(insecure bool) *Manager {
+func NewManager(insecure, skipHTTPFallback bool) *Manager {
 	manager := Manager{
-		insecure: insecure,
-		cache:    lru.New(500),
-		sg:       singleflight.Group{},
+		insecure:         insecure,
+		skipHTTPFallback: skipHTTPFallback,
+		cache:            lru.New(500),
+		sg:               singleflight.Group{},
 	}
 
 	return &manager
@@ -51,7 +53,7 @@ func (manager *Manager) CheckReferrer(ctx context.Context, ref string, manifestD
 
 		// No LRU cache found, try to fetch referrers and parse out
 		// the nydus metadata layer descriptor.
-		referrer := newReferrer(keyChain, manager.insecure)
+		referrer := newReferrer(keyChain, manager.insecure, manager.skipHTTPFallback)
 		metaLayer, err := referrer.checkReferrer(ctx, ref, manifestDigest)
 		if err != nil {
 			return nil, errors.Wrap(err, "check referrer")
@@ -83,6 +85,6 @@ func (manager *Manager) TryFetchMetadata(ctx context.Context, ref string, manife
 		return errors.Wrap(err, "get key chain")
 	}
 
-	referrer := newReferrer(keyChain, manager.insecure)
+	referrer := newReferrer(keyChain, manager.insecure, manager.skipHTTPFallback)
 	return referrer.fetchMetadata(ctx, ref, *metaLayer, metadataPath)
 }
