@@ -69,20 +69,6 @@ func LoadFscacheConfig(p string) (*FscacheDaemonConfig, error) {
 	return &cfg, nil
 }
 
-func (c *FscacheDaemonConfig) UpdateMirrors(mirrorsConfigDir, registryHost string) error {
-	mirrors, caCerts, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
-	if err != nil {
-		return err
-	}
-	if len(mirrors) > 0 {
-		c.Config.BackendConfig.Mirrors = mirrors
-	}
-	if len(caCerts) > 0 {
-		c.Config.BackendConfig.CACertFiles = caCerts
-	}
-	return nil
-}
-
 func (c *FscacheDaemonConfig) StorageBackend() (string, *BackendConfig) {
 	return c.Config.BackendType, &c.Config.BackendConfig
 }
