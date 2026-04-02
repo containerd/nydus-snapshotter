@@ -20,6 +20,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+type MirrorConfig struct {
+	Host                string
+	Headers             map[string]string
+	HealthCheckInterval int
+	FailureLimit        uint8
+	PingURL             string
+}
+
 // Copied from containerd, for compatibility with containerd's toml configuration file.
 type HostFileConfig struct {
 	Capabilities []string               `toml:"capabilities"`

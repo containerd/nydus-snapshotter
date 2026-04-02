@@ -9,10 +9,13 @@ package daemonconfig
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -35,7 +38,6 @@ type DaemonConfig interface {
 	// Provide auth
 	FillAuth(kc *auth.PassKeyChain)
 	StorageBackend() (StorageBackendType, *BackendConfig)
-	UpdateMirrors(mirrorsConfigDir, registryHost string) error
 	DumpString() (string, error)
 	DumpFile(path string) error
 }
@@ -60,14 +62,6 @@ func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
 	}
 }
 
-type MirrorConfig struct {
-	Host                string            `json:"host,omitempty"`
-	Headers             map[string]string `json:"headers,omitempty"`
-	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
-	FailureLimit        uint8             `json:"failure_limit,omitempty"`
-	PingURL             string            `json:"ping_url,omitempty"`
-}
-
 type BackendConfig struct {
 	// Localfs backend configs
 	BlobFile     string `json:"blob_file,omitempty"`
@@ -76,13 +70,12 @@ type BackendConfig struct {
 	ReadAheadSec int    `json:"readahead_sec,omitempty"`
 
 	// Registry backend configs
-	Host               string         `json:"host,omitempty"`
-	Repo               string         `json:"repo,omitempty"`
-	Auth               string         `json:"auth,omitempty" secret:"true"`
-	RegistryToken      string         `json:"registry_token,omitempty" secret:"true"`
-	BlobURLScheme      string         `json:"blob_url_scheme,omitempty"`
-	BlobRedirectedHost string         `json:"blob_redirected_host,omitempty"`
-	Mirrors            []MirrorConfig `json:"mirrors,omitempty"`
+	Host               string `json:"host,omitempty"`
+	Repo               string `json:"repo,omitempty"`
+	Auth               string `json:"auth,omitempty" secret:"true"`
+	RegistryToken      string `json:"registry_token,omitempty" secret:"true"`
+	BlobURLScheme      string `json:"blob_url_scheme,omitempty"`
+	BlobRedirectedHost string `json:"blob_redirected_host,omitempty"`
 
 	// Shared by oss and s3 backend configs
 	EndPoint        string `json:"endpoint,omitempty"`
@@ -168,15 +161,17 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 			registryHost = "index.docker.io"
 		}
 
-		if err := c.UpdateMirrors(config.GetMirrorsConfigDir(), registryHost); err != nil {
-			return errors.Wrap(err, "update mirrors config")
-		}
+		effectiveHost, effectiveScheme := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
 
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		keyChain := auth.GetRegistryKeyChain(imageID, labels)
-		c.Supplement(registryHost, image.Repo, snapshotID, params)
+		c.Supplement(effectiveHost, image.Repo, snapshotID, params)
+		if effectiveScheme != "" {
+			_, bc := c.StorageBackend()
+			bc.BlobURLScheme = effectiveScheme
+		}
 		c.FillAuth(keyChain)
 
 	// For Localfs, OSS, and S3 backends, only the WorkDir needs to be supplemented.
@@ -187,6 +182,45 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	}
 
 	return nil
+}
+
+// selectMirrorHost loads mirror configs for the given registry host and returns the host and
+// scheme of the first reachable mirror. If a mirror has no PingURL it is used unconditionally.
+// Falls back to (registryHost, "") when no mirror is configured or reachable.
+func selectMirrorHost(mirrorsConfigDir, registryHost string) (string, string) {
+	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
+	if err != nil {
+		log.L.Warnf("Failed to load mirrors config for %s: %v, falling back to origin", registryHost, err)
+		return registryHost, ""
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, mirror := range mirrors {
+		if mirror.PingURL == "" {
+			scheme, host := splitMirrorURL(mirror.Host)
+			return host, scheme
+		}
+		resp, pingErr := client.Get(mirror.PingURL)
+		if pingErr == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				scheme, host := splitMirrorURL(mirror.Host)
+				return host, scheme
+			}
+		}
+		log.L.Warnf("Mirror %s ping URL %s check failed, trying next mirror", mirror.Host, mirror.PingURL)
+	}
+
+	return registryHost, ""
+}
+
+// splitMirrorURL splits a mirror host URL (e.g. "http://mirror:5000") into scheme and bare host.
+// Returns ("", original) if no scheme is present.
+func splitMirrorURL(mirrorHost string) (scheme, host string) {
+	if idx := strings.Index(mirrorHost, "://"); idx >= 0 {
+		return mirrorHost[:idx], mirrorHost[idx+3:]
+	}
+	return "", mirrorHost
 }
 
 func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
