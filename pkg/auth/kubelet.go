@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"os"
@@ -31,6 +32,9 @@ import (
 
 const (
 	pluginExecTimeout = 1 * time.Minute
+	// globalCacheKey is the key used for caching credentials that are not specific to a registry or image.
+	// Angle brackets are used to avoid conflicts with actual image or registry names.
+	globalCacheKey = "<global>"
 )
 
 var (
@@ -40,15 +44,15 @@ var (
 
 // KubeletProvider retrieves credentials using Kubernetes credential provider plugins.
 type KubeletProvider struct {
-	plugins    []*kubeletconfigv1.CredentialProvider
-	binDir     string
-	mu         sync.RWMutex
-	registries map[string]*kubeletCredential // registry glob -> cached credential
+	plugins []*kubeletconfigv1.CredentialProvider
+	binDir  string
+	mu      sync.RWMutex
+	cache   map[string]*kubeletCredential // cache key (image or registry or global) -> cached credential
 }
 
 // kubeletCredential pairs a PassKeyChain with its provider-reported expiry.
 type kubeletCredential struct {
-	keychain  *PassKeyChain
+	keychains map[string]*PassKeyChain
 	expiresAt time.Time // zero means no cache (always re-exec plugin)
 }
 
@@ -100,9 +104,9 @@ func NewKubeletProvider(configPath, binDir string) (*KubeletProvider, error) {
 	}
 
 	provider := &KubeletProvider{
-		plugins:    make([]*kubeletconfigv1.CredentialProvider, 0, len(config.Providers)),
-		binDir:     binDir,
-		registries: make(map[string]*kubeletCredential),
+		plugins: make([]*kubeletconfigv1.CredentialProvider, 0, len(config.Providers)),
+		binDir:  binDir,
+		cache:   make(map[string]*kubeletCredential),
 	}
 
 	// Validate and register credential providers
@@ -189,10 +193,10 @@ func (p *KubeletProvider) String() string {
 }
 
 // GetCredentials retrieves credentials using kubelet credential provider plugins.
-// It first checks the internal registry cache for a non-expired match (using the
-// same wildcard matching logic as the kubelet). On a cache miss it executes all
-// matching plugins, stores every returned registry entry in the cache, and then
-// returns the most specific match for the requested ref.
+// It first checks the cache using the same cacheKeyType-based lookup as the
+// kubelet (image -> registry -> global). On a cache miss it executes all
+// matching plugins, stores results keyed by cacheKeyType, and returns the most
+// specific match for the requested ref.
 func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error) {
 	if req == nil || req.Ref == "" {
 		return nil, errors.New("ref not found in request")
@@ -204,21 +208,25 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 		return nil, errors.Wrap(err, "failed to parse image reference")
 	}
 
+	image := refSpec.String()
+
 	// Evict expired before adding new ones to bound the map size
 	p.evictExpired()
 
-	// Fast path: serve from the registry cache when a valid-long-enough credential
-	// exists. Otherwise, re-execute the plugin.
-	cred := p.bestMatchedCred(refSpec.String())
-	if cred != nil && (req.ValidUntil.IsZero() || cred.expiresAt.After(req.ValidUntil)) {
-		log.L.WithField("ref", req.Ref).Debug("serving kubelet credentials from registry cache")
-		return cred.keychain, nil
+	// Fast path: serve from cache when a valid-long-enough credential exists.
+	// Lookup order follows the kubelet: image key, registry key, global key.
+	cred := p.getCachedCredential(image, req.ValidUntil)
+	if cred != nil {
+		if kc := bestKeychainMatch(cred.keychains, image); kc != nil {
+			log.L.WithField("ref", req.Ref).Debug("serving kubelet credentials from cache")
+			return kc, nil
+		}
 	}
 
 	// Slow path: execute matching plugins
-	allCredentials := make(map[string]*kubeletCredential)
+	allKeychains := make(map[string]*PassKeyChain)
 	for _, plugin := range p.plugins {
-		if !isImageAllowed(plugin, refSpec.String()) {
+		if !isImageAllowed(plugin, image) {
 			continue
 		}
 
@@ -226,7 +234,7 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 		// "If one of the strings matches the requested image from the kubelet, the plugin will be invoked and given a chance to provide credentials"
 		// So each matching plugin should have a chance to fetch credentials
 		// TODO: parallelize?
-		resp, err := p.execPlugin(context.Background(), plugin, refSpec.String())
+		resp, err := p.execPlugin(context.Background(), plugin, image)
 		if err != nil {
 			log.L.WithError(err).WithFields(map[string]any{"plugin": plugin.Name, "ref": req.Ref}).Warn("failed to execute credential provider plugin")
 			continue
@@ -237,58 +245,107 @@ func (p *KubeletProvider) GetCredentials(req *AuthRequest) (*PassKeyChain, error
 			continue
 		}
 
+		cacheKey := computeCacheKey(resp.CacheKeyType, image)
+		if cacheKey == "" {
+			log.L.WithFields(map[string]any{
+				"plugin":       plugin.Name,
+				"cacheKeyType": resp.CacheKeyType,
+			}).Warn("credential provider plugin returned invalid cacheKeyType")
+			continue
+		}
+
+		keychains := make(map[string]*PassKeyChain, len(resp.Auth))
+		for registryGlob, authConfig := range resp.Auth {
+			// First plugin wins for overlapping auth keys, matching the kubelet spec:
+			// "If providers return overlapping auth keys, the value from the provider
+			// earlier in this list is used."
+			if _, exists := allKeychains[registryGlob]; exists {
+				continue
+			}
+			kc := &PassKeyChain{
+				Username: authConfig.Username,
+				Password: authConfig.Password,
+			}
+			keychains[registryGlob] = kc
+			allKeychains[registryGlob] = kc
+		}
+
 		var expiresAt time.Time
 		if d := resolveCacheDuration(resp, plugin); d > 0 {
 			expiresAt = time.Now().Add(d)
 		}
 
-		for registry, authConfig := range resp.Auth {
-			c := &kubeletCredential{
-				keychain: &PassKeyChain{
-					Username: authConfig.Username,
-					Password: authConfig.Password,
-				},
+		// Only cache when the plugin provides a TTL.
+		// A zero duration means no caching (plugin will be re-executed on the next request).
+		if !expiresAt.IsZero() {
+			log.L.WithFields(map[string]any{
+				"cacheKeyType": resp.CacheKeyType,
+				"cacheKey":     cacheKey,
+				"duration":     time.Until(expiresAt).Round(time.Second),
+				"registries":   slices.Collect(maps.Keys(keychains)),
+			}).Debug("caching kubelet credential provider response")
+
+			p.mu.Lock()
+			p.cache[cacheKey] = &kubeletCredential{
+				keychains: keychains,
 				expiresAt: expiresAt,
 			}
-			allCredentials[registry] = c
-			// Only cache when the plugin provides a TTL
-			// A zero duration means no caching (plugin will be re-executed on the next request).
-			if !expiresAt.IsZero() {
-				p.mu.Lock()
-				p.registries[registry] = c
-				p.mu.Unlock()
-			}
+			p.mu.Unlock()
 		}
 	}
 
-	if len(allCredentials) == 0 {
+	if len(allKeychains) == 0 {
 		return nil, errors.New("no credentials found")
 	}
 
-	cred = bestMatch(allCredentials, refSpec.String())
-	if cred == nil {
+	kc := bestKeychainMatch(allKeychains, image)
+	if kc == nil {
 		return nil, errors.New("no matching registries found")
 	}
-	return cred.keychain, nil
+	return kc, nil
 }
 
-// evictExpired removes all expired entries from p.registries.
+// evictExpired removes all expired entries from p.cache.
 func (p *KubeletProvider) evictExpired() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := time.Now()
-	for registry, cred := range p.registries {
+	for key, cred := range p.cache {
 		if cred.expiresAt.IsZero() || now.After(cred.expiresAt) {
-			delete(p.registries, registry)
+			delete(p.cache, key)
 		}
 	}
 }
 
-// bestMatch returns the most specific entry in m that matches image,
-// using reverse-alphabetical order on the registry glob keys.
-func bestMatch(m map[string]*kubeletCredential, image string) *kubeletCredential {
+// getCachedCredential looks up a cached credential for the given image using the
+// same lookup order as the kubelet: image key, registry key, then global key.
+// Returns nil when no valid, non-expired match exists that satisfies validUntil.
+func (p *KubeletProvider) getCachedCredential(image string, validUntil time.Time) *kubeletCredential {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	now := time.Now()
+	for _, key := range []string{image, parseRegistry(image), globalCacheKey} {
+		cred, ok := p.cache[key]
+		if !ok {
+			continue
+		}
+		if cred.expiresAt.IsZero() || now.After(cred.expiresAt) {
+			continue
+		}
+		if !validUntil.IsZero() && !cred.expiresAt.After(validUntil) {
+			continue
+		}
+		return cred
+	}
+	return nil
+}
+
+// bestKeychainMatch returns the most specific PassKeyChain whose registry glob
+// matches image, using reverse-alphabetical order (longer/more specific paths first).
+func bestKeychainMatch(keychains map[string]*PassKeyChain, image string) *PassKeyChain {
 	var matching []string
-	for registry := range m {
+	for registry := range keychains {
 		if matched, err := urlsMatchStr(registry, image); err == nil && matched {
 			matching = append(matching, registry)
 		} else if err != nil {
@@ -301,31 +358,37 @@ func bestMatch(m map[string]*kubeletCredential, image string) *kubeletCredential
 	if len(matching) == 0 {
 		return nil
 	}
-	// Sort in reverse alphabetical order: longer/more specific paths sort first
+	// Sort in reverse alphabetical order: longer/more specific paths sort first.
 	// For example, "gcr.io/etcd-development" matches before "gcr.io".
 	sort.Sort(sort.Reverse(sort.StringSlice(matching)))
-	return m[matching[0]]
+	return keychains[matching[0]]
 }
 
-// bestMatchedCred returns the non-expired cached credential whose registry glob
-// most specifically matches image. Returns nil when no valid match exists.
-func (p *KubeletProvider) bestMatchedCred(image string) *kubeletCredential {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	now := time.Now()
-	// Build a view of only the non-expired entries, then delegate the
-	// match/sort logic to bestMatch.
-	valid := make(map[string]*kubeletCredential, len(p.registries))
-	for registry, cred := range p.registries {
-		if !cred.expiresAt.IsZero() && !now.After(cred.expiresAt) {
-			valid[registry] = cred
-		}
+// computeCacheKey determines the cache key for a plugin response based on the
+// cacheKeyType field, following the same logic as the kubelet.
+// Inspired from https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/plugin/plugin.go#L545
+func computeCacheKey(cacheKeyType credentialproviderv1.PluginCacheKeyType, image string) string {
+	switch cacheKeyType {
+	case credentialproviderv1.ImagePluginCacheKeyType:
+		return image
+	case credentialproviderv1.RegistryPluginCacheKeyType:
+		return parseRegistry(image)
+	case credentialproviderv1.GlobalPluginCacheKeyType:
+		return globalCacheKey
+	default:
+		return ""
 	}
-	return bestMatch(valid, image)
+}
+
+// parseRegistry extracts the registry (host and port) from an image string.
+// Ported: https://github.com/kubernetes/kubernetes/blob/v1.35.0/pkg/credentialprovider/plugin/plugin.go#L592
+func parseRegistry(image string) string {
+	imageParts := strings.Split(image, "/")
+	return imageParts[0]
 }
 
 // resolveCacheDuration picks the effective TTL from a plugin response:
-// the per-response CacheDuration takes precedence,
+// the per-response CacheDuration takes precedence if it is positive,
 // otherwise the plugin's DefaultCacheDuration is used.
 func resolveCacheDuration(resp *credentialproviderv1.CredentialProviderResponse, plugin *kubeletconfigv1.CredentialProvider) time.Duration {
 	if resp.CacheDuration != nil && resp.CacheDuration.Duration >= 0 {

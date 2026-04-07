@@ -63,7 +63,6 @@ type Manager struct {
 	cacheDirPath         string
 	nydusImagePath       string
 	insecure             bool
-	skipHTTPFallback     bool
 	validateDiffID       bool // whether to validate digest for uncompressed content
 	checkTarfsHint       bool // whether to rely on tarfs hint annotation
 	maxConcurrentProcess int64
@@ -85,13 +84,12 @@ type snapshotStatus struct {
 	cancel          context.CancelFunc
 }
 
-func NewManager(insecure, skipHTTPFallback, checkTarfsHint bool, cacheDirPath, nydusImagePath string, maxConcurrentProcess int64) *Manager {
+func NewManager(insecure, checkTarfsHint bool, cacheDirPath, nydusImagePath string, maxConcurrentProcess int64) *Manager {
 	return &Manager{
 		snapshotMap:          map[string]*snapshotStatus{},
 		cacheDirPath:         cacheDirPath,
 		nydusImagePath:       nydusImagePath,
 		insecure:             insecure,
-		skipHTTPFallback:     skipHTTPFallback,
 		validateDiffID:       true,
 		checkTarfsHint:       checkTarfsHint,
 		maxConcurrentProcess: maxConcurrentProcess,
@@ -337,7 +335,7 @@ func (t *Manager) blobProcess(ctx context.Context, wg *sync.WaitGroup, snapshotI
 		epilog(err, "create key chain for connection")
 		return err
 	}
-	remote := remote.New(keyChain, t.insecure, t.skipHTTPFallback)
+	remote := remote.New(keyChain, t.insecure)
 	rc, _, err := t.getBlobStream(ctx, remote, ref, layerDigest)
 	if err != nil && remote.RetryWithPlainHTTP(ref, err) {
 		rc, _, err = t.getBlobStream(ctx, remote, ref, layerDigest)
@@ -770,7 +768,7 @@ func (t *Manager) CheckTarfsHintAnnotation(ctx context.Context, ref string, mani
 	if err != nil {
 		return false, err
 	}
-	remote := remote.New(keyChain, t.insecure, t.skipHTTPFallback)
+	remote := remote.New(keyChain, t.insecure)
 
 	handle := func() (bool, error) {
 		if tarfsHint, ok := t.tarfsHintCache.Get(ref); ok {

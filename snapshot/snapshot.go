@@ -98,7 +98,6 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		}
 	}
 
-	skipHTTPFallback := cfg.RemoteConfig.SkipHTTPFallback
 	var skipSSLVerify bool
 	var daemonConfig *daemonconfig.DaemonConfig
 	fsDriver := config.GetFsDriver()
@@ -232,17 +231,17 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	opts = append(opts, filesystem.WithCacheManager(cacheMgr))
 
 	if cfg.Experimental.EnableIndexDetect {
-		indexMgr := index.NewManager(skipSSLVerify, skipHTTPFallback)
+		indexMgr := index.NewManager(skipSSLVerify)
 		opts = append(opts, filesystem.WithIndexManager(indexMgr))
 	}
 
 	if cfg.Experimental.EnableReferrerDetect {
-		referrerMgr := referrer.NewManager(skipSSLVerify, skipHTTPFallback)
+		referrerMgr := referrer.NewManager(skipSSLVerify)
 		opts = append(opts, filesystem.WithReferrerManager(referrerMgr))
 	}
 
 	if cfg.Experimental.TarfsConfig.EnableTarfs {
-		tarfsMgr := tarfs.NewManager(skipSSLVerify, skipHTTPFallback, cfg.Experimental.TarfsConfig.TarfsHint,
+		tarfsMgr := tarfs.NewManager(skipSSLVerify, cfg.Experimental.TarfsConfig.TarfsHint,
 			cacheConfig.CacheDir, cfg.DaemonConfig.NydusImagePath,
 			int64(cfg.Experimental.TarfsConfig.MaxConcurrentProc))
 		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
@@ -251,6 +250,13 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "initialize filesystem thin layer")
+	}
+
+	// Start credential renewal after NewFileSystem, which calls Manager.Recover()
+	// and populates the daemon caches from the DB. Starting earlier would cause
+	// the initial reconciliation to see empty managers on restart.
+	if interval := cfg.RemoteConfig.AuthConfig.CredentialRenewalInterval; interval > 0 {
+		startCredentialRenewal(ctx, interval, fsManagers)
 	}
 
 	if config.IsSystemControllerEnabled() {
@@ -334,13 +340,16 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 		}
 	}
 
-	cleanup, err = o.cleanupUnusedCacheBlobs(ctx)
+	cleanup, err = o.getUnusedCacheBlobs(ctx)
 	if err != nil {
 		return err
 	}
 	log.L.Infof("[Cleanup] unused cache blobs %v", cleanup)
 
 	for _, blob := range cleanup {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		// Add sha256: prefix to make it a valid blob digest
 		if err := o.fs.RemoveCache("sha256:" + blob); err != nil {
 			log.L.WithError(err).Warnf("failed to remove cache blob %s", blob)
@@ -1276,7 +1285,7 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	return nil
 }
 
-func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, error) {
+func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error) {
 	// Get a write transaction to ensure no other write transaction can be entered
 	// while the cleanup is scanning.
 	_, t, err := o.ms.TransactionContext(ctx, true)
@@ -1312,7 +1321,7 @@ func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, er
 		return nil, errors.Wrap(err, "walk managers to collect used blobs")
 	}
 
-	log.L.Debugf("[cleanupUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))
+	log.L.Debugf("[getUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))
 
 	// Update metrics for blobs in use
 	data.CacheBlobsInUse.Set(float64(len(usedBlobIDs)))
@@ -1337,13 +1346,13 @@ func (o *snapshotter) cleanupUnusedCacheBlobs(ctx context.Context) ([]string, er
 
 		blobID := cache.ExtractBlobIDFromFilename(entry.Name())
 		if blobID == "" {
-			log.L.Debugf("[cleanupUnusedCacheBlobs] skipping file with unknown format: %s", entry.Name())
+			log.L.Debugf("[getUnusedCacheBlobs] skipping file with unknown format: %s", entry.Name())
 			continue
 		}
 
 		storedBlobIDs[blobID] = nil
 	}
-	log.L.Debugf("[cleanupUnusedCacheBlobs] found %d stored blob IDs", len(storedBlobIDs))
+	log.L.Debugf("[getUnusedCacheBlobs] found %d stored blob IDs", len(storedBlobIDs))
 
 	var unusedBlobIDs []string
 	for blobID := range storedBlobIDs {

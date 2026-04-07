@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025. Nydus Developers. All rights reserved.
+ * Copyright (c) 2026. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,63 +14,61 @@ import (
 )
 
 func TestRetryWithPlainHTTP(t *testing.T) {
-	const ref = "docker.io/library/nginx:latest"
-
-	httpsErr := fmt.Errorf("Get https://docker.io/v2/: http: server gave HTTP response to HTTPS client")
-	connRefusedErr := fmt.Errorf("Get https://docker.io/v2/: dial tcp connect: connection refused")
+	const host = "myregistry.example.com"
+	ref := fmt.Sprintf("%s/repo/image:latest", host)
+	httpResponseErr := fmt.Errorf("Get https://%s/v2/: server gave HTTP response to HTTPS client", host)
+	connRefusedErr := fmt.Errorf("Get https://%s/v2/: connect: connection refused", host)
 	otherErr := fmt.Errorf("some unrelated error")
 
 	tests := []struct {
-		name             string
-		skipHTTPFallback bool
-		err              error
-		expected         bool
+		name     string
+		insecure bool
+		err      error
+		want     bool
 	}{
 		{
-			name:             "fallback on HTTPS-to-HTTP error",
-			skipHTTPFallback: false,
-			err:              httpsErr,
-			expected:         true,
+			name:     "insecure allows HTTP fallback on HTTP response error",
+			insecure: true,
+			err:      httpResponseErr,
+			want:     true,
 		},
 		{
-			name:             "fallback on connection refused",
-			skipHTTPFallback: false,
-			err:              connRefusedErr,
-			expected:         true,
+			name:     "insecure allows HTTP fallback on connection refused",
+			insecure: true,
+			err:      connRefusedErr,
+			want:     true,
 		},
 		{
-			name:             "no fallback on unrelated error",
-			skipHTTPFallback: false,
-			err:              otherErr,
-			expected:         false,
+			name:     "insecure does not fallback on unrelated error",
+			insecure: true,
+			err:      otherErr,
+			want:     false,
 		},
 		{
-			name:             "no fallback when nil error",
-			skipHTTPFallback: false,
-			err:              nil,
-			expected:         false,
+			name:     "secure blocks HTTP fallback on HTTP response error",
+			insecure: false,
+			err:      httpResponseErr,
+			want:     false,
 		},
 		{
-			name:             "skip fallback even on HTTPS-to-HTTP error",
-			skipHTTPFallback: true,
-			err:              httpsErr,
-			expected:         false,
+			name:     "secure blocks HTTP fallback on connection refused",
+			insecure: false,
+			err:      connRefusedErr,
+			want:     false,
 		},
 		{
-			name:             "skip fallback even on connection refused",
-			skipHTTPFallback: true,
-			err:              connRefusedErr,
-			expected:         false,
+			name:     "nil error returns false",
+			insecure: true,
+			err:      nil,
+			want:     false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			remote := &Remote{
-				skipHTTPFallback: tt.skipHTTPFallback,
-			}
-			result := remote.RetryWithPlainHTTP(ref, tt.err)
-			assert.Equal(t, tt.expected, result)
+			r := &Remote{insecure: tt.insecure}
+			got := r.RetryWithPlainHTTP(ref, tt.err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

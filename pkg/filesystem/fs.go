@@ -18,15 +18,14 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
+	"github.com/containerd/log"
 	"github.com/mohae/deepcopy"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/containerd/containerd/v2/core/snapshots"
-	"github.com/containerd/containerd/v2/core/snapshots/storage"
-	"github.com/containerd/log"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
@@ -42,6 +41,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/signature"
 	"github.com/containerd/nydus-snapshotter/pkg/stargz"
 	"github.com/containerd/nydus-snapshotter/pkg/tarfs"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
 )
 
 type Filesystem struct {
@@ -268,11 +268,23 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 			return err
 		}
 
-		var sid string
+		// For shared daemons, we need to use the correct cache ID to query metrics.
+		// For fscache, the cache is registered with fscacheID (a digest), not the raw snapshot ID.
+		// For fusedev, the cache is registered with the snapshot ID.
+		sid := ""
 		if d.IsSharedDaemon() {
-			sid = rafs.SnapshotID
-		} else {
-			sid = ""
+			if rafs.GetFsDriver() == config.FsDriverFscache {
+				// For fscache, use the fscache ID from annotations if available
+				if fscacheID, ok := rafs.Annotations[racache.AnnoFsCacheID]; ok && fscacheID != "" {
+					sid = fscacheID
+				} else {
+					// Fallback: compute fscacheID if not in annotations yet
+					sid = erofs.FscacheID(rafs.SnapshotID)
+				}
+			} else {
+				// For fusedev, use the snapshot ID directly
+				sid = rafs.SnapshotID
+			}
 		}
 
 		cacheMetrics, err := d.GetCacheMetrics(sid)
@@ -280,12 +292,21 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
 			return errors.Wrapf(err, "failed to get cache metric")
 		}
 		log.L.Debugf("Found %d underlying files for rafs instance %s", len(cacheMetrics.UnderlyingFiles), rafs.SnapshotID)
+
+		// Lock the daemon's RafsCache when modifying rafs fields to prevent
+		// race conditions with concurrent reads (e.g., during cache cleanup)
+		d.RafsCache.Lock()
 		rafs.UnderlyingFiles = cacheMetrics.UnderlyingFiles
+		d.RafsCache.Unlock()
+
 		fsManager, err := fs.getManager(rafs.GetFsDriver())
 		if err != nil {
-			return err
+			return errors.Wrap(err, "failed to get manager")
 		}
-		fsManager.UpdateRafsInstance(rafs)
+		err = fsManager.UpdateRafsInstance(rafs)
+		if err != nil {
+			return errors.Wrap(err, "failed to update rafs instance")
+		}
 		log.L.Debugf("Nydus remote snapshot %s is ready", snapshotID)
 	}
 

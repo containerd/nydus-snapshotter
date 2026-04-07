@@ -219,7 +219,6 @@ type RemoteConfig struct {
 	AuthConfig         AuthConfig    `toml:"auth"`
 	ConvertVpcRegistry bool          `toml:"convert_vpc_registry"`
 	SkipSSLVerify      bool          `toml:"skip_ssl_verify"`
-	SkipHTTPFallback   bool          `toml:"skip_http_fallback"`
 	MirrorsConfig      MirrorsConfig `toml:"mirrors_config"`
 }
 

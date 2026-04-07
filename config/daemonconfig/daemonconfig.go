@@ -83,7 +83,6 @@ type BackendConfig struct {
 	BlobURLScheme      string         `json:"blob_url_scheme,omitempty"`
 	BlobRedirectedHost string         `json:"blob_redirected_host,omitempty"`
 	Mirrors            []MirrorConfig `json:"mirrors,omitempty"`
-	SkipHTTPFallback   bool           `json:"skip_http_fallback,omitempty"`
 
 	// Shared by oss and s3 backend configs
 	EndPoint        string `json:"endpoint,omitempty"`
@@ -113,6 +112,7 @@ type BackendConfig struct {
 }
 
 type DeviceConfig struct {
+	ID      string `json:"id,omitempty"`
 	Backend struct {
 		BackendType string        `json:"type"`
 		Config      BackendConfig `json:"config"`
@@ -230,7 +230,11 @@ func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
 		case reflect.Struct:
 			result[jsonTags[0]] = serializeWithSecretFilter(field.Interface())
 		case reflect.Ptr:
-			result[jsonTags[0]] = serializeWithSecretFilter(field.Elem().Interface())
+			if fieldType.Type.Elem().Kind() == reflect.Struct {
+				result[jsonTags[0]] = serializeWithSecretFilter(field.Elem().Interface())
+			} else {
+				result[jsonTags[0]] = field.Elem().Interface()
+			}
 		default:
 			result[jsonTags[0]] = field.Interface()
 		}

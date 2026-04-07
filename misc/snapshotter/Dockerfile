@@ -15,9 +15,10 @@ RUN apk add -q --no-cache curl && \
 
 FROM base AS kubectl-sourcer
 ARG TARGETARCH
+ARG KUBE_VER=v1.30.2
 
 RUN apk add -q --no-cache curl && \
-    curl -fsSL -o /usr/bin/kubectl https://dl.k8s.io/release/"$(curl -L -s https://dl.k8s.io/release/stable.txt)"/bin/linux/"$TARGETARCH"/kubectl && \
+    curl -fsSL -o /usr/bin/kubectl https://dl.k8s.io/release/${KUBE_VER}/bin/linux/${TARGETARCH}/kubectl && \
     chmod +x /usr/bin/kubectl
 
 FROM base

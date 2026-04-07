@@ -14,27 +14,27 @@ import (
 	"os"
 	"slices"
 
-	"github.com/containerd/nydus-snapshotter/pkg/auth"
-	"github.com/containerd/nydus-snapshotter/pkg/label"
-	"github.com/containerd/nydus-snapshotter/pkg/remote"
 	"github.com/containerd/platforms"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+
+	"github.com/containerd/nydus-snapshotter/pkg/auth"
+	"github.com/containerd/nydus-snapshotter/pkg/converter"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
+	"github.com/containerd/nydus-snapshotter/pkg/remote"
 )
 
 // Containerd restricts the max size of manifest index to 8M, follow it.
 const maxManifestIndexSize = 0x800000
-const metadataNameInLayer = "image/image.boot"
-const nydusOSFeature = "nydus.remoteimage.v1"
 
 type detector struct {
 	remote *remote.Remote
 }
 
-func newDetector(keyChain *auth.PassKeyChain, insecure, skipHTTPFallback bool) *detector {
+func newDetector(keyChain *auth.PassKeyChain, insecure bool) *detector {
 	return &detector{
-		remote: remote.New(keyChain, insecure, skipHTTPFallback),
+		remote: remote.New(keyChain, insecure),
 	}
 }
 
@@ -124,12 +124,8 @@ func (d *detector) findNydusManifestInIndex(index ocispec.Index, originalDigest 
 
 	pMatcher := platforms.NewMatcher(*originalDesc.Platform)
 	for _, manifest := range index.Manifests {
-		if d.hasNydusFeatures(manifest.Platform) && pMatcher.Match(*manifest.Platform) {
-			return &manifest, nil
-		}
-
-		// Fallback to looking for artifact type field
-		if d.hasNydusArtifactType(&manifest) && pMatcher.Match(*manifest.Platform) {
+		if pMatcher.Match(*manifest.Platform) &&
+			(d.hasNydusFeatures(manifest.Platform) || d.hasNydusArtifactType(&manifest)) {
 			return &manifest, nil
 		}
 	}
@@ -143,7 +139,7 @@ func (d *detector) hasNydusFeatures(platform *ocispec.Platform) bool {
 		return false
 	}
 
-	return slices.Contains(platform.OSFeatures, nydusOSFeature)
+	return slices.Contains(platform.OSFeatures, converter.ManifestOSFeatureNydus)
 }
 
 // hasNydusArtifactType checks if the descriptor is of nydus artifact type.
@@ -151,13 +147,13 @@ func (d *detector) hasNydusArtifactType(desc *ocispec.Descriptor) bool {
 	if desc == nil {
 		return false
 	}
-	return desc.ArtifactType == "application/vnd.nydus.image.manifest.v1+json"
+	return desc.ArtifactType == converter.ManifestArtifactTypeNydus
 }
 
 // fetchMetadata fetches and unpacks nydus metadata file to specified path.
-func (r *detector) fetchMetadata(ctx context.Context, ref string, desc ocispec.Descriptor, metadataPath string) error {
+func (d *detector) fetchMetadata(ctx context.Context, ref string, desc ocispec.Descriptor, metadataPath string) error {
 	handle := func() error {
-		resolver := r.remote.Resolve(ctx, ref)
+		resolver := d.remote.Resolve(ctx, ref)
 		fetcher, err := resolver.Fetcher(ctx, ref)
 		if err != nil {
 			return errors.Wrap(err, "get fetcher")
@@ -170,7 +166,7 @@ func (r *detector) fetchMetadata(ctx context.Context, ref string, desc ocispec.D
 		defer rc.Close()
 
 		// Unpack nydus metadata file to specified path.
-		if err := remote.Unpack(rc, metadataNameInLayer, metadataPath); err != nil {
+		if err := remote.Unpack(rc, converter.BootstrapFileNameInLayer, metadataPath); err != nil {
 			os.Remove(metadataPath)
 			return errors.Wrap(err, "unpack metadata from layer")
 		}
@@ -179,7 +175,7 @@ func (r *detector) fetchMetadata(ctx context.Context, ref string, desc ocispec.D
 	}
 
 	err := handle()
-	if err != nil && r.remote.RetryWithPlainHTTP(ref, err) {
+	if err != nil && d.remote.RetryWithPlainHTTP(ref, err) {
 		return handle()
 	}
 

@@ -30,9 +30,11 @@ jobs:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
       - name: Test
+        env:
+          AUTH_TYPE: ${{ inputs.auth-type }}
+          INDEX_DETECT: ${{ inputs.index-detect }}
         run: |
-          export AUTH_TYPE='${{ inputs.auth-type }}'
-          export INDEX_DETECT='${{ inputs.index-detect }}'
+          AUTH_TYPE='${{ inputs.auth-type }}'
           ./tests/helpers/kind.sh
       - name: Dump logs
         if: failure()

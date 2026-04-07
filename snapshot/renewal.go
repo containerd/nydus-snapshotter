@@ -69,9 +69,10 @@ func reconcileCredentials(ctx context.Context, managers []*mgr.Manager) {
 
 				live[r.ImageID] = struct{}{}
 
+				old := auth.GetStoredCredential(r.ImageID)
 				log.L.WithField("ref", r.ImageID).Debug("renewing credential entry")
 				kc := auth.RenewCredential(r.ImageID)
-				if kc == nil {
+				if kc == nil || (old != nil && old.ToBase64() == kc.ToBase64()) {
 					continue
 				}
 
