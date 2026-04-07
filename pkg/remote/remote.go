@@ -47,6 +47,10 @@ type Remote struct {
 	// withPlainHTTP attempts to request the remote registry using http instead
 	// of https.
 	withPlainHTTP bool
+	// insecure indicates that the registry is explicitly configured as insecure.
+	// HTTP fallback is only allowed when insecure is true,
+	// matching Docker's --insecure-registry semantics.
+	insecure bool
 }
 
 func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
@@ -90,10 +94,15 @@ func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
 	return &Remote{
 		resolverFunc:  resolverFunc,
 		withPlainHTTP: false,
+		insecure:      insecure,
 	}
 }
 
 func (remote *Remote) RetryWithPlainHTTP(ref string, err error) bool {
+	if !remote.insecure {
+		return false
+	}
+
 	retry := err != nil && (isErrHTTPResponseToHTTPSClient(err) || isErrConnectionRefused(err))
 	if !retry {
 		return false
