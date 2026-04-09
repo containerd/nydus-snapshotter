@@ -471,6 +471,13 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		err = errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
 	}
 
+	// Wait for the daemon to be ready before persisting the RAFS instance
+	if err == nil && (fsDriver == config.FsDriverFscache || fsDriver == config.FsDriverFusedev) {
+		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+			return errors.Wrapf(err, "daemon %s failed to reach RUNNING for snapshot %s", d.ID(), snapshotID)
+		}
+	}
+
 	// Persist it after associate instance after all the states are calculated.
 	if err == nil {
 		if err := fsManager.AddRafsInstance(rafs); err != nil {
