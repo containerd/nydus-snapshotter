@@ -16,9 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeMirrorHostsToml(t *testing.T, dir, registryHost, content string) {
+var testRegistryHost = "fake-test.registry.com"
+
+func writeMirrorHostsToml(t *testing.T, dir, content string) {
 	t.Helper()
-	hostDir := filepath.Join(dir, registryHost)
+	hostDir := filepath.Join(dir, testRegistryHost)
 	require.NoError(t, os.MkdirAll(hostDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(hostDir, "hosts.toml"), []byte(content), 0600))
 }
@@ -42,25 +44,25 @@ func TestSplitMirrorURL(t *testing.T) {
 }
 
 func TestSelectMirrorHost_NoConfig(t *testing.T) {
-	host, scheme := selectMirrorHost("", "registry.docker.io")
-	require.Equal(t, "registry.docker.io", host)
+	host, scheme := selectMirrorHost("", testRegistryHost)
+	require.Equal(t, testRegistryHost, host)
 	require.Equal(t, "", scheme)
 }
 
 func TestSelectMirrorHost_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	host, scheme := selectMirrorHost(tmpDir, "registry.docker.io")
-	require.Equal(t, "registry.docker.io", host)
+	host, scheme := selectMirrorHost(tmpDir, testRegistryHost)
+	require.Equal(t, testRegistryHost, host)
 	require.Equal(t, "", scheme)
 }
 
 func TestSelectMirrorHost_MirrorNoPingURL(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeMirrorHostsToml(t, tmpDir, "registry.docker.io", `
+	writeMirrorHostsToml(t, tmpDir, `
 [host]
   [host."http://mirror1:5000"]
 `)
-	host, scheme := selectMirrorHost(tmpDir, "registry.docker.io")
+	host, scheme := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, "mirror1:5000", host)
 	require.Equal(t, "http", scheme)
 }
@@ -72,12 +74,12 @@ func TestSelectMirrorHost_MirrorPingSucceeds(t *testing.T) {
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	writeMirrorHostsToml(t, tmpDir, "registry.docker.io", `
+	writeMirrorHostsToml(t, tmpDir, `
 [host]
   [host."http://mirror1:5000"]
     ping_url = "`+srv.URL+`"
 `)
-	host, scheme := selectMirrorHost(tmpDir, "registry.docker.io")
+	host, scheme := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, "mirror1:5000", host)
 	require.Equal(t, "http", scheme)
 }
@@ -89,13 +91,13 @@ func TestSelectMirrorHost_MirrorPingFails_FallbackToOrigin(t *testing.T) {
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	writeMirrorHostsToml(t, tmpDir, "registry.docker.io", `
+	writeMirrorHostsToml(t, tmpDir, `
 [host]
   [host."http://mirror1:5000"]
     ping_url = "`+srv.URL+`"
 `)
-	host, scheme := selectMirrorHost(tmpDir, "registry.docker.io")
-	require.Equal(t, "registry.docker.io", host)
+	host, scheme := selectMirrorHost(tmpDir, testRegistryHost)
+	require.Equal(t, testRegistryHost, host)
 	require.Equal(t, "", scheme)
 }
 
@@ -106,13 +108,13 @@ func TestSelectMirrorHost_FirstMirrorFails_SecondMirrorNoPing(t *testing.T) {
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	writeMirrorHostsToml(t, tmpDir, "registry.docker.io", `
+	writeMirrorHostsToml(t, tmpDir, `
 [host]
   [host."http://mirror1:5000"]
     ping_url = "`+srv.URL+`"
   [host."https://mirror2.example.com"]
 `)
-	host, scheme := selectMirrorHost(tmpDir, "registry.docker.io")
+	host, scheme := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, "mirror2.example.com", host)
 	require.Equal(t, "https", scheme)
 }
