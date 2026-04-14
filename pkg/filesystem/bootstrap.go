@@ -10,18 +10,24 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/layout"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/retry"
 )
 
 const (
 	defaultBootstrapReadyAttempts = 20
 	defaultBootstrapReadyInterval = 50 * time.Millisecond
-	v6BlockBitsOffset             = layout.RafsV6SuperBlockOffset + 12
-	v6BlockBits512                = 9
-	v6BlockBits4096               = 12
+
+	v6BlockBitsOffset = layout.RafsV6SuperBlockOffset + 12
+	v6BlockBits512    = 9
+	v6BlockBits4096   = 12
 )
 
 func waitForReadyBootstrap(path string) error {
@@ -30,37 +36,61 @@ func waitForReadyBootstrap(path string) error {
 
 func waitForReadyBootstrapWithRetry(path string, attempts int, interval time.Duration) error {
 	var (
-		lastSize int64 = -1
-		lastErr  error
+		lastState *string
 	)
 
-	for idx := 0; idx < attempts; idx++ {
-		size, err := validateBootstrap(path)
-		if err == nil {
-			if size == lastSize {
-				return nil
-			}
-			lastSize = size
-			lastErr = fmt.Errorf("bootstrap size %d is still changing", size)
-		} else {
-			log.L.WithError(err).Warnf("bootstrap %s validation attempt %d/%d failed", path, idx+1, attempts)
-			lastErr = err
+	err := retry.Do(func() error {
+		state, err := validateBootstrapAndBlobMeta(path)
+		if err != nil {
+			return err
 		}
 
-		if idx+1 < attempts {
-			time.Sleep(interval)
+		// Require two consecutive "ready" states to reading unready bootstrap
+		if lastState == nil || state != *lastState {
+			lastState = &state
+			return fmt.Errorf("bootstrap is not ready, current state: %s", state)
 		}
+
+		return nil
+	},
+	retry.Attempts(uint(attempts)),
+	retry.Delay(interval),
+	retry.DelayType(retry.FixedDelay),
+	retry.LastErrorOnly(true),
+	retry.OnRetry(func(n uint, err error) {
+		log.L.Warnf("bootstrap is not ready, retrying... attempt: %d, error: %v", n+1, err)
+	}),
+	)
+
+	if err != nil {
+		return fmt.Errorf("bootstrap is not ready after %d attempts, last error: %w", attempts, err)
 	}
 
-	if lastErr == nil {
-		lastErr = fmt.Errorf("bootstrap is not ready")
+	return nil
+}
+
+func validateBootstrapAndBlobMeta(path string) (string, error) {
+	bootstrapSize, err := validateBootstrap(path)
+	if err != nil {
+		return "", err
 	}
 
-	return fmt.Errorf("bootstrap %s is not ready: %w", path, lastErr)
+	blobMetaState, err := validateBlobMetaFiles(path)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("bootstrap=%d;%s", bootstrapSize, blobMetaState), nil
 }
 
 func validateBootstrap(path string) (int64, error) {
-	info, err := os.Stat(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
 	if err != nil {
 		return 0, err
 	}
@@ -68,18 +98,13 @@ func validateBootstrap(path string) (int64, error) {
 		return 0, fmt.Errorf("bootstrap is not a regular file")
 	}
 
-	file, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-
-	headSize := int(info.Size())
+	size := info.Size()
+	headSize := int(size)
 	if headSize > layout.MaxSuperBlockSize {
 		headSize = layout.MaxSuperBlockSize
 	}
 	if headSize < 8 {
-		return 0, fmt.Errorf("bootstrap is too small: %d", info.Size())
+		return 0, fmt.Errorf("bootstrap is too small: %d", size)
 	}
 
 	head := make([]byte, headSize)
@@ -97,12 +122,66 @@ func validateBootstrap(path string) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-		if info.Size()%int64(blockSize) != 0 {
-			return 0, fmt.Errorf("v6 bootstrap size %d is not aligned to %d", info.Size(), blockSize)
+		if size%int64(blockSize) != 0 {
+			return 0, fmt.Errorf("v6 bootstrap size %d is not aligned to %d", size, blockSize)
 		}
 	}
 
-	return info.Size(), nil
+	return size, nil
+}
+
+func validateBlobMetaFiles(bootstrapPath string) (string, error) {
+	pattern := filepath.Join(filepath.Dir(bootstrapPath), "*.blob.meta")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", err
+	}
+
+	sort.Strings(matches)
+
+	if len(matches) == 0 {
+		return "blobmeta=none", nil
+	}
+
+	var b strings.Builder
+	b.WriteString("blobmeta=")
+
+	for i, p := range matches {
+		file, err := os.Open(p)
+		if err != nil {
+			return "", err
+		}
+
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return "", err
+		}
+		if !info.Mode().IsRegular() {
+			file.Close()
+			return "", fmt.Errorf("blob.meta %s is not a regular file", p)
+		}
+		if info.Size() <= 0 {
+			file.Close()
+			return "", fmt.Errorf("blob.meta %s is empty", p)
+		}
+
+		var buf [1]byte
+		if _, err := io.ReadFull(file, buf[:]); err != nil {
+			file.Close()
+			return "", fmt.Errorf("read blob.meta %s: %w", p, err)
+		}
+		file.Close()
+
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(filepath.Base(p))
+		b.WriteByte(':')
+		b.WriteString(strconv.FormatInt(info.Size(), 10))
+	}
+
+	return b.String(), nil
 }
 
 func detectV6BlockSize(head []byte) (int, error) {
