@@ -53,6 +53,11 @@ type Remote struct {
 	insecure bool
 }
 
+func isLocalRegistryHost(host string) bool {
+	match, err := docker.MatchLocalhost(host)
+	return err == nil && match
+}
+
 func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
 	// nolint:unparam
 	credFunc := func(string) (string, string, error) {
@@ -99,7 +104,16 @@ func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
 }
 
 func (remote *Remote) RetryWithPlainHTTP(ref string, err error) bool {
-	if !remote.insecure {
+	parsed, _ := reference.ParseNormalizedNamed(ref)
+	host := ""
+	if parsed != nil {
+		host = reference.Domain(parsed)
+	}
+
+	// Keep secure default for remote registries. For loopback/localhost
+	// registries, allow retrying over plain HTTP to align with common local
+	// development setups (for example k3s + local registry on localhost:5000).
+	if !remote.insecure && !isLocalRegistryHost(host) {
 		return false
 	}
 
@@ -108,9 +122,7 @@ func (remote *Remote) RetryWithPlainHTTP(ref string, err error) bool {
 		return false
 	}
 
-	parsed, _ := reference.ParseNormalizedNamed(ref)
-	if parsed != nil {
-		host := reference.Domain(parsed)
+	if host != "" {
 		// If the error message includes the current registry host string, it
 		// implies that we can retry the request with plain HTTP.
 		if strings.Contains(err.Error(), fmt.Sprintf("/%s/", host)) {
