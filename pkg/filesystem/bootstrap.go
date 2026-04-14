@@ -53,13 +53,13 @@ func waitForReadyBootstrapWithRetry(path string, attempts int, interval time.Dur
 
 		return nil
 	},
-	retry.Attempts(uint(attempts)),
-	retry.Delay(interval),
-	retry.DelayType(retry.FixedDelay),
-	retry.LastErrorOnly(true),
-	retry.OnRetry(func(n uint, err error) {
-		log.L.Warnf("bootstrap is not ready, retrying... attempt: %d, error: %v", n+1, err)
-	}),
+		retry.Attempts(uint(attempts)),
+		retry.Delay(interval),
+		retry.DelayType(retry.FixedDelay),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			log.L.Warnf("bootstrap is not ready, retrying... attempt: %d, error: %v", n+1, err)
+		}),
 	)
 
 	if err != nil {
