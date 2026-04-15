@@ -73,9 +73,10 @@ collect_interval = "1m"
 convert_vpc_registry = false
 
 [remote.mirrors_config]
-# Snapshotter will overwrite daemon's mirrors configuration
-# if the values loaded from this driectory are not null before starting a daemon.
-# Set to "" or an empty directory to disable it.
+# Snapshotter will rewrite nydusd's backend host to the first reachable mirror
+# loaded from this directory before each mount. Mirror selection is done by the
+# snapshotter (ping_url health check) and falls back to the origin registry host
+# when no mirror is available. Set to "" or an empty directory to disable it.
 #dir = "/etc/nydus/certs.d"
 
 [remote.auth]
