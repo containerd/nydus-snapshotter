@@ -54,7 +54,14 @@ Add Nydus as a proxy plugin into containerd's configuration file which may be lo
   [proxy_plugins.nydus]
     type = "snapshot"
     address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+    # Needed by containerd/k3s idmap(userns-remap) flow to avoid fallback remap snapshots.
+    capabilities = ["remap-ids"]
 ```
+
+For Kubernetes `hostUsers: false` end-to-end setup and validation, see
+[Kubernetes User Namespaces](./docs/kubernetes_user_namespaces.md).
+For that scenario, use `containerd v2.0+`; Kubernetes compatibility should follow
+the official user namespaces documentation linked in that guide.
 
 Restart your containerd service making the change take effect. Assume that your node is systemd based, restart the service as below:
 
