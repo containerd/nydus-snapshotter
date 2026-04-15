@@ -648,6 +648,102 @@ function idmap_stop_registry {
     nerdctl rm -f "${IDMAP_REGISTRY_NAME}" || true
 }
 
+# Prepare an active snapshot with IDMapping labels.
+# Containerd v2.0 `ctr snapshots prepare` no longer supports `--label`, so we
+# fall back to a tiny Go helper that calls SnapshotService.Prepare directly.
+function prepare_idmapped_snapshot {
+    local snap_key="$1"
+    local parent="$2"
+    local uid_map="$3"
+    local gid_map="$4"
+
+    if ctr snapshots prepare --help 2>&1 | grep -q -- "--label"; then
+        ctr snapshots --snapshotter "${PLUGIN}" prepare \
+            --label "containerd.io/snapshot/uidmapping=${uid_map}" \
+            --label "containerd.io/snapshot/gidmapping=${gid_map}" \
+            "${snap_key}" "${parent}"
+        return 0
+    fi
+
+    local helper="/tmp/prepare_idmapped_snapshot.go"
+    cat >"${helper}" <<'EOF'
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"os"
+
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/snapshots"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
+)
+
+func main() {
+	var (
+		address     string
+		namespace   string
+		snapshotter string
+		key         string
+		parent      string
+		uidmap      string
+		gidmap      string
+	)
+	flag.StringVar(&address, "address", "/run/containerd/containerd.sock", "containerd socket")
+	flag.StringVar(&namespace, "namespace", "default", "containerd namespace")
+	flag.StringVar(&snapshotter, "snapshotter", "nydus", "snapshotter name")
+	flag.StringVar(&key, "key", "", "snapshot key")
+	flag.StringVar(&parent, "parent", "", "parent snapshot")
+	flag.StringVar(&uidmap, "uidmap", "", "uid mapping")
+	flag.StringVar(&gidmap, "gidmap", "", "gid mapping")
+	flag.Parse()
+
+	if key == "" {
+		fmt.Fprintln(os.Stderr, "missing --key")
+		os.Exit(2)
+	}
+
+	client, err := containerd.New(address)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "new containerd client: %v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	ctx := namespaces.WithNamespace(context.Background(), namespace)
+	snapshotSvc := client.SnapshotService(snapshotter)
+
+	labels := map[string]string{}
+	if uidmap != "" {
+		labels["containerd.io/snapshot/uidmapping"] = uidmap
+	}
+	if gidmap != "" {
+		labels["containerd.io/snapshot/gidmapping"] = gidmap
+	}
+
+	opts := []snapshots.Opt{}
+	if len(labels) > 0 {
+		opts = append(opts, snapshots.WithLabels(labels))
+	}
+
+	if _, err := snapshotSvc.Prepare(ctx, key, parent, opts...); err != nil {
+		fmt.Fprintf(os.Stderr, "prepare snapshot: %v\n", err)
+		os.Exit(1)
+	}
+}
+EOF
+
+    go run "${helper}" \
+        --address "${CONTAINERD_SOCKET}" \
+        --namespace "default" \
+        --snapshotter "${PLUGIN}" \
+        --key "${snap_key}" \
+        --parent "${parent}" \
+        --uidmap "${uid_map}" \
+        --gidmap "${gid_map}"
+}
+
 # Convert a plain OCI image into nydus format using nydusify,
 # then pull the resulting nydus image via the nydus snapshotter.
 function test_idmapping_build_image {
@@ -713,12 +809,12 @@ function test_idmapping_use_image {
     local uid_map="0:1000:65536"
     local gid_map="0:1000:65536"
 
-    # Create an active snapshot with IDMapping labels. ctr passes these labels
-    # through to Prepare(), which triggers our chown + mount-option logic.
-    ctr snapshots --snapshotter "${PLUGIN}" prepare \
-        --label "containerd.io/snapshot/uidmapping=${uid_map}" \
-        --label "containerd.io/snapshot/gidmapping=${gid_map}" \
-        "${snap_key}" ""
+    # Create an active snapshot with IDMapping labels. This triggers snapshot
+    # directory chown and mount-option generation for remapping.
+    if ! prepare_idmapped_snapshot "${snap_key}" "" "${uid_map}" "${gid_map}"; then
+        echo "ERROR $FUNCNAME: failed to prepare idmapped snapshot"
+        return 1
+    fi
 
     # Retrieve mount information. For a no-parent active snapshot the
     # snapshotter returns a single bind mount; its source is the fs/ directory.
