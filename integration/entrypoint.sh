@@ -655,11 +655,18 @@ function test_idmapping_build_image {
 
     idmap_start_registry
 
+    local nydus_image_bin
+    nydus_image_bin="${NYDUS_IMAGE_BIN:-$(command -v nydus-image || true)}"
+    if [[ -z "${nydus_image_bin}" ]]; then
+        echo "ERROR $FUNCNAME: nydus-image binary not found in PATH"
+        return 1
+    fi
+
     local ok=false
     local i
     for i in $(seq 10); do
         if nydusify convert \
-            --nydus-image /usr/bin/nydus-image \
+            --nydus-image "${nydus_image_bin}" \
             --source "${REDIS_OCI_IMAGE}" \
             --target "${IDMAP_NYDUS_IMAGE}" \
             --target-insecure; then
