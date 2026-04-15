@@ -1064,19 +1064,6 @@ func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID st
 	return nil
 }
 
-func bindMount(source, roFlag string) []mount.Mount {
-	return []mount.Mount{
-		{
-			Type:   "bind",
-			Source: source,
-			Options: []string{
-				roFlag,
-				"rbind",
-			},
-		},
-	}
-}
-
 func overlayMount(options []string) []mount.Mount {
 	return []mount.Mount{
 		{
@@ -1226,7 +1213,7 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 		if s.Kind == snapshots.KindView {
 			roFlag = "ro"
 		}
-		opts := append(idmapOptions, roFlag, "rbind")
+		opts := append(append([]string{}, idmapOptions...), roFlag, "rbind")
 		return []mount.Mount{{Type: "bind", Source: o.upperPath(s.ID), Options: opts}}, nil
 	}
 
@@ -1245,7 +1232,7 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 		parentPath := o.upperPath(s.ParentIDs[0])
 		// if we only have one parent then just return a bind mount
 		log.G(ctx).Debugf("bind mount on %s", parentPath)
-		opts := append(idmapOptions, "ro", "rbind")
+		opts := append(append([]string{}, idmapOptions...), "ro", "rbind")
 		return []mount.Mount{{Type: "bind", Source: parentPath, Options: opts}}, nil
 	}
 
