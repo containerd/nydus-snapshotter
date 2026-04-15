@@ -662,7 +662,7 @@ function test_idmapping_build_image {
             --nydus-image /usr/bin/nydus-image \
             --source "${REDIS_OCI_IMAGE}" \
             --target "${IDMAP_NYDUS_IMAGE}" \
-            --insecure-target; then
+            --target-insecure; then
             ok=true
             break
         fi
