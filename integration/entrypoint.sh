@@ -744,6 +744,71 @@ EOF
         --gidmap "${gid_map}"
 }
 
+function get_snapshot_mounts_json {
+    local snap_key="$1"
+    local helper="/tmp/get_snapshot_mounts.go"
+    cat >"${helper}" <<'EOF'
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
+)
+
+func main() {
+	var (
+		address     string
+		namespace   string
+		snapshotter string
+		key         string
+	)
+	flag.StringVar(&address, "address", "/run/containerd/containerd.sock", "containerd socket")
+	flag.StringVar(&namespace, "namespace", "default", "containerd namespace")
+	flag.StringVar(&snapshotter, "snapshotter", "nydus", "snapshotter name")
+	flag.StringVar(&key, "key", "", "snapshot key")
+	flag.Parse()
+
+	if key == "" {
+		fmt.Fprintln(os.Stderr, "missing --key")
+		os.Exit(2)
+	}
+
+	client, err := containerd.New(address)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "new containerd client: %v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	ctx := namespaces.WithNamespace(context.Background(), namespace)
+	snapshotSvc := client.SnapshotService(snapshotter)
+
+	mounts, err := snapshotSvc.Mounts(ctx, key)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "get snapshot mounts: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := json.NewEncoder(os.Stdout).Encode(mounts); err != nil {
+		fmt.Fprintf(os.Stderr, "encode mounts json: %v\n", err)
+		os.Exit(1)
+	}
+}
+EOF
+
+    go run "${helper}" \
+        --address "${CONTAINERD_SOCKET}" \
+        --namespace "default" \
+        --snapshotter "${PLUGIN}" \
+        --key "${snap_key}"
+}
+
 # Convert a plain OCI image into nydus format using nydusify,
 # then pull the resulting nydus image via the nydus snapshotter.
 function test_idmapping_build_image {
@@ -816,16 +881,18 @@ function test_idmapping_use_image {
         return 1
     fi
 
-    # Retrieve mount information. For a no-parent active snapshot the
-    # snapshotter returns a single bind mount; its source is the fs/ directory.
+    # Retrieve mount information from SnapshotService. For a no-parent active
+    # snapshot the snapshotter returns a single bind mount; its source is fs/.
     local mounts_output
-    mounts_output=$(ctr snapshots --snapshotter "${PLUGIN}" mounts "${snap_key}" 2>&1)
+    if ! mounts_output=$(get_snapshot_mounts_json "${snap_key}"); then
+        echo "ERROR $FUNCNAME: failed to get mounts for snapshot ${snap_key}"
+        ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
+        return 1
+    fi
     echo "Mounts output: ${mounts_output}"
 
-    # Extract the bind-mount source path from proto-text output, e.g.:
-    #   type:"bind"  source:"/var/lib/.../fs"  options:"uidmap=..."  ...
     local fs_dir
-    fs_dir=$(echo "${mounts_output}" | grep -oP 'source:"\K[^"]+' | head -1)
+    fs_dir=$(echo "${mounts_output}" | jq -r '.[0].source // empty')
 
     if [[ -z "${fs_dir}" || ! -d "${fs_dir}" ]]; then
         echo "ERROR $FUNCNAME: could not resolve snapshot fs directory from: ${mounts_output}"
@@ -847,8 +914,8 @@ function test_idmapping_use_image {
     echo "SUCCESS $FUNCNAME: IDMapping chown verified (uid=${dir_uid} gid=${dir_gid})"
 
     # (b) Verify uidmap/gidmap mount options when kernel idmapped mounts are enabled.
-    if echo "${mounts_output}" | grep -q "uidmap=${uid_map}"; then
-        if ! echo "${mounts_output}" | grep -q "gidmap=${gid_map}"; then
+    if echo "${mounts_output}" | jq -e --arg uid "uidmap=${uid_map}" 'any(.[]?.options[]?; . == $uid)' >/dev/null; then
+        if ! echo "${mounts_output}" | jq -e --arg gid "gidmap=${gid_map}" 'any(.[]?.options[]?; . == $gid)' >/dev/null; then
             echo "ERROR $FUNCNAME: mount options missing gidmap=${gid_map}"
             ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
             return 1
