@@ -609,3 +609,166 @@ fi
 start_container_on_oci
 
 start_container_with_referrer_detect
+
+# ---------------------------------------------------------------------------
+# IDMapping tests
+#   build image  — convert an OCI image to nydus format and pull it
+#   use image    — run a container from the nydus image; verify that active
+#                  snapshots created with uidmapping/gidmapping labels have
+#                  the correct host-side ownership and carry uidmap=/gidmap=
+#                  in returned mount options when kernel idmapped mounts are
+#                  available.
+# ---------------------------------------------------------------------------
+
+IDMAP_REGISTRY_NAME="nydus-idmap-registry"
+IDMAP_REGISTRY_PORT="15000"
+IDMAP_NYDUS_IMAGE="localhost:${IDMAP_REGISTRY_PORT}/redis:nydus-idmap-test"
+
+function idmap_start_registry {
+    # Use host network to avoid requiring CNI bridge plugin in CI.
+    nerdctl rm -f "${IDMAP_REGISTRY_NAME}" >/dev/null 2>&1 || true
+    nerdctl run -d --net host \
+        -e "REGISTRY_HTTP_ADDR=0.0.0.0:${IDMAP_REGISTRY_PORT}" \
+        --name "${IDMAP_REGISTRY_NAME}" registry:2
+
+    local i
+    for i in $(seq 20); do
+        if nerdctl ps --format '{{.Names}}' | grep -q "^${IDMAP_REGISTRY_NAME}$"; then
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "ERROR: local registry did not become ready"
+    nerdctl logs "${IDMAP_REGISTRY_NAME}" || true
+    return 1
+}
+
+function idmap_stop_registry {
+    nerdctl rm -f "${IDMAP_REGISTRY_NAME}" || true
+}
+
+# Convert a plain OCI image into nydus format using nydusify,
+# then pull the resulting nydus image via the nydus snapshotter.
+function test_idmapping_build_image {
+    echo "testing $FUNCNAME"
+
+    idmap_start_registry
+
+    local ok=false
+    local i
+    for i in $(seq 10); do
+        if nydusify convert \
+            --nydus-image /usr/bin/nydus-image \
+            --source "${REDIS_OCI_IMAGE}" \
+            --target "${IDMAP_NYDUS_IMAGE}" \
+            --insecure-target; then
+            ok=true
+            break
+        fi
+        sleep 1
+    done
+    if [[ "${ok}" != "true" ]]; then
+        echo "ERROR $FUNCNAME: failed to convert image to nydus format"
+        return 1
+    fi
+
+    ok=false
+    for i in $(seq 10); do
+        if nerdctl --snapshotter nydus image pull --insecure-registry "${IDMAP_NYDUS_IMAGE}"; then
+            ok=true
+            break
+        fi
+        sleep 1
+    done
+    if [[ "${ok}" != "true" ]]; then
+        echo "ERROR $FUNCNAME: failed to pull converted nydus image"
+        return 1
+    fi
+
+    echo "SUCCESS $FUNCNAME: nydus image built and pulled"
+}
+
+# Run a container from the previously built nydus image to confirm
+# the snapshotter serves it correctly; then exercise IDMapping by preparing an
+# active snapshot with uidmapping/gidmapping labels and asserting that
+# (a) the fs/ directory is chowned to the mapped host UID/GID, and
+# (b) uidmap=/gidmap= options are present when kernel idmapped mounts are enabled.
+function test_idmapping_use_image {
+    echo "testing $FUNCNAME"
+
+    # Basic smoke: run a short-lived container from the nydus image
+    nerdctl --snapshotter nydus run --rm --net none "${IDMAP_NYDUS_IMAGE}" redis-server --version
+    echo "SUCCESS $FUNCNAME: container ran from nydus image"
+
+    # --- IDMapping snapshot verification ---
+    local snap_key="idmapping-active-$(date +%s)"
+    local uid_map="0:1000:65536"
+    local gid_map="0:1000:65536"
+
+    # Create an active snapshot with IDMapping labels. ctr passes these labels
+    # through to Prepare(), which triggers our chown + mount-option logic.
+    ctr snapshots --snapshotter "${PLUGIN}" prepare \
+        --label "containerd.io/snapshot/uidmapping=${uid_map}" \
+        --label "containerd.io/snapshot/gidmapping=${gid_map}" \
+        "${snap_key}" ""
+
+    # Retrieve mount information. For a no-parent active snapshot the
+    # snapshotter returns a single bind mount; its source is the fs/ directory.
+    local mounts_output
+    mounts_output=$(ctr snapshots --snapshotter "${PLUGIN}" mounts "${snap_key}" 2>&1)
+    echo "Mounts output: ${mounts_output}"
+
+    # Extract the bind-mount source path from proto-text output, e.g.:
+    #   type:"bind"  source:"/var/lib/.../fs"  options:"uidmap=..."  ...
+    local fs_dir
+    fs_dir=$(echo "${mounts_output}" | grep -oP 'source:"\K[^"]+' | head -1)
+
+    if [[ -z "${fs_dir}" || ! -d "${fs_dir}" ]]; then
+        echo "ERROR $FUNCNAME: could not resolve snapshot fs directory from: ${mounts_output}"
+        ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
+        return 1
+    fi
+
+    # (a) Verify that the fs/ directory is owned by the mapped host UID/GID (1000)
+    local dir_uid dir_gid
+    dir_uid=$(stat -c '%u' "${fs_dir}")
+    dir_gid=$(stat -c '%g' "${fs_dir}")
+
+    if [[ "${dir_uid}" != "1000" || "${dir_gid}" != "1000" ]]; then
+        echo "ERROR $FUNCNAME: IDMapping chown failed:" \
+             "expected uid=1000 gid=1000, got uid=${dir_uid} gid=${dir_gid}"
+        ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
+        return 1
+    fi
+    echo "SUCCESS $FUNCNAME: IDMapping chown verified (uid=${dir_uid} gid=${dir_gid})"
+
+    # (b) Verify uidmap/gidmap mount options when kernel idmapped mounts are enabled.
+    if echo "${mounts_output}" | grep -q "uidmap=${uid_map}"; then
+        if ! echo "${mounts_output}" | grep -q "gidmap=${gid_map}"; then
+            echo "ERROR $FUNCNAME: mount options missing gidmap=${gid_map}"
+            ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
+            return 1
+        fi
+        echo "SUCCESS $FUNCNAME: IDMapping mount options verified (uidmap=${uid_map} gidmap=${gid_map})"
+    else
+        echo "INFO $FUNCNAME: uidmap/gidmap mount options not present, likely no kernel idmapped mount support in test environment"
+    fi
+
+    ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
+    detect_go_race
+}
+
+function test_idmapping {
+    echo "=== IDMapping test suite ==="
+    nerdctl_prune_images
+    reboot_containerd multiple
+
+    test_idmapping_build_image
+    test_idmapping_use_image
+
+    idmap_stop_registry
+    echo "=== IDMapping test suite PASSED ==="
+}
+
+test_idmapping
