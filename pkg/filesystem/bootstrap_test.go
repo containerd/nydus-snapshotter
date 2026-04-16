@@ -52,7 +52,12 @@ func TestWaitForReadyBootstrapWaitsForStableBlobMeta(t *testing.T) {
 
 	state, err := validateBootstrapAndBlobMeta(bootstrap)
 	require.NoError(t, err)
-	require.Equal(t, "bootstrap=8192;blobmeta=a.blob.meta:3", state)
+	require.Equal(t, bootstrapState{
+		BootstrapSize: 8192,
+		BlobMetaFiles: []blobMetaState{
+			{Name: "a.blob.meta", Size: 3},
+		},
+	}, state)
 }
 
 func TestWaitForReadyBootstrapRejectsStableMisalignedV6(t *testing.T) {
@@ -105,7 +110,10 @@ func TestValidateBlobMetaFilesReturnsSortedState(t *testing.T) {
 
 	state, err := validateBlobMetaFiles(bootstrap)
 	require.NoError(t, err)
-	require.Equal(t, "blobmeta=a.blob.meta:1,z.blob.meta:2", state)
+	require.Equal(t, []blobMetaState{
+		{Name: "a.blob.meta", Size: 1},
+		{Name: "z.blob.meta", Size: 2},
+	}, state)
 }
 
 func TestValidateBlobMetaFilesRejectsEmptyFile(t *testing.T) {
@@ -128,7 +136,12 @@ func TestValidateBootstrapAndBlobMetaReturnsCombinedState(t *testing.T) {
 
 	state, err := validateBootstrapAndBlobMeta(bootstrap)
 	require.NoError(t, err)
-	require.Equal(t, "bootstrap=8192;blobmeta=layer.blob.meta:4", state)
+	require.Equal(t, bootstrapState{
+		BootstrapSize: 8192,
+		BlobMetaFiles: []blobMetaState{
+			{Name: "layer.blob.meta", Size: 4},
+		},
+	}, state)
 }
 
 func TestDetectV6BlockSize(t *testing.T) {
@@ -153,6 +166,43 @@ func TestDetectV6BlockSizeRejectsShortHeader(t *testing.T) {
 	require.Contains(t, err.Error(), "header is too small")
 }
 
+func TestBootstrapStateEqual(t *testing.T) {
+	a := bootstrapState{
+		BootstrapSize: 8192,
+		BlobMetaFiles: []blobMetaState{
+			{Name: "a.blob.meta", Size: 1},
+			{Name: "b.blob.meta", Size: 2},
+		},
+	}
+
+	b := bootstrapState{
+		BootstrapSize: 8192,
+		BlobMetaFiles: []blobMetaState{
+			{Name: "a.blob.meta", Size: 1},
+			{Name: "b.blob.meta", Size: 2},
+		},
+	}
+
+	c := bootstrapState{
+		BootstrapSize: 8193,
+		BlobMetaFiles: []blobMetaState{
+			{Name: "a.blob.meta", Size: 1},
+			{Name: "b.blob.meta", Size: 2},
+		},
+	}
+
+	d := bootstrapState{
+		BootstrapSize: 8192,
+		BlobMetaFiles: []blobMetaState{
+			{Name: "a.blob.meta", Size: 1},
+		},
+	}
+
+	require.True(t, a.Equal(b))
+	require.False(t, a.Equal(c))
+	require.False(t, a.Equal(d))
+}
+
 func writeFakeV5Bootstrap(path string, size int) error {
 	buf := make([]byte, size)
 	binary.LittleEndian.PutUint32(buf[0:4], layout.RafsV5SuperMagic)
@@ -162,7 +212,10 @@ func writeFakeV5Bootstrap(path string, size int) error {
 
 func writeFakeV6Bootstrap(path string, size int, blockBits byte) error {
 	buf := make([]byte, size)
-	binary.LittleEndian.PutUint32(buf[layout.RafsV6SuperBlockOffset:layout.RafsV6SuperBlockOffset+4], layout.RafsV6SuperMagic)
+	binary.LittleEndian.PutUint32(
+		buf[layout.RafsV6SuperBlockOffset:layout.RafsV6SuperBlockOffset+4],
+		layout.RafsV6SuperMagic,
+	)
 	buf[v6BlockBitsOffset] = blockBits
 	return os.WriteFile(path, buf, 0644)
 }

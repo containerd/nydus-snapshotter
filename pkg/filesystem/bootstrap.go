@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/containerd/log"
@@ -30,57 +28,89 @@ const (
 	v6BlockBits4096   = 12
 )
 
+type blobMetaState struct {
+	Name string
+	Size int64
+}
+
+type bootstrapState struct {
+	BootstrapSize int64
+	BlobMetaFiles []blobMetaState
+}
+
+func (s bootstrapState) Equal(previous bootstrapState) bool {
+	if s.BootstrapSize != previous.BootstrapSize {
+		return false
+	}
+	if len(s.BlobMetaFiles) != len(previous.BlobMetaFiles) {
+		return false
+	}
+	for i := range s.BlobMetaFiles {
+		if s.BlobMetaFiles[i] != previous.BlobMetaFiles[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func waitForReadyBootstrap(path string) error {
 	return waitForReadyBootstrapWithRetry(path, defaultBootstrapReadyAttempts, defaultBootstrapReadyInterval)
 }
 
+// Wait for the bootstrap and its related blob meta files to become valid and stable
 func waitForReadyBootstrapWithRetry(path string, attempts int, interval time.Duration) error {
 	var (
-		lastState *string
+		lastState bootstrapState
+		haveState bool
 	)
 
-	err := retry.Do(func() error {
-		state, err := validateBootstrapAndBlobMeta(path)
-		if err != nil {
-			return err
-		}
+	err := retry.Do(
+		func() error {
+			state, err := validateBootstrapAndBlobMeta(path)
+			if err != nil {
+				return err
+			}
 
-		// Require two consecutive "ready" states to reading unready bootstrap
-		if lastState == nil || state != *lastState {
-			lastState = &state
-			return fmt.Errorf("bootstrap is not ready, current state: %s", state)
-		}
+			// Require two consecutive "ready" states to avoid reading partially-written bootstrap
+			if !haveState || !state.Equal(lastState) {
+				lastState = state
+				haveState = true
+				return fmt.Errorf("bootstrap is not ready, current state: %v", state)
+			}
 
-		return nil
-	},
+			return nil
+		},
 		retry.Attempts(uint(attempts)),
 		retry.Delay(interval),
 		retry.DelayType(retry.FixedDelay),
 		retry.LastErrorOnly(true),
 		retry.OnRetry(func(n uint, err error) {
-			log.L.Warnf("bootstrap is not ready, retrying... attempt: %d, error: %v", n+1, err)
+			log.L.Warnf("bootstrap is not ready, retrying... attempt=%d/%d error=%v", n+1, attempts, err)
 		}),
 	)
 
 	if err != nil {
-		return fmt.Errorf("bootstrap is not ready after %d attempts, last error: %w", attempts, err)
+		return fmt.Errorf("bootstrap is not ready after %d attempts: %w", attempts, err)
 	}
 
 	return nil
 }
 
-func validateBootstrapAndBlobMeta(path string) (string, error) {
+func validateBootstrapAndBlobMeta(path string) (bootstrapState, error) {
 	bootstrapSize, err := validateBootstrap(path)
 	if err != nil {
-		return "", err
+		return bootstrapState{}, err
 	}
 
-	blobMetaState, err := validateBlobMetaFiles(path)
+	blobMetaFiles, err := validateBlobMetaFiles(path)
 	if err != nil {
-		return "", err
+		return bootstrapState{}, err
 	}
 
-	return fmt.Sprintf("bootstrap=%d;%s", bootstrapSize, blobMetaState), nil
+	return bootstrapState{
+		BootstrapSize: bootstrapSize,
+		BlobMetaFiles: blobMetaFiles,
+	}, nil
 }
 
 func validateBootstrap(path string) (int64, error) {
@@ -130,58 +160,54 @@ func validateBootstrap(path string) (int64, error) {
 	return size, nil
 }
 
-func validateBlobMetaFiles(bootstrapPath string) (string, error) {
+func validateBlobMetaFiles(bootstrapPath string) ([]blobMetaState, error) {
 	pattern := filepath.Join(filepath.Dir(bootstrapPath), "*.blob.meta")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	sort.Strings(matches)
 
 	if len(matches) == 0 {
-		return "blobmeta=none", nil
+		return nil, nil
 	}
 
-	var b strings.Builder
-	b.WriteString("blobmeta=")
-
-	for i, p := range matches {
+	files := make([]blobMetaState, 0, len(matches))
+	for _, p := range matches {
 		file, err := os.Open(p)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		info, err := file.Stat()
 		if err != nil {
 			file.Close()
-			return "", err
+			return nil, err
 		}
 		if !info.Mode().IsRegular() {
 			file.Close()
-			return "", fmt.Errorf("blob.meta %s is not a regular file", p)
+			return nil, fmt.Errorf("blob.meta %s is not a regular file", p)
 		}
 		if info.Size() <= 0 {
 			file.Close()
-			return "", fmt.Errorf("blob.meta %s is empty", p)
+			return nil, fmt.Errorf("blob.meta %s is empty", p)
 		}
 
 		var buf [1]byte
 		if _, err := io.ReadFull(file, buf[:]); err != nil {
 			file.Close()
-			return "", fmt.Errorf("read blob.meta %s: %w", p, err)
+			return nil, fmt.Errorf("read blob.meta %s: %w", p, err)
 		}
 		file.Close()
 
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(filepath.Base(p))
-		b.WriteByte(':')
-		b.WriteString(strconv.FormatInt(info.Size(), 10))
+		files = append(files, blobMetaState{
+			Name: filepath.Base(p),
+			Size: info.Size(),
+		})
 	}
 
-	return b.String(), nil
+	return files, nil
 }
 
 func detectV6BlockSize(head []byte) (int, error) {
