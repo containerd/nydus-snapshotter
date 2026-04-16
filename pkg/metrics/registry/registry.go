@@ -24,6 +24,7 @@ func init() {
 		data.NydusdEventCount,
 		data.NydusdCount,
 		data.NydusdRSS,
+		data.NydusdImageInfo,
 		data.SnapshotEventElapsedHists,
 		data.CacheUsage,
 		data.CPUUsage,

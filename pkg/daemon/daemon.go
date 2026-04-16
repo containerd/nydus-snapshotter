@@ -28,6 +28,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/collector"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/containerd/nydus-snapshotter/pkg/supervisor"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/erofs"
@@ -150,6 +151,7 @@ func (d *Daemon) AddRafsInstance(r *rafs.Rafs) {
 	d.RafsCache.Add(r)
 	d.IncRef()
 	r.DaemonID = d.ID()
+	collector.NewDaemonImageCollector(d.ID(), r.ImageID).Collect()
 }
 
 func (d *Daemon) UpdateRafsInstance(r *rafs.Rafs) {
@@ -157,6 +159,9 @@ func (d *Daemon) UpdateRafsInstance(r *rafs.Rafs) {
 }
 
 func (d *Daemon) RemoveRafsInstance(snapshotID string) {
+	if r := d.RafsCache.Get(snapshotID); r != nil {
+		collector.NewDaemonImageCollector(d.ID(), r.ImageID).Delete()
+	}
 	d.RafsCache.Remove(snapshotID)
 	d.DecRef()
 }

@@ -26,6 +26,11 @@ type DaemonResourceCollector struct {
 	Value    float64
 }
 
+type DaemonImageCollector struct {
+	DaemonID string
+	ImageRef string
+}
+
 func (d *DaemonEventCollector) Collect() {
 	data.NydusdEventCount.WithLabelValues(string(d.event)).Inc()
 }
@@ -40,4 +45,12 @@ func (d *DaemonInfoCollector) Collect() {
 
 func (d *DaemonResourceCollector) Collect() {
 	data.NydusdRSS.WithLabelValues(d.DaemonID).Set(d.Value)
+}
+
+func (d *DaemonImageCollector) Collect() {
+	data.NydusdImageInfo.WithLabelValues(d.DaemonID, d.ImageRef).Set(1)
+}
+
+func (d *DaemonImageCollector) Delete() {
+	data.NydusdImageInfo.DeleteLabelValues(d.DaemonID, d.ImageRef)
 }

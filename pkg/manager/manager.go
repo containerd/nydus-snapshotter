@@ -255,6 +255,12 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 
 	defer m.cleanUpDaemonResources(d)
 
+	// Clean up any remaining RAFS instances that were not individually
+	// unmounted (e.g., during forced shutdown or error recovery paths).
+	for _, r := range d.RafsCache.List() {
+		d.RemoveRafsInstance(r.SnapshotID)
+	}
+
 	if err := d.UmountRafsInstances(); err != nil {
 		log.L.Errorf("Failed to detach all fs instances from daemon %s, %s", d.ID(), err)
 	}
