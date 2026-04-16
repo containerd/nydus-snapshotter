@@ -54,7 +54,7 @@ Add Nydus as a proxy plugin into containerd's configuration file which may be lo
   [proxy_plugins.nydus]
     type = "snapshot"
     address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
-    # Needed by containerd/k3s idmap(userns-remap) flow to avoid fallback remap snapshots.
+    # Needed by containerd/k8s idmap(userns-remap) flow to avoid fallback remap snapshots.
     capabilities = ["remap-ids"]
 ```
 

@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -873,41 +872,35 @@ func (o *snapshotter) createSnapshotWithRecovery(ctx context.Context, kind snaps
 		return nil, storage.Snapshot{}, errors.Wrap(err, "create snapshot")
 	}
 
-	// Determine UID/GID for the new snapshot's fs directory. With IDMapping labels
-	// chown to the mapped host UID/GID; otherwise inherit from the parent snapshot.
-	mappedUID, mappedGID := -1, -1
-	if v, ok := base.Labels[label.LabelSnapshotUIDMapping]; ok {
-		uid, err := parseIDMappingHostID(v)
-		if err != nil {
-			return nil, storage.Snapshot{}, errors.Wrapf(err, "invalid UID mapping %q", v)
+	// Chown the snapshot's fs directory: when IDMapping labels are present,
+	// use the mapped host UID/GID; otherwise inherit from the parent snapshot.
+	uidMapping, hasUID := base.Labels[label.LabelSnapshotUIDMapping]
+	gidMapping, hasGID := base.Labels[label.LabelSnapshotGIDMapping]
+	if hasUID || hasGID {
+		mappedUID, mappedGID := -1, -1
+		if hasUID {
+			uid, err := parseIDMappingHostID(uidMapping)
+			if err != nil {
+				return nil, storage.Snapshot{}, errors.Wrapf(err, "invalid UID mapping %q", uidMapping)
+			}
+			mappedUID = uid
 		}
-		mappedUID = uid
-	}
-	if v, ok := base.Labels[label.LabelSnapshotGIDMapping]; ok {
-		gid, err := parseIDMappingHostID(v)
-		if err != nil {
-			return nil, storage.Snapshot{}, errors.Wrapf(err, "invalid GID mapping %q", v)
+		if hasGID {
+			gid, err := parseIDMappingHostID(gidMapping)
+			if err != nil {
+				return nil, storage.Snapshot{}, errors.Wrapf(err, "invalid GID mapping %q", gidMapping)
+			}
+			mappedGID = gid
 		}
-		mappedGID = gid
-	}
-	if (mappedUID == -1 || mappedGID == -1) && len(s.ParentIDs) > 0 {
+		if err := os.Lchown(filepath.Join(td, "fs"), mappedUID, mappedGID); err != nil {
+			return nil, storage.Snapshot{}, errors.Wrap(err, "perform chown")
+		}
+	} else if len(s.ParentIDs) > 0 {
 		st, err := os.Stat(o.upperPath(s.ParentIDs[0]))
 		if err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "stat parent")
 		}
-		stat, ok := st.Sys().(*syscall.Stat_t)
-		if !ok {
-			return nil, storage.Snapshot{}, errors.New("incompatible types after stat call: *syscall.Stat_t expected")
-		}
-		if mappedUID == -1 {
-			mappedUID = int(stat.Uid)
-		}
-		if mappedGID == -1 {
-			mappedGID = int(stat.Gid)
-		}
-	}
-	if mappedUID != -1 && mappedGID != -1 {
-		if err := os.Lchown(filepath.Join(td, "fs"), mappedUID, mappedGID); err != nil {
+		if err := lchown(filepath.Join(td, "fs"), st); err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "perform chown")
 		}
 	}
@@ -1064,6 +1057,17 @@ func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID st
 	return nil
 }
 
+func bindMount(source, roFlag string, extraOpts ...string) []mount.Mount {
+	opts := append(append([]string{}, extraOpts...), roFlag, "rbind")
+	return []mount.Mount{
+		{
+			Type:    "bind",
+			Source:  source,
+			Options: opts,
+		},
+	}
+}
+
 func overlayMount(options []string) []mount.Mount {
 	return []mount.Mount{
 		{
@@ -1213,8 +1217,7 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 		if s.Kind == snapshots.KindView {
 			roFlag = "ro"
 		}
-		opts := append(append([]string{}, idmapOptions...), roFlag, "rbind")
-		return []mount.Mount{{Type: "bind", Source: o.upperPath(s.ID), Options: opts}}, nil
+		return bindMount(o.upperPath(s.ID), roFlag, idmapOptions...), nil
 	}
 
 	var options []string
@@ -1232,8 +1235,7 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 		parentPath := o.upperPath(s.ParentIDs[0])
 		// if we only have one parent then just return a bind mount
 		log.G(ctx).Debugf("bind mount on %s", parentPath)
-		opts := append(append([]string{}, idmapOptions...), "ro", "rbind")
-		return []mount.Mount{{Type: "bind", Source: parentPath, Options: opts}}, nil
+		return bindMount(parentPath, "ro", idmapOptions...), nil
 	}
 
 	parentPaths := make([]string, len(s.ParentIDs))
