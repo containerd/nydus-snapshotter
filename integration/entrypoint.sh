@@ -892,7 +892,7 @@ function test_idmapping_use_image {
     echo "Mounts output: ${mounts_output}"
 
     local fs_dir
-    fs_dir=$(echo "${mounts_output}" | jq -r '.[0].source // empty')
+    fs_dir=$(echo "${mounts_output}" | jq -r '.[0].source // .[0].Source // empty')
 
     if [[ -z "${fs_dir}" || ! -d "${fs_dir}" ]]; then
         echo "ERROR $FUNCNAME: could not resolve snapshot fs directory from: ${mounts_output}"
@@ -914,8 +914,8 @@ function test_idmapping_use_image {
     echo "SUCCESS $FUNCNAME: IDMapping chown verified (uid=${dir_uid} gid=${dir_gid})"
 
     # (b) Verify uidmap/gidmap mount options when kernel idmapped mounts are enabled.
-    if echo "${mounts_output}" | jq -e --arg uid "uidmap=${uid_map}" 'any(.[]?.options[]?; . == $uid)' >/dev/null; then
-        if ! echo "${mounts_output}" | jq -e --arg gid "gidmap=${gid_map}" 'any(.[]?.options[]?; . == $gid)' >/dev/null; then
+    if echo "${mounts_output}" | jq -e --arg uid "uidmap=${uid_map}" 'any(.[]?; any((.options // .Options // [])[]?; . == $uid))' >/dev/null; then
+        if ! echo "${mounts_output}" | jq -e --arg gid "gidmap=${gid_map}" 'any(.[]?; any((.options // .Options // [])[]?; . == $gid))' >/dev/null; then
             echo "ERROR $FUNCNAME: mount options missing gidmap=${gid_map}"
             ctr snapshots --snapshotter "${PLUGIN}" rm "${snap_key}" || true
             return 1

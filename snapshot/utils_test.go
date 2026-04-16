@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025. Nydus Developers. All rights reserved.
+ * Copyright (c) 2026. Nydus Developers. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
