@@ -16,7 +16,8 @@ import (
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
+	tmtypes "github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/containerd/containerd/v2/core/content"
@@ -156,14 +157,14 @@ func (b *S3Backend) Push(ctx context.Context, cs content.Store, desc ocispec.Des
 		return errors.Wrap(err, "failed to create s3 client")
 	}
 
-	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
-		u.PartSize = MultipartChunkSize
+	tm := transfermanager.New(client, func(o *transfermanager.Options) {
+		o.PartSizeBytes = MultipartChunkSize
 	})
-	if _, err := uploader.Upload(ctx, &s3.PutObjectInput{
+	if _, err := tm.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket:            aws.String(b.bucketName),
 		Key:               aws.String(blobObjectKey),
 		Body:              reader,
-		ChecksumAlgorithm: b.checksumAlgorithm,
+		ChecksumAlgorithm: tmtypes.ChecksumAlgorithm(b.checksumAlgorithm),
 	}); err != nil {
 		return errors.Wrap(err, "push blob to s3 backend")
 	}
