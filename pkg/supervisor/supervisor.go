@@ -7,6 +7,7 @@
 package supervisor
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -21,7 +22,6 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 
-	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
