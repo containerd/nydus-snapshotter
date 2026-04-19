@@ -262,7 +262,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	if config.GetFsDriver() == config.FsDriverFile {
-		filefsMgr := filefs.NewManager(cacheConfig.CacheDir)
+		filefsMgr := filefs.NewManager(cacheConfig.CacheDir, skipSSLVerify)
 		opts = append(opts, filesystem.WithFilefsManager(filefsMgr))
 	}
 

@@ -23,10 +23,18 @@ import (
 
 // Manager manages file-backed EROFS mounts with fanotify on-demand loading.
 type Manager struct {
-	mu           sync.Mutex
-	snapshots    map[string]*snapshotState
-	cacheDirPath string
-	fetcher      *DataFetcher
+	mu               sync.Mutex
+	snapshots        map[string]*snapshotState
+	snapshotContexts map[string]*snapshotContext // per-snapshot image ref and labels
+	cacheDirPath     string
+	insecure         bool
+	fetcher          *DataFetcher
+}
+
+// snapshotContext holds per-snapshot metadata needed for on-demand blob fetching.
+type snapshotContext struct {
+	imageRef string
+	labels   map[string]string
 }
 
 type snapshotState struct {
@@ -38,11 +46,13 @@ type snapshotState struct {
 }
 
 // NewManager creates a new file-backed EROFS mount manager.
-func NewManager(cacheDirPath string) *Manager {
+func NewManager(cacheDirPath string, insecure bool) *Manager {
 	return &Manager{
-		snapshots:    make(map[string]*snapshotState),
-		cacheDirPath: cacheDirPath,
-		fetcher:      NewDataFetcher(cacheDirPath),
+		snapshots:        make(map[string]*snapshotState),
+		snapshotContexts: make(map[string]*snapshotContext),
+		cacheDirPath:     cacheDirPath,
+		insecure:         insecure,
+		fetcher:          NewDataFetcher(cacheDirPath, insecure),
 	}
 }
 
@@ -84,12 +94,30 @@ func (m *Manager) MountFileErofs(snapshotID string, r *rafs.Rafs) error {
 		return errors.Wrapf(err, "setup fanotify for %s", mountPoint)
 	}
 
+	// Register per-snapshot context for the fetcher to use during on-demand loading.
+	sctx := &snapshotContext{
+		imageRef: r.ImageID,
+		labels:   r.Annotations,
+	}
+
 	m.mu.Lock()
 	m.snapshots[snapshotID] = st
+	m.snapshotContexts[snapshotID] = sctx
 	m.mu.Unlock()
 
 	r.SetMountpoint(mountPoint)
 	return nil
+}
+
+// GetSnapshotContext returns the image reference for a snapshot, used by the
+// fetcher to obtain auth credentials for remote blob downloads.
+func (m *Manager) GetSnapshotContext(snapshotID string) (imageRef string, labels map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sctx, ok := m.snapshotContexts[snapshotID]; ok {
+		return sctx.imageRef, sctx.labels
+	}
+	return "", nil
 }
 
 // UmountFileErofs unmounts a file-backed EROFS mount and stops the fanotify listener.
@@ -101,6 +129,7 @@ func (m *Manager) UmountFileErofs(snapshotID string) error {
 		return nil
 	}
 	delete(m.snapshots, snapshotID)
+	delete(m.snapshotContexts, snapshotID)
 	m.mu.Unlock()
 
 	// Signal the fanotify goroutine to stop.
