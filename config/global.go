@@ -188,6 +188,11 @@ func ProcessConfigurations(c *SnapshotterConfig) error {
 		m = DaemonModeShared
 	}
 
+	if c.DaemonConfig.FsDriver == FsDriverFile && m != DaemonModeNone {
+		log.L.Infof("file driver only supports 'none' mode, override daemon mode from '%s' to 'none'", m)
+		m = DaemonModeNone
+	}
+
 	globalConfig.DaemonMode = m
 
 	return nil

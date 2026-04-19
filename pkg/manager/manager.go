@@ -174,6 +174,8 @@ func (m *Manager) recoverRafsInstances(ctx context.Context,
 			rafs.RafsGlobalCache.Add(r)
 		} else if r.GetFsDriver() == config.FsDriverBlockdev {
 			rafs.RafsGlobalCache.Add(r)
+		} else if r.GetFsDriver() == config.FsDriverFile {
+			rafs.RafsGlobalCache.Add(r)
 		}
 
 		return nil

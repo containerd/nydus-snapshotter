@@ -29,6 +29,8 @@ const (
 	FsDriverNodev string = "nodev"
 	// Relay layer content download operation to other agents.
 	FsDriverProxy string = "proxy"
+	// Mount RAFS filesystem by using EROFS file-backed mount with fanotify on-demand loading.
+	FsDriverFile string = "file"
 )
 
 const (

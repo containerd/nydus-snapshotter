@@ -31,6 +31,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
 	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/filefs"
 	"github.com/containerd/nydus-snapshotter/pkg/index"
 	mgr "github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/metrics"
@@ -182,6 +183,23 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		fsManagers = append(fsManagers, proxyManager)
 	}
 
+	if config.GetFsDriver() == config.FsDriverFile {
+		fileManager, err := mgr.NewManager(mgr.Opt{
+			NydusdBinaryPath: "",
+			Database:         db,
+			CacheDir:         cfg.CacheManagerConfig.CacheDir,
+			RootDir:          cfg.Root,
+			RecoverPolicy:    rp,
+			FsDriver:         config.FsDriverFile,
+			DaemonConfig:     nil,
+			CgroupMgr:        nil,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "create file driver manager")
+		}
+		fsManagers = append(fsManagers, fileManager)
+	}
+
 	metricServer, err := metrics.NewServer(
 		ctx,
 		metrics.WithProcessManagers(fsManagers),
@@ -241,6 +259,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			cacheConfig.CacheDir, cfg.DaemonConfig.NydusImagePath,
 			int64(cfg.Experimental.TarfsConfig.MaxConcurrentProc))
 		opts = append(opts, filesystem.WithTarfsManager(tarfsMgr))
+	}
+
+	if config.GetFsDriver() == config.FsDriverFile {
+		filefsMgr := filefs.NewManager(cacheConfig.CacheDir)
+		opts = append(opts, filesystem.WithFilefsManager(filefsMgr))
 	}
 
 	nydusFs, err := filesystem.NewFileSystem(ctx, opts...)

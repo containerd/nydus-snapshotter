@@ -33,6 +33,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/daemon"
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
+	"github.com/containerd/nydus-snapshotter/pkg/filefs"
 	"github.com/containerd/nydus-snapshotter/pkg/index"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
@@ -53,6 +54,7 @@ type Filesystem struct {
 	indexMgr            *index.Manager
 	stargzResolver      *stargz.Resolver
 	tarfsMgr            *tarfs.Manager
+	filefsMgr           *filefs.Manager
 	verifier            *signature.Verifier
 	nydusdBinaryPath    string
 	rootMountpoint      string
@@ -457,6 +459,11 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		if err != nil {
 			err = errors.Wrapf(err, "mount tarfs for snapshot %s", snapshotID)
 		}
+	case config.FsDriverFile:
+		err = fs.filefsMgr.MountFileErofs(snapshotID, rafs)
+		if err != nil {
+			err = errors.Wrapf(err, "file-backed mount erofs for snapshot %s", snapshotID)
+		}
 	case config.FsDriverNodev:
 		// Nothing to do
 	case config.FsDriverProxy:
@@ -580,6 +587,13 @@ func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
 		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
 			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
 		}
+	case config.FsDriverFile:
+		if err := fs.filefsMgr.UmountFileErofs(snapshotID); err != nil {
+			return errors.Wrapf(err, "umount file-backed erofs on snapshot %s", snapshotID)
+		}
+		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
+			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
+		}
 	case config.FsDriverNodev, config.FsDriverProxy:
 		// For proxy mode, we still need to clean up the DB entry to prevent
 		// "already exists" errors on subsequent Mount() calls.
@@ -668,6 +682,11 @@ func (fs *Filesystem) Teardown(ctx context.Context) error {
 			// } else if fsManager.FsDriver == config.FsDriverBlockdev {
 			// TODO: support tarfs
 		}
+	}
+
+	// Tear down all file-backed EROFS mounts.
+	if fs.filefsMgr != nil {
+		fs.filefsMgr.TeardownAll()
 	}
 
 	return nil

@@ -9,6 +9,7 @@ package filesystem
 
 import (
 	"github.com/containerd/nydus-snapshotter/pkg/cache"
+	"github.com/containerd/nydus-snapshotter/pkg/filefs"
 	"github.com/containerd/nydus-snapshotter/pkg/index"
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	"github.com/containerd/nydus-snapshotter/pkg/referrer"
@@ -78,6 +79,16 @@ func WithTarfsManager(tm *tarfs.Manager) NewFSOpt {
 			return errors.New("tarfs manager cannot be nil")
 		}
 		fs.tarfsMgr = tm
+		return nil
+	}
+}
+
+func WithFilefsManager(fm *filefs.Manager) NewFSOpt {
+	return func(fs *Filesystem) error {
+		if fm == nil {
+			return errors.New("filefs manager cannot be nil")
+		}
+		fs.filefsMgr = fm
 		return nil
 	}
 }

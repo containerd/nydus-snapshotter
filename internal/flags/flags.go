@@ -82,7 +82,7 @@ func buildFlags(args *Args) []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "fs-driver",
-			Usage:       "driver to mount RAFS filesystem, possible values: \"fusedev\", \"fscache\"",
+			Usage:       "driver to mount RAFS filesystem, possible values: \"fusedev\", \"fscache\", \"file\"",
 			Destination: &args.FsDriver,
 			DefaultText: constant.FsDriverFusedev,
 		},

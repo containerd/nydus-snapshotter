@@ -116,6 +116,7 @@ const (
 	FsDriverFscache  string = constant.FsDriverFscache
 	FsDriverNodev    string = constant.FsDriverNodev
 	FsDriverProxy    string = constant.FsDriverProxy
+	FsDriverFile     string = constant.FsDriverFile
 )
 
 const (
@@ -328,7 +329,7 @@ func ValidateConfig(c *SnapshotterConfig) error {
 
 	if c.DaemonConfig.FsDriver != FsDriverFscache && c.DaemonConfig.FsDriver != FsDriverFusedev &&
 		c.DaemonConfig.FsDriver != FsDriverBlockdev && c.DaemonConfig.FsDriver != FsDriverNodev &&
-		c.DaemonConfig.FsDriver != FsDriverProxy {
+		c.DaemonConfig.FsDriver != FsDriverProxy && c.DaemonConfig.FsDriver != FsDriverFile {
 		return errors.Errorf("invalid filesystem driver %q", c.DaemonConfig.FsDriver)
 	}
 	if _, err := ParseRecoverPolicy(c.DaemonConfig.RecoverPolicy); err != nil {
