@@ -312,7 +312,9 @@ func (c *nydusdClient) GetInflightMetrics() (*types.InflightMetrics, error) {
 func (c *nydusdClient) GetCacheMetrics(sid string) (*types.CacheMetrics, error) {
 	query := query{}
 	if sid != "" {
-		query.Add("id", "/"+sid)
+		// nydusd's blobcache metrics are keyed by the raw fscache ID (a digest),
+		// unlike /api/v1/metrics which uses a "/<mountpoint>" path.
+		query.Add("id", sid)
 	}
 
 	url := c.url(endpointCacheMetrics, query)
