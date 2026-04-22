@@ -34,4 +34,11 @@ var (
 		[]string{daemonIDLabel},
 		ttl.DefaultTTL,
 	)
+	NydusdImageInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "nydusd_image_info",
+			Help: "Mapping of nydus daemon to served image references.",
+		},
+		[]string{daemonIDLabel, imageRefLabel},
+	)
 )

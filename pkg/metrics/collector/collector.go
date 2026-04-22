@@ -45,6 +45,10 @@ func NewDaemonInfoCollector(version *types.BuildTimeInfo, value float64) *Daemon
 	return &DaemonInfoCollector{version, value}
 }
 
+func NewDaemonImageCollector(daemonID, imageRef string) *DaemonImageCollector {
+	return &DaemonImageCollector{DaemonID: daemonID, ImageRef: imageRef}
+}
+
 func NewSnapshotterMetricsCollector(ctx context.Context, cacheDir string, pid int) (*SnapshotterMetricsCollector, error) {
 	currentStat, err := tool.GetProcessStat(pid)
 	if err != nil {
