@@ -118,7 +118,7 @@ func TestLoadMirrorConfig(t *testing.T) {
 
 	mirrors, _, err = LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	require.NoError(t, err)
-	require.Nil(t, mirrors)
+	require.Equal(t, len(mirrors), 0)
 
 	buf1 := []byte(`server = "https://default-docker.hub.com"
 	[host]
