@@ -38,25 +38,6 @@ func TestLoadMirrorConfigCACerts(t *testing.T) {
 		require.Equal(t, []string{caPath}, caCerts)
 	})
 
-	t.Run("single CA cert as relative path resolved against hosts dir", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		hostDir := filepath.Join(tmpDir, "certs.d", registryHost)
-		require.NoError(t, os.MkdirAll(hostDir, os.ModePerm))
-
-		caFile := "my-ca.pem"
-		require.NoError(t, os.WriteFile(filepath.Join(hostDir, caFile), []byte(""), 0600))
-
-		hosts := fmt.Sprintf(`
-[host."https://mirror.example.com"]
-  ca = %q
-`, caFile)
-		require.NoError(t, os.WriteFile(filepath.Join(hostDir, "hosts.toml"), []byte(hosts), 0600))
-
-		_, caCerts, err := LoadMirrorsConfig(filepath.Join(tmpDir, "certs.d"), registryHost)
-		require.NoError(t, err)
-		require.Equal(t, []string{filepath.Join(hostDir, caFile)}, caCerts)
-	})
-
 	t.Run("multiple CA certs as array", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		hostDir := filepath.Join(tmpDir, "certs.d", registryHost)

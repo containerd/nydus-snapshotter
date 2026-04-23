@@ -139,17 +139,8 @@ func getSortedHosts(root *toml.Tree) ([]string, error) {
 	return list, nil
 }
 
-// makeAbsPath resolves a relative path p against base directory base.
-// Mirrors containerd's unexported helper of the same name.
-func makeAbsPath(p, base string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
-	return filepath.Join(base, p)
-}
-
 // parseHostConfig returns the parsed host configuration, make sure the server is not null.
-func parseHostConfig(server string, config HostFileConfig, baseDir string) (hostConfig, error) {
+func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 	var (
 		result = hostConfig{}
 		err    error
@@ -186,11 +177,9 @@ func parseHostConfig(server string, config HostFileConfig, baseDir string) (host
 	if config.CACert != nil {
 		switch cert := config.CACert.(type) {
 		case string:
-			result.CACerts = []string{makeAbsPath(cert, baseDir)}
+			result.CACerts = []string{cert}
 		case []interface{}:
-			certs, err := makeStringSlice(cert, func(s string) string {
-				return makeAbsPath(s, baseDir)
-			})
+			certs, err := makeStringSlice(cert, nil)
 			if err != nil {
 				return hostConfig{}, fmt.Errorf("invalid type for ca: %w", err)
 			}
@@ -207,7 +196,7 @@ func parseHostConfig(server string, config HostFileConfig, baseDir string) (host
 	return result, nil
 }
 
-func parseHostsFile(b []byte, baseDir string) ([]hostConfig, error) {
+func parseHostsFile(b []byte) ([]hostConfig, error) {
 	tree, err := toml.LoadBytes(b)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TOML: %w", err)
@@ -234,7 +223,7 @@ func parseHostsFile(b []byte, baseDir string) ([]hostConfig, error) {
 	for _, host := range orderedHosts {
 		if host != "" {
 			config := c.HostConfigs[host]
-			parsed, err := parseHostConfig(host, config, baseDir)
+			parsed, err := parseHostConfig(host, config)
 			if err != nil {
 				return nil, err
 			}
@@ -254,7 +243,7 @@ func loadHostDir(hostsDir string) ([]hostConfig, error) {
 		return []hostConfig{}, nil
 	}
 
-	hosts, err := parseHostsFile(b, hostsDir)
+	hosts, err := parseHostsFile(b)
 	if err != nil {
 		return nil, err
 	}
