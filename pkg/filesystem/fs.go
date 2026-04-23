@@ -371,6 +371,9 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		if err != nil {
 			return errors.Wrapf(err, "find bootstrap file snapshot %s", snapshotID)
 		}
+		if err := waitForReadyBootstrap(bootstrap); err != nil {
+			return errors.Wrapf(err, "wait for bootstrap file snapshot %s", snapshotID)
+		}
 
 		// Nydusd uses cache manager's directory to store blob caches. So cache
 		// manager knows where to find those blobs.
