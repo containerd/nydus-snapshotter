@@ -20,6 +20,15 @@ import (
 	"github.com/pkg/errors"
 )
 
+type MirrorConfig struct {
+	Host                string
+	Headers             map[string]string
+	HealthCheckInterval int
+	FailureLimit        uint8
+	PingURL             string
+	CACerts             []string
+}
+
 // Copied from containerd, for compatibility with containerd's toml configuration file.
 type HostFileConfig struct {
 	Capabilities []string               `toml:"capabilities"`
@@ -36,9 +45,10 @@ type HostFileConfig struct {
 }
 
 type hostConfig struct {
-	Scheme string
-	Host   string
-	Header http.Header
+	Scheme  string
+	Host    string
+	Header  http.Header
+	CACerts []string
 
 	HealthCheckInterval int
 	FailureLimit        uint8
@@ -70,6 +80,7 @@ func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
 		parsedMirrors[i].HealthCheckInterval = host.HealthCheckInterval
 		parsedMirrors[i].FailureLimit = host.FailureLimit
 		parsedMirrors[i].PingURL = host.PingURL
+		parsedMirrors[i].CACerts = host.CACerts
 
 		if len(host.Header) > 0 {
 			mirrorHeader := make(map[string]string, len(host.Header))
@@ -138,8 +149,20 @@ func getSortedHosts(root *toml.Tree) ([]string, error) {
 	return list, nil
 }
 
+// makeAbsPath resolves p to an absolute path relative to base if not already absolute.
+// Mirrors the same helper in containerd's pkg/remote/remotes/docker/config/hosts.go,
+// which is unexported and cannot be reused directly.
+func makeAbsPath(p, base string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(base, p)
+}
+
 // parseHostConfig returns the parsed host configuration, make sure the server is not null.
-func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
+// The CACert parsing logic mirrors containerd's pkg/remote/remotes/docker/config/hosts.go
+// (parseHostConfig), which is unexported and cannot be reused directly.
+func parseHostConfig(server string, baseDir string, config HostFileConfig) (hostConfig, error) {
 	var (
 		result = hostConfig{}
 		err    error
@@ -173,6 +196,22 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 		result.Header = header
 	}
 
+	if config.CACert != nil {
+		switch cert := config.CACert.(type) {
+		case string:
+			result.CACerts = []string{makeAbsPath(cert, baseDir)}
+		case []interface{}:
+			result.CACerts, err = makeStringSlice(cert, func(p string) string {
+				return makeAbsPath(p, baseDir)
+			})
+			if err != nil {
+				return hostConfig{}, fmt.Errorf("invalid type in \"ca\": %w", err)
+			}
+		default:
+			return hostConfig{}, fmt.Errorf("invalid type %v for \"ca\"", cert)
+		}
+	}
+
 	result.HealthCheckInterval = config.HealthCheckInterval
 	result.FailureLimit = config.FailureLimit
 	result.PingURL = config.PingURL
@@ -180,7 +219,7 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 	return result, nil
 }
 
-func parseHostsFile(b []byte) ([]hostConfig, error) {
+func parseHostsFile(baseDir string, b []byte) ([]hostConfig, error) {
 	tree, err := toml.LoadBytes(b)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TOML: %w", err)
@@ -207,7 +246,7 @@ func parseHostsFile(b []byte) ([]hostConfig, error) {
 	for _, host := range orderedHosts {
 		if host != "" {
 			config := c.HostConfigs[host]
-			parsed, err := parseHostConfig(host, config)
+			parsed, err := parseHostConfig(host, baseDir, config)
 			if err != nil {
 				return nil, err
 			}
@@ -227,7 +266,7 @@ func loadHostDir(hostsDir string) ([]hostConfig, error) {
 		return []hostConfig{}, nil
 	}
 
-	hosts, err := parseHostsFile(b)
+	hosts, err := parseHostsFile(hostsDir, b)
 	if err != nil {
 		return nil, err
 	}

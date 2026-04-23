@@ -9,10 +9,15 @@ package daemonconfig
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/config"
@@ -35,7 +40,6 @@ type DaemonConfig interface {
 	// Provide auth
 	FillAuth(kc *auth.PassKeyChain)
 	StorageBackend() (StorageBackendType, *BackendConfig)
-	UpdateMirrors(mirrorsConfigDir, registryHost string) error
 	DumpString() (string, error)
 	DumpFile(path string) error
 }
@@ -58,14 +62,6 @@ func NewDaemonConfig(fsDriver, path string) (DaemonConfig, error) {
 	default:
 		return nil, errors.Errorf("unsupported, fs driver %q", fsDriver)
 	}
-}
-
-type MirrorConfig struct {
-	Host                string            `json:"host,omitempty"`
-	Headers             map[string]string `json:"headers,omitempty"`
-	HealthCheckInterval int               `json:"health_check_interval,omitempty"`
-	FailureLimit        uint8             `json:"failure_limit,omitempty"`
-	PingURL             string            `json:"ping_url,omitempty"`
 }
 
 type BackendConfig struct {
@@ -97,6 +93,10 @@ type BackendConfig struct {
 	// Shared by registry, oss, and s3
 	Scheme     string `json:"scheme,omitempty"`
 	SkipVerify bool   `json:"skip_verify,omitempty"`
+
+	// CA certificates for TLS verification, populated from the "ca" field in hosts.toml.
+	// Mirrors the ca_cert_files field introduced in nydusd by DataDog/nydus#23.
+	CACertFiles []string `json:"ca_cert_files,omitempty"`
 
 	// Below configs are common configs shared by all backends
 	Proxy struct {
@@ -168,15 +168,20 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 			registryHost = "index.docker.io"
 		}
 
-		if err := c.UpdateMirrors(config.GetMirrorsConfigDir(), registryHost); err != nil {
-			return errors.Wrap(err, "update mirrors config")
-		}
+		effectiveScheme, effectiveHost, caCerts := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
 
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		keyChain := auth.GetRegistryKeyChain(imageID, labels)
-		c.Supplement(registryHost, image.Repo, snapshotID, params)
+		c.Supplement(effectiveHost, image.Repo, snapshotID, params)
+		_, bc := c.StorageBackend()
+		if effectiveScheme != "" {
+			bc.BlobURLScheme = effectiveScheme
+		}
+		if len(caCerts) > 0 {
+			bc.CACertFiles = caCerts
+		}
 		c.FillAuth(keyChain)
 
 	// For Localfs, OSS, and S3 backends, only the WorkDir needs to be supplemented.
@@ -187,6 +192,54 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	}
 
 	return nil
+}
+
+// selectMirrorHost loads mirror configs for the given registry host and returns the scheme,
+// host, and CA certificates of the first reachable mirror. If a mirror has no PingURL it is
+// used unconditionally. Falls back to (registryHost, "", nil) when no mirror is configured
+// or reachable.
+func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, host string, caCerts []string) {
+	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
+	if err != nil {
+		log.L.Warnf("Failed to load mirrors config for %s: %v, falling back to origin", registryHost, err)
+		return registryHost, "", nil
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	for _, mirror := range mirrors {
+		scheme, host, err = splitMirrorURL(mirror.Host)
+		if err != nil {
+			err = fmt.Errorf("Skipping due to Failing to split mirror host %s: %w", mirror.Host, err)
+			continue
+		}
+		if mirror.PingURL == "" {
+			return scheme, host, mirror.CACerts
+		}
+		resp, pingErr := client.Get(mirror.PingURL)
+		if pingErr == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return scheme, host, mirror.CACerts
+			}
+		}
+		log.L.Warnf("Mirror %s ping URL %s check failed, trying next mirror", mirror.Host, mirror.PingURL)
+	}
+
+	return registryHost, "", nil
+}
+
+// splitMirrorURL splits a mirror host URL (e.g. "http://mirror:5000") into scheme and bare host.
+// Scheme is forced to be https if not present.
+func splitMirrorURL(mirrorHost string) (scheme, host string, err error) {
+	// url.Parse requires a scheme to properly works even if it doesn't returns an error
+	if !(strings.HasPrefix(mirrorHost, "http://") || strings.HasPrefix(mirrorHost, "https://")) {
+		mirrorHost = "https://" + mirrorHost
+	}
+	value, err := url.Parse(mirrorHost)
+	if err != nil {
+		return "", "", err
+	}
+	return value.Scheme, value.Host, nil
 }
 
 func serializeWithSecretFilter(obj interface{}) map[string]interface{} {
