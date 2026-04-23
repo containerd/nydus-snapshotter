@@ -95,8 +95,9 @@ type BackendConfig struct {
 	Region string `json:"region,omitempty"`
 
 	// Shared by registry, oss, and s3
-	Scheme     string `json:"scheme,omitempty"`
-	SkipVerify bool   `json:"skip_verify,omitempty"`
+	Scheme      string   `json:"scheme,omitempty"`
+	SkipVerify  bool     `json:"skip_verify,omitempty"`
+	CACertFiles []string `json:"ca_cert_files,omitempty"`
 
 	// Below configs are common configs shared by all backends
 	Proxy struct {

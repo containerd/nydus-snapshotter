@@ -40,6 +40,7 @@ type hostConfig struct {
 	Host   string
 	Header http.Header
 
+	CACerts             []string
 	HealthCheckInterval int
 	FailureLimit        uint8
 	PingURL             string
@@ -138,8 +139,17 @@ func getSortedHosts(root *toml.Tree) ([]string, error) {
 	return list, nil
 }
 
+// makeAbsPath resolves a relative path p against base directory base.
+// Mirrors containerd's unexported helper of the same name.
+func makeAbsPath(p, base string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(base, p)
+}
+
 // parseHostConfig returns the parsed host configuration, make sure the server is not null.
-func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
+func parseHostConfig(server string, config HostFileConfig, baseDir string) (hostConfig, error) {
 	var (
 		result = hostConfig{}
 		err    error
@@ -173,6 +183,23 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 		result.Header = header
 	}
 
+	if config.CACert != nil {
+		switch cert := config.CACert.(type) {
+		case string:
+			result.CACerts = []string{makeAbsPath(cert, baseDir)}
+		case []interface{}:
+			certs, err := makeStringSlice(cert, func(s string) string {
+				return makeAbsPath(s, baseDir)
+			})
+			if err != nil {
+				return hostConfig{}, fmt.Errorf("invalid type for ca: %w", err)
+			}
+			result.CACerts = certs
+		default:
+			return hostConfig{}, fmt.Errorf("invalid type %v for ca", config.CACert)
+		}
+	}
+
 	result.HealthCheckInterval = config.HealthCheckInterval
 	result.FailureLimit = config.FailureLimit
 	result.PingURL = config.PingURL
@@ -180,7 +207,7 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 	return result, nil
 }
 
-func parseHostsFile(b []byte) ([]hostConfig, error) {
+func parseHostsFile(b []byte, baseDir string) ([]hostConfig, error) {
 	tree, err := toml.LoadBytes(b)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TOML: %w", err)
@@ -207,7 +234,7 @@ func parseHostsFile(b []byte) ([]hostConfig, error) {
 	for _, host := range orderedHosts {
 		if host != "" {
 			config := c.HostConfigs[host]
-			parsed, err := parseHostConfig(host, config)
+			parsed, err := parseHostConfig(host, config, baseDir)
 			if err != nil {
 				return nil, err
 			}
@@ -227,7 +254,7 @@ func loadHostDir(hostsDir string) ([]hostConfig, error) {
 		return []hostConfig{}, nil
 	}
 
-	hosts, err := parseHostsFile(b)
+	hosts, err := parseHostsFile(b, hostsDir)
 	if err != nil {
 		return nil, err
 	}
@@ -235,25 +262,34 @@ func loadHostDir(hostsDir string) ([]hostConfig, error) {
 	return hosts, nil
 }
 
-func LoadMirrorsConfig(mirrorsConfigDir, registryHost string) ([]MirrorConfig, error) {
-	var mirrors []MirrorConfig
-
+func LoadMirrorsConfig(mirrorsConfigDir, registryHost string) ([]MirrorConfig, []string, error) {
 	if mirrorsConfigDir == "" {
-		return mirrors, nil
+		return nil, nil, nil
 	}
 	hostDir, err := hostDirFromRoot(mirrorsConfigDir, registryHost)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if hostDir == "" {
-		return mirrors, nil
+		return nil, nil, nil
 	}
 
-	hostConfig, err := loadHostDir(hostDir)
+	hosts, err := loadHostDir(hostDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	mirrors = append(mirrors, parseMirrorsConfig(hostConfig)...)
 
-	return mirrors, nil
+	// Collect CA certs from all host entries and deduplicate.
+	seen := make(map[string]struct{})
+	var caCerts []string
+	for _, h := range hosts {
+		for _, ca := range h.CACerts {
+			if _, ok := seen[ca]; !ok {
+				seen[ca] = struct{}{}
+				caCerts = append(caCerts, ca)
+			}
+		}
+	}
+
+	return parseMirrorsConfig(hosts), caCerts, nil
 }
