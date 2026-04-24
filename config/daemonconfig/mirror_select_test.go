@@ -85,14 +85,14 @@ func TestSplitMirrorURL(t *testing.T) {
 }
 
 func TestSelectMirrorHost_NoConfig(t *testing.T) {
-	scheme, host := selectMirrorHost("", testRegistryHost)
+	scheme, host, _ := selectMirrorHost("", testRegistryHost)
 	require.Equal(t, testRegistryHost, host)
 	require.Equal(t, "", scheme)
 }
 
 func TestSelectMirrorHost_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	scheme, host := selectMirrorHost(tmpDir, testRegistryHost)
+	scheme, host, _ := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, testRegistryHost, host)
 	require.Equal(t, "", scheme)
 }
@@ -103,7 +103,7 @@ func TestSelectMirrorHost_MirrorNoPingURL(t *testing.T) {
 [host]
   [host."http://mirror1:5000"]
 `)
-	scheme, host := selectMirrorHost(tmpDir, testRegistryHost)
+	scheme, host, _ := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, "mirror1:5000", host)
 	require.Equal(t, "http", scheme)
 }
@@ -120,7 +120,7 @@ func TestSelectMirrorHost_MirrorPingSucceeds(t *testing.T) {
   [host."http://mirror1:5000"]
     ping_url = "`+srv.URL+`"
 `)
-	scheme, host := selectMirrorHost(tmpDir, testRegistryHost)
+	scheme, host, _ := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, "mirror1:5000", host)
 	require.Equal(t, "http", scheme)
 }
@@ -137,7 +137,7 @@ func TestSelectMirrorHost_MirrorPingFails_FallbackToOrigin(t *testing.T) {
   [host."http://mirror1:5000"]
     ping_url = "`+srv.URL+`"
 `)
-	scheme, host := selectMirrorHost(tmpDir, testRegistryHost)
+	scheme, host, _ := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, testRegistryHost, host)
 	require.Equal(t, "", scheme)
 }
@@ -155,7 +155,7 @@ func TestSelectMirrorHost_FirstMirrorFails_SecondMirrorNoPing(t *testing.T) {
     ping_url = "`+srv.URL+`"
   [host."https://mirror2.example.com"]
 `)
-	scheme, host := selectMirrorHost(tmpDir, testRegistryHost)
+	scheme, host, _ := selectMirrorHost(tmpDir, testRegistryHost)
 	require.Equal(t, "mirror2.example.com", host)
 	require.Equal(t, "https", scheme)
 }

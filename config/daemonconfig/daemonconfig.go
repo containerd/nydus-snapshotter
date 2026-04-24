@@ -90,8 +90,9 @@ type BackendConfig struct {
 	Region string `json:"region,omitempty"`
 
 	// Shared by registry, oss, and s3
-	Scheme     string `json:"scheme,omitempty"`
-	SkipVerify bool   `json:"skip_verify,omitempty"`
+	Scheme      string   `json:"scheme,omitempty"`
+	SkipVerify  bool     `json:"skip_verify,omitempty"`
+	CACertFiles []string `json:"ca_cert_files,omitempty"`
 
 	// Below configs are common configs shared by all backends
 	Proxy struct {
@@ -163,16 +164,19 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 			registryHost = "index.docker.io"
 		}
 
-		effectiveScheme, effectiveHost := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
+		effectiveScheme, effectiveHost, caCertFiles := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
 
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		keyChain := auth.GetRegistryKeyChain(imageID, labels)
 		c.Supplement(effectiveHost, image.Repo, snapshotID, params)
+		_, bc := c.StorageBackend()
 		if effectiveScheme != "" {
-			_, bc := c.StorageBackend()
 			bc.BlobURLScheme = effectiveScheme
+		}
+		if len(caCertFiles) > 0 {
+			bc.CACertFiles = caCertFiles
 		}
 		c.FillAuth(keyChain)
 
@@ -186,14 +190,15 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	return nil
 }
 
-// selectMirrorHost loads mirror configs for the given registry host and returns the host and
-// scheme of the first reachable mirror. If a mirror has no PingURL it is used unconditionally.
-// Falls back to (registryHost, "") when no mirror is configured or reachable.
-func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, host string) {
-	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
+// selectMirrorHost loads mirror configs for the given registry host and returns the host,
+// scheme of the first reachable mirror, and the CA cert files. If a mirror has no PingURL
+// it is used unconditionally. Falls back to (registryHost, "", nil) when no mirror is
+// configured or reachable.
+func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, host string, caCertFiles []string) {
+	mirrors, caCertFiles, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		log.L.Warnf("Failed to load mirrors config for %s: %v, falling back to origin", registryHost, err)
-		return registryHost, ""
+		return registryHost, "", nil
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -204,19 +209,19 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 			continue
 		}
 		if mirror.PingURL == "" {
-			return scheme, host
+			return scheme, host, caCertFiles
 		}
 		resp, pingErr := client.Get(mirror.PingURL)
 		if pingErr == nil {
 			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				return scheme, host
+				return scheme, host, caCertFiles
 			}
 		}
 		log.L.Warnf("Mirror %s ping URL %s check failed, trying next mirror", mirror.Host, mirror.PingURL)
 	}
 
-	return registryHost, ""
+	return registryHost, "", nil
 }
 
 // splitMirrorURL splits a mirror host URL (e.g. "http://mirror:5000") into scheme and bare host.
