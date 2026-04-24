@@ -36,7 +36,7 @@ const (
 
 type DaemonConfig interface {
 	// Provide stuffs relevant to accessing registry apart from auth
-	Supplement(host, repo, snapshotID string, params map[string]string)
+	Supplement(scheme, host, repo, snapshotID string, params map[string]string)
 	// Provide auth
 	FillAuth(kc *auth.PassKeyChain)
 	StorageBackend() (StorageBackendType, *BackendConfig)
@@ -164,21 +164,20 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 		}
 
 		effectiveScheme, effectiveHost := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
-
+		if effectiveHost != "" {
+			registryHost = effectiveHost
+		}
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		keyChain := auth.GetRegistryKeyChain(imageID, labels)
-		c.Supplement(effectiveHost, image.Repo, snapshotID, params)
-		if effectiveScheme != "" {
-			_, bc := c.StorageBackend()
-			bc.BlobURLScheme = effectiveScheme
-		}
+		c.Supplement(effectiveScheme, effectiveHost, image.Repo, snapshotID, params)
+
 		c.FillAuth(keyChain)
 
 	// For Localfs, OSS, and S3 backends, only the WorkDir needs to be supplemented.
 	case backendTypeLocalfs, backendTypeOss, backendTypeS3:
-		c.Supplement("", "", snapshotID, params)
+		c.Supplement("", "", "", snapshotID, params)
 	default:
 		return errors.Errorf("unknown backend type %s", backendType)
 	}
@@ -193,7 +192,7 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		log.L.Warnf("Failed to load mirrors config for %s: %v, falling back to origin", registryHost, err)
-		return registryHost, ""
+		return "", registryHost
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -216,7 +215,7 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 		log.L.Warnf("Mirror %s ping URL %s check failed, trying next mirror", mirror.Host, mirror.PingURL)
 	}
 
-	return registryHost, ""
+	return "", registryHost
 }
 
 // splitMirrorURL splits a mirror host URL (e.g. "http://mirror:5000") into scheme and bare host.

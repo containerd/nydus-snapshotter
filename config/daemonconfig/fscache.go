@@ -74,7 +74,10 @@ func (c *FscacheDaemonConfig) StorageBackend() (string, *BackendConfig) {
 }
 
 // Each fscache/erofs has a configuration with different fscache ID built from snapshot ID.
-func (c *FscacheDaemonConfig) Supplement(host, repo, snapshotID string, params map[string]string) {
+func (c *FscacheDaemonConfig) Supplement(scheme, host, repo, snapshotID string, params map[string]string) {
+	if scheme != "" {
+		c.Config.BackendConfig.Scheme = scheme
+	}
 	if host != "" {
 		c.Config.BackendConfig.Host = host
 	}
