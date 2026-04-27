@@ -404,20 +404,16 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 	upgradingSocket := path.Join(path.Dir(d.GetAPISock()), next)
 	newDaemon.States.APISocket = upgradingSocket
 
-	cmd, err := manager.BuildDaemonCommand(&newDaemon, c.NydusdPath, true)
-	if err != nil {
-		return err
-	}
-
 	if err := supervisor.SendStatesTimeout(time.Second * 10); err != nil {
 		return errors.Wrap(err, "Send states")
 	}
 
-	if err := cmd.Start(); err != nil {
+	pid, err := manager.StartDaemonProcess(&newDaemon, c.NydusdPath, true)
+	if err != nil {
 		return errors.Wrap(err, "start process")
 	}
 
-	newDaemon.States.ProcessID = cmd.Process.Pid
+	newDaemon.States.ProcessID = pid
 
 	if err := newDaemon.WaitUntilState(types.DaemonStateInit); err != nil {
 		return errors.Wrap(err, "wait until init state")

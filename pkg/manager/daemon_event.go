@@ -159,20 +159,16 @@ func (m *Manager) DoDaemonUpgrade(d *daemon.Daemon, nydusdPath string, manager *
 	upgradingSocket := path.Join(path.Dir(d.GetAPISock()), next)
 	newDaemon.States.APISocket = upgradingSocket
 
-	cmd, err := manager.BuildDaemonCommand(newDaemon, nydusdPath, true)
-	if err != nil {
-		return nil, err
-	}
-
 	if err := supervisor.SendStatesTimeout(time.Second * 10); err != nil {
 		return nil, errors.Wrap(err, "Send states")
 	}
 
-	if err := cmd.Start(); err != nil {
+	pid, err := manager.StartDaemonProcess(newDaemon, nydusdPath, true)
+	if err != nil {
 		return nil, errors.Wrap(err, "start process")
 	}
 
-	newDaemon.States.ProcessID = cmd.Process.Pid
+	newDaemon.States.ProcessID = pid
 
 	if err := newDaemon.WaitUntilState(types.DaemonStateInit); err != nil {
 		return nil, errors.Wrap(err, "wait until init state")

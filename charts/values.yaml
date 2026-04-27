@@ -1,0 +1,83 @@
+image:
+  repository: ghcr.io/containerd
+  imagePullPolicy: IfNotPresent
+  imagePullSecret: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+rbac:
+  clusterRole:
+    # Optional RBAC rules for the chart-managed ClusterRole.
+    rules: []
+
+snapshotter:
+  # Host bootstrap behavior for nydus-snapshotter.
+  # When enabled, an initContainer mutates host containerd config and restarts
+  # containerd. This is invasive and can disrupt control-plane or kind nodes.
+  # Keep it enabled when the chart is responsible for wiring containerd to the
+  # nydus snapshotter. Disable it only when nodes are already preconfigured.
+  hostSetup:
+    enabled: true
+    containerdConfigPath: "/etc/containerd/config.toml"
+    containerdSocketPath: "/run/containerd/containerd.sock"
+
+  daemonset:
+    image:
+      name: nydus-snapshotter
+      tag: v0.16.0
+    resources:
+      limits:
+        cpu: 1
+        memory: 500Mi
+      requests:
+        cpu: 200m
+        memory: 200Mi
+    tolerations:
+      - operator: Exists
+    nodeSelector: {}
+
+  # Default snapshotter config.toml rendered into the ConfigMap.
+  # This path must reference a file packaged inside the chart, typically under
+  # `charts/files/`. Use `snapshotter.configuration` for raw content overrides.
+  configurationFile: "files/snapshotter/config.toml"
+
+  # Raw snapshotter config.toml content. When non-empty, it takes precedence
+  # over `configurationFile`. Useful with:
+  # `--set-file snapshotter.configuration=/path/to/config.toml`.
+  configuration: ""
+
+  # Targeted overrides kept for common operational changes via `helm --set`.
+  nydusdPath: ""
+  logLevel: ""
+
+# Default scheduling keeps the DaemonSet away from control-plane nodes and
+# virtual-kubelet style nodes while still allowing regular nodes without an
+# instance-type label.
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+            - key: node-role.kubernetes.io/master
+              operator: DoesNotExist
+            - key: node.kubernetes.io/instance-type
+              operator: DoesNotExist
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+            - key: node-role.kubernetes.io/master
+              operator: DoesNotExist
+            - key: node.kubernetes.io/instance-type
+              operator: NotIn
+              values:
+                - virtual-node

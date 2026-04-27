@@ -158,6 +158,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			FsDriver:         config.FsDriverFusedev,
 			DaemonConfig:     daemonConfig,
 			CgroupMgr:        cgroupMgr,
+			DelegateNydusd:   cfg.DelegateNydusd,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "create fusedev manager")
