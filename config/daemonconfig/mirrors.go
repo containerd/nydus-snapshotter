@@ -40,6 +40,7 @@ type hostConfig struct {
 	Host   string
 	Header http.Header
 
+	CACerts             []string
 	HealthCheckInterval int
 	FailureLimit        uint8
 	PingURL             string
@@ -173,6 +174,21 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 		result.Header = header
 	}
 
+	if config.CACert != nil {
+		switch cert := config.CACert.(type) {
+		case string:
+			result.CACerts = []string{cert}
+		case []interface{}:
+			certs, err := makeStringSlice(cert, nil)
+			if err != nil {
+				return hostConfig{}, fmt.Errorf("invalid type for ca: %w", err)
+			}
+			result.CACerts = certs
+		default:
+			return hostConfig{}, fmt.Errorf("invalid type %v for ca", config.CACert)
+		}
+	}
+
 	result.HealthCheckInterval = config.HealthCheckInterval
 	result.FailureLimit = config.FailureLimit
 	result.PingURL = config.PingURL
@@ -235,25 +251,34 @@ func loadHostDir(hostsDir string) ([]hostConfig, error) {
 	return hosts, nil
 }
 
-func LoadMirrorsConfig(mirrorsConfigDir, registryHost string) ([]MirrorConfig, error) {
-	var mirrors []MirrorConfig
-
+func LoadMirrorsConfig(mirrorsConfigDir, registryHost string) ([]MirrorConfig, []string, error) {
 	if mirrorsConfigDir == "" {
-		return mirrors, nil
+		return nil, nil, nil
 	}
 	hostDir, err := hostDirFromRoot(mirrorsConfigDir, registryHost)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if hostDir == "" {
-		return mirrors, nil
+		return nil, nil, nil
 	}
 
-	hostConfig, err := loadHostDir(hostDir)
+	hosts, err := loadHostDir(hostDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	mirrors = append(mirrors, parseMirrorsConfig(hostConfig)...)
 
-	return mirrors, nil
+	// Collect CA certs from all host entries and deduplicate.
+	seen := make(map[string]struct{})
+	var caCerts []string
+	for _, h := range hosts {
+		for _, ca := range h.CACerts {
+			if _, ok := seen[ca]; !ok {
+				seen[ca] = struct{}{}
+				caCerts = append(caCerts, ca)
+			}
+		}
+	}
+
+	return parseMirrorsConfig(hosts), caCerts, nil
 }

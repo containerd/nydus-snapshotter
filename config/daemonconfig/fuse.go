@@ -85,12 +85,15 @@ func (c *FuseDaemonConfig) FillAuth(kc *auth.PassKeyChain) {
 }
 
 func (c *FuseDaemonConfig) UpdateMirrors(mirrorsConfigDir, registryHost string) error {
-	mirrors, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
+	mirrors, caCerts, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		return err
 	}
 	if len(mirrors) > 0 {
 		c.Device.Backend.Config.Mirrors = mirrors
+	}
+	if len(caCerts) > 0 {
+		c.Device.Backend.Config.CACertFiles = caCerts
 	}
 	return nil
 }
