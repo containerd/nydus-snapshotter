@@ -133,7 +133,39 @@ function configure_snapshotter() {
     [proxy_plugins.nydus]
         type = "snapshot"
         address = "$SNAPSHOTTER_GRPC_SOCKET"
+        capabilities = ["remap-ids"]
 EOF
+    fi
+
+    # Advertise remap support to containerd so idmap/userns-remap workloads do
+    # not fall back to the compatibility remap snapshot flow.
+    if ! awk '
+            BEGIN {in_nydus=0; found=0}
+            /^[[:space:]]*\[proxy_plugins\.nydus\][[:space:]]*$/ {in_nydus=1; next}
+            in_nydus && /^[[:space:]]*\[/ {in_nydus=0}
+            in_nydus && /remap-ids/ {found=1}
+            END {exit(found ? 0 : 1)}
+        ' "$CONTAINER_RUNTIME_CONFIG".bak; then
+        awk '
+            BEGIN {in_nydus=0; inserted=0}
+            /^[[:space:]]*\[proxy_plugins\.nydus\][[:space:]]*$/ {
+                in_nydus=1
+                print
+                next
+            }
+            in_nydus && /^[[:space:]]*\[/ {
+                print "        capabilities = [\"remap-ids\"]"
+                inserted=1
+                in_nydus=0
+            }
+            { print }
+            END {
+                if (in_nydus && !inserted) {
+                    print "        capabilities = [\"remap-ids\"]"
+                }
+            }
+        ' "$CONTAINER_RUNTIME_CONFIG".bak > "${CONTAINER_RUNTIME_CONFIG}".tmp
+        mv "${CONTAINER_RUNTIME_CONFIG}".tmp "$CONTAINER_RUNTIME_CONFIG".bak
     fi
 
     if grep -q 'disable_snapshot_annotations' "$CONTAINER_RUNTIME_CONFIG".bak; then

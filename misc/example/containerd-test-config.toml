@@ -26,3 +26,4 @@ oom_score = 0
   [proxy_plugins.nydus]
       type = "snapshot"
       address = "/var/lib/containerd-test/io.containerd.snapshotter.v1.nydus/containerd-nydus-grpc.sock"
+      capabilities = ["remap-ids"]

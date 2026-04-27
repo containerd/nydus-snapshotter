@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
+	overlayutils "github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/config"
@@ -63,6 +64,7 @@ type snapshotter struct {
 	syncRemove              bool
 	cleanupOnClose          bool
 	enableOverlayfsVolatile bool
+	idmapMountsSupported    bool
 }
 
 func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
@@ -287,6 +289,17 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		return nil, fmt.Errorf("%s does not support d_type. If the backing filesystem is xfs, please reformat with ftype=1 to enable d_type support", cfg.Root)
 	}
 
+	idmapSupported, err := overlayutils.SupportsIDMappedMounts()
+	if err != nil {
+		log.L.WithError(err).Warn("failed to detect idmapped mounts support, assuming not supported")
+		idmapSupported = false
+	}
+	if idmapSupported {
+		log.L.Info("kernel supports idmapped overlay mounts; IDMapping via uidmap/gidmap enabled")
+	} else {
+		log.L.Warn("kernel does not support idmapped overlay mounts (requires Linux 5.19+); IDMapping labels will be ignored for mounts")
+	}
+
 	ms, err := storage.NewMetaStore(filepath.Join(cfg.Root, "metadata.db"))
 	if err != nil {
 		return nil, err
@@ -314,6 +327,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		enableKataVolume:        cfg.SnapshotsConfig.EnableKataVolume,
 		enableOverlayfsVolatile: cfg.SnapshotsConfig.EnableOverlayfsVolatile,
 		cleanupOnClose:          cfg.CleanupOnClose,
+		idmapMountsSupported:    idmapSupported,
 	}, nil
 }
 
@@ -858,13 +872,34 @@ func (o *snapshotter) createSnapshotWithRecovery(ctx context.Context, kind snaps
 		return nil, storage.Snapshot{}, errors.Wrap(err, "create snapshot")
 	}
 
-	// Try to keep the whole stack having the same UID and GID
-	if len(s.ParentIDs) > 0 {
+	// Chown the snapshot's fs directory: when IDMapping labels are present,
+	// use the mapped host UID/GID; otherwise inherit from the parent snapshot.
+	uidMapping, hasUID := base.Labels[label.LabelSnapshotUIDMapping]
+	gidMapping, hasGID := base.Labels[label.LabelSnapshotGIDMapping]
+	if hasUID || hasGID {
+		mappedUID, mappedGID := -1, -1
+		if hasUID {
+			uid, err := parseIDMappingHostID(uidMapping)
+			if err != nil {
+				return nil, storage.Snapshot{}, errors.Wrapf(err, "invalid UID mapping %q", uidMapping)
+			}
+			mappedUID = uid
+		}
+		if hasGID {
+			gid, err := parseIDMappingHostID(gidMapping)
+			if err != nil {
+				return nil, storage.Snapshot{}, errors.Wrapf(err, "invalid GID mapping %q", gidMapping)
+			}
+			mappedGID = gid
+		}
+		if err := os.Lchown(filepath.Join(td, "fs"), mappedUID, mappedGID); err != nil {
+			return nil, storage.Snapshot{}, errors.Wrap(err, "perform chown")
+		}
+	} else if len(s.ParentIDs) > 0 {
 		st, err := os.Stat(o.upperPath(s.ParentIDs[0]))
 		if err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "stat parent")
 		}
-
 		if err := lchown(filepath.Join(td, "fs"), st); err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "perform chown")
 		}
@@ -1022,15 +1057,13 @@ func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID st
 	return nil
 }
 
-func bindMount(source, roFlag string) []mount.Mount {
+func bindMount(source, roFlag string, extraOpts ...string) []mount.Mount {
+	opts := append(append([]string{}, extraOpts...), roFlag, "rbind")
 	return []mount.Mount{
 		{
-			Type:   "bind",
-			Source: source,
-			Options: []string{
-				roFlag,
-				"rbind",
-			},
+			Type:    "bind",
+			Source:  source,
+			Options: opts,
 		},
 	}
 }
@@ -1100,6 +1133,7 @@ func (o *snapshotter) mountProxy(ctx context.Context, s storage.Snapshot) ([]mou
 // `s` and `id` can represent a different layer, it's useful when View an image
 func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string, s storage.Snapshot, id, key string) ([]mount.Mount, error) {
 	var overlayOptions []string
+
 	if _, ok := labels[label.OverlayfsVolatileOpt]; ok || o.enableOverlayfsVolatile {
 		overlayOptions = append(overlayOptions, "volatile")
 	}
@@ -1151,20 +1185,44 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	if o.enableNydusOverlayFS || config.GetDaemonMode() == config.DaemonModeNone {
 		return o.remoteMountWithExtraOptions(ctx, s, id, overlayOptions)
 	}
+	// uidmap=/gidmap= is only processed by the plain kernel overlay driver (Linux 5.19+);
+	// fuse.nydus-overlayfs and Kata paths do not support these options.
+	if o.idmapMountsSupported {
+		if v, ok := labels[label.LabelSnapshotUIDMapping]; ok {
+			overlayOptions = append([]string{fmt.Sprintf("uidmap=%s", v)}, overlayOptions...)
+		}
+		if v, ok := labels[label.LabelSnapshotGIDMapping]; ok {
+			overlayOptions = append([]string{fmt.Sprintf("gidmap=%s", v)}, overlayOptions...)
+		}
+	}
 	return overlayMount(overlayOptions), nil
 }
 
 func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
+	// uidmap=/gidmap= mount options enable kernel-level UID/GID translation for
+	// containers running with user namespaces. Requires Linux 5.19+ idmapped overlay.
+	var idmapOptions []string
+	if o.idmapMountsSupported {
+		if v, ok := labels[label.LabelSnapshotUIDMapping]; ok {
+			idmapOptions = append(idmapOptions, fmt.Sprintf("uidmap=%s", v))
+		}
+		if v, ok := labels[label.LabelSnapshotGIDMapping]; ok {
+			idmapOptions = append(idmapOptions, fmt.Sprintf("gidmap=%s", v))
+		}
+	}
+
 	if len(s.ParentIDs) == 0 {
 		// if we only have one layer/no parents then just return a bind mount as overlay will not work
 		roFlag := "rw"
 		if s.Kind == snapshots.KindView {
 			roFlag = "ro"
 		}
-		return bindMount(o.upperPath(s.ID), roFlag), nil
+		return bindMount(o.upperPath(s.ID), roFlag, idmapOptions...), nil
 	}
 
 	var options []string
+	options = append(options, idmapOptions...)
+
 	if s.Kind == snapshots.KindActive {
 		options = append(options,
 			fmt.Sprintf("workdir=%s", o.workPath(s.ID)),
@@ -1177,7 +1235,7 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 		parentPath := o.upperPath(s.ParentIDs[0])
 		// if we only have one parent then just return a bind mount
 		log.G(ctx).Debugf("bind mount on %s", parentPath)
-		return bindMount(parentPath, "ro"), nil
+		return bindMount(parentPath, "ro", idmapOptions...), nil
 	}
 
 	parentPaths := make([]string, len(s.ParentIDs))
