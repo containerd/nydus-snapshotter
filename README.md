@@ -165,7 +165,7 @@ Dragonfly supports both **mirror** mode and HTTP **proxy** mode to boost the con
 
 ### Hot updating mirror configurations
 
-In addition to setting the registry mirror in nydusd's json configuration file, `nydus-snapshotter` also supports hot updating mirror configurations. You can set the configuration directory in nudus-snapshotter's toml configuration file with `remote.mirrors_config.dir`. The empty `remote.mirrors_config.dir` means disabling it.
+`nydus-snapshotter` supports hot updating mirror configurations. You can set the configuration directory in nydus-snapshotter's toml configuration file with `remote.mirrors_config.dir`. The empty `remote.mirrors_config.dir` means disabling it.
 
 ```toml
 [remote.mirrors_config]
@@ -177,12 +177,12 @@ Configuration file is compatible with containerd's configuration file in toml fo
 ```toml
 [host]
   [host."http://127.0.0.1:65001"]
-    [host."http://127.0.0.1:65001".header]
-      # NOTE: For Dragonfly, the HTTP scheme must be explicitly specified.
-      X-Dragonfly-Registry = ["https://p2p-nydus.com"]
+    # Optional: health check URL. If set, the mirror is only used when this URL returns HTTP 2xx.
+    # If not set, the mirror is used unconditionally.
+    ping_url = "http://127.0.0.1:65001/ping"
 ```
 
-Mirror configurations loaded from nydusd's json file will be overwritten before pulling image if the valid mirror configuration items loaded from `remote.mirrors_config.dir` are greater than 0.
+Before each mount, the snapshotter reads the mirror configuration for the target registry host and rewrites nydusd's backend `host` to the first reachable mirror. If a mirror has no `ping_url` it is selected immediately. If all mirrors fail their health check, the original registry host is used as fallback.
 
 ## Community
 
