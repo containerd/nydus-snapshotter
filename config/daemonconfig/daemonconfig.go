@@ -9,6 +9,7 @@ package daemonconfig
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -199,7 +200,7 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 	mirrors, caCerts, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		log.L.Warnf("Failed to load mirrors config for %s: %v, falling back to origin", registryHost, err)
-		return "", registryHost, caCerts
+		return "", registryHost, nil
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -219,10 +220,26 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 				return scheme, host, caCerts
 			}
 		}
-		log.L.Warnf("Mirror %s ping URL %s check failed, trying next mirror", mirror.Host, mirror.PingURL)
+
+		if resp != nil {
+			pingBody, _ := io.ReadAll(resp.Body)
+			log.L.Warnf("Mirror %s ping URL %s check failed with error %v, statusCode %d, response '%s', trying next mirror",
+				mirror.Host,
+				mirror.PingURL,
+				err,
+				resp.StatusCode,
+				string(pingBody),
+			)
+		} else {
+			log.L.Warnf("Mirror %s ping URL %s check failed with error %v, trying next mirror",
+				mirror.Host,
+				mirror.PingURL,
+				err,
+			)
+		}
 	}
 
-	return "", registryHost, caCerts
+	return "", registryHost, nil
 }
 
 // splitMirrorURL splits a mirror host URL (e.g. "http://mirror:5000") into scheme and bare host.
