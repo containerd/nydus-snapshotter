@@ -224,21 +224,23 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 				return scheme, host, caCerts
 			}
 		}
-
-		statusCode := 0
-		pingBody := []byte("")
+		
 		if resp != nil {
-			statusCode = resp.StatusCode
 			pingBody, _ = io.ReadAll(resp.Body)
+			log.L.Warnf("Mirror %s ping URL %s check failed with error %w, statusCode %d, response '%s', trying next mirror",
+				mirror.Host,
+				mirror.PingURL,
+				err,
+				resp.StatusCode,
+				string(pingBody),
+			)
+		} else {
+			log.L.Warnf("Mirror %s ping URL %s check failed with error %w, trying next mirror",
+				mirror.Host,
+				mirror.PingURL,
+				err,
+			)
 		}
-
-		log.L.Warnf("Mirror %s ping URL %s check failed with error %w, statusCode %d, response '%s', trying next mirror",
-			mirror.Host,
-			mirror.PingURL,
-			err,
-			statusCode,
-			string(pingBody),
-		)
 	}
 
 	return "", registryHost, nil
