@@ -35,7 +35,7 @@ jobs:
             build-arch: static
             build-linker: static
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -113,7 +113,7 @@ jobs:
             build-arch: ppc64le
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
