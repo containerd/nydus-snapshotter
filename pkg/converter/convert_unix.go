@@ -1285,36 +1285,44 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 	originalBlobDigests := <-originalBlobDigestChan
 	blobDescs := []ocispec.Descriptor{}
 
-	var blobDigests []digest.Digest
-	if opt.OCIRef {
-		blobDigests = nydusBlobDigests
-	} else {
-		blobDigests = mergeManifestBlobDigests(nydusBlobDigests, originalBlobDigests)
-	}
-
-	for idx, blobDigest := range blobDigests {
-		blobInfo, err := cs.Info(ctx, blobDigest)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "get info from content store")
-		}
-		blobDesc := ocispec.Descriptor{
-			Digest:    blobDigest,
-			Size:      blobInfo.Size,
-			MediaType: MediaTypeNydusBlob,
-			Annotations: map[string]string{
-				LayerAnnotationUncompressed: blobDigest.String(),
-				LayerAnnotationNydusBlob:    "true",
-			},
-		}
+	// When a storage backend is configured, blobs are pushed directly to the
+	// backend and are not retained in the local content store. In convertManifest,
+	// blobDescs is only consumed when opt.Backend == nil (manifest.Layers is set
+	// to []ocispec.Descriptor{*bootstrapDesc} when a backend is active). Skip
+	// building blobDescs to avoid spurious "content digest not found" errors,
+	// which occur when chunk-dict blobs exist only in the backend and not locally.
+	if opt.Backend == nil {
+		var blobDigests []digest.Digest
 		if opt.OCIRef {
-			blobDesc.Annotations[label.NydusRefLayer] = layers[idx].OriginalDigest.String()
+			blobDigests = nydusBlobDigests
+		} else {
+			blobDigests = mergeManifestBlobDigests(nydusBlobDigests, originalBlobDigests)
 		}
 
-		if opt.Encrypt != nil {
-			blobDesc.Annotations[LayerAnnotationNydusEncryptedBlob] = "true"
-		}
+		for idx, blobDigest := range blobDigests {
+			blobInfo, err := cs.Info(ctx, blobDigest)
+			if err != nil {
+				return nil, nil, errors.Wrap(err, "get info from content store")
+			}
+			blobDesc := ocispec.Descriptor{
+				Digest:    blobDigest,
+				Size:      blobInfo.Size,
+				MediaType: MediaTypeNydusBlob,
+				Annotations: map[string]string{
+					LayerAnnotationUncompressed: blobDigest.String(),
+					LayerAnnotationNydusBlob:    "true",
+				},
+			}
+			if opt.OCIRef {
+				blobDesc.Annotations[label.NydusRefLayer] = layers[idx].OriginalDigest.String()
+			}
 
-		blobDescs = append(blobDescs, blobDesc)
+			if opt.Encrypt != nil {
+				blobDesc.Annotations[LayerAnnotationNydusEncryptedBlob] = "true"
+			}
+
+			blobDescs = append(blobDescs, blobDesc)
+		}
 	}
 
 	if opt.FsVersion == "" {
