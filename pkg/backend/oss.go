@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -190,4 +191,19 @@ func (b *OSSBackend) Check(blobDigest digest.Digest) (string, error) {
 
 func (b *OSSBackend) Type() string {
 	return BackendTypeOSS
+}
+
+func (b *OSSBackend) Size(blobDigest digest.Digest) (int64, error) {
+	blobID := blobDigest.Hex()
+	blobObjectKey := b.objectPrefix + blobID
+	headers, err := b.bucket.GetObjectMeta(blobObjectKey)
+	if err != nil {
+		return 0, errors.Wrap(err, "get object size")
+	}
+	sizeStr := headers.Get("Content-Length")
+	size, err := strconv.ParseInt(sizeStr, 10, 0)
+	if err != nil {
+		return 0, errors.Wrap(err, "parse content-length header")
+	}
+	return size, nil
 }

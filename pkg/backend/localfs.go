@@ -100,3 +100,12 @@ func (b *LocalFSBackend) Check(blobDigest digest.Digest) (string, error) {
 func (b *LocalFSBackend) Type() string {
 	return BackendTypeLocalFS
 }
+
+func (b *LocalFSBackend) Size(blobDigest digest.Digest) (int64, error) {
+	dstPath := b.dstPath(blobDigest.Hex())
+	info, err := os.Stat(dstPath)
+	if err != nil {
+		return 0, errors.Wrap(err, "stat blob in localfs backend")
+	}
+	return info.Size(), nil
+}

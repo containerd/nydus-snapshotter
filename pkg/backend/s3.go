@@ -186,3 +186,19 @@ func (b *S3Backend) Check(blobDigest digest.Digest) (string, error) {
 func (b *S3Backend) Type() string {
 	return BackendTypeS3
 }
+
+func (b *S3Backend) Size(blobDigest digest.Digest) (int64, error) {
+	objectKey := b.objectPrefix + blobDigest.Hex()
+	client, err := b.client()
+	if err != nil {
+		return 0, errors.Wrap(err, "create s3 client")
+	}
+	output, err := client.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: &b.bucketName,
+		Key:    &objectKey,
+	})
+	if err != nil {
+		return 0, errors.Wrap(err, "head object for size")
+	}
+	return *output.ContentLength, nil
+}
