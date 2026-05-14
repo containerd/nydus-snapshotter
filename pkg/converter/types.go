@@ -53,6 +53,9 @@ type Backend interface {
 	Check(blobDigest digest.Digest) (string, error)
 	// Type returns backend type name.
 	Type() string
+	// Size returns the size (in bytes) of the blob with the given digest
+	// from the remote storage backend.
+	Size(blobDigest digest.Digest) (int64, error)
 }
 
 type PackOption struct {
