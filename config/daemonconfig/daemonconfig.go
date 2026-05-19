@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -126,6 +127,11 @@ type DeviceConfig struct {
 // For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
 // We don't have to persist configuration file for fscache since its configuration
 // is passed through HTTP API.
+//
+// The write is atomic: contents are written to a tmp file in the same directory
+// and renamed over the target. A concurrent reader, or a reader after the
+// snapshotter is killed mid-write, will see either the previous contents or
+// the new contents, never a truncated/empty file.
 func DumpConfigFile(c interface{}, path string) error {
 	if config.IsBackendSourceEnabled() {
 		c = serializeWithSecretFilter(c)
@@ -135,7 +141,28 @@ func DumpConfigFile(c interface{}, path string) error {
 		return errors.Wrapf(err, "marshal config")
 	}
 
-	return os.WriteFile(path, b, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return errors.Wrapf(err, "create tmp config in %s", filepath.Dir(path))
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		if err != nil {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err = tmp.Write(b); err != nil {
+		tmp.Close()
+		return errors.Wrapf(err, "write tmp config %s", tmpPath)
+	}
+	if err = tmp.Close(); err != nil {
+		return errors.Wrapf(err, "close tmp config %s", tmpPath)
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
+		return errors.Wrapf(err, "rename tmp config to %s", path)
+	}
+	return nil
 }
 
 func DumpConfigString(c interface{}) (string, error) {
