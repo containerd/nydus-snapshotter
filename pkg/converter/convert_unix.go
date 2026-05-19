@@ -1297,15 +1297,15 @@ func MergeLayers(ctx context.Context, cs content.Store, descs []ocispec.Descript
 		var err error
 		if opt.Backend != nil {
 			blobSize, err = opt.Backend.Size(blobDigest)
+			if err != nil {
+				return nil, nil, errors.Wrap(err, "get blob size from backend")
+			}
 		} else {
 			blobInfo, err := cs.Info(ctx, blobDigest)
 			if err != nil {
 				return nil, nil, errors.Wrap(err, "get info from content store")
 			}
 			blobSize = blobInfo.Size
-		}
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "get blob size")
 		}
 		blobDesc := ocispec.Descriptor{
 			Digest:    blobDigest,
