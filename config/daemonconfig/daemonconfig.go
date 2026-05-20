@@ -127,11 +127,6 @@ type DeviceConfig struct {
 // For nydusd as FUSE daemon. Serialize Daemon info and persist to a json file
 // We don't have to persist configuration file for fscache since its configuration
 // is passed through HTTP API.
-//
-// The write is atomic: contents are written to a tmp file in the same directory
-// and renamed over the target. A concurrent reader, or a reader after the
-// snapshotter is killed mid-write, will see either the previous contents or
-// the new contents, never a truncated/empty file.
 func DumpConfigFile(c interface{}, path string) error {
 	if config.IsBackendSourceEnabled() {
 		c = serializeWithSecretFilter(c)
@@ -141,9 +136,17 @@ func DumpConfigFile(c interface{}, path string) error {
 		return errors.Wrapf(err, "marshal config")
 	}
 
+	return atomicWriteFile(path, b)
+}
+
+// atomicWriteFile writes data to a tmp file in the same directory as path and
+// renames it over path. A concurrent reader, or a reader after the process is
+// killed mid-write, sees either the previous contents or the new contents,
+// never a truncated/empty file.
+func atomicWriteFile(path string, data []byte) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return errors.Wrapf(err, "create tmp config in %s", filepath.Dir(path))
+		return errors.Wrapf(err, "create tmp file in %s", filepath.Dir(path))
 	}
 	tmpPath := tmp.Name()
 	defer func() {
@@ -152,15 +155,15 @@ func DumpConfigFile(c interface{}, path string) error {
 		}
 	}()
 
-	if _, err = tmp.Write(b); err != nil {
+	if _, err = tmp.Write(data); err != nil {
 		tmp.Close()
-		return errors.Wrapf(err, "write tmp config %s", tmpPath)
+		return errors.Wrapf(err, "write tmp file %s", tmpPath)
 	}
 	if err = tmp.Close(); err != nil {
-		return errors.Wrapf(err, "close tmp config %s", tmpPath)
+		return errors.Wrapf(err, "close tmp file %s", tmpPath)
 	}
 	if err = os.Rename(tmpPath, path); err != nil {
-		return errors.Wrapf(err, "rename tmp config to %s", path)
+		return errors.Wrapf(err, "rename tmp file to %s", path)
 	}
 	return nil
 }
