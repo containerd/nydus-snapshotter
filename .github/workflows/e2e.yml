@@ -18,6 +18,9 @@ env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
 
+permissions:
+  contents: read
+
 jobs:
   run-e2e-for-cgroups-v1:
     runs-on: ubuntu-22.04
