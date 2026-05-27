@@ -175,39 +175,43 @@ func validateBlobMetaFiles(bootstrapPath string) ([]blobMetaState, error) {
 
 	files := make([]blobMetaState, 0, len(matches))
 	for _, p := range matches {
-		file, err := os.Open(p)
+		state, err := validateBlobMetaFile(p)
 		if err != nil {
 			return nil, err
 		}
-
-		info, err := file.Stat()
-		if err != nil {
-			file.Close()
-			return nil, err
-		}
-		if !info.Mode().IsRegular() {
-			file.Close()
-			return nil, fmt.Errorf("blob.meta %s is not a regular file", p)
-		}
-		if info.Size() <= 0 {
-			file.Close()
-			return nil, fmt.Errorf("blob.meta %s is empty", p)
-		}
-
-		var buf [1]byte
-		if _, err := io.ReadFull(file, buf[:]); err != nil {
-			file.Close()
-			return nil, fmt.Errorf("read blob.meta %s: %w", p, err)
-		}
-		file.Close()
-
-		files = append(files, blobMetaState{
-			Name: filepath.Base(p),
-			Size: info.Size(),
-		})
+		files = append(files, state)
 	}
 
 	return files, nil
+}
+
+func validateBlobMetaFile(path string) (blobMetaState, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return blobMetaState{}, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return blobMetaState{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return blobMetaState{}, fmt.Errorf("blob.meta %s is not a regular file", path)
+	}
+	if info.Size() <= 0 {
+		return blobMetaState{}, fmt.Errorf("blob.meta %s is empty", path)
+	}
+
+	var buf [1]byte
+	if _, err := io.ReadFull(file, buf[:]); err != nil {
+		return blobMetaState{}, fmt.Errorf("read blob.meta %s: %w", path, err)
+	}
+
+	return blobMetaState{
+		Name: filepath.Base(path),
+		Size: info.Size(),
+	}, nil
 }
 
 func detectV6BlockSize(head []byte) (int, error) {

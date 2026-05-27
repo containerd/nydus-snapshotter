@@ -116,13 +116,27 @@ func TestValidateBlobMetaFilesReturnsSortedState(t *testing.T) {
 	}, state)
 }
 
-func TestValidateBlobMetaFilesRejectsEmptyFile(t *testing.T) {
+func TestValidateBlobMetaFileReturnsState(t *testing.T) {
 	dir := t.TempDir()
-	bootstrap := filepath.Join(dir, "image.boot")
+	blobMeta := filepath.Join(dir, "a.blob.meta")
 
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "empty.blob.meta"), nil, 0644))
+	require.NoError(t, os.WriteFile(blobMeta, []byte{1, 2, 3}, 0644))
 
-	_, err := validateBlobMetaFiles(bootstrap)
+	state, err := validateBlobMetaFile(blobMeta)
+	require.NoError(t, err)
+	require.Equal(t, blobMetaState{
+		Name: "a.blob.meta",
+		Size: 3,
+	}, state)
+}
+
+func TestValidateBlobMetaFileRejectsEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	blobMeta := filepath.Join(dir, "empty.blob.meta")
+
+	require.NoError(t, os.WriteFile(blobMeta, nil, 0644))
+
+	_, err := validateBlobMetaFile(blobMeta)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "is empty")
 }
