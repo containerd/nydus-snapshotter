@@ -71,7 +71,7 @@ jobs:
           if [ "${{ matrix.build-arch }}" == "static" ]; then
             make static-package
           else
-            make package GOOS=${{ matrix.build-os }} GOARCH=${{ matrix.build-arch }}
+            CGO_ENABLED=0 make package GOOS=${{ matrix.build-os }} GOARCH=${{ matrix.build-arch }}
           fi
       - name: upload artifacts
         uses: actions/upload-artifact@v4
