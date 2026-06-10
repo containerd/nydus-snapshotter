@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/containerd/log"
-	"golang.org/x/exp/slices"
 )
 
 const (
