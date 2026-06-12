@@ -35,11 +35,12 @@ type FuseDaemonConfig struct {
 
 // Control how to perform prefetch from file system layer
 type FSPrefetch struct {
-	Enable        bool `json:"enable"`
-	PrefetchAll   bool `json:"prefetch_all"`
-	ThreadsCount  int  `json:"threads_count,omitempty"`
-	MergingSize   int  `json:"merging_size,omitempty"`
-	BandwidthRate int  `json:"bandwidth_rate,omitempty"`
+	Enable         bool `json:"enable"`
+	PrefetchAll    bool `json:"prefetch_all"`
+	ThreadsCount   int  `json:"threads_count,omitempty"`
+	MergingSize    int  `json:"merging_size,omitempty"`
+	BandwidthRate  int  `json:"bandwidth_rate,omitempty"`
+	StreamPrefetch bool `json:"stream_prefetch,omitempty"`
 }
 
 // Load fuse daemon configuration from template file
