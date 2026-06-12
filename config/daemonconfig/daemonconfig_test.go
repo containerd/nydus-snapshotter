@@ -50,7 +50,8 @@ func TestLoadConfig(t *testing.T) {
   "fs_prefetch": {
     "enable": true,
     "threads_count": 10,
-    "merging_size": 131072
+    "merging_size": 131072,
+    "stream_prefetch": true
   }
 }`)
 	var cfg FuseDaemonConfig
@@ -59,6 +60,7 @@ func TestLoadConfig(t *testing.T) {
 	require.Equal(t, cfg.Enable, true)
 	require.Equal(t, cfg.MergingSize, 131072)
 	require.Equal(t, cfg.ThreadsCount, 10)
+	require.Equal(t, cfg.StreamPrefetch, true)
 	require.Equal(t, cfg.Device.Backend.Config.BlobURLScheme, "http")
 	require.Equal(t, cfg.Device.Backend.Config.SkipVerify, true)
 	require.Equal(t, cfg.Device.Backend.Config.Proxy.CheckInterval, 5)
