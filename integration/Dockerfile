@@ -44,6 +44,7 @@ RUN  wget -q "$DOWNLOADS_MIRROR"/dragonflyoss/nydus/releases/download/v"$NYDUS_V
   tar xzf nydus-static-v"$NYDUS_VER"-linux-"$TARGETARCH".tgz && \
   install -D -m 755 nydus-static/nydusd /usr/local/bin/nydusd && \
   install -D -m 755 nydus-static/nydus-image /usr/local/bin/nydus-image && \
+  install -D -m 755 nydus-static/nydusify /usr/local/bin/nydusify && \
   install -D -m 755 nydus-static/nydusctl /usr/local/bin/nydusctl
 
 # Install nerdctl

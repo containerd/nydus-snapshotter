@@ -28,6 +28,13 @@ const (
 	// client is trying to prepare.
 	TargetSnapshotRef = "containerd.io/snapshot.ref"
 
+	// LabelSnapshotUIDMapping is set by containerd when preparing a snapshot for a
+	// container running with user namespaces. Value format: "containerID:hostID:size".
+	LabelSnapshotUIDMapping = "containerd.io/snapshot/uidmapping"
+	// LabelSnapshotGIDMapping is set by containerd when preparing a snapshot for a
+	// container running with user namespaces. Value format: "containerID:hostID:size".
+	LabelSnapshotGIDMapping = "containerd.io/snapshot/gidmapping"
+
 	// A bool flag to mark the blob as a Nydus data blob, set by image builders.
 	NydusDataLayer = "containerd.io/snapshot/nydus-blob"
 	// A bool flag to mark the blob as a nydus bootstrap, set by image builders.
@@ -88,4 +95,11 @@ func IsNydusProxyMode(labels map[string]string) bool {
 func HasTarfsHint(labels map[string]string) bool {
 	_, ok := labels[TarfsHint]
 	return ok
+}
+
+// HasIDMapping returns true if the snapshot has UID or GID mapping labels set.
+func HasIDMapping(labels map[string]string) bool {
+	_, hasUID := labels[LabelSnapshotUIDMapping]
+	_, hasGID := labels[LabelSnapshotGIDMapping]
+	return hasUID || hasGID
 }
