@@ -637,7 +637,6 @@ func (fs *Filesystem) RemoveCache(blobDigest string) error {
 			if err := c.UnbindBlob("", blobID); err != nil {
 				return err
 			}
-			return nil
 		}
 	}
 
