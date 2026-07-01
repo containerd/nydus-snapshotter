@@ -79,6 +79,10 @@ linters:
               desc: The containerd platforms package was migrated to a separate module. Use github.com/containerd/platforms instead.
             - pkg: "github.com/containerd/containerd/reference/docker"
               desc: The containerd reference package was migrated to a separate module. Use github.com/distribution/reference instead.
+            - pkg: "golang.org/x/exp/maps"
+              desc: Use stdlib maps instead.
+            - pkg: "golang.org/x/exp/slices"
+              desc: Use stdlib slices instead.
     #   govet:
     #     check-shadowing: true
     #     enable:
