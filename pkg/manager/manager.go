@@ -294,7 +294,7 @@ func (m *Manager) DestroyDaemon(d *daemon.Daemon) error {
 
 func (m *Manager) cleanUpDaemonResources(d *daemon.Daemon) {
 	// TODO: use recycle bin to stage directories/files to be deleted.
-	resource := []string{d.States.ConfigDir, d.States.LogDir}
+	resource := []string{d.States.ConfigDir, d.States.LogDir, d.HostMountpoint()}
 	if !d.IsSharedDaemon() {
 		socketDir := path.Dir(d.GetAPISock())
 		resource = append(resource, socketDir)

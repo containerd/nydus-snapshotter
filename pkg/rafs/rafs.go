@@ -110,13 +110,14 @@ func (rs *Cache) SetIntances(instances map[string]*Rafs) {
 
 // The whole struct will be persisted
 type Rafs struct {
-	Seq             uint64
-	ImageID         string // Usually is the image reference
-	DaemonID        string
-	FsDriver        string
-	SnapshotID      string // Given by containerd
-	SnapshotDir     string
-	UnderlyingFiles []string // Underlying cache blob files
+	Seq              uint64
+	ImageID          string // Usually is the image reference
+	DaemonID         string
+	FsDriver         string
+	SnapshotID       string // Given by containerd
+	SnapshotDir      string
+	SourceSnapshotID string
+	UnderlyingFiles  []string // Underlying cache blob files
 	// 1. A host kernel EROFS/TARFS mountpoint
 	// 2. Absolute path to each rafs instance root directory.
 	Mountpoint  string
@@ -149,6 +150,14 @@ func (r *Rafs) AddAnnotation(k, v string) {
 
 func (r *Rafs) GetSnapshotDir() string {
 	return r.SnapshotDir
+}
+
+func (r *Rafs) GetSourceSnapshotID() string {
+	if r.SourceSnapshotID != "" {
+		return r.SourceSnapshotID
+	}
+
+	return r.SnapshotID
 }
 
 func (r *Rafs) GetFsDriver() string {
@@ -187,8 +196,9 @@ func (r *Rafs) RelaMountpoint() string {
 }
 
 func (r *Rafs) BootstrapFile() (string, error) {
+	sourceSnapshotDir := path.Join(config.GetSnapshotsRootDir(), r.GetSourceSnapshotID())
 	// meta files are stored at <snapshot_id>/fs/image/image.boot
-	bootstrap := filepath.Join(r.SnapshotDir, "fs", "image", "image.boot")
+	bootstrap := filepath.Join(sourceSnapshotDir, "fs", "image", "image.boot")
 	_, err := os.Stat(bootstrap)
 	if err == nil {
 		return bootstrap, nil
@@ -196,7 +206,7 @@ func (r *Rafs) BootstrapFile() (string, error) {
 
 	if os.IsNotExist(err) {
 		// check legacy location for backward compatibility
-		bootstrap = filepath.Join(r.SnapshotDir, "fs", "image.boot")
+		bootstrap = filepath.Join(sourceSnapshotDir, "fs", "image.boot")
 		_, err = os.Stat(bootstrap)
 		if err == nil {
 			return bootstrap, nil

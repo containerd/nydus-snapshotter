@@ -15,7 +15,9 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -201,6 +203,79 @@ func TestMountNative(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "no parents, active snapshot with idmap - rw bind mount with uidmap/gidmap",
+			snapshot: storage.Snapshot{
+				ID:        "snap10",
+				Kind:      snapshots.KindActive,
+				ParentIDs: []string{},
+			},
+			labels: map[string]string{
+				snapshots.LabelSnapshotUIDMapping: "0:100000:65536",
+				snapshots.LabelSnapshotGIDMapping: "0:100000:65536",
+			},
+			expectedMounts: []mount.Mount{
+				{
+					Type:   "bind",
+					Source: s.upperPath("snap10"),
+					Options: []string{
+						"rw",
+						"rbind",
+						"uidmap=0:100000:65536",
+						"gidmap=0:100000:65536",
+					},
+				},
+			},
+		},
+		{
+			name: "one parent, view snapshot with idmap - ro bind mount with uidmap/gidmap",
+			snapshot: storage.Snapshot{
+				ID:        "snap11",
+				Kind:      snapshots.KindView,
+				ParentIDs: []string{"parent1"},
+			},
+			labels: map[string]string{
+				snapshots.LabelSnapshotUIDMapping: "0:200000:65536",
+				snapshots.LabelSnapshotGIDMapping: "0:200000:65536",
+			},
+			expectedMounts: []mount.Mount{
+				{
+					Type:   "bind",
+					Source: s.upperPath("parent1"),
+					Options: []string{
+						"ro",
+						"rbind",
+						"uidmap=0:200000:65536",
+						"gidmap=0:200000:65536",
+					},
+				},
+			},
+		},
+		{
+			name: "multiple parents, active snapshot with idmap - overlay with uidmap/gidmap",
+			snapshot: storage.Snapshot{
+				ID:        "snap12",
+				Kind:      snapshots.KindActive,
+				ParentIDs: []string{"parent1", "parent2"},
+			},
+			labels: map[string]string{
+				snapshots.LabelSnapshotUIDMapping: "0:100000:65536",
+				snapshots.LabelSnapshotGIDMapping: "0:100000:65536",
+			},
+			expectedMounts: []mount.Mount{
+				{
+					Type:   "overlay",
+					Source: "overlay",
+					Options: []string{
+						fmt.Sprintf("workdir=%s", s.workPath("snap12")),
+						fmt.Sprintf("upperdir=%s", s.upperPath("snap12")),
+						fmt.Sprintf("lowerdir=%s:%s", s.upperPath("parent1"), s.upperPath("parent2")),
+						"uidmap=0:100000:65536",
+						"gidmap=0:100000:65536",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -269,4 +344,41 @@ func TestMountNativeConfigVolatile(t *testing.T) {
 		require.Len(t, mounts, 1)
 		assert.NotContains(t, mounts[0].Options, "volatile")
 	})
+}
+
+func TestMountRemoteUsesPerPodLowerdirForIDMap(t *testing.T) {
+	originalInstances := rafs.RafsGlobalCache.List()
+	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
+	t.Cleanup(func() {
+		rafs.RafsGlobalCache.SetIntances(originalInstances)
+	})
+
+	snapshotterRoot := t.TempDir()
+	s := &snapshotter{
+		root: snapshotterRoot,
+		fs:   &filesystem.Filesystem{},
+	}
+
+	labels := map[string]string{
+		label.SnapshotUIDMapping: "0:100000:65536",
+		label.SnapshotGIDMapping: "0:100000:65536",
+	}
+	rafsKey, err := label.RafsInstanceIDFromLabels("meta", labels)
+	require.NoError(t, err)
+
+	mountpoint := filepath.Join(snapshotterRoot, "mnt", rafsKey)
+	rafs.RafsGlobalCache.Add(&rafs.Rafs{
+		SnapshotID:  rafsKey,
+		SnapshotDir: filepath.Join(snapshotterRoot, "snapshots", "meta"),
+		Mountpoint:  mountpoint,
+	})
+
+	mounts, err := s.mountRemote(context.Background(), labels, storage.Snapshot{
+		ID:   "active",
+		Kind: snapshots.KindActive,
+	}, "meta", "active-key")
+	require.NoError(t, err)
+	require.Len(t, mounts, 1)
+	assert.Contains(t, mounts[0].Options, fmt.Sprintf("lowerdir=%s", mountpoint))
+	assert.NotContains(t, mounts[0].Options, fmt.Sprintf("lowerdir=%s", filepath.Join(snapshotterRoot, "snapshots", "meta", "fs")))
 }

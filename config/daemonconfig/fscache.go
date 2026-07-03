@@ -112,6 +112,13 @@ func (c *FscacheDaemonConfig) FillAuth(kc *auth.PassKeyChain) {
 	}
 }
 
+// SetIDMapping is a no-op: idmap is currently not initialized/applied for the fscache driver in this layer.
+func (c *FscacheDaemonConfig) SetIDMapping(m *[3]uint32) {
+	if m != nil {
+		log.L.Warnf("nydus idmap: id_mapping is not supported by the fscache driver, ignoring")
+	}
+}
+
 func (c *FscacheDaemonConfig) DumpString() (string, error) {
 	return DumpConfigString(c)
 }

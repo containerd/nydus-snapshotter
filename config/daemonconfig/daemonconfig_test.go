@@ -66,33 +66,60 @@ func TestLoadConfig(t *testing.T) {
 	require.Equal(t, cfg.Device.Backend.Config.Proxy.CheckInterval, 5)
 }
 
-func TestAmplifyIo(t *testing.T) {
-	// Test non-zero value
-	input1 := []byte(`{"amplify_io": 1048576}`)
-	var cfg1 FuseDaemonConfig
-	err1 := json.Unmarshal(input1, &cfg1)
-	require.Nil(t, err1)
-	require.Equal(t, *cfg1.AmplifyIo, 1048576)
-	output1, _ := json.Marshal(cfg1)
-	require.Contains(t, string(output1), `"amplify_io":1048576`)
+func TestFuseDaemonConfigOptionalFields(t *testing.T) {
+	t.Run("amplify_io non-zero", func(t *testing.T) {
+		input := []byte(`{"amplify_io": 1048576}`)
+		var cfg FuseDaemonConfig
+		err := json.Unmarshal(input, &cfg)
+		require.Nil(t, err)
+		require.Equal(t, *cfg.AmplifyIo, 1048576)
+		output, _ := json.Marshal(cfg)
+		require.Contains(t, string(output), `"amplify_io":1048576`)
+	})
 
-	// Test zero value
-	input2 := []byte(`{"amplify_io": 0}`)
-	var cfg2 FuseDaemonConfig
-	err2 := json.Unmarshal(input2, &cfg2)
-	require.Nil(t, err2)
-	require.Equal(t, *cfg2.AmplifyIo, 0)
-	output2, _ := json.Marshal(cfg2)
-	require.Contains(t, string(output2), `"amplify_io":0`)
+	t.Run("amplify_io zero", func(t *testing.T) {
+		input := []byte(`{"amplify_io": 0}`)
+		var cfg FuseDaemonConfig
+		err := json.Unmarshal(input, &cfg)
+		require.Nil(t, err)
+		require.Equal(t, *cfg.AmplifyIo, 0)
+		output, _ := json.Marshal(cfg)
+		require.Contains(t, string(output), `"amplify_io":0`)
+	})
 
-	// Test nil value
-	input3 := []byte(`{}`)
-	var cfg3 FuseDaemonConfig
-	err3 := json.Unmarshal(input3, &cfg3)
-	require.Nil(t, err3)
-	require.Nil(t, cfg3.AmplifyIo)
-	output3, _ := json.Marshal(cfg3)
-	require.NotContains(t, string(output3), `amplify_io`)
+	t.Run("amplify_io nil", func(t *testing.T) {
+		input := []byte(`{}`)
+		var cfg FuseDaemonConfig
+		err := json.Unmarshal(input, &cfg)
+		require.Nil(t, err)
+		require.Nil(t, cfg.AmplifyIo)
+		output, _ := json.Marshal(cfg)
+		require.NotContains(t, string(output), `amplify_io`)
+	})
+
+	t.Run("id_mapping round-trip", func(t *testing.T) {
+		// Must serialize as a 3-element JSON array matching nydusd's
+		// `RafsConfigV2.id_mapping` (u32, u32, u32) tuple.
+		cfg := FuseDaemonConfig{Mode: "direct"}
+		cfg.SetIDMapping(&[3]uint32{0, 100000, 65536})
+
+		b, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		require.Contains(t, string(b), `"id_mapping":[0,100000,65536]`)
+
+		var restored FuseDaemonConfig
+		err = json.Unmarshal(b, &restored)
+		require.NoError(t, err)
+		require.NotNil(t, restored.IDMapping)
+		require.Equal(t, [3]uint32{0, 100000, 65536}, *restored.IDMapping)
+	})
+
+	t.Run("id_mapping unset omitted", func(t *testing.T) {
+		cfg := FuseDaemonConfig{Mode: "direct"}
+		b, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		require.NotContains(t, string(b), "id_mapping")
+	})
 }
 
 func TestSerializeWithSecretFilter(t *testing.T) {

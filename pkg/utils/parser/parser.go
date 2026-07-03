@@ -9,6 +9,7 @@ package parser
 import (
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -74,4 +75,12 @@ func MemoryConfigToBytes(data string, totalMemoryBytes int) (int64, error) {
 
 	multiplier := unitMultipliers[unit]
 	return int64(value * float64(multiplier)), nil
+}
+
+func ParseUint32(s string) (uint32, error) {
+	v, err := strconv.ParseUint(strings.TrimSpace(s), 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(v), nil
 }

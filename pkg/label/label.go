@@ -7,7 +7,13 @@
 package label
 
 import (
+	"fmt"
+	"math"
+	"strings"
+
+	"github.com/containerd/containerd/v2/core/snapshots"
 	snpkg "github.com/containerd/containerd/v2/pkg/snapshotters"
+	"github.com/containerd/nydus-snapshotter/pkg/utils/parser"
 )
 
 // For package compatibility, we still keep the old exported name here.
@@ -63,7 +69,99 @@ const (
 
 	// An alternative nydus index manifest exists in the original OCI index manifest for this snapshot
 	NydusIndexAlternative = "containerd.io/snapshot/nydus-index-alternative"
+
+	SnapshotUIDMapping = snapshots.LabelSnapshotUIDMapping
+
+	SnapshotGIDMapping = snapshots.LabelSnapshotGIDMapping
 )
+
+// IDMapping represents a contiguous UID/GID mapping tuple (Internal, External, Range),
+// matching nydusd's `RafsConfigV2.id_mapping` format.
+type IDMapping struct {
+	Internal uint32 // User/Group ID inside the container (namespace)
+	External uint32 // Mapped User/Group ID on the host
+	Range    uint32 // Number of contiguous IDs in the mapping
+}
+
+// parseSingleMapping parses one containerd mapping string `internalID:hostID:size`.
+// The format maps an in-container (namespace) User/Group ID to a host (external) ID.
+func parseSingleMapping(kind, value string) (*IDMapping, error) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("nydus idmap: invalid %s mapping %q, expected internalID:hostID:size", kind, value)
+	}
+
+	internalID, err := parser.ParseUint32(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("nydus idmap: invalid %s internalID in %q: %w", kind, value, err)
+	}
+
+	externalID, err := parser.ParseUint32(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("nydus idmap: invalid %s hostID in %q: %w", kind, value, err)
+	}
+
+	size, err := parser.ParseUint32(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("nydus idmap: invalid %s size in %q: %w", kind, value, err)
+	}
+
+	if size == 0 {
+		return nil, fmt.Errorf("nydus idmap: %s mapping %q has zero range", kind, value)
+	}
+
+	// Perform arithmetic overflow checks.
+	if internalID > math.MaxUint32-size || externalID > math.MaxUint32-size {
+		return nil, fmt.Errorf("nydus idmap: %s mapping %q overflows uint32", kind, value)
+	}
+
+	return &IDMapping{Internal: internalID, External: externalID, Range: size}, nil
+}
+
+// ParseIDMapping extracts raw UID/GID mappings from snapshot labels.
+// It enforces that UID and GID mappings are identical and returns a single
+// unified IDMapping. Returns nil with no error if idmap labels are absent.
+func ParseIDMapping(labels map[string]string) (*IDMapping, error) {
+	uidStr := labels[SnapshotUIDMapping]
+	gidStr := labels[SnapshotGIDMapping]
+
+	if uidStr == "" && gidStr == "" {
+		//nolint:nilnil // intentionally nil, nil: success with no mapping present
+		return nil, nil
+	}
+
+	if uidStr == "" || gidStr == "" {
+		return nil, fmt.Errorf("nydus idmap: both uid and gid mappings must be provided")
+	}
+
+	if uidStr != gidStr {
+		return nil, fmt.Errorf("nydus idmap: uid mapping %q and gid mapping %q do not match", uidStr, gidStr)
+	}
+
+	idMapping, err := parseSingleMapping("uid", uidStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return idMapping, nil
+}
+
+func RafsInstanceID(snapshotID string, idMapping *IDMapping) string {
+	if idMapping == nil {
+		return snapshotID
+	}
+
+	return fmt.Sprintf("%s-userns-%d", snapshotID, idMapping.External)
+}
+
+func RafsInstanceIDFromLabels(snapshotID string, labels map[string]string) (string, error) {
+	idMapping, err := ParseIDMapping(labels)
+	if err != nil {
+		return "", err
+	}
+
+	return RafsInstanceID(snapshotID, idMapping), nil
+}
 
 func IsNydusDataLayer(labels map[string]string) bool {
 	_, ok := labels[NydusDataLayer]
