@@ -159,11 +159,16 @@ func (d *Daemon) UpdateRafsInstance(r *rafs.Rafs) {
 }
 
 func (d *Daemon) RemoveRafsInstance(snapshotID string) {
+	// Only drop the reference when the instance was actually cached.
+	// AddRafsInstance only IncRef()s when it adds, so a duplicate Umount
+	// (retry / recovery) for an already-removed snapshot must not DecRef()
+	// again, otherwise a shared daemon's refcount goes too low and the
+	// nydusd can be torn down while other snapshots still use it.
 	if r := d.RafsCache.Get(snapshotID); r != nil {
 		collector.NewDaemonImageCollector(d.ID(), r.ImageID).Delete()
+		d.RafsCache.Remove(snapshotID)
+		d.DecRef()
 	}
-	d.RafsCache.Remove(snapshotID)
-	d.DecRef()
 }
 
 // Get and cache daemon current working state by querying nydusd:
