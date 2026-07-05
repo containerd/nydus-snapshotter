@@ -40,7 +40,7 @@ func TestWaitForReadyBootstrapWaitsForStableBlobMeta(t *testing.T) {
 	bootstrap := filepath.Join(dir, "image.boot")
 	blobMeta := filepath.Join(dir, "a.blob.meta")
 
-	require.NoError(t, writeFakeV5Bootstrap(bootstrap, 8192))
+	require.NoError(t, writeFakeV5Bootstrap(bootstrap))
 
 	go func() {
 		time.Sleep(5 * time.Millisecond)
@@ -73,7 +73,7 @@ func TestWaitForReadyBootstrapRejectsStableMisalignedV6(t *testing.T) {
 func TestWaitForReadyBootstrapAcceptsStableV5(t *testing.T) {
 	dir := t.TempDir()
 	bootstrap := filepath.Join(dir, "image.boot")
-	require.NoError(t, writeFakeV5Bootstrap(bootstrap, 8192))
+	require.NoError(t, writeFakeV5Bootstrap(bootstrap))
 
 	err := waitForReadyBootstrapWithRetry(bootstrap, 3, 5*time.Millisecond)
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestValidateBootstrapAndBlobMetaReturnsCombinedState(t *testing.T) {
 	dir := t.TempDir()
 	bootstrap := filepath.Join(dir, "image.boot")
 
-	require.NoError(t, writeFakeV5Bootstrap(bootstrap, 8192))
+	require.NoError(t, writeFakeV5Bootstrap(bootstrap))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "layer.blob.meta"), []byte{1, 2, 3, 4}, 0644))
 
 	state, err := validateBootstrapAndBlobMeta(bootstrap)
@@ -217,8 +217,8 @@ func TestBootstrapStateEqual(t *testing.T) {
 	require.False(t, a.Equal(d))
 }
 
-func writeFakeV5Bootstrap(path string, size int) error {
-	buf := make([]byte, size)
+func writeFakeV5Bootstrap(path string) error {
+	buf := make([]byte, 8192)
 	binary.LittleEndian.PutUint32(buf[0:4], layout.RafsV5SuperMagic)
 	binary.LittleEndian.PutUint32(buf[4:8], layout.RafsV5SuperVersion)
 	return os.WriteFile(path, buf, 0644)
@@ -232,4 +232,33 @@ func writeFakeV6Bootstrap(path string, size int, blockBits byte) error {
 	)
 	buf[v6BlockBitsOffset] = blockBits
 	return os.WriteFile(path, buf, 0644)
+}
+
+func TestCopyBlobMetaFilesDoesNotTruncateSourceViaExistingHardlink(t *testing.T) {
+	srcDir := t.TempDir()
+	cacheDir := t.TempDir()
+	bootstrap := filepath.Join(srcDir, "image.boot")
+	srcMeta := filepath.Join(srcDir, "layer.blob.meta")
+	dstMeta := filepath.Join(cacheDir, "layer.blob.meta")
+
+	require.NoError(t, writeFakeV5Bootstrap(bootstrap))
+	require.NoError(t, os.WriteFile(srcMeta, []byte("blob-meta"), 0644))
+	require.NoError(t, os.Link(srcMeta, dstMeta))
+
+	fs := &Filesystem{}
+	require.NoError(t, fs.copyBlobMetaFiles(bootstrap, cacheDir))
+
+	srcContent, err := os.ReadFile(srcMeta)
+	require.NoError(t, err)
+	require.Equal(t, []byte("blob-meta"), srcContent)
+
+	dstContent, err := os.ReadFile(dstMeta)
+	require.NoError(t, err)
+	require.Equal(t, []byte("blob-meta"), dstContent)
+
+	srcInfo, err := os.Stat(srcMeta)
+	require.NoError(t, err)
+	dstInfo, err := os.Stat(dstMeta)
+	require.NoError(t, err)
+	require.False(t, os.SameFile(srcInfo, dstInfo))
 }

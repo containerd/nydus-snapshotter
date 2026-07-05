@@ -515,15 +515,10 @@ func (fs *Filesystem) copyBlobMetaFiles(bootstrap, cacheDir string) error {
 		fileName := filepath.Base(srcPath)
 		dstPath := filepath.Join(cacheDir, fileName)
 
-		if err := os.Link(srcPath, dstPath); err != nil {
-			log.L.Warnf("Failed to create hardlink for %s: %v, falling back to copy", fileName, err)
-			if err := fs.copyFile(srcPath, dstPath); err != nil {
-				return errors.Wrapf(err, "copy blob meta file %s", fileName)
-			}
-			log.L.Debugf("Copied blob meta file: %s -> %s", srcPath, dstPath)
-		} else {
-			log.L.Debugf("Created hardlink for blob meta: %s -> %s", srcPath, dstPath)
+		if err := fs.copyFile(srcPath, dstPath); err != nil {
+			return errors.Wrapf(err, "copy blob meta file %s", fileName)
 		}
+		log.L.Debugf("Copied blob meta file: %s -> %s", srcPath, dstPath)
 	}
 
 	return nil
@@ -536,14 +531,32 @@ func (fs *Filesystem) copyFile(src, dst string) error {
 	}
 	defer source.Close()
 
-	destination, err := os.Create(dst)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	destination, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	defer destination.Close()
+	tmpPath := destination.Name()
+	defer func() {
+		if destination != nil {
+			destination.Close()
+		}
+		_ = os.Remove(tmpPath)
+	}()
 
 	_, err = io.Copy(destination, source)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := destination.Close(); err != nil {
+		return err
+	}
+	destination = nil
+
+	return os.Rename(tmpPath, dst)
 }
 
 func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
