@@ -43,6 +43,9 @@ type DaemonConfig interface {
 	StorageBackend() (StorageBackendType, *BackendConfig)
 	DumpString() (string, error)
 	DumpFile(path string) error
+	// SetIDMapping sets the UID/GID mapping tuple (internal, external, range)
+	// for user-namespace remap-ids support. A nil value clears any mapping.
+	SetIDMapping(m *[3]uint32)
 }
 
 // Daemon configurations factory

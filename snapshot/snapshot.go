@@ -419,7 +419,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 	switch info.Kind {
 	case snapshots.KindView:
 		if label.IsNydusMetaLayer(info.Labels) {
-			err = o.fs.WaitUntilReady(id)
+			err = o.fs.WaitUntilReady(id, info.Labels)
 			if err != nil {
 				// Skip waiting if clients is unpacking nydus artifacts to `mounts`
 				// For example, nydus-snapshotter's client like Buildkit is calling snapshotter in below workflow:
@@ -444,7 +444,7 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 			pKey := info.Parent
 			if pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
 				if label.IsNydusMetaLayer(pInfo.Labels) {
-					if err = o.fs.WaitUntilReady(pID); err != nil {
+					if err = o.fs.WaitUntilReady(pID, info.Labels); err != nil {
 						return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 					}
 					needRemoteMounts = true
@@ -543,13 +543,13 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 
 	if label.IsNydusMetaLayer(pInfo.Labels) {
 		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
-		if err = o.fs.WaitUntilReady(pID); err != nil {
+		if err = o.fs.WaitUntilReady(pID, pInfo.Labels); err != nil {
 			if errors.Is(err, errdefs.ErrNotFound) {
 				if err := o.fs.Mount(ctx, pID, pInfo.Labels, nil); err != nil {
 					return nil, errors.Wrapf(err, "mount rafs, instance id %s", pID)
 				}
 
-				if err := o.fs.WaitUntilReady(pID); err != nil {
+				if err := o.fs.WaitUntilReady(pID, pInfo.Labels); err != nil {
 					return nil, errors.Wrapf(err, "wait for instance id %s", pID)
 				}
 			} else {
@@ -656,6 +656,15 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		return errors.Wrapf(err, "get snapshot %s", key)
 	}
 
+	var removeRafsSnapshotID string
+	if info.Kind == snapshots.KindActive || info.Kind == snapshots.KindView {
+		if idMapping, parseErr := label.ParseIDMapping(info.Labels); parseErr == nil && idMapping != nil {
+			if metaID, _, metaErr := o.findMetaLayer(ctx, key); metaErr == nil {
+				removeRafsSnapshotID = metaID
+			}
+		}
+	}
+
 	switch {
 	case label.IsNydusMetaLayer(info.Labels):
 		log.L.Infof("[Remove] nydus meta snapshot with key %s snapshot id %s", key, id)
@@ -693,6 +702,14 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 			}
 		}()
 	}
+
+	defer func() {
+		if err == nil && removeRafsSnapshotID != "" {
+			if umountErr := o.fs.UmountByLabels(ctx, removeRafsSnapshotID, info.Labels); umountErr != nil {
+				log.G(ctx).WithError(umountErr).WithField("snapshot_id", removeRafsSnapshotID).Warn("failed to remove per-pod lower RAFS instance")
+			}
+		}
+	}()
 
 	return t.Commit()
 }
@@ -858,8 +875,20 @@ func (o *snapshotter) createSnapshotWithRecovery(ctx context.Context, kind snaps
 		return nil, storage.Snapshot{}, errors.Wrap(err, "create snapshot")
 	}
 
-	// Try to keep the whole stack having the same UID and GID
-	if len(s.ParentIDs) > 0 {
+	// When remap-ids labels are present, containerd skips its own recursive
+	// chown — we chown just the upper dir to the mapped host ID (single
+	// directory, does not defeat lazy pulling). Without idmap, inherit the
+	// parent's UID/GID as before.
+	idMapping, err := label.ParseIDMapping(base.Labels)
+	if err != nil {
+		return nil, storage.Snapshot{}, errors.Wrap(err, "parse id mapping")
+	}
+	if idMapping != nil {
+		externalID := int(idMapping.External)
+		if err := os.Lchown(filepath.Join(td, "fs"), externalID, externalID); err != nil {
+			return nil, storage.Snapshot{}, errors.Wrap(err, "perform idmapped chown")
+		}
+	} else if len(s.ParentIDs) > 0 {
 		st, err := os.Stat(o.upperPath(s.ParentIDs[0]))
 		if err != nil {
 			return nil, storage.Snapshot{}, errors.Wrap(err, "stat parent")
@@ -1022,15 +1051,18 @@ func (o *snapshotter) mergeTarfs(ctx context.Context, s storage.Snapshot, pID st
 	return nil
 }
 
-func bindMount(source, roFlag string) []mount.Mount {
+func bindMount(source, roFlag string, extraOptions ...string) []mount.Mount {
+	options := []string{
+		roFlag,
+		"rbind",
+	}
+	options = append(options, extraOptions...)
+
 	return []mount.Mount{
 		{
-			Type:   "bind",
-			Source: source,
-			Options: []string{
-				roFlag,
-				"rbind",
-			},
+			Type:    "bind",
+			Source:  source,
+			Options: options,
 		},
 	}
 }
@@ -1118,7 +1150,11 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 		}
 	}
 
-	lowerPathNydus, err := o.lowerPath(id)
+	rafsKey, err := label.RafsInstanceIDFromLabels(id, labels)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse id mapping for remote mount")
+	}
+	lowerPathNydus, err := o.lowerPath(rafsKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to locate overlay lowerdir")
 	}
@@ -1144,6 +1180,19 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	overlayOptions = append(overlayOptions, lowerDirOption)
 	log.G(ctx).Infof("remote mount options %v", overlayOptions)
 
+	// Chown overlay upperdir/workdir to the mapped host UID (from
+	// remap-ids labels) so the container can write to its rootfs.
+	if s.Kind == snapshots.KindActive {
+		if idMapping, _ := label.ParseIDMapping(labels); idMapping != nil {
+			externalID := int(idMapping.External)
+			for _, d := range []string{o.upperPath(s.ID), o.workPath(s.ID)} {
+				if err := os.Lchown(d, externalID, externalID); err != nil {
+					log.G(ctx).WithError(err).Warnf("chown %s to %d for idmap: %v", d, externalID, err)
+				}
+			}
+		}
+	}
+
 	if o.enableKataVolume {
 		return o.mountWithKataVolume(ctx, id, overlayOptions, key)
 	}
@@ -1154,14 +1203,30 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	return overlayMount(overlayOptions), nil
 }
 
+// mountNative builds mount options for non-nydus (plain OCI) images.
 func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string, s storage.Snapshot) ([]mount.Mount, error) {
+	idMapping, err := label.ParseIDMapping(labels)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse id mapping for native mount")
+	}
+
+	var idMapOptions []string
+	if idMapping != nil {
+		// uidmap=/gidmap= are consumed by containerd's mount package
+		// (open_tree + mount_setattr + move_mount), NOT by the kernel.
+		idMapOptions = []string{
+			fmt.Sprintf("uidmap=%d:%d:%d", idMapping.Internal, idMapping.External, idMapping.Range),
+			fmt.Sprintf("gidmap=%d:%d:%d", idMapping.Internal, idMapping.External, idMapping.Range),
+		}
+	}
+
 	if len(s.ParentIDs) == 0 {
 		// if we only have one layer/no parents then just return a bind mount as overlay will not work
 		roFlag := "rw"
 		if s.Kind == snapshots.KindView {
 			roFlag = "ro"
 		}
-		return bindMount(o.upperPath(s.ID), roFlag), nil
+		return bindMount(o.upperPath(s.ID), roFlag, idMapOptions...), nil
 	}
 
 	var options []string
@@ -1177,8 +1242,9 @@ func (o *snapshotter) mountNative(ctx context.Context, labels map[string]string,
 		parentPath := o.upperPath(s.ParentIDs[0])
 		// if we only have one parent then just return a bind mount
 		log.G(ctx).Debugf("bind mount on %s", parentPath)
-		return bindMount(parentPath, "ro"), nil
+		return bindMount(parentPath, "ro", idMapOptions...), nil
 	}
+	options = append(options, idMapOptions...)
 
 	parentPaths := make([]string, len(s.ParentIDs))
 	for i := range s.ParentIDs {
@@ -1215,6 +1281,13 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 		return nil, err
 	}
 
+	// Per-pod RAFS instances (e.g. "48-userns-<uid>") live outside
+	// containerd's IDMap — keep them alive while still referenced.
+	liveRafsSnapshotDirs := make(map[string]struct{})
+	for _, instance := range rafs.RafsGlobalCache.List() {
+		liveRafsSnapshotDirs[filepath.Base(instance.GetSnapshotDir())] = struct{}{}
+	}
+
 	// For example:
 	// 23:default/24/sha256:8c2ed532dce363da2d08489f385c432f7c0ee4509ab4e20eb2778803916adc93
 	// 24:sha256:c858413d9e5162c287028d630128ea4323d5029bf8a093af783480b38cf8d44e
@@ -1234,6 +1307,9 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 	cleanup := make([]string, 0, 16)
 	for _, d := range dirs {
 		if _, ok := ids[d]; ok {
+			continue
+		}
+		if _, ok := liveRafsSnapshotDirs[d]; ok {
 			continue
 		}
 		// When it quits, there will be nothing inside

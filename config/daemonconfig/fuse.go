@@ -31,6 +31,10 @@ type FuseDaemonConfig struct {
 	FSPrefetch      `json:"fs_prefetch,omitempty"`
 	// (experimental) The nydus daemon could cache more data to increase hit ratio when enabled the warmup feature.
 	Warmup uint64 `json:"warmup,omitempty"`
+	// UID/GID mapping tuple (internal, external, range) for user-namespace
+	// remap-ids support. Serialized as a 3-element JSON array to match nydusd's
+	// `RafsConfigV2.id_mapping` tuple. Omitted when no mapping is configured.
+	IDMapping *[3]uint32 `json:"id_mapping,omitempty"`
 }
 
 // Control how to perform prefetch from file system layer
@@ -87,6 +91,10 @@ func (c *FuseDaemonConfig) FillAuth(kc *auth.PassKeyChain) {
 
 func (c *FuseDaemonConfig) StorageBackend() (string, *BackendConfig) {
 	return c.Device.Backend.BackendType, &c.Device.Backend.Config
+}
+
+func (c *FuseDaemonConfig) SetIDMapping(m *[3]uint32) {
+	c.IDMapping = m
 }
 
 func (c *FuseDaemonConfig) DumpString() (string, error) {

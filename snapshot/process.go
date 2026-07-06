@@ -48,7 +48,7 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 			}
 
 			// Let Prepare operation show the rootfs content.
-			if err := sn.fs.WaitUntilReady(id); err != nil {
+			if err := sn.fs.WaitUntilReady(id, labels); err != nil {
 				return false, nil, err
 			}
 
@@ -142,6 +142,17 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		if handler == nil {
 			if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
 				logger.Infof("Prepare active Nydus snapshot %s", key)
+				// Propagate user-namespace remap-ids labels from the Active
+				// snapshot to the meta layer so fs.Mount() and mountRemote()
+				// can apply the correct id_mapping.
+				for _, k := range []string{
+					label.SnapshotUIDMapping,
+					label.SnapshotGIDMapping,
+				} {
+					if v, ok := labels[k]; ok {
+						info.Labels[k] = v
+					}
+				}
 				handler = remoteHandler(id, info.Labels)
 			}
 		}

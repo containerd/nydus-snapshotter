@@ -12,6 +12,7 @@ package filesystem
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -248,14 +249,19 @@ func (fs *Filesystem) TryStopSharedDaemon() {
 
 // WaitUntilReady wait until daemon ready by snapshotID, it will wait until nydus domain socket established
 // and the status of nydusd daemon must be ready
-func (fs *Filesystem) WaitUntilReady(snapshotID string) error {
-	rafs := racache.RafsGlobalCache.Get(snapshotID)
+func (fs *Filesystem) WaitUntilReady(snapshotID string, labels map[string]string) error {
+	rafsKey, err := label.RafsInstanceIDFromLabels(snapshotID, labels)
+	if err != nil {
+		return errors.Wrapf(err, "parse id mapping for snapshot %s", snapshotID)
+	}
+
+	rafs := racache.RafsGlobalCache.Get(rafsKey)
 	if rafs == nil {
 		// If NoneDaemon mode, there's no need to wait for daemon ready
 		if config.GetDaemonMode() == config.DaemonModeNone {
 			return nil
 		}
-		return errors.Wrapf(errdefs.ErrNotFound, "no instance %s", snapshotID)
+		return errors.Wrapf(errdefs.ErrNotFound, "no instance %s", rafsKey)
 	}
 
 	if rafs.GetFsDriver() == config.FsDriverFscache || rafs.GetFsDriver() == config.FsDriverFusedev {
@@ -321,19 +327,43 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 	mu.Lock()
 	defer mu.Unlock()
 
-	rafs := racache.RafsGlobalCache.Get(snapshotID)
-	if rafs != nil {
-		// Instance already exists, how could this happen? Can containerd handle this case?
-		return nil
+	// Parse id-mapping labels early so each pod with a distinct UID range
+	// gets its own RAFS instance (per-pod rafsKey includes the mapping suffix).
+	// A shared daemon has a single id_mapping config, so different pods
+	// cannot reuse the same FUSE mount.
+	idMapping, err := label.ParseIDMapping(labels)
+	if err != nil {
+		return errors.Wrapf(err, "parse id mapping for snapshot %s", snapshotID)
 	}
+
+	// Per-pod rafs cache key: two pods sharing the same image but with
+	// different user-namespace mappings get separate rafs instances.
+	rafsKey := label.RafsInstanceID(snapshotID, idMapping)
 
 	fsDriver := config.GetFsDriver()
 	if label.IsTarfsDataLayer(labels) {
 		fsDriver = config.FsDriverBlockdev
 	}
+
+	if idMapping != nil {
+		if fsDriver != config.FsDriverFusedev {
+			return errors.Errorf("id mapping (remap-ids) is only supported by the fusedev driver, got %q", fsDriver)
+		}
+	}
 	isSharedFusedev := fsDriver == config.FsDriverFusedev && config.GetDaemonMode() == config.DaemonModeShared
 	useSharedDaemon := fsDriver == config.FsDriverFscache || isSharedFusedev
 
+	rafs := racache.RafsGlobalCache.Get(rafsKey)
+	if rafs != nil && idMapping == nil {
+		// Instance already exists and no remap-ids needed — safe to reuse.
+		return nil
+	}
+	if rafs != nil && idMapping != nil {
+		// Per-pod compound rafsKey already includes the UID mapping in
+		// its suffix, so a cache hit means this exact pod already has
+		// a mount — duplicate Mount() call, safe to reuse.
+		return nil
+	}
 	var imageID string
 	imageID, ok := labels[snpkg.TargetRefLabel]
 	if !ok {
@@ -346,17 +376,19 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		}
 	}
 
-	rafs, err = racache.NewRafs(snapshotID, imageID, fsDriver)
+	rafs, err = racache.NewRafs(rafsKey, imageID, fsDriver)
 	if err != nil {
 		return errors.Wrapf(err, "create rafs instance %s", snapshotID)
+	}
+	if idMapping != nil {
+		rafs.SourceSnapshotID = snapshotID
 	}
 
 	defer func() {
 		if err != nil {
-			if umountErr := fs.Umount(ctx, snapshotID); umountErr != nil {
+			if umountErr := fs.umountRafsInstances([]*racache.Rafs{rafs}); umountErr != nil {
 				log.L.WithError(umountErr).Warnf("failed to umount snapshot %s during cleanup", snapshotID)
 			}
-			racache.RafsGlobalCache.Remove(snapshotID)
 		}
 	}()
 
@@ -393,6 +425,12 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			if err != nil {
 				return err
 			}
+			if idMapping != nil {
+				mp = fmt.Sprintf("%s-%d", mp, idMapping.External)
+				if err := os.MkdirAll(mp, 0755); err != nil {
+					return errors.Wrapf(err, "create idmap mountpoint dir %s", mp)
+				}
+			}
 			d, err = fs.createDaemon(fsManager, config.DaemonModeDedicated, mp, 0)
 			// if daemon already exists for snapshotID, just return
 			if err != nil && !errdefs.IsAlreadyExists(err) {
@@ -408,16 +446,21 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 			daemonconfig.CacheDir:  cacheDir,
 		}
 		cfg := deepcopy.Copy(*fsManager.DaemonConfig).(daemonconfig.DaemonConfig)
-		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, snapshotID, false, labels, params)
+		err = daemonconfig.SupplementDaemonConfig(cfg, imageID, rafsKey, false, labels, params)
 		if err != nil {
 			return errors.Wrap(err, "supplement configuration")
+		}
+
+		// Inject the UID/GID mapping so nydusd applies VFS-layer remapping.
+		if idMapping != nil && fsDriver == config.FsDriverFusedev {
+			cfg.SetIDMapping(&[3]uint32{idMapping.Internal, idMapping.External, idMapping.Range})
 		}
 
 		// TODO: How to manage rafs configurations on-disk? separated json config file or DB record?
 		// In order to recover erofs mount, the configuration file has to be persisted.
 		var configSubDir string
 		if useSharedDaemon {
-			configSubDir = snapshotID
+			configSubDir = rafsKey
 		} else {
 			// Associate daemon config object when creating a new daemon object to avoid
 			// reading disk file again and again.
@@ -560,61 +603,144 @@ func (fs *Filesystem) copyFile(src, dst string) error {
 }
 
 func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
-	rafs := racache.RafsGlobalCache.Get(snapshotID)
-	if rafs == nil {
+	rafsList := fs.collectRafsInstances(snapshotID)
+	if len(rafsList) == 0 {
 		log.L.Debugf("no RAFS filesystem instance associated with snapshot %s", snapshotID)
 		return nil
 	}
 
-	fsDriver := rafs.GetFsDriver()
-	if fsDriver == config.FsDriverNodev {
+	return fs.umountRafsInstances(rafsList)
+}
+
+func (fs *Filesystem) UmountByLabels(_ context.Context, snapshotID string, labels map[string]string) error {
+	rafsKey, err := label.RafsInstanceIDFromLabels(snapshotID, labels)
+	if err != nil {
+		return errors.Wrapf(err, "parse id mapping for snapshot %s", snapshotID)
+	}
+
+	rafs := racache.RafsGlobalCache.Get(rafsKey)
+	if rafs == nil {
 		return nil
 	}
-	fsManager, err := fs.getManager(fsDriver)
-	if err != nil {
-		return errors.Wrapf(err, "get manager for filesystem instance %s", rafs.DaemonID)
+
+	return fs.umountRafsInstances([]*racache.Rafs{rafs})
+}
+
+// collectRafsInstances gathers all RAFS instances associated with a snapshot:
+// the shared instance keyed by snapshotID itself, plus any per-pod idmap
+// derivatives whose SourceSnapshotID matches snapshotID. In the idmap scenario,
+// a single base snapshot may spawn multiple RAFS instances (one per user
+// namespace mapping), all of which must be collected for unmount.
+func (fs *Filesystem) collectRafsInstances(snapshotID string) []*racache.Rafs {
+	var rafsList []*racache.Rafs
+	// Get the shared (non-idmap) RAFS instance.
+	if r := racache.RafsGlobalCache.Get(snapshotID); r != nil {
+		rafsList = append(rafsList, r)
+	}
+	// Find per-pod idmap derivatives whose SourceSnapshotID matches.
+	for _, r := range racache.RafsGlobalCache.List() {
+		if r.SnapshotID != snapshotID && r.GetSourceSnapshotID() == snapshotID {
+			rafsList = append(rafsList, r)
+		}
 	}
 
-	switch fsDriver {
+	return rafsList
+}
+
+func (fs *Filesystem) umountRafsInstances(rafsList []*racache.Rafs) error {
+	var firstErr error
+
+	for _, rafs := range rafsList {
+		if err := fs.umountRafsInstance(rafs); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			log.L.WithError(err).Warnf("failed to umount RAFS instance %s", rafs.SnapshotID)
+		}
+	}
+
+	return firstErr
+}
+
+func (fs *Filesystem) umountRafsInstance(rafs *racache.Rafs) error {
+	switch rafs.GetFsDriver() {
 	case config.FsDriverFscache, config.FsDriverFusedev:
-		daemon, err := fs.getDaemonByRafs(rafs)
+		fsManager, err := fs.getManager(rafs.GetFsDriver())
 		if err != nil {
-			log.L.Debugf("snapshot %s has no associated nydusd", snapshotID)
-			return errors.Wrapf(err, "get daemon with ID %s for snapshot %s", rafs.DaemonID, snapshotID)
+			return errors.Wrapf(err, "get manager for filesystem instance %s", rafs.DaemonID)
 		}
 
-		daemon.RemoveRafsInstance(snapshotID)
-		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
-			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
+		daemon, daemonErr := fs.getDaemonByRafs(rafs)
+		if daemonErr == nil {
+			daemon.RemoveRafsInstance(rafs.SnapshotID)
+		} else {
+			log.L.Debugf("snapshot %s has no associated nydusd: %v", rafs.SnapshotID, daemonErr)
 		}
-		if err := daemon.UmountRafsInstance(rafs); err != nil {
-			return errors.Wrapf(err, "umount instance %s", snapshotID)
+
+		if err := fsManager.RemoveRafsInstance(rafs.SnapshotID); err != nil {
+			log.L.WithError(err).Warnf("remove rafs %s from store", rafs.SnapshotID)
 		}
-		// Once daemon's reference reaches 0, destroy the whole daemon
-		if daemon.GetRef() == 0 {
-			if err := fsManager.DestroyDaemon(daemon); err != nil {
-				return errors.Wrapf(err, "destroy daemon %s", daemon.ID())
+		if daemonErr == nil {
+			if err := daemon.UmountRafsInstance(rafs); err != nil {
+				log.L.WithError(err).Warnf("umount instance %s", rafs.SnapshotID)
+			}
+			if daemon.IsSharedDaemon() {
+				fs.cleanUpSharedRafsResources(daemon.ID(), rafs)
+			}
+			if daemon.GetRef() == 0 {
+				if err := fsManager.DestroyDaemon(daemon); err != nil {
+					return errors.Wrapf(err, "destroy daemon %s", daemon.ID())
+				}
 			}
 		}
+
+		racache.RafsGlobalCache.Remove(rafs.SnapshotID)
 	case config.FsDriverBlockdev:
-		if err := fs.tarfsMgr.UmountTarErofs(snapshotID); err != nil {
-			return errors.Wrapf(err, "umount tar erofs on snapshot %s", snapshotID)
+		fsManager, err := fs.getManager(rafs.GetFsDriver())
+		if err != nil {
+			return errors.Wrapf(err, "get manager for filesystem instance %s", rafs.DaemonID)
 		}
-		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
-			return errors.Wrapf(err, "remove snapshot %s", snapshotID)
+		if err := fs.tarfsMgr.UmountTarErofs(rafs.SnapshotID); err != nil {
+			return errors.Wrapf(err, "umount tar erofs on snapshot %s", rafs.SnapshotID)
 		}
-	case config.FsDriverNodev, config.FsDriverProxy:
-		// For proxy mode, we still need to clean up the DB entry to prevent
-		// "already exists" errors on subsequent Mount() calls.
-		if err := fsManager.RemoveRafsInstance(snapshotID); err != nil {
-			// Log but don't fail - the entry might not exist
-			log.L.Debugf("remove instance %s from DB: %v", snapshotID, err)
+		if err := fsManager.RemoveRafsInstance(rafs.SnapshotID); err != nil {
+			return errors.Wrapf(err, "remove snapshot %s", rafs.SnapshotID)
 		}
+		racache.RafsGlobalCache.Remove(rafs.SnapshotID)
+	case config.FsDriverProxy:
+		fsManager, err := fs.getManager(rafs.GetFsDriver())
+		if err != nil {
+			return errors.Wrapf(err, "get manager for filesystem instance %s", rafs.DaemonID)
+		}
+		if err := fsManager.RemoveRafsInstance(rafs.SnapshotID); err != nil {
+			log.L.Debugf("remove instance %s from DB: %v", rafs.SnapshotID, err)
+		}
+		racache.RafsGlobalCache.Remove(rafs.SnapshotID)
+	case config.FsDriverNodev:
+		racache.RafsGlobalCache.Remove(rafs.SnapshotID)
 	default:
-		return errors.Errorf("unknown filesystem driver %s for snapshot %s", fsDriver, snapshotID)
+		return errors.Errorf("unknown filesystem driver %s for snapshot %s", rafs.GetFsDriver(), rafs.SnapshotID)
 	}
 
 	return nil
+}
+
+func (fs *Filesystem) cleanUpSharedRafsResources(daemonID string, rafs *racache.Rafs) {
+	resources := []string{
+		filepath.Join(config.GetConfigRoot(), daemonID, rafs.SnapshotID),
+	}
+	if mountpoint := rafs.GetMountpoint(); mountpoint != "" {
+		resources = append(resources, mountpoint)
+	}
+
+	for _, resource := range resources {
+		if resource == "" {
+			continue
+		}
+		if err := os.RemoveAll(resource); err != nil {
+			log.L.WithError(err).Warnf("remove shared rafs resource %s", resource)
+		}
+	}
 }
 
 // How much space the layer/blob cache filesystem is occupying
