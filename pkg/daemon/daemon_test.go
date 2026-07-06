@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 )
 
 func TestMain(m *testing.M) {
@@ -149,4 +150,30 @@ func TestUpdateAuthConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRemoveRafsInstanceRefcount checks that a duplicate Umount for an
+// already-removed snapshot does not decrement the daemon refcount a second
+// time. AddRafsInstance only IncRef()s when it adds, so RemoveRafsInstance
+// must only DecRef() when the instance was really cached.
+func TestRemoveRafsInstanceRefcount(t *testing.T) {
+	d := &Daemon{
+		States:    ConfigState{ID: "daemon-1"},
+		RafsCache: rafs.NewRafsCache(),
+	}
+
+	r := &rafs.Rafs{SnapshotID: "snap-1", ImageID: "example.com/foo:latest"}
+	d.AddRafsInstance(r)
+	assert.Equal(t, int32(1), d.GetRef())
+	assert.Equal(t, 1, d.RafsCache.Len())
+
+	// First Umount: instance is cached, so it drops the reference.
+	d.RemoveRafsInstance(r.SnapshotID)
+	assert.Equal(t, int32(0), d.GetRef())
+	assert.Equal(t, 0, d.RafsCache.Len())
+
+	// Duplicate Umount for the same snapshot must be a no-op on the refcount.
+	d.RemoveRafsInstance(r.SnapshotID)
+	assert.Equal(t, int32(0), d.GetRef())
+	assert.Equal(t, 0, d.RafsCache.Len())
 }
