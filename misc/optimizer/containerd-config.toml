@@ -18,6 +18,7 @@ version = 2
   [proxy_plugins.nydus]
     type = "snapshot"
     address = "/run/containerd-nydus/containerd-nydus-grpc.sock"
+    capabilities = ["remap-ids"]
 
 [plugins."io.containerd.nri.v1.nri"]
   config_file = "/etc/nri/nri.conf"
