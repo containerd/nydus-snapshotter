@@ -1,0 +1,3 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "golang.org/x/crypto/openpgp is deprecated and has no fixed version; it is pulled in transitively via github.com/containers/ocicrypt, whose maintainers decided to keep using it: https://github.com/containers/ocicrypt/issues/58"
