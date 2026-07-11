@@ -28,11 +28,39 @@ jobs:
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          "$(go env GOPATH)/bin/govulncheck" ./...
+          govulncheck="$(go env GOPATH)/bin/govulncheck"
+
+          # GO-2026-5932: golang.org/x/crypto/openpgp is deprecated, unmaintained
+          # and has no fixed version. It is pulled in and used transitively via
+          # github.com/containers/ocicrypt, whose maintainers have decided to keep
+          # using it (https://github.com/containers/ocicrypt/issues/58), so it
+          # cannot be resolved by bumping dependencies. Suppress only this advisory
+          # while still failing on any other (existing or future) called vulnerability.
+          ignore="GO-2026-5932"
+
+          # -format json makes govulncheck exit 0 regardless of findings, so we
+          # gate on the parsed output instead.
+          "$govulncheck" -format json ./... > govulncheck.json
+
+          echo "Called vulnerabilities found by govulncheck:"
+          jq -r 'select(.finding != null and .finding.trace[0].function != null) | .finding.osv' \
+            govulncheck.json | sort -u
+
+          remaining="$(jq -r --arg ignore "$ignore" \
+            'select(.finding != null and .finding.trace[0].function != null) | .finding.osv | select(. != $ignore)' \
+            govulncheck.json | sort -u)"
+
+          if [ -n "$remaining" ]; then
+            echo "::error::govulncheck found actionable vulnerabilities:"
+            echo "$remaining"
+            exit 1
+          fi
+
+          echo "No actionable vulnerabilities (ignoring: ${ignore})."
       - name: OSV-Scanner
         run: |
           go install github.com/google/osv-scanner/cmd/osv-scanner@v1
-          "$(go env GOPATH)/bin/osv-scanner" -r .
+          "$(go env GOPATH)/bin/osv-scanner" --config=osv-scanner.toml -r .
   build:
     name: Build and Lint
     timeout-minutes: 10
