@@ -599,12 +599,18 @@ func (d *Daemon) Terminate() error {
 	return nil
 }
 
-func (d *Daemon) Wait() error {
-	// if we found pid here, we need to kill and wait process to exit, Pid=0 means somehow we lost
-	// the daemon pid, so that we can't kill the process, just roughly umount the mountpoint
+// WaitForExit waits for the daemon process to exit and reaps it.
+// It does not perform any mount cleanup, so it is safe to use during hot upgrade.
+func (d *Daemon) WaitForExit() error {
 	d.Lock()
 	defer d.Unlock()
 
+	return d.waitProcessLocked()
+}
+
+func (d *Daemon) waitProcessLocked() error {
+	// If we found pid here, wait for the daemon process to exit. Pid=0 means somehow we lost
+	// the daemon pid, so that we can't wait for it, just roughly umount the mountpoint.
 	if d.Pid() > 0 {
 		p, err := os.FindProcess(d.Pid())
 		if err != nil {
@@ -613,7 +619,22 @@ func (d *Daemon) Wait() error {
 
 		// if nydus-snapshotter restarts, it will break the relationship between nydusd and
 		// nydus-snapshotter, p.Wait() will return err, so here should exclude this case
-		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
+		if _, err = p.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) && !errors.Is(err, os.ErrProcessDone) {
+			return errors.Wrapf(err, "wait process %d", d.Pid())
+		}
+	}
+
+	return nil
+}
+
+func (d *Daemon) Wait() error {
+	// If we found pid here, wait for the daemon process to exit. Pid=0 means somehow we lost
+	// the daemon pid, so that we can't wait for it, just roughly umount the mountpoint.
+	d.Lock()
+	defer d.Unlock()
+
+	if d.Pid() > 0 {
+		if err := d.waitProcessLocked(); err != nil {
 			log.L.Errorf("failed to process wait, %v", err)
 		} else if d.HostMountpoint() != "" && config.GetFsDriver() == config.FsDriverFusedev {
 			// No need to umount if the nydusd never performs mount. In other word, it does not

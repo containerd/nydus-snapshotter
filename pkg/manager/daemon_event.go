@@ -190,9 +190,12 @@ func (m *Manager) DoDaemonUpgrade(d *daemon.Daemon, nydusdPath string, manager *
 		return nil, errors.Wrap(err, "unsubscribe daemon event")
 	}
 
-	// Let the older daemon exit without umount
+	// Let the older daemon exit and be reaped without umount.
 	if err := d.Exit(); err != nil {
 		return nil, errors.Wrap(err, "old daemon exits")
+	}
+	if err := d.WaitForExit(); err != nil {
+		log.L.Warnf("wait old daemon %s exit failed: %v", d.ID(), err)
 	}
 
 	if err := newDaemon.Start(); err != nil {
