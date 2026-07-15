@@ -9,10 +9,12 @@ package manager
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/containerd/log"
@@ -23,8 +25,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	defaultDaemonTerminationTimeout = 5 * time.Second
+	processExitPollInterval         = 100 * time.Millisecond
+)
+
 func (m *Manager) SubscribeDaemonEvent(d *daemon.Daemon) error {
-	if err := m.monitor.Subscribe(d.ID(), d.GetAPISock(), m.LivenessNotifier); err != nil {
+	pid := daemonProcessID(d)
+	if err := m.monitor.Subscribe(d.ID(), pid, d.GetAPISock(), m.LivenessNotifier); err != nil {
 		log.L.Errorf("Nydusd %s probably not started", d.ID())
 		return errors.Wrapf(err, "subscribe daemon %s", d.ID())
 	}
@@ -41,13 +49,25 @@ func (m *Manager) UnsubscribeDaemonEvent(d *daemon.Daemon) error {
 }
 
 func (m *Manager) handleDaemonDeathEvent() {
-	// TODO: ratelimit for daemon recovery operations?
 	for ev := range m.LivenessNotifier {
 		log.L.Warnf("Daemon %s died! socket path %s", ev.daemonID, ev.path)
 
 		d := m.GetByDaemonID(ev.daemonID)
 		if d == nil {
 			log.L.Warnf("Daemon %s was not found, may have been removed", ev.daemonID)
+			continue
+		}
+		currentPID := daemonProcessID(d)
+		if ev.processID != currentPID {
+			log.L.Warnf(
+				"Ignore stale death event for daemon %s: event pid %d, current pid %d",
+				ev.daemonID, ev.processID, currentPID,
+			)
+			continue
+		}
+
+		if m.isRecoveryInFlight(ev.daemonID) {
+			log.L.Warnf("Recovery already in progress for daemon %s, skipping duplicate death event", ev.daemonID)
 			continue
 		}
 
@@ -65,17 +85,32 @@ func (m *Manager) handleDaemonDeathEvent() {
 			log.L.Infof("Do failover for daemon %s", ev.daemonID)
 			go m.doDaemonFailover(d)
 		default:
-			// RecoverPolicyNone or RecoverPolicyInvalid - do nothing
+			m.recoveryInFlight.Delete(ev.daemonID)
 		}
 	}
 }
 
+// isRecoveryInFlight marks daemonID as recovering and reports whether a
+// recovery was already in progress, so duplicate death events are ignored.
+func (m *Manager) isRecoveryInFlight(daemonID string) bool {
+	_, loaded := m.recoveryInFlight.LoadOrStore(daemonID, struct{}{})
+	return loaded
+}
+
+func daemonProcessID(d *daemon.Daemon) int {
+	d.Lock()
+	defer d.Unlock()
+	return d.Pid()
+}
+
 func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
-	if err := d.Wait(); err != nil {
-		log.L.Warnf("fail to wait for daemon, %v", err)
+	defer m.recoveryInFlight.Delete(d.ID())
+
+	if err := m.terminateDaemonProcess(d, "failover"); err != nil {
+		log.L.WithError(err).Errorf("abort failover because old daemon %s was not terminated", d.ID())
+		return
 	}
 
-	// Starting a new nydusd will re-subscribe
 	if err := m.UnsubscribeDaemonEvent(d); err != nil {
 		log.L.Warnf("fail to unsubscribe daemon %s, %v", d.ID(), err)
 	}
@@ -110,11 +145,13 @@ func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
 }
 
 func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
-	if err := d.Wait(); err != nil {
-		log.L.Warnf("fails to wait for daemon, %v", err)
+	defer m.recoveryInFlight.Delete(d.ID())
+
+	if err := m.terminateDaemonProcess(d, "restart"); err != nil {
+		log.L.WithError(err).Errorf("abort restart because old daemon %s was not terminated", d.ID())
+		return
 	}
 
-	// Starting a new nydusd will re-subscribe
 	if err := m.UnsubscribeDaemonEvent(d); err != nil {
 		log.L.Warnf("fails to unsubscribe daemon %s, %v", d.ID(), err)
 	}
@@ -137,6 +174,138 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 			log.L.Warnf("Failed to mount rafs instance, %v", err)
 		}
 	}
+}
+
+// Make sure the old nydusd process is gone before starting a new one.
+// If the process is still alive — the death event may be a false positive
+// (e.g. API socket closed while the process hangs) — kill it with SIGTERM,
+// escalating to SIGKILL after a timeout. If it has already exited, just reap
+// it like the original recovery flow did, to avoid leaving a zombie behind.
+func (m *Manager) terminateDaemonProcess(d *daemon.Daemon, reason string) error {
+	if d == nil || d.Pid() <= 0 {
+		return nil
+	}
+
+	// On Linux, os.FindProcess uses a pidfd when available, pinning this
+	// handle to the specific process before the cmdline identity check below,
+	// so a later signal can never reach a reused pid.
+	p, err := os.FindProcess(d.Pid())
+	if err != nil {
+		return errors.Wrapf(err, "find daemon %s (pid %d) before %s", d.ID(), d.Pid(), reason)
+	}
+	defer func() {
+		_ = p.Release()
+	}()
+
+	state, err := inspectDaemonProcess(d)
+	if err != nil {
+		return errors.Wrapf(err, "inspect daemon %s (pid %d) before %s", d.ID(), d.Pid(), reason)
+	}
+
+	switch state {
+	case daemonProcessAlive:
+		// The daemon is still running; continue with the termination path below.
+	case daemonProcessGone, daemonProcessReused:
+		return nil
+	case daemonProcessZombie:
+		// The process has already exited; reaping the zombie is instantaneous.
+		return d.Wait()
+	}
+
+	if err := p.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return errors.Wrapf(err, "send SIGTERM to daemon %s (pid %d) before %s", d.ID(), d.Pid(), reason)
+	}
+
+	exited, err := waitUntilDaemonExited(d, defaultDaemonTerminationTimeout)
+	if err == nil {
+		if exited == daemonProcessZombie {
+			return d.Wait()
+		}
+		return nil
+	}
+
+	log.L.Warnf("daemon %s (pid %d) did not exit after SIGTERM before %s, sending SIGKILL", d.ID(), d.Pid(), reason)
+	if err := p.Signal(syscall.SIGKILL); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return errors.Wrapf(err, "send SIGKILL to daemon %s (pid %d) before %s", d.ID(), d.Pid(), reason)
+	}
+
+	exited, err = waitUntilDaemonExited(d, defaultDaemonTerminationTimeout)
+	if err != nil {
+		return errors.Wrapf(err, "daemon %s (pid %d) still alive after SIGKILL before %s", d.ID(), d.Pid(), reason)
+	}
+	if exited == daemonProcessZombie {
+		return d.Wait()
+	}
+	return nil
+}
+
+type daemonProcessState int
+
+const (
+	daemonProcessAlive daemonProcessState = iota
+	daemonProcessZombie
+	daemonProcessGone
+	daemonProcessReused
+)
+
+// inspectDaemonProcess reads /proc/<pid>/cmdline and classifies the process.
+func inspectDaemonProcess(d *daemon.Daemon) (daemonProcessState, error) {
+	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", d.Pid()))
+	return classifyProcessCmdline(cmdline, err, d.GetAPISock())
+}
+
+// classifyProcessCmdline distinguishes an exited process from an inspection
+// failure. A matching --apisock identifies the current nydusd; an empty
+// cmdline means zombie, and a different cmdline means the pid was reused.
+func classifyProcessCmdline(cmdline []byte, readErr error, apisock string) (daemonProcessState, error) {
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return daemonProcessGone, nil
+		}
+		return daemonProcessGone, readErr
+	}
+	if len(cmdline) == 0 {
+		return daemonProcessZombie, nil
+	}
+
+	args := strings.Split(string(cmdline), "\x00")
+	if !containsArgPair(args, "--apisock", apisock) {
+		return daemonProcessReused, nil
+	}
+
+	return daemonProcessAlive, nil
+}
+
+func waitUntilDaemonExited(d *daemon.Daemon, timeout time.Duration) (daemonProcessState, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(processExitPollInterval)
+	defer ticker.Stop()
+
+	for {
+		state, err := inspectDaemonProcess(d)
+		if err == nil && state != daemonProcessAlive {
+			return state, nil
+		}
+
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			if err != nil {
+				return daemonProcessAlive, errors.Wrap(err, "inspect process")
+			}
+			return daemonProcessAlive, errors.Errorf("process did not exit within %s", timeout)
+		}
+	}
+}
+
+func containsArgPair(args []string, key, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == key && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }
 
 // Provide minimal parameters since most of it can be recovered by nydusd states.

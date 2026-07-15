@@ -26,7 +26,7 @@ import (
 type LivenessMonitor interface {
 	// Subscribe death event of a nydusd daemon.
 	// `path` is where the monitor is listening on.
-	Subscribe(id string, path string, notifier chan<- deathEvent) error
+	Subscribe(id string, pid int, path string, notifier chan<- deathEvent) error
 	// Unsubscribe death event of a nydusd daemon.
 	Unsubscribe(id string) error
 	// Run the monitor, wait for nydusd death event.
@@ -42,6 +42,7 @@ type target struct {
 	notifier chan<- deathEvent
 	// `id` is usually the daemon ID
 	id   string
+	pid  int
 	path string
 }
 
@@ -58,8 +59,9 @@ type livenessMonitor struct {
 }
 
 type deathEvent struct {
-	daemonID string
-	path     string
+	daemonID  string
+	processID int
+	path      string
 }
 
 func newMonitor() (_ *livenessMonitor, err error) {
@@ -78,7 +80,7 @@ func newMonitor() (_ *livenessMonitor, err error) {
 	return m, nil
 }
 
-func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deathEvent) (err error) {
+func (m *livenessMonitor) Subscribe(id string, pid int, path string, notifier chan<- deathEvent) (err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -135,7 +137,7 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 			log.L.Errorf("Failed to control epoll. daemon id %s path %s. %v", id, path, err)
 			return
 		}
-		target := &target{uc: uc, id: id, path: path}
+		target := &target{uc: uc, id: id, pid: pid, path: path}
 
 		// Only add subscribed target when everything is OK.
 		m.set[fd] = target
@@ -221,7 +223,11 @@ func (m *livenessMonitor) Run() {
 					log.L.Warnf("Daemon %s died", target.id)
 					collector.NewDaemonEventCollector(types.DaemonStateDied).Collect()
 					// Notify subscribers that death event happens
-					target.notifier <- deathEvent{daemonID: target.id, path: target.path}
+					target.notifier <- deathEvent{
+						daemonID:  target.id,
+						processID: target.pid,
+						path:      target.path,
+					}
 				}
 			}
 		}
