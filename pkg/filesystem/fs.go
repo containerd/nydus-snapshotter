@@ -212,12 +212,25 @@ func (fs *Filesystem) TryRetainSharedDaemon(d *daemon.Daemon) {
 			log.L.Debug("retain fscache shared daemon")
 			fs.fscacheSharedDaemon = d
 			d.IncRef()
+			return
+		}
+		// Hot-upgrade keeps the same daemon ID but replaces the running process.
+		// Make sure the filesystem tracks the new daemon object so shutdown and
+		// recovery operate on the live pid/socket pair instead of the stale one.
+		if fs.fscacheSharedDaemon.ID() == d.ID() {
+			log.L.Debugf("replace fscache shared daemon %s with upgraded daemon", d.ID())
+			fs.fscacheSharedDaemon = d
 		}
 	case config.FsDriverFusedev:
 		if fs.fusedevSharedDaemon == nil && d.HostMountpoint() == fs.rootMountpoint {
 			log.L.Debug("retain fusedev shared daemon")
 			fs.fusedevSharedDaemon = d
 			d.IncRef()
+			return
+		}
+		if fs.fusedevSharedDaemon != nil && fs.fusedevSharedDaemon.ID() == d.ID() {
+			log.L.Debugf("replace fusedev shared daemon %s with upgraded daemon", d.ID())
+			fs.fusedevSharedDaemon = d
 		}
 	}
 }

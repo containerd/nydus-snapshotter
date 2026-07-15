@@ -435,9 +435,12 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 		return errors.Wrap(err, "unsubscribe daemon event")
 	}
 
-	// Let the older daemon exit without umount
+	// Let the older daemon exit and be reaped without umount.
 	if err := d.Exit(); err != nil {
 		return errors.Wrap(err, "old daemon exits")
+	}
+	if err := d.WaitForExit(); err != nil {
+		log.L.Warnf("wait old daemon %s exit failed: %v", d.ID(), err)
 	}
 
 	fs.TryRetainSharedDaemon(&newDaemon)
