@@ -1281,11 +1281,20 @@ func (o *snapshotter) getCleanupDirectories(ctx context.Context) ([]string, erro
 		return nil, err
 	}
 
-	// Per-pod RAFS instances (e.g. "48-userns-<uid>") live outside
-	// containerd's IDMap — keep them alive while still referenced.
+	// Per-pod idmapped RAFS instances (e.g. "48-userns-<uid>") live outside
+	// containerd's IDMap, so they must be protected from orphan cleanup while
+	// still referenced. They are the only instances with a SourceSnapshotID
+	// (set when remap-ids labels are present). Ordinary instances share their
+	// ID with containerd's IDMap: while live they are already retained by the
+	// `ids` check below, and once their snapshot metadata is removed they must
+	// stay eligible for cleanup so the mount is torn down and the cached blobs
+	// released. Protecting them here would keep the mount referenced
+	// indefinitely and leak disk.
 	liveRafsSnapshotDirs := make(map[string]struct{})
 	for _, instance := range rafs.RafsGlobalCache.List() {
-		liveRafsSnapshotDirs[filepath.Base(instance.GetSnapshotDir())] = struct{}{}
+		if instance.SourceSnapshotID != "" {
+			liveRafsSnapshotDirs[filepath.Base(instance.GetSnapshotDir())] = struct{}{}
+		}
 	}
 
 	// For example:
