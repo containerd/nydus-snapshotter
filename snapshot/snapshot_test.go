@@ -9,6 +9,7 @@ package snapshot
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -344,6 +345,62 @@ func TestMountNativeConfigVolatile(t *testing.T) {
 		require.Len(t, mounts, 1)
 		assert.NotContains(t, mounts[0].Options, "volatile")
 	})
+}
+
+func TestGetCleanupDirectoriesProtectsOnlyIDMappedInstances(t *testing.T) {
+	originalInstances := rafs.RafsGlobalCache.List()
+	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
+	t.Cleanup(func() {
+		rafs.RafsGlobalCache.SetIntances(originalInstances)
+	})
+
+	snapshotterRoot := t.TempDir()
+	ms, err := storage.NewMetaStore(filepath.Join(snapshotterRoot, "metadata.db"))
+	require.NoError(t, err)
+	s := &snapshotter{
+		root: snapshotterRoot,
+		ms:   ms,
+	}
+
+	// A committed snapshot that containerd still tracks: it appears in the
+	// IDMap and represents a genuinely-live ordinary instance.
+	txCtx, trans, err := ms.TransactionContext(context.Background(), true)
+	require.NoError(t, err)
+	_, err = storage.CreateSnapshot(txCtx, snapshots.KindActive, "live-key", "")
+	require.NoError(t, err)
+	liveID, err := storage.CommitActive(txCtx, "live-key", "live", snapshots.Usage{})
+	require.NoError(t, err)
+	require.NoError(t, trans.Commit())
+
+	// An orphaned ordinary instance and an orphaned idmapped instance: both
+	// exist on disk and are still referenced in the RAFS cache, but neither is
+	// tracked by containerd anymore (as after image GC removed their metadata).
+	// The idmapped per-pod instance carries a SourceSnapshotID (set only when
+	// remap-ids labels are present); ordinary instances leave it empty.
+	const ordinaryID = "48"
+	const idMappedSource = "50"
+	idMappedID := label.RafsInstanceID(idMappedSource, &label.IDMapping{External: 100000, Range: 65536})
+	instances := []*rafs.Rafs{
+		{SnapshotID: liveID, SnapshotDir: s.snapshotDir(liveID)},
+		{SnapshotID: ordinaryID, SnapshotDir: s.snapshotDir(ordinaryID)},
+		{SnapshotID: idMappedID, SnapshotDir: s.snapshotDir(idMappedID), SourceSnapshotID: idMappedSource},
+	}
+	for _, instance := range instances {
+		require.NoError(t, os.MkdirAll(instance.SnapshotDir, 0o755))
+		rafs.RafsGlobalCache.Add(instance)
+	}
+
+	cleanup, err := s.cleanupDirectories(context.Background())
+	require.NoError(t, err)
+
+	// The ordinary orphan must be eligible for cleanup, otherwise its mount is
+	// never torn down and its cached blobs are never released.
+	assert.Contains(t, cleanup, s.snapshotDir(ordinaryID))
+	// A live ordinary instance stays protected via the IDMap, and the idmapped
+	// per-pod instance (which containerd's IDMap never tracks) stays protected
+	// while still referenced.
+	assert.NotContains(t, cleanup, s.snapshotDir(liveID))
+	assert.NotContains(t, cleanup, s.snapshotDir(idMappedID))
 }
 
 func TestMountRemoteUsesPerPodLowerdirForIDMap(t *testing.T) {
