@@ -1366,6 +1366,36 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	return nil
 }
 
+// collectUsedCacheBlobIDs gathers the cache blob IDs referenced by the given
+// RAFS instances. It returns complete == false when any fscache/fusedev
+// instance has no underlying-files information yet — e.g. it was just mounted
+// and containerd has not called Mounts()/WaitUntilReady for it, or its cache
+// metrics fetch failed — meaning the returned set MUST NOT be used to decide
+// deletions: an instance with unknown usage may use any blob in the cache.
+func collectUsedCacheBlobIDs(instances []*rafs.Rafs) (map[string]bool, bool) {
+	usedBlobIDs := make(map[string]bool)
+	complete := true
+	for _, instance := range instances {
+		fsDriver := instance.GetFsDriver()
+		if fsDriver != config.FsDriverFscache && fsDriver != config.FsDriverFusedev {
+			// Only blobcache-backed drivers materialize files in the cache
+			// directory; other drivers never populate UnderlyingFiles.
+			continue
+		}
+		if len(instance.UnderlyingFiles) == 0 {
+			complete = false
+			continue
+		}
+		for _, filePath := range instance.UnderlyingFiles {
+			filename := filepath.Base(filePath)
+			if blobID := cache.ExtractBlobIDFromFilename(filename); blobID != "" {
+				usedBlobIDs[blobID] = true
+			}
+		}
+	}
+	return usedBlobIDs, complete
+}
+
 func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error) {
 	// Get a write transaction to ensure no other write transaction can be entered
 	// while the cleanup is scanning.
@@ -1381,25 +1411,26 @@ func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error)
 	}()
 
 	// Collect all used blob IDs from all daemons
-	usedBlobIDs := make(map[string]bool)
+	var instances []*rafs.Rafs
 	if err := o.fs.WalkManagers(func(mgr *mgr.Manager) error {
 		for _, d := range mgr.ListDaemons() {
-			// Get all rafs instances for this daemon
-			for _, rafs := range d.RafsCache.List() {
-				// Extract blob IDs from underlying files and mark as used
-				for _, filePath := range rafs.UnderlyingFiles {
-					// Extract blob ID from the file path
-					filename := filepath.Base(filePath)
-					blobID := cache.ExtractBlobIDFromFilename(filename)
-					if blobID != "" {
-						usedBlobIDs[blobID] = true
-					}
-				}
+			for _, instance := range d.RafsCache.List() {
+				instances = append(instances, instance)
 			}
 		}
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "walk managers to collect used blobs")
+	}
+
+	usedBlobIDs, complete := collectUsedCacheBlobIDs(instances)
+	if !complete {
+		// Unknown usage must count as "in use": deleting blobs based on
+		// incomplete knowledge unlinks cache files under a live daemon. The
+		// gap self-heals once WaitUntilReady populates the instance on the
+		// next Mounts() call, so skip this round instead of guessing.
+		log.L.Info("[getUnusedCacheBlobs] usage of some RAFS instances is not known yet, skipping cache GC this round")
+		return nil, nil
 	}
 
 	log.L.Debugf("[getUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))

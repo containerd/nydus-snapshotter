@@ -308,7 +308,13 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string, labels map[string]string
 
 		cacheMetrics, err := d.GetCacheMetrics(sid)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get cache metric")
+			// The daemon is already verified RUNNING above; failing the mount
+			// over a metrics hiccup fails pod creation for no reason (#762).
+			// The underlying-files list only feeds blob cache GC accounting,
+			// and GC treats instances with unknown usage as fully in use, so
+			// continuing without it is safe.
+			log.L.WithError(err).Warnf("failed to get cache metrics for rafs instance %s", rafs.SnapshotID)
+			return nil
 		}
 		log.L.Debugf("Found %d underlying files for rafs instance %s", len(cacheMetrics.UnderlyingFiles), rafs.SnapshotID)
 
