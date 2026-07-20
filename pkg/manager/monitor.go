@@ -115,14 +115,15 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 	}
 
 	if rawConn, err = uc.SyscallConn(); err != nil {
-		return
+		if closeErr := uc.Close(); closeErr != nil {
+			log.L.WithError(closeErr).Warnf("close liveness connection for daemon %s", id)
+		}
+		return err
 	}
 
-	err = rawConn.Control(func(fd FD) {
-		err = unix.SetNonblock(int(fd), true)
-		if err != nil {
-			log.L.Errorf("Failed to set file. daemon id %s path %s. %v", id, path, err)
-			return
+	if err = controlFD(rawConn, func(fd FD) error {
+		if err := unix.SetNonblock(int(fd), true); err != nil {
+			return errors.Wrapf(err, "set connection non-blocking, daemon id %s path %s", id, path)
 		}
 
 		event := unix.EpollEvent{
@@ -130,10 +131,8 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 			Events: unix.EPOLLHUP | unix.EPOLLERR | unix.EPOLLET,
 		}
 
-		err = unix.EpollCtl(m.epollFd, unix.EPOLL_CTL_ADD, int(fd), &event)
-		if err != nil {
-			log.L.Errorf("Failed to control epoll. daemon id %s path %s. %v", id, path, err)
-			return
+		if err := unix.EpollCtl(m.epollFd, unix.EPOLL_CTL_ADD, int(fd), &event); err != nil {
+			return errors.Wrapf(err, "add connection to epoll interest list, daemon id %s path %s", id, path)
 		}
 		target := &target{uc: uc, id: id, path: path}
 
@@ -141,11 +140,33 @@ func (m *livenessMonitor) Subscribe(id string, path string, notifier chan<- deat
 		m.set[fd] = target
 		m.subscribers[id] = target
 		target.notifier = notifier
-	})
+		return nil
+	}); err != nil {
+		// Leave nothing behind on failure: reporting success for a daemon that
+		// was never added to the epoll interest list means its death would
+		// never be noticed and recovery would never start.
+		if closeErr := uc.Close(); closeErr != nil {
+			log.L.WithError(closeErr).Warnf("close liveness connection for daemon %s", id)
+		}
+		return err
+	}
 
 	log.L.Infof("Subscribe daemon %s liveness event, path=%s.", id, path)
 
 	return
+}
+
+// controlFD runs fn on the raw connection's file descriptor and returns the
+// first error from either the Control call itself or from fn.
+// syscall.RawConn.Control only reports its own failure; an error assigned
+// inside the callback to a variable that Control's result is later assigned to
+// would be silently overwritten.
+func controlFD(rc syscall.RawConn, fn func(fd FD) error) error {
+	var fnErr error
+	if err := rc.Control(func(fd uintptr) { fnErr = fn(fd) }); err != nil {
+		return err
+	}
+	return fnErr
 }
 
 func (m *livenessMonitor) Unsubscribe(id string) (err error) {
@@ -170,14 +191,18 @@ func (m *livenessMonitor) unsubscribe(id string) (err error) {
 	}
 
 	// No longer wait for event, delete it from interest list.
-	if err = rawConn.Control(func(fd uintptr) {
-		if err := unix.EpollCtl(m.epollFd, unix.EPOLL_CTL_DEL, int(fd), &unix.EpollEvent{}); err != nil {
-			log.L.Errorf("Fail to delete event fd %d for supervisor %s", int(fd), id)
-			return
-		}
+	if err = controlFD(rawConn, func(fd FD) error {
+		// The set entry must go even if EPOLL_CTL_DEL fails: the connection is
+		// closed below, which removes the fd from the interest list anyway, and
+		// a stale entry would collide with a future subscription reusing the
+		// same fd number.
 		delete(m.set, fd)
+		if err := unix.EpollCtl(m.epollFd, unix.EPOLL_CTL_DEL, int(fd), &unix.EpollEvent{}); err != nil {
+			return errors.Wrapf(err, "delete event fd %d for supervisor %s", int(fd), id)
+		}
+		return nil
 	}); err != nil {
-		return errors.Wrapf(err, "remove target FD in the interested list, id=%s", id)
+		log.L.WithError(err).Warnf("remove target FD from the interest list, id=%s", id)
 	}
 
 	if err = target.uc.Close(); err != nil {
