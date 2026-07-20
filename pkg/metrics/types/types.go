@@ -8,6 +8,7 @@ package fs
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/containerd/nydus-snapshotter/pkg/daemon/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,6 +56,10 @@ type MetricHistogram struct {
 	Buckets     []uint64
 	GetCounters GetCountersFn
 
+	// Guards constHists: Clear/Save run on the metrics collection goroutine
+	// while Collect is invoked by the Prometheus registry from HTTP scrape
+	// goroutines.
+	mu sync.Mutex
 	// Save the last generated histogram metric
 	constHists []prometheus.Metric
 }
@@ -83,10 +88,14 @@ func (h *MetricHistogram) ToConstHistogram(m *types.FsMetrics, imageRef string) 
 }
 
 func (h *MetricHistogram) Clear() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.constHists = nil
 }
 
 func (h *MetricHistogram) Save(m prometheus.Metric) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.constHists = append(h.constHists, m)
 }
 
@@ -98,9 +107,9 @@ func (h *MetricHistogram) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (h *MetricHistogram) Collect(ch chan<- prometheus.Metric) {
-	if h.constHists != nil {
-		for _, hist := range h.constHists {
-			ch <- hist
-		}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, hist := range h.constHists {
+		ch <- hist
 	}
 }

@@ -354,11 +354,11 @@ func (fs *Filesystem) RefreshUnderlyingFiles(instance *racache.Rafs) error {
 	}
 	log.L.Debugf("Found %d underlying files for rafs instance %s", len(cacheMetrics.UnderlyingFiles), instance.SnapshotID)
 
-	// Lock the daemon's RafsCache when modifying rafs fields to prevent
-	// race conditions with concurrent reads (e.g., during cache cleanup)
-	d.RafsCache.Lock()
-	instance.UnderlyingFiles = cacheMetrics.UnderlyingFiles
-	d.RafsCache.Unlock()
+	// This instance is handed out by two registries — RafsGlobalCache
+	// (snapshot cleanup) and the daemon's RafsCache (cache GC, metrics) —
+	// whose deep-copying readers each hold only their own cache's mutex,
+	// so the update must exclude both.
+	instance.UpdateUnderlyingFiles(cacheMetrics.UnderlyingFiles, &d.RafsCache)
 
 	return nil
 }
