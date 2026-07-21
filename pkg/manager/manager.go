@@ -314,9 +314,9 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 	// Records whose on-disk artifacts are damaged — e.g. a daemon that was
 	// persisted but whose config file never made it to disk. One damaged
 	// record must not abort the whole walk: returning an error here fails
-	// NewSnapshotter, and since the record is never pruned the snapshotter
-	// crash-loops on every restart until the database is repaired by hand.
-	var quarantined []*daemon.Daemon
+	// NewSnapshotter, crash-looping the snapshotter on every restart until
+	// the database is repaired by hand. The record itself is kept: restoring
+	// the config file lets a later restart re-adopt the daemon.
 	if err := m.store.WalkDaemons(ctx, func(s *daemon.ConfigState) error {
 		if s.FsDriver != m.FsDriver {
 			return nil
@@ -340,8 +340,8 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		if d.States.FsDriver == config.FsDriverFusedev {
 			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
 			if err != nil {
-				log.L.Errorf("Quarantining daemon %s: failed to reload configuration %s, %s", d.ID(), d.ConfigFile(""), err)
-				quarantined = append(quarantined, d)
+				log.L.Errorf("Skipping recovery of daemon %s: failed to reload configuration %s, %s", d.ID(), d.ConfigFile(""), err)
+				m.daemonCache.Remove(d)
 				//nolint:nilerr
 				return nil
 			}
@@ -393,18 +393,6 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		return nil
 	}); err != nil {
 		return errors.Wrapf(err, "walk daemons to reconnect")
-	}
-
-	// Prune quarantined records outside the walk since the bucket must not be
-	// mutated during ForEach. A daemon without its configuration cannot be
-	// recovered or managed; dropping the record keeps the next restart from
-	// tripping over it again, and orphan process cleanup is handled by the
-	// regular vestige clearing.
-	for _, d := range quarantined {
-		m.daemonCache.Remove(d)
-		if err := m.store.DeleteDaemon(d.ID()); err != nil {
-			log.L.WithError(err).Warnf("failed to prune quarantined daemon record %s", d.ID())
-		}
 	}
 
 	return nil
