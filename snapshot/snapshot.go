@@ -1396,7 +1396,43 @@ func collectUsedCacheBlobIDs(instances []*rafs.Rafs) (map[string]bool, bool) {
 	return usedBlobIDs, complete
 }
 
+// reconcileUnknownCacheUsage re-queries cache metrics for RAFS instances whose
+// UnderlyingFiles has not been populated yet — their post-mount Mounts() call
+// has not happened, or its metrics fetch failed — so that a single such
+// instance does not keep blob cache GC paused. It involves daemon socket I/O
+// and therefore must run outside any metastore transaction. Failures are
+// tolerated: the instance keeps its unknown usage and getUnusedCacheBlobs
+// skips the round.
+func (o *snapshotter) reconcileUnknownCacheUsage() {
+	if err := o.fs.WalkManagers(func(fsManager *mgr.Manager) error {
+		for _, d := range fsManager.ListDaemons() {
+			for snapshotID, instance := range d.RafsCache.List() {
+				fsDriver := instance.GetFsDriver()
+				if fsDriver != config.FsDriverFscache && fsDriver != config.FsDriverFusedev {
+					continue
+				}
+				if len(instance.UnderlyingFiles) != 0 {
+					continue
+				}
+				// List() hands out deep copies; refresh the registered instance.
+				live := d.RafsCache.Get(snapshotID)
+				if live == nil {
+					continue
+				}
+				if err := o.fs.RefreshUnderlyingFiles(live); err != nil {
+					log.L.WithError(err).Debugf("[getUnusedCacheBlobs] cannot refresh underlying files of rafs instance %s", snapshotID)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		log.L.WithError(err).Warn("[getUnusedCacheBlobs] reconcile instances with unknown cache usage")
+	}
+}
+
 func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error) {
+	o.reconcileUnknownCacheUsage()
+
 	// Get a write transaction to ensure no other write transaction can be entered
 	// while the cleanup is scanning.
 	_, t, err := o.ms.TransactionContext(ctx, true)
@@ -1426,10 +1462,11 @@ func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error)
 	usedBlobIDs, complete := collectUsedCacheBlobIDs(instances)
 	if !complete {
 		// Unknown usage must count as "in use": deleting blobs based on
-		// incomplete knowledge unlinks cache files under a live daemon. The
-		// gap self-heals once WaitUntilReady populates the instance on the
-		// next Mounts() call, so skip this round instead of guessing.
-		log.L.Info("[getUnusedCacheBlobs] usage of some RAFS instances is not known yet, skipping cache GC this round")
+		// incomplete knowledge unlinks cache files under a live daemon.
+		// Reconciliation above already retried the metrics query, so reaching
+		// this point means a daemon is unreachable right now; skip the round
+		// instead of guessing and let a later round retry.
+		log.L.Info("[getUnusedCacheBlobs] usage of some RAFS instances is still unknown after reconciliation, skipping cache GC this round")
 		return nil, nil
 	}
 
