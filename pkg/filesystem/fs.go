@@ -287,36 +287,16 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string, labels map[string]string
 			return err
 		}
 
-		// For shared daemons, we need to use the correct cache ID to query metrics.
-		// For fscache, the cache is registered with fscacheID (a digest), not the raw snapshot ID.
-		// For fusedev, the cache is registered with the snapshot ID.
-		sid := ""
-		if d.IsSharedDaemon() {
-			if rafs.GetFsDriver() == config.FsDriverFscache {
-				// For fscache, use the fscache ID from annotations if available
-				if fscacheID, ok := rafs.Annotations[racache.AnnoFsCacheID]; ok && fscacheID != "" {
-					sid = fscacheID
-				} else {
-					// Fallback: compute fscacheID if not in annotations yet
-					sid = erofs.FscacheID(rafs.SnapshotID)
-				}
-			} else {
-				// For fusedev, use the snapshot ID directly
-				sid = rafs.SnapshotID
-			}
+		if err := fs.RefreshUnderlyingFiles(rafs); err != nil {
+			// The daemon is already verified RUNNING above; failing the mount
+			// over a metrics hiccup fails pod creation for no reason (#762).
+			// The underlying-files list only feeds blob cache GC accounting,
+			// and the GC reconciles instances with unknown usage before every
+			// round, treating them as fully in use until then, so continuing
+			// without it is safe.
+			log.L.WithError(err).Warnf("failed to get cache metrics for rafs instance %s", rafs.SnapshotID)
+			return nil
 		}
-
-		cacheMetrics, err := d.GetCacheMetrics(sid)
-		if err != nil {
-			return errors.Wrapf(err, "failed to get cache metric")
-		}
-		log.L.Debugf("Found %d underlying files for rafs instance %s", len(cacheMetrics.UnderlyingFiles), rafs.SnapshotID)
-
-		// Lock the daemon's RafsCache when modifying rafs fields to prevent
-		// race conditions with concurrent reads (e.g., during cache cleanup)
-		d.RafsCache.Lock()
-		rafs.UnderlyingFiles = cacheMetrics.UnderlyingFiles
-		d.RafsCache.Unlock()
 
 		fsManager, err := fs.getManager(rafs.GetFsDriver())
 		if err != nil {
@@ -328,6 +308,57 @@ func (fs *Filesystem) WaitUntilReady(snapshotID string, labels map[string]string
 		}
 		log.L.Debugf("Nydus remote snapshot %s is ready", snapshotID)
 	}
+
+	return nil
+}
+
+// RefreshUnderlyingFiles queries the nydusd daemon serving a RAFS instance for
+// its cache metrics and updates instance.UnderlyingFiles with the result.
+//
+// Unlike calling d.GetCacheMetrics directly, it fails fast when the daemon's
+// API socket does not exist instead of polling for it to appear, so periodic
+// callers (e.g. blob cache GC reconciliation) are never stalled behind a dead
+// or still-starting daemon.
+func (fs *Filesystem) RefreshUnderlyingFiles(instance *racache.Rafs) error {
+	d, err := fs.getDaemonByRafs(instance)
+	if err != nil {
+		return errors.Wrapf(err, "get daemon for rafs instance %s", instance.SnapshotID)
+	}
+
+	if st, err := os.Stat(d.GetAPISock()); err != nil || st.Mode()&os.ModeSocket == 0 {
+		return errors.Wrapf(errdefs.ErrNotFound, "api socket %s of daemon %s", d.GetAPISock(), d.ID())
+	}
+
+	// For shared daemons, we need to use the correct cache ID to query metrics.
+	// For fscache, the cache is registered with fscacheID (a digest), not the raw snapshot ID.
+	// For fusedev, the cache is registered with the snapshot ID.
+	sid := ""
+	if d.IsSharedDaemon() {
+		if instance.GetFsDriver() == config.FsDriverFscache {
+			// For fscache, use the fscache ID from annotations if available
+			if fscacheID, ok := instance.Annotations[racache.AnnoFsCacheID]; ok && fscacheID != "" {
+				sid = fscacheID
+			} else {
+				// Fallback: compute fscacheID if not in annotations yet
+				sid = erofs.FscacheID(instance.SnapshotID)
+			}
+		} else {
+			// For fusedev, use the snapshot ID directly
+			sid = instance.SnapshotID
+		}
+	}
+
+	cacheMetrics, err := d.GetCacheMetrics(sid)
+	if err != nil {
+		return errors.Wrapf(err, "get cache metrics for rafs instance %s", instance.SnapshotID)
+	}
+	log.L.Debugf("Found %d underlying files for rafs instance %s", len(cacheMetrics.UnderlyingFiles), instance.SnapshotID)
+
+	// Lock the daemon's RafsCache when modifying rafs fields to prevent
+	// race conditions with concurrent reads (e.g., during cache cleanup)
+	d.RafsCache.Lock()
+	instance.UnderlyingFiles = cacheMetrics.UnderlyingFiles
+	d.RafsCache.Unlock()
 
 	return nil
 }

@@ -347,6 +347,31 @@ func TestMountNativeConfigVolatile(t *testing.T) {
 	})
 }
 
+func TestCollectUsedCacheBlobIDs(t *testing.T) {
+	blobA := "1f66d51e5b3a51e0a4e942f89e2b9c4a7c76b0678c1c1e74dcb0f5e8a4b1c001"
+	blobB := "2a77e62f6c4b62f1b5fa53f9af3cad5b8d87c1789d2d2f85edc1a6f9b5c2d002"
+
+	known := &rafs.Rafs{
+		SnapshotID:      "1",
+		FsDriver:        "fusedev",
+		UnderlyingFiles: []string{"/cache/" + blobA, "/cache/" + blobB + ".blob.meta"},
+	}
+	otherDriver := &rafs.Rafs{SnapshotID: "2", FsDriver: "blockdev"}
+
+	// All blobcache-backed instances report their files: the set is complete
+	// and safe to delete against.
+	used, complete := collectUsedCacheBlobIDs([]*rafs.Rafs{known, otherDriver})
+	assert.True(t, complete)
+	assert.Equal(t, map[string]bool{blobA: true, blobB: true}, used)
+
+	// An instance whose usage is not known yet (mounted, but Mounts() has not
+	// populated UnderlyingFiles) makes the set incomplete: deleting based on
+	// it would unlink cache files under a live daemon.
+	unknown := &rafs.Rafs{SnapshotID: "3", FsDriver: "fusedev"}
+	_, complete = collectUsedCacheBlobIDs([]*rafs.Rafs{known, unknown})
+	assert.False(t, complete)
+}
+
 func TestGetCleanupDirectoriesProtectsOnlyIDMappedInstances(t *testing.T) {
 	originalInstances := rafs.RafsGlobalCache.List()
 	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
