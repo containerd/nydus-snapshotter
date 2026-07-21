@@ -18,7 +18,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/store"
 )
 
-func TestRecoverDaemonsQuarantinesRecordsWithoutConfig(t *testing.T) {
+func TestRecoverDaemonsSkipsRecordsWithoutConfig(t *testing.T) {
 	rootDir := t.TempDir()
 	db, err := store.NewDatabase(rootDir)
 	require.NoError(t, err)
@@ -69,14 +69,22 @@ func TestRecoverDaemonsQuarantinesRecordsWithoutConfig(t *testing.T) {
 	assert.Empty(t, recovering)
 	assert.Empty(t, live)
 
-	// The damaged records are pruned so the next restart does not trip over
-	// them again; the unrelated record is untouched.
+	// The damaged records stay in the store: a missing config file does not
+	// prove the daemon is dead, and keeping the record lets a later restart
+	// re-adopt the daemon once the file is restored.
 	remaining := make(map[string]string)
 	require.NoError(t, m.store.WalkDaemons(context.Background(), func(s *daemon.ConfigState) error {
 		remaining[s.ID] = s.FsDriver
 		return nil
 	}))
-	assert.Equal(t, map[string]string{other.ID(): config.FsDriverFscache}, remaining)
+	expected := map[string]string{other.ID(): config.FsDriverFscache}
+	for _, d := range poisoned {
+		expected[d.ID()] = config.FsDriverFusedev
+	}
+	assert.Equal(t, expected, remaining)
+
+	// Only the in-memory registration is dropped, so no half-initialized
+	// daemon without its configuration lingers in the cache.
 	for _, d := range poisoned {
 		assert.Nil(t, m.daemonCache.GetByDaemonID(d.ID(), nil))
 	}
