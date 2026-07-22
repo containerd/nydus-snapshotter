@@ -716,6 +716,9 @@ func (fs *Filesystem) umountRafsInstance(rafs *racache.Rafs) error {
 
 		daemon, daemonErr := fs.getDaemonByRafs(rafs)
 		if daemonErr == nil {
+			if err := daemon.UmountRafsInstance(rafs); err != nil {
+				return errors.Wrapf(err, "umount instance %s", rafs.SnapshotID)
+			}
 			daemon.RemoveRafsInstance(rafs.SnapshotID)
 		} else {
 			log.L.Debugf("snapshot %s has no associated nydusd: %v", rafs.SnapshotID, daemonErr)
@@ -725,9 +728,6 @@ func (fs *Filesystem) umountRafsInstance(rafs *racache.Rafs) error {
 			log.L.WithError(err).Warnf("remove rafs %s from store", rafs.SnapshotID)
 		}
 		if daemonErr == nil {
-			if err := daemon.UmountRafsInstance(rafs); err != nil {
-				log.L.WithError(err).Warnf("umount instance %s", rafs.SnapshotID)
-			}
 			if daemon.IsSharedDaemon() {
 				fs.cleanUpSharedRafsResources(daemon.ID(), rafs)
 			}
