@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -145,4 +146,36 @@ func TestUpdateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSendFdTimeout(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "api.sock")
+
+	oldTimeout := sendFdRequestTimeout
+	sendFdRequestTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		sendFdRequestTimeout = oldTimeout
+	})
+
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, endpointSendFd, r.URL.Path)
+		time.Sleep(300 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	listener, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	ts.Listener = listener
+	ts.Start()
+	defer ts.Close()
+
+	client, err := NewNydusClient(sock)
+	require.NoError(t, err)
+
+	start := time.Now()
+	err = client.SendFd()
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), time.Second)
 }

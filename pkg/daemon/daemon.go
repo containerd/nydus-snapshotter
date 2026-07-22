@@ -432,6 +432,10 @@ func (d *Daemon) SendStates() {
 			return nil
 		})
 		if err != nil {
+			if errors.Is(err, supervisor.ErrFetchDaemonStatesSkipped) {
+				log.L.Debugf("skip daemon %s state sync: %v", d.ID(), err)
+				return
+			}
 			log.L.Warnf("Daemon %s does not support sending states, %v", d.ID(), err)
 		}
 	}
