@@ -64,6 +64,7 @@ type snapshotter struct {
 	cleanupOnClose          bool
 	enableOverlayfsVolatile bool
 	cleanupQueue            *snapshotCleanupQueue
+	pendingCullTracker      *pendingCullTracker
 }
 
 func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
@@ -314,6 +315,12 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	if config.GetFsDriver() == config.FsDriverFscache && !syncRemove {
 		log.L.Infof("enable async snapshot cleanup for fscache mode")
 		sn.cleanupQueue = newSnapshotCleanupQueue(sn.cleanupSnapshotDirectory)
+		sn.pendingCullTracker = newPendingCullTracker(
+			ctx,
+			pendingCullPollInterval,
+			sn.fs.PendingCulls,
+			sn.cleanupQueue,
+		)
 	}
 
 	return sn, nil
@@ -330,7 +337,8 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 		return err
 	}
 
-	log.L.Infof("[Cleanup] orphan directories %v", cleanup)
+	log.L.Infof("[Cleanup] orphan directories count=%d", len(cleanup))
+	log.L.Debugf("[Cleanup] orphan directories %v", cleanup)
 
 	for _, dir := range cleanup {
 		if o.cleanupQueue != nil {
@@ -344,21 +352,31 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 		}
 	}
 
+	scanEpoch, endScan := o.fs.BeginFscacheGCScan()
+	defer endScan()
 	cleanup, err = o.getUnusedCacheBlobs(ctx)
 	if err != nil {
 		return err
 	}
-	log.L.Infof("[Cleanup] unused cache blobs %v", cleanup)
+	log.L.Infof("[Cleanup] unused cache blobs count=%d", len(cleanup))
+	log.L.Debugf("[Cleanup] unused cache blobs %v", cleanup)
 
 	for _, blob := range cleanup {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		endBlobGC, ok := o.fs.TryBeginFscacheBlobGC(blob, scanEpoch)
+		if !ok {
+			log.L.Infof("skip fscache blob %s cleanup due to concurrent mount publication", blob)
+			continue
+		}
 		// Add sha256: prefix to make it a valid blob digest
-		if err := o.fs.RemoveCache("sha256:" + blob); err != nil {
+		done, err := o.fs.RemoveCache("sha256:" + blob)
+		endBlobGC()
+		if err != nil {
 			log.L.WithError(err).Warnf("failed to remove cache blob %s", blob)
 			data.CacheBlobDeletionErrors.Inc()
-		} else {
+		} else if done {
 			data.CacheBlobsDeleted.Inc()
 		}
 	}
@@ -746,6 +764,9 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 func (o *snapshotter) Close() error {
 	log.L.Info("[Close] shutdown snapshotter")
 
+	if o.pendingCullTracker != nil {
+		o.pendingCullTracker.close()
+	}
 	if o.cleanupQueue != nil {
 		o.cleanupQueue.close()
 	}
@@ -1368,9 +1389,16 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	// For example: cleanupSnapshotDirectory /var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/34" dir=/var/lib/containerd/io.containerd.snapshotter.v1.nydus/snapshots/34
 
 	snapshotID := filepath.Base(dir)
-	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
-		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
-		return errors.Wrapf(err, "unmount snapshot directory %q", dir)
+	if err := o.fs.Umount(ctx, snapshotID); err != nil {
+		if !os.IsNotExist(err) {
+			var pending *errdefs.FscacheCullPendingError
+			if errors.As(err, &pending) && o.pendingCullTracker != nil {
+				o.pendingCullTracker.register(dir, pending.BlobID, pending.Reason)
+			} else {
+				log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
+			}
+			return errors.Wrapf(err, "unmount snapshot directory %q", dir)
+		}
 	}
 
 	if o.fs.TarfsEnabled() {
@@ -1381,6 +1409,11 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 
 	if err := os.RemoveAll(dir); err != nil {
 		return errors.Wrapf(err, "remove directory %q", dir)
+	}
+	if o.pendingCullTracker != nil {
+		o.pendingCullTracker.forget(snapshotID)
+	} else if o.cleanupQueue != nil {
+		o.cleanupQueue.clearDeferred(snapshotID)
 	}
 
 	return nil

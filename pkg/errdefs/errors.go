@@ -8,6 +8,7 @@ package errdefs
 
 import (
 	stderrors "errors"
+	"fmt"
 	"net"
 	"syscall"
 
@@ -22,7 +23,23 @@ var (
 	ErrUnavailable     = errors.New("unavailable")
 	ErrNotImplemented  = errors.New("not implemented") // represents not supported and unimplemented
 	ErrDeviceBusy      = errors.New("device busy")     // represents not supported and unimplemented
+	// ErrFscacheCullPending means the filesystem was unmounted and unbound, but
+	// cachefiles still needs to finish reclaiming the bootstrap cookie.
+	ErrFscacheCullPending = errors.New("fscache cull pending")
 )
+
+type FscacheCullPendingError struct {
+	BlobID string
+	Reason string
+}
+
+func (e *FscacheCullPendingError) Error() string {
+	return fmt.Sprintf("fscache blob %s cull is pending: %s", e.BlobID, e.Reason)
+}
+
+func (e *FscacheCullPendingError) Unwrap() error {
+	return ErrFscacheCullPending
+}
 
 // IsAlreadyExists returns true if the error is due to already exists
 func IsAlreadyExists(err error) bool {

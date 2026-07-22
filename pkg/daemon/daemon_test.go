@@ -8,6 +8,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,8 +22,31 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
+	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
+	"golang.org/x/sys/unix"
 )
+
+type teardownClient struct {
+	NydusdClient
+	calls     *[]string
+	cullDone  bool
+	unbindErr error
+	cullErr   error
+}
+
+func (c *teardownClient) UnbindBlob(domainID, blobID string) error {
+	*c.calls = append(*c.calls, fmt.Sprintf("unbind:%s:%s", domainID, blobID))
+	return c.unbindErr
+}
+
+func (c *teardownClient) CullBlob(blobID string, background bool) (CullBlobResult, error) {
+	*c.calls = append(*c.calls, fmt.Sprintf("cull:%s:%t", blobID, background))
+	if c.cullDone {
+		return CullBlobResult{Status: CullBlobDone}, c.cullErr
+	}
+	return CullBlobResult{Status: CullBlobPending, Reason: "open"}, c.cullErr
+}
 
 func TestMain(m *testing.M) {
 	// Initialize global config so DumpFile does not panic.
@@ -176,4 +200,98 @@ func TestRemoveRafsInstanceRefcount(t *testing.T) {
 	d.RemoveRafsInstance(r.SnapshotID)
 	assert.Equal(t, int32(0), d.GetRef())
 	assert.Equal(t, 0, d.RafsCache.Len())
+}
+
+func TestSharedErofsUmountOrderAndRetry(t *testing.T) {
+	tests := []struct {
+		name      string
+		mounted   bool
+		umountErr error
+		cullDone  bool
+		unbindErr error
+		cullErr   error
+		wantErr   bool
+		wantCalls []string
+	}{
+		{
+			name:      "mounted teardown follows reverse creation order",
+			mounted:   true,
+			cullDone:  true,
+			wantCalls: []string{"check", "umount", "unbind:domain:cookie", "cull:cookie:true"},
+		},
+		{
+			name:      "busy mount does not mutate daemon state",
+			mounted:   true,
+			umountErr: unix.EBUSY,
+			cullDone:  true,
+			wantErr:   true,
+			wantCalls: []string{"check", "umount"},
+		},
+		{
+			name:      "retry skips an already unmounted mountpoint",
+			cullDone:  true,
+			wantCalls: []string{"check", "unbind:domain:cookie", "cull:cookie:true"},
+		},
+		{
+			name:      "pending bootstrap cull retains teardown state",
+			wantErr:   true,
+			wantCalls: []string{"check", "unbind:domain:cookie", "cull:cookie:true"},
+		},
+		{
+			name:      "domain unbind failure remains visible",
+			unbindErr: fmt.Errorf("unbind failed"),
+			wantErr:   true,
+			wantCalls: []string{"check", "unbind:domain:cookie"},
+		},
+		{
+			name:      "bootstrap cull failure remains visible",
+			cullErr:   fmt.Errorf("cull failed"),
+			wantErr:   true,
+			wantCalls: []string{"check", "unbind:domain:cookie", "cull:cookie:true"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := []string{}
+			client := &teardownClient{
+				calls:     &calls,
+				cullDone:  tt.cullDone,
+				unbindErr: tt.unbindErr,
+				cullErr:   tt.cullErr,
+			}
+			d := &Daemon{client: client}
+			ra := &rafs.Rafs{
+				SnapshotID: "snapshot",
+				Mountpoint: "/mountpoint",
+				Annotations: map[string]string{
+					rafs.AnnoFsCacheDomainID: "domain",
+					rafs.AnnoFsCacheID:       "cookie",
+				},
+			}
+			isMountpoint := func(string) (bool, error) {
+				calls = append(calls, "check")
+				return tt.mounted, nil
+			}
+			umount := func(string) error {
+				calls = append(calls, "umount")
+				return tt.umountErr
+			}
+
+			err := d.sharedErofsUmountWith(ra, isMountpoint, umount)
+			assert.Equal(t, tt.wantCalls, calls)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.name == "pending bootstrap cull retains teardown state" {
+					require.ErrorIs(t, err, errdefs.ErrFscacheCullPending)
+					var pending *errdefs.FscacheCullPendingError
+					require.ErrorAs(t, err, &pending)
+					require.Equal(t, "cookie", pending.BlobID)
+					require.Equal(t, "open", pending.Reason)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

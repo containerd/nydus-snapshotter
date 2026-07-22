@@ -7,6 +7,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -68,6 +69,89 @@ func TestNydusClient_CheckStatus(t *testing.T) {
 	assert.Equal(t, info.DaemonState(), types.DaemonStateRunning)
 	assert.Equal(t, "testid", info.ID)
 	assert.Equal(t, BTI, info.Version)
+}
+
+func TestCullBlob(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantStatus CullBlobStatus
+		wantReason string
+		background bool
+		wantErr    bool
+	}{
+		{name: "done", statusCode: http.StatusNoContent, wantStatus: CullBlobDone},
+		{name: "pending", statusCode: http.StatusOK, wantStatus: CullBlobPending, wantReason: "open", background: true},
+		{name: "unexpected accepted", statusCode: http.StatusAccepted, wantErr: true},
+		{name: "daemon error", statusCode: http.StatusInternalServerError, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			sock := filepath.Join(dir, "api.sock")
+			ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodDelete, r.Method)
+				assert.Equal(t, endpointCullBlob, r.URL.Path)
+				assert.Equal(t, "test-blob", r.URL.Query().Get("blob_id"))
+				if tt.background {
+					assert.Equal(t, "true", r.URL.Query().Get("background"))
+				} else {
+					assert.Empty(t, r.URL.Query().Get("background"))
+				}
+				if tt.statusCode == http.StatusInternalServerError {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tt.statusCode)
+					_, _ = w.Write([]byte(`{"code":"EIO","message":"cull failed"}`))
+					return
+				}
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == http.StatusOK {
+					_, _ = w.Write([]byte(`{"status":"pending","reason":"open"}`))
+				}
+			}))
+			listener, err := net.Listen("unix", sock)
+			require.NoError(t, err)
+			ts.Listener = listener
+			ts.Start()
+			defer ts.Close()
+
+			client, err := NewNydusClient(sock)
+			require.NoError(t, err)
+			result, err := client.CullBlob("test-blob", tt.background)
+			assert.Equal(t, tt.wantStatus, result.Status)
+			assert.Equal(t, tt.wantReason, result.Reason)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPendingCulls(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "api.sock")
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, endpointCullBlob, r.URL.Path)
+		_, _ = w.Write([]byte(`{"blob-a":"open","blob-b":"awaiting cachefiles commit"}`))
+	}))
+	listener, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	ts.Listener = listener
+	ts.Start()
+	defer ts.Close()
+
+	client, err := NewNydusClient(sock)
+	require.NoError(t, err)
+	pending, err := client.PendingCulls(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"blob-a": "open",
+		"blob-b": "awaiting cachefiles commit",
+	}, pending)
 }
 
 func TestUpdateConfig(t *testing.T) {
