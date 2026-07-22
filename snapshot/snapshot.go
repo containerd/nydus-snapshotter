@@ -63,6 +63,7 @@ type snapshotter struct {
 	syncRemove              bool
 	cleanupOnClose          bool
 	enableOverlayfsVolatile bool
+	cleanupQueue            *snapshotCleanupQueue
 }
 
 func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
@@ -297,12 +298,7 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 	}
 
 	syncRemove := cfg.SnapshotsConfig.SyncRemove
-	if config.GetFsDriver() == config.FsDriverFscache {
-		log.L.Infof("enable syncRemove for fscache mode")
-		syncRemove = true
-	}
-
-	return &snapshotter{
+	sn := &snapshotter{
 		root:                    cfg.Root,
 		nydusdPath:              cfg.DaemonConfig.NydusdPath,
 		ms:                      ms,
@@ -314,7 +310,13 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 		enableKataVolume:        cfg.SnapshotsConfig.EnableKataVolume,
 		enableOverlayfsVolatile: cfg.SnapshotsConfig.EnableOverlayfsVolatile,
 		cleanupOnClose:          cfg.CleanupOnClose,
-	}, nil
+	}
+	if config.GetFsDriver() == config.FsDriverFscache && !syncRemove {
+		log.L.Infof("enable async snapshot cleanup for fscache mode")
+		sn.cleanupQueue = newSnapshotCleanupQueue(sn.cleanupSnapshotDirectory)
+	}
+
+	return sn, nil
 }
 
 func (o *snapshotter) Cleanup(ctx context.Context) error {
@@ -331,6 +333,12 @@ func (o *snapshotter) Cleanup(ctx context.Context) error {
 	log.L.Infof("[Cleanup] orphan directories %v", cleanup)
 
 	for _, dir := range cleanup {
+		if o.cleanupQueue != nil {
+			if err := o.cleanupQueue.enqueueAndWait(ctx, dir, "cleanup"); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := o.cleanupSnapshotDirectory(ctx, dir); err != nil {
 			log.L.WithError(err).Warnf("failed to remove directory %s", dir)
 		}
@@ -682,7 +690,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		return errors.Wrapf(err, "failed to remove key %s", key)
 	}
 
-	if o.syncRemove {
+	if o.cleanupQueue == nil && o.syncRemove {
 		var removals []string
 		removals, err = o.getCleanupDirectories(ctx)
 		if err != nil {
@@ -711,7 +719,14 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		}
 	}()
 
-	return t.Commit()
+	if err = t.Commit(); err != nil {
+		return err
+	}
+
+	if o.cleanupQueue != nil {
+		o.cleanupQueue.enqueue(o.snapshotDir(id), key)
+	}
+	return nil
 }
 
 func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...string) error {
@@ -730,6 +745,10 @@ func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...str
 
 func (o *snapshotter) Close() error {
 	log.L.Info("[Close] shutdown snapshotter")
+
+	if o.cleanupQueue != nil {
+		o.cleanupQueue.close()
+	}
 
 	if o.cleanupOnClose {
 		err := o.fs.Teardown(context.Background())
@@ -1351,6 +1370,7 @@ func (o *snapshotter) cleanupSnapshotDirectory(ctx context.Context, dir string) 
 	snapshotID := filepath.Base(dir)
 	if err := o.fs.Umount(ctx, snapshotID); err != nil && !os.IsNotExist(err) {
 		log.G(ctx).WithError(err).WithField("dir", dir).Error("failed to unmount")
+		return errors.Wrapf(err, "unmount snapshot directory %q", dir)
 	}
 
 	if o.fs.TarfsEnabled() {

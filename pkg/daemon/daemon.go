@@ -368,7 +368,10 @@ func (d *Daemon) sharedErofsUmount(ra *rafs.Rafs) error {
 	fscacheID := ra.Annotations[rafs.AnnoFsCacheID]
 
 	if err := c.UnbindBlob(domainID, fscacheID); err != nil {
-		return errors.Wrapf(err, "request to unbind fscache blob, domain %s, fscache %s", domainID, fscacheID)
+		if !isBlobCacheEntryNotFound(err) {
+			return errors.Wrapf(err, "request to unbind fscache blob, domain %s, fscache %s", domainID, fscacheID)
+		}
+		log.L.Warnf("ignore missing blob cache entry while unbinding domain %s, fscache %s", domainID, fscacheID)
 	}
 
 	mountpoint := ra.GetMountpoint()
@@ -383,6 +386,10 @@ func (d *Daemon) sharedErofsUmount(ra *rafs.Rafs) error {
 	}
 
 	return nil
+}
+
+func isBlobCacheEntryNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "blob_cache: cache entry not found")
 }
 
 func (d *Daemon) UmountRafsInstance(r *rafs.Rafs) error {
