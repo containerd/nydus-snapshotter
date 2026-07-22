@@ -11,11 +11,93 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
+
+func assertFDClosed(t *testing.T, fd int) {
+	t.Helper()
+	_, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	assert.ErrorIs(t, err, syscall.EBADF)
+}
+
+func TestSupervisorSaveClosesReplacedFD(t *testing.T) {
+	su := &Supervisor{fd: -1, dataStorage: newMemStatesStorage()}
+	first, err := unix.Dup(int(os.Stdin.Fd()))
+	require.NoError(t, err)
+	second, err := unix.Dup(int(os.Stdin.Fd()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = unix.Close(second) })
+
+	su.save([]byte("first"), first)
+	su.save([]byte("second"), second)
+
+	assertFDClosed(t, first)
+	_, err = unix.FcntlInt(uintptr(second), unix.F_GETFD, 0)
+	require.NoError(t, err)
+}
+
+func TestRecvRejectsMultipleFDsWithoutLeaking(t *testing.T) {
+	sockets, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	require.NoError(t, err)
+	clientFile := os.NewFile(uintptr(sockets[0]), "client")
+	serverFile := os.NewFile(uintptr(sockets[1]), "server")
+	t.Cleanup(func() {
+		_ = clientFile.Close()
+		_ = serverFile.Close()
+	})
+	client, err := net.FileConn(clientFile)
+	require.NoError(t, err)
+	server, err := net.FileConn(serverFile)
+	require.NoError(t, err)
+	clientConn, ok := client.(*net.UnixConn)
+	require.True(t, ok)
+	serverConn, ok := server.(*net.UnixConn)
+	require.True(t, ok)
+	t.Cleanup(func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	})
+
+	first, err := os.CreateTemp(t.TempDir(), "first")
+	require.NoError(t, err)
+	defer first.Close()
+	second, err := os.CreateTemp(t.TempDir(), "second")
+	require.NoError(t, err)
+	defer second.Close()
+
+	before, err := os.ReadDir("/proc/self/fd")
+	require.NoError(t, err)
+	_, _, err = clientConn.WriteMsgUnix([]byte("state"), unix.UnixRights(int(first.Fd()), int(second.Fd())), nil)
+	require.NoError(t, err)
+	require.NoError(t, clientConn.CloseWrite())
+	_, fd, err := recv(serverConn)
+	after, readErr := os.ReadDir("/proc/self/fd")
+	require.NoError(t, readErr)
+
+	assert.EqualError(t, err, "expected exactly one control file descriptor, received 2")
+	assert.Equal(t, -1, fd)
+	assert.Equal(t, len(before), len(after))
+}
+
+func TestDestroySupervisorClosesFD(t *testing.T) {
+	set, err := NewSupervisorSet(t.TempDir())
+	require.NoError(t, err)
+	su := set.NewSupervisor("test")
+	fd, err := unix.Dup(int(os.Stdin.Fd()))
+	require.NoError(t, err)
+	su.save(nil, fd)
+
+	require.NoError(t, set.DestroySupervisor("test"))
+
+	assertFDClosed(t, fd)
+	assert.Equal(t, -1, su.fd)
+}
 
 func TestSupervisor(t *testing.T) {
 	rootDir, err1 := os.MkdirTemp("", "supervisor")
