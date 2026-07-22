@@ -109,6 +109,9 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 	// TODO: We still need to consider shared daemon the time sequence of initializing daemon,
 	// start daemon commit its state to DB and retrieving its state.
 	if fscacheManager, ok := fs.enabledManagers[config.FsDriverFscache]; ok {
+		fscacheManager.IsSharedDaemonRetained = func(d *daemon.Daemon) bool {
+			return fs.fscacheSharedDaemon != nil && fs.fscacheSharedDaemon.ID() == d.ID()
+		}
 		if !hasFscacheSharedDaemon && fs.fscacheSharedDaemon == nil {
 			log.L.Infof("initializing shared nydus daemon for fscache")
 			if err := fs.initSharedDaemon(fscacheManager); err != nil {
@@ -119,6 +122,9 @@ func NewFileSystem(ctx context.Context, opt ...NewFSOpt) (*Filesystem, error) {
 		return nil, errors.Errorf("shared fscache daemon is present, but manager is missing")
 	}
 	if fusedevManager, ok := fs.enabledManagers[config.FsDriverFusedev]; ok {
+		fusedevManager.IsSharedDaemonRetained = func(d *daemon.Daemon) bool {
+			return fs.fusedevSharedDaemon != nil && fs.fusedevSharedDaemon.ID() == d.ID()
+		}
 		if config.IsFusedevSharedModeEnabled() && !hasFusedevSharedDaemon && fs.fusedevSharedDaemon == nil {
 			log.L.Infof("initializing shared nydus daemon for fusedev")
 			if err := fs.initSharedDaemon(fusedevManager); err != nil {
@@ -971,6 +977,10 @@ func (fs *Filesystem) initSharedDaemon(fsManager *manager.Manager) (err error) {
 
 	if err := fsManager.StartDaemon(d); err != nil {
 		return errors.Wrap(err, "start shared daemon")
+	}
+
+	if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+		return errors.Wrap(err, "wait shared daemon to become running")
 	}
 
 	fs.TryRetainSharedDaemon(d)

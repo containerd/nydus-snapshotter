@@ -49,6 +49,11 @@ type Manager struct {
 	NydusdBinaryPath string
 	RecoverPolicy    config.DaemonRecoverPolicy
 	SupervisorSet    *supervisor.SupervisorsSet
+
+	// IsSharedDaemonRetained is a callback to check if a daemon is currently
+	// retained as the active shared daemon. It is used to avoid killing a
+	// shared daemon that has already been retained.
+	IsSharedDaemonRetained func(d *daemon.Daemon) bool
 }
 
 type Opt struct {

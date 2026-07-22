@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/containerd/log"
@@ -27,6 +28,11 @@ import (
 )
 
 const endpointGetBackend string = "/api/v1/daemons/%s/backend"
+
+// defaultDaemonTerminationTimeout is how long we wait for a failed nydusd to
+// exit after SIGTERM before escalating to SIGKILL. It is a var so tests can
+// shorten it.
+var defaultDaemonTerminationTimeout = 5 * time.Second
 
 // Spawn a nydusd daemon to serve the daemon instance.
 //
@@ -81,22 +87,42 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 		log.L.Errorf("Fail to update daemon info (%+v) to DB: %v", d, err)
 	}
 
-	// If nydusd fails startup, manager can't subscribe its death event.
-	// So we can ignore the subscribing error.
+	// Verify the daemon actually comes up in the background. If it does not,
+	// terminate the spawned process so it cannot linger as an orphan that keeps
+	// pulling from the registry (see #771). `proc` is captured here so we act on
+	// exactly the process we started, regardless of any concurrent pid changes.
+	proc := cmd.Process
 	go func() {
 		if err := daemon.WaitUntilSocketExisted(d.GetAPISock(), d.States.ProcessID); err != nil {
-			// FIXME: Should clean the daemon record in DB if the nydusd fails starting
-			log.L.Errorf("Nydusd %s probably not started", d.ID())
+			log.L.Errorf("Nydusd %s probably not started, terminating it: %v", d.ID(), err)
+			m.terminateFailedDaemon(d, proc)
 			return
 		}
 
 		if err = m.SubscribeDaemonEvent(d); err != nil {
-			log.L.Errorf("Nydusd %s probably not started", d.ID())
+			log.L.Errorf("Failed to subscribe nydusd %s events, terminating it: %v", d.ID(), err)
+			m.terminateFailedDaemon(d, proc)
 			return
 		}
 
 		if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
-			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
+			// A failover-managed daemon (recover_policy=failover) legitimately
+			// stays in INIT/READY while the failover/upgrade flow drives
+			// INIT -> TakeOver -> Start after StartDaemon returns. Do not treat
+			// that as a failed startup: killing or unsubscribing it here would
+			// wreck the takeover. Its cleanup belongs to the failover flow.
+			if d.Supervisor != nil {
+				log.L.WithError(err).Warnf("daemon %s did not reach RUNNING yet, leaving it to the failover flow", d.ID())
+				return
+			}
+			log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state, terminating it", d.ID())
+			// Unsubscribe before killing, otherwise the liveness monitor would
+			// observe the kill as a death event and (with recover_policy=restart)
+			// immediately respawn what we just decided to reap.
+			if uerr := m.UnsubscribeDaemonEvent(d); uerr != nil {
+				log.L.WithError(uerr).Warnf("unsubscribe daemon %s after startup failure", d.ID())
+			}
+			m.terminateFailedDaemon(d, proc)
 			return
 		}
 
@@ -117,6 +143,71 @@ func (m *Manager) StartDaemon(d *daemon.Daemon) error {
 	}()
 
 	return nil
+}
+
+// terminateFailedDaemon best-effort stops a nydusd that failed startup
+// verification, so it stops pulling from the registry instead of lingering as
+// an orphan. SIGTERM is tried first and escalated to SIGKILL if the process,
+// for example one wedged on a slow registry, does not exit in time. The process
+// is finally reaped to avoid leaving a zombie. It operates on the captured
+// process handle, so it is safe against pid reuse and concurrent teardown.
+func (m *Manager) terminateFailedDaemon(d *daemon.Daemon, proc *os.Process) {
+	if proc == nil {
+		return
+	}
+
+	// A failover-managed daemon (recover_policy=failover) legitimately stays in
+	// INIT/READY while the failover flow drives INIT -> TakeOver -> Start after
+	// StartDaemon returns, so a "not RUNNING yet" verdict here may be a takeover
+	// in progress rather than a failed startup. Killing it would destroy the
+	// takeover, so leave its cleanup to the failover flow.
+	if d.Supervisor != nil {
+		log.L.Warnf("nydusd %s (pid %d) failed startup verification, leaving cleanup to the failover flow", d.ID(), proc.Pid)
+		return
+	}
+
+	// For a shared daemon, if it fails to reach RUNNING, it won't be retained
+	// by TryRetainSharedDaemon. We must kill it here so it doesn't linger.
+	// But if it is already retained (e.g., this is a spurious timeout or
+	// TryRetainSharedDaemon was called concurrently), killing it would drop
+	// the active shared daemon. We check IsSharedDaemon() and whether it is
+	// the currently active one.
+	if d.IsSharedDaemon() && m.isDaemonRetainedAsShared(d) {
+		log.L.Warnf("nydusd %s (pid %d) failed startup verification but is already retained as shared daemon, not killing it", d.ID(), proc.Pid)
+		return
+	}
+
+	log.L.Warnf("terminating nydusd %s (pid %d) that failed to start", d.ID(), proc.Pid)
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = proc.Wait()
+		close(done)
+	}()
+
+	if err := proc.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		log.L.WithError(err).Warnf("send SIGTERM to nydusd %s (pid %d)", d.ID(), proc.Pid)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(defaultDaemonTerminationTimeout):
+		log.L.Warnf("nydusd %s (pid %d) did not exit after SIGTERM, sending SIGKILL", d.ID(), proc.Pid)
+		if err := proc.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			log.L.WithError(err).Warnf("send SIGKILL to nydusd %s (pid %d)", d.ID(), proc.Pid)
+		}
+		<-done
+	}
+}
+
+// isDaemonRetainedAsShared checks if the daemon is currently retained as the
+// active shared daemon in the filesystem manager. This is a callback provided
+// by the manager to avoid circular dependencies.
+func (m *Manager) isDaemonRetainedAsShared(d *daemon.Daemon) bool {
+	if m.IsSharedDaemonRetained != nil {
+		return m.IsSharedDaemonRetained(d)
+	}
+	return false
 }
 
 // Build commandline according to nydusd daemon configuration.
