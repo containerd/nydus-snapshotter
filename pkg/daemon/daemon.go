@@ -134,6 +134,49 @@ func (d *Daemon) ConfigFile(instanceID string) string {
 	return filepath.Join(d.States.ConfigDir, instanceID, "config.json")
 }
 
+// CleanupOrphanedRafsConfigs removes configurations which no longer have a persisted
+// RAFS instance. This reclaims entries left behind by older snapshotter versions.
+func (d *Daemon) CleanupOrphanedRafsConfigs() error {
+	if !d.IsSharedDaemon() {
+		return nil
+	}
+
+	entries, err := os.ReadDir(d.States.ConfigDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	active := d.RafsCache.List()
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, ok := active[entry.Name()]; ok {
+			continue
+		}
+
+		configFile := filepath.Join(d.States.ConfigDir, entry.Name(), "config.json")
+		info, err := os.Stat(configFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Dir(configFile)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // NydusdThreadNum returns how many working threads are needed of a single nydusd
 func (d *Daemon) NydusdThreadNum() int {
 	return d.States.ThreadNum
