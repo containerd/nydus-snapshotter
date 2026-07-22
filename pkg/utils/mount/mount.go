@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/containerd/log"
 	"github.com/pkg/errors"
 
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
@@ -26,17 +27,61 @@ type Interface interface {
 type Mounter struct {
 }
 
-func (m *Mounter) Umount(target string) error {
-	if mounted, err := IsMountpoint(target); err == nil {
-		if !mounted {
-			return errors.New("not mounted")
-		}
-	} else {
-		return err
+// These indirections are test seams so unit tests can stub out the real
+// syscall / filesystem check without touching real mountpoints.
+var (
+	syscallUnmount = syscall.Unmount
+	isMountpoint   = IsMountpoint
+)
+
+// isDisconnected reports whether err indicates a broken/stale mountpoint whose
+// backing server (e.g. a dead nydusd behind a FUSE mount) is gone. Such a
+// mountpoint still needs to be unmounted, so callers must not bail out on it.
+func isDisconnected(err error) bool {
+	return errors.Is(err, syscall.ENOTCONN) || errors.Is(err, syscall.ESTALE)
+}
+
+// unmountWithFallback tries a plain unmount first and, on failure, degrades to
+// force then lazy detach so that busy or disconnected mountpoints are always
+// torn down instead of being left behind.
+func unmountWithFallback(target string) error {
+	err := syscallUnmount(target, 0)
+	if err == nil || errors.Is(err, syscall.EINVAL) {
+		// EINVAL means the target is not a mountpoint (already unmounted).
+		return nil
 	}
 
-	// return syscall.Unmount(target, syscall.MNT_FORCE)
-	return syscall.Unmount(target, 0)
+	// umountForce aborts in-flight requests, which is what a disconnected FUSE
+	// mount needs; try it first.
+	if ferr := syscallUnmount(target, umountForce); ferr == nil {
+		log.L.Warnf("force umount %s after plain umount failed: %v", target, err)
+		return nil
+	}
+
+	// umountDetach (lazy) detaches from the namespace even while busy; last resort.
+	if lerr := syscallUnmount(target, umountDetach); lerr != nil {
+		return errors.Wrapf(lerr, "lazy umount %s (plain umount error: %v)", target, err)
+	}
+	log.L.Warnf("lazy-detached %s after plain umount failed: %v", target, err)
+	return nil
+}
+
+func (m *Mounter) Umount(target string) error {
+	mounted, err := isMountpoint(target)
+	if err != nil {
+		// A disconnected/stale mountpoint fails IsMountpoint (stat returns
+		// ENOTCONN) but still needs unmounting; proceed instead of bailing out.
+		if !isDisconnected(err) {
+			return err
+		}
+		mounted = true
+	}
+
+	if !mounted {
+		return nil
+	}
+
+	return unmountWithFallback(target)
 }
 
 func NormalizePath(path string) (realPath string, err error) {
@@ -83,8 +128,11 @@ func IsMountpoint(path string) (bool, error) {
 
 func WaitUntilUnmounted(path string) error {
 	return retry.Do(func() error {
-		mounted, err := IsMountpoint(path)
+		mounted, err := isMountpoint(path)
 		if err != nil {
+			if isDisconnected(err) {
+				return nil
+			}
 			return err
 		}
 
