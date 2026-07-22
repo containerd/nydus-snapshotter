@@ -59,6 +59,9 @@ const (
 	jsonContentType = "application/json"
 )
 
+// Bound best-effort daemon state sync so it does not stall mount/unmount paths for too long.
+var sendFdRequestTimeout = 5 * time.Second
+
 // Nydusd HTTP client to query nydusd runtime status, operate file system instances.
 // Control nydusd workflow like failover and upgrade.
 type NydusdClient interface {
@@ -102,10 +105,9 @@ func (c *nydusdClient) url(path string, query query) (url string) {
 
 // A simple http client request wrapper with capability to take
 // request body and handle or process http response if result is expected.
-func (c *nydusdClient) request(method string, url string,
+func (c *nydusdClient) requestWithContext(ctx context.Context, method string, url string,
 	body io.Reader, respHandler func(resp *http.Response) error) error {
-
-	req, err := http.NewRequest(method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return errors.Wrapf(err, "construct request %s", url)
 	}
@@ -130,6 +132,11 @@ func (c *nydusdClient) request(method string, url string,
 	}
 
 	return parseErrorMessage(resp)
+}
+
+func (c *nydusdClient) request(method string, url string,
+	body io.Reader, respHandler func(resp *http.Response) error) error {
+	return c.requestWithContext(context.Background(), method, url, body, respHandler)
 }
 
 func succeeded(resp *http.Response) bool {
@@ -345,8 +352,10 @@ func (c *nydusdClient) TakeOver() error {
 }
 
 func (c *nydusdClient) SendFd() error {
+	ctx, cancel := context.WithTimeout(context.Background(), sendFdRequestTimeout)
+	defer cancel()
 	url := c.url(endpointSendFd, query{})
-	return c.request(http.MethodPut, url, nil, nil)
+	return c.requestWithContext(ctx, http.MethodPut, url, nil, nil)
 }
 
 func (c *nydusdClient) Start() error {

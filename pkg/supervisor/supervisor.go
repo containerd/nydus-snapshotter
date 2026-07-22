@@ -22,10 +22,17 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/errdefs"
 	"github.com/pkg/errors"
 
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/sys/unix"
 )
+
+// Keep mount/unmount paths from waiting indefinitely on supervisor state sync.
+var fetchDaemonStatesAcquireTimeout = 200 * time.Millisecond
+var fetchDaemonStatesTimeout = 5 * time.Second
+
+// ErrFetchDaemonStatesSkipped indicates that a best-effort state sync was skipped
+// because another supervisor operation held the semaphore too long.
+var ErrFetchDaemonStatesSkipped = errors.New("fetch daemon states skipped")
 
 type StatesStorage interface {
 	// Save state to storage space.
@@ -177,13 +184,10 @@ func send(uc *net.UnixConn, data []byte, fd int) error {
 	return nil
 }
 
-// There are several stages from different goroutines to trigger sending daemon states
-// the waiter will overlap each other causing the UDS being deleted.
-// But we don't want to keep the server listen for ever.
-// `to` equal to zero indicates that caller should call the receiver the receive stats
-// when it thinks is appropriate. `to` is not zero, no receiver callback will be returned.
-// Then this method is responsible to receive states inside.
-func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) {
+// There are several stages from different goroutines to trigger sending daemon states,
+// so the listener should not be left around forever. Positive timeout bounds both
+// Accept() and the subsequent receive on the accepted connection.
+func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, func(), error) {
 	if err := os.Remove(su.path); err != nil {
 		if !os.IsNotExist(err) {
 			log.L.Warnf("Unable to remove existed socket file %s, %s", su.path, err)
@@ -192,11 +196,26 @@ func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) 
 
 	listener, err := net.Listen("unix", su.path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "listen on socket %s", su.path)
+		return nil, nil, errors.Wrapf(err, "listen on socket %s", su.path)
+	}
+
+	var closeOnce sync.Once
+	cancel := func() {
+		closeOnce.Do(func() {
+			_ = listener.Close()
+		})
 	}
 
 	receiver := func() error {
-		defer func() { _ = listener.Close() }()
+		defer cancel()
+
+		if to > 0 {
+			if deadlineListener, ok := listener.(interface{ SetDeadline(time.Time) error }); ok {
+				if err := deadlineListener.SetDeadline(time.Now().Add(to)); err != nil {
+					return errors.Wrap(err, "set listener deadline")
+				}
+			}
+		}
 
 		// After the listener is closed, Accept() wakes up
 		conn, err := listener.Accept()
@@ -205,7 +224,14 @@ func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) 
 		}
 		defer func() { _ = conn.Close() }()
 
-		data, fd, err := recv(conn.(*net.UnixConn))
+		unixConn := conn.(*net.UnixConn)
+		if to > 0 {
+			if err := unixConn.SetDeadline(time.Now().Add(to)); err != nil {
+				return errors.Wrap(err, "set receiver deadline")
+			}
+		}
+
+		data, fd, err := recv(unixConn)
 		if err != nil {
 			return err
 		}
@@ -216,39 +242,21 @@ func (su *Supervisor) waitStatesTimeout(to time.Duration) (func() error, error) 
 		return nil
 	}
 
-	cancelTimer := make(chan int, 1)
-	// Once timeouts, stop waiting for states
-	if to > 0 {
-		timer := time.NewTimer(to)
-		go func() {
-			select {
-			case <-timer.C:
-				log.L.Warnf("Receiving state timeouts after %s", to)
-				// Wake up the blocking `Accept`
-				_ = listener.Close()
-			case <-cancelTimer:
-			}
-
-		}()
-
-		go func() {
-			if err := receiver(); err != nil {
-				log.L.Errorf("receiver fails, %s", err)
-			}
-			if to > 0 {
-				cancelTimer <- 1
-			}
-		}()
-
-		// With non-zero timeout parameter, call should be aware that receiver is nil
-		//nolint: nilnil
-		return nil, nil
-	}
-
-	return receiver, nil
+	return receiver, cancel, nil
 }
 
 func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
+	if err := su.sem.Acquire(context.Background(), 1); err != nil {
+		return err
+	}
+
+	releaseSem := true
+	defer func() {
+		if releaseSem {
+			su.sem.Release(1)
+		}
+	}()
+
 	// It is used to receive before
 	if err := os.Remove(su.path); err != nil {
 		if !os.IsNotExist(err) {
@@ -263,6 +271,7 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 
 	sender := func() error {
 		defer func() { _ = listener.Close() }()
+		defer su.sem.Release(1)
 
 		conn, err := listener.Accept()
 		if err != nil {
@@ -295,7 +304,6 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 				_ = listener.Close()
 			case <-cancelTimer:
 			}
-
 		}()
 	}
 
@@ -310,34 +318,55 @@ func (su *Supervisor) SendStatesTimeout(to time.Duration) error {
 		}
 	}()
 
+	releaseSem = false
+
 	return nil
 }
 
 func (su *Supervisor) FetchDaemonStates(trigger func() error) error {
-	if err := su.sem.Acquire(context.TODO(), 1); err != nil {
+	acquireCtx, cancelAcquire := context.WithTimeout(context.Background(), fetchDaemonStatesAcquireTimeout)
+	defer cancelAcquire()
+
+	if err := su.sem.Acquire(acquireCtx, 1); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.L.Warnf("Supervisor %s skips FetchDaemonStates because semaphore is busy after %s",
+				su.id, fetchDaemonStatesAcquireTimeout)
+			return errors.Wrapf(ErrFetchDaemonStatesSkipped, "supervisor %s semaphore busy after %s",
+				su.id, fetchDaemonStatesAcquireTimeout)
+		}
 		return err
 	}
 
 	defer su.sem.Release(1)
 
-	receiver, err := su.waitStatesTimeout(0)
+	receiverCtx, cancelReceiverCtx := context.WithTimeout(context.Background(), fetchDaemonStatesTimeout)
+	defer cancelReceiverCtx()
+
+	receiver, cancelReceiver, err := su.waitStatesTimeout(fetchDaemonStatesTimeout)
 	if err != nil {
 		return errors.Wrapf(err, "wait states on %s", su.Sock())
 	}
+	defer cancelReceiver()
 
-	eg := errgroup.Group{}
-	eg.Go(func() error {
-		err := trigger()
+	receiverErrCh := make(chan error, 1)
+	go func() {
+		receiverErrCh <- errors.Wrapf(receiver(), "receiver on %s", su.Sock())
+	}()
+
+	if err := trigger(); err != nil {
+		cancelReceiver()
+		<-receiverErrCh
 		return errors.Wrapf(err, "trigger on %s", su.Sock())
-	})
+	}
 
-	eg.Go(func() error {
-		err := receiver()
-		return errors.Wrapf(err, "receiver on %s", su.Sock())
-	})
-
-	// FIXME: With Timeout context!
-	return eg.Wait()
+	select {
+	case err := <-receiverErrCh:
+		return err
+	case <-receiverCtx.Done():
+		cancelReceiver()
+		<-receiverErrCh
+		return errors.Wrapf(receiverCtx.Err(), "fetch daemon states on %s", su.Sock())
+	}
 }
 
 // The unix domain socket on which nydus daemon is connected to
