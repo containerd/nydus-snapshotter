@@ -659,12 +659,12 @@ func (d *Daemon) Wait() error {
 func (d *Daemon) ClearVestige() {
 	mounter := mount.Mounter{}
 	if d.States.FsDriver == config.FsDriverFscache {
-		instances := d.RafsCache.List()
-		for _, i := range instances {
-			if err := mounter.Umount(i.GetMountpoint()); err != nil {
-				log.L.Warnf("Can't umount %s, %v", d.States.Mountpoint, err)
-			}
-		}
+		// Keep per-RAFS EROFS mounts while replacing a dead nydusd. The
+		// replacement daemon rebinds each blob to the existing mount after it
+		// reaches RUNNING, so unmounting here would defeat mount recovery.
+		// Snapshot removal still unmounts these resources through SharedUmount;
+		// this skip only applies to daemon restart recovery.
+		log.L.Infof("Skip unmounting fscache RAFS mountpoints when clearing daemon %s vestige", d.ID())
 	} else {
 		log.L.Infof("Unmounting %s when clear vestige", d.HostMountpoint())
 		if err := mounter.Umount(d.HostMountpoint()); err != nil {
