@@ -129,7 +129,26 @@ func (m *Manager) Recover(ctx context.Context,
 	if err := m.recoverRafsInstances(ctx, recoveringDaemons, liveDaemons); err != nil {
 		return errors.Wrapf(err, "recover RAFS instances")
 	}
+	m.cleanupOrphanedRafsConfigs(*recoveringDaemons, *liveDaemons)
 	return nil
+}
+
+func (m *Manager) cleanupOrphanedRafsConfigs(daemonSets ...map[string]*daemon.Daemon) {
+	seen := make(map[string]struct{})
+	for _, daemonSet := range daemonSets {
+		for _, d := range daemonSet {
+			if d.States.FsDriver != m.FsDriver {
+				continue
+			}
+			if _, ok := seen[d.ID()]; ok {
+				continue
+			}
+			seen[d.ID()] = struct{}{}
+			if err := d.CleanupOrphanedRafsConfigs(); err != nil {
+				log.L.WithError(err).Warnf("failed to clean orphaned RAFS configurations for daemon %s", d.ID())
+			}
+		}
+	}
 }
 
 func (m *Manager) AddRafsInstance(r *rafs.Rafs) error {

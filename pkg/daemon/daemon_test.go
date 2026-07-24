@@ -177,3 +177,28 @@ func TestRemoveRafsInstanceRefcount(t *testing.T) {
 	assert.Equal(t, int32(0), d.GetRef())
 	assert.Equal(t, 0, d.RafsCache.Len())
 }
+
+func TestCleanupOrphanedRafsConfigs(t *testing.T) {
+	configDir := t.TempDir()
+	d := &Daemon{
+		States: ConfigState{
+			ConfigDir:  configDir,
+			DaemonMode: config.DaemonModeShared,
+		},
+		RafsCache: rafs.NewRafsCache(),
+	}
+	d.RafsCache.Add(&rafs.Rafs{SnapshotID: "active"})
+
+	for _, id := range []string{"active", "orphan"} {
+		dir := filepath.Join(configDir, id)
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"), []byte("{}"), 0o644))
+	}
+	otherDir := filepath.Join(configDir, "not-a-rafs-config")
+	require.NoError(t, os.MkdirAll(otherDir, 0o755))
+
+	require.NoError(t, d.CleanupOrphanedRafsConfigs())
+	assert.DirExists(t, filepath.Join(configDir, "active"))
+	assert.NoDirExists(t, filepath.Join(configDir, "orphan"))
+	assert.DirExists(t, otherDir)
+}
