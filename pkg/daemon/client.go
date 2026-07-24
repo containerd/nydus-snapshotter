@@ -53,6 +53,8 @@ const (
 	// --- V2 API begins
 	// Add/remove blobs managed by the blob cache manager.
 	endpointBlobs = "/api/v2/blobs"
+	// Reclaim a blob from the kernel fscache with completion status.
+	endpointCullBlob = "/api/v2/blobs/cull"
 
 	defaultHTTPClientTimeout = 30 * time.Second
 
@@ -69,6 +71,8 @@ type NydusdClient interface {
 
 	BindBlob(daemonConfig string) error
 	UnbindBlob(domainID, blobID string) error
+	CullBlob(blobID string, background bool) (CullBlobResult, error)
+	PendingCulls(ctx context.Context) (map[string]string, error)
 
 	GetFsMetrics(sid string) (*types.FsMetrics, error)
 	GetInflightMetrics() (*types.InflightMetrics, error)
@@ -80,6 +84,18 @@ type NydusdClient interface {
 	SendFd() error
 	Start() error
 	Exit() error
+}
+
+type CullBlobStatus string
+
+const (
+	CullBlobDone    CullBlobStatus = "done"
+	CullBlobPending CullBlobStatus = "pending"
+)
+
+type CullBlobResult struct {
+	Status CullBlobStatus
+	Reason string
 }
 
 // Nydusd API server http client used to command nydusd's action and
@@ -275,6 +291,56 @@ func (c *nydusdClient) UnbindBlob(domainID, blobID string) error {
 	url := c.url(endpointBlobs, query)
 
 	return c.request(http.MethodDelete, url, nil, nil)
+}
+
+// CullBlob interprets 204 as done and the new endpoint's structured 200 response as pending.
+// Background requests remain owned by nydusd; foreground requests are retried by a later GC pass.
+func (c *nydusdClient) CullBlob(blobID string, background bool) (CullBlobResult, error) {
+	query := query{}
+	query.Add("blob_id", blobID)
+	if background {
+		query.Add("background", "true")
+	}
+	url := c.url(endpointCullBlob, query)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, url, nil)
+	if err != nil {
+		return CullBlobResult{}, errors.Wrapf(err, "construct request %s", url)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return CullBlobResult{}, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return CullBlobResult{Status: CullBlobDone}, nil
+	case http.StatusOK:
+		var result struct {
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		}
+		if err := decode(resp, &result); err != nil {
+			return CullBlobResult{}, errors.Wrap(err, "decode cull response")
+		}
+		if result.Status != string(CullBlobPending) {
+			return CullBlobResult{}, errors.Errorf("unexpected cull response status %q", result.Status)
+		}
+		return CullBlobResult{Status: CullBlobPending, Reason: result.Reason}, nil
+	default:
+		return CullBlobResult{}, parseErrorMessage(resp)
+	}
+}
+
+func (c *nydusdClient) PendingCulls(_ context.Context) (map[string]string, error) {
+	url := c.url(endpointCullBlob, query{})
+	pending := make(map[string]string)
+	if err := c.request(http.MethodGet, url, nil, func(resp *http.Response) error {
+		return decode(resp, &pending)
+	}); err != nil {
+		return nil, err
+	}
+	return pending, nil
 }
 
 func (c *nydusdClient) GetFsMetrics(sid string) (*types.FsMetrics, error) {

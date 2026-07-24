@@ -17,6 +17,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"sync"
 
 	"github.com/containerd/containerd/v2/core/snapshots"
@@ -58,6 +60,155 @@ type Filesystem struct {
 	nydusdBinaryPath    string
 	rootMountpoint      string
 	snapshotMutexMap    sync.Map
+	fscacheLifecycle    fscacheBlobLifecycle
+}
+
+type fscacheBlobState struct {
+	publishers    int
+	gcActive      bool
+	lastPublished uint64
+}
+
+type fscacheBlobLifecycle struct {
+	mu          sync.Mutex
+	cond        *sync.Cond
+	epoch       uint64
+	activeScans map[uint64]int
+	blobs       map[string]*fscacheBlobState
+}
+
+func normalizeBlobIDs(blobIDs []string) []string {
+	ids := append([]string(nil), blobIDs...)
+	sort.Strings(ids)
+	return slices.Compact(ids)
+}
+
+func (m *fscacheBlobLifecycle) initLocked() {
+	if m.cond == nil {
+		m.cond = sync.NewCond(&m.mu)
+	}
+	if m.activeScans == nil {
+		m.activeScans = make(map[uint64]int)
+	}
+	if m.blobs == nil {
+		m.blobs = make(map[string]*fscacheBlobState)
+	}
+}
+
+func (m *fscacheBlobLifecycle) beginPublication(blobIDs []string) func(bool) {
+	ids := normalizeBlobIDs(blobIDs)
+	m.mu.Lock()
+	m.initLocked()
+	for _, blobID := range ids {
+		if blobID == "" {
+			continue
+		}
+		state := m.blobs[blobID]
+		if state == nil {
+			state = &fscacheBlobState{}
+			m.blobs[blobID] = state
+		}
+		state.publishers++
+	}
+	for {
+		blocked := false
+		for _, blobID := range ids {
+			if state := m.blobs[blobID]; state != nil && state.gcActive {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			break
+		}
+		m.cond.Wait()
+	}
+	m.mu.Unlock()
+
+	var once sync.Once
+	return func(published bool) {
+		once.Do(func() {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if published {
+				m.epoch++
+			}
+			for _, blobID := range ids {
+				if blobID == "" {
+					continue
+				}
+				state := m.blobs[blobID]
+				state.publishers--
+				if published {
+					state.lastPublished = m.epoch
+				}
+			}
+			m.pruneLocked()
+			m.cond.Broadcast()
+		})
+	}
+}
+
+func (m *fscacheBlobLifecycle) beginScan() (uint64, func()) {
+	m.mu.Lock()
+	m.initLocked()
+	epoch := m.epoch
+	m.activeScans[epoch]++
+	m.mu.Unlock()
+
+	var once sync.Once
+	return epoch, func() {
+		once.Do(func() {
+			m.mu.Lock()
+			m.activeScans[epoch]--
+			if m.activeScans[epoch] == 0 {
+				delete(m.activeScans, epoch)
+			}
+			m.pruneLocked()
+			m.mu.Unlock()
+		})
+	}
+}
+
+func (m *fscacheBlobLifecycle) tryBeginGC(blobID string, scanEpoch uint64) (func(), bool) {
+	m.mu.Lock()
+	m.initLocked()
+	state := m.blobs[blobID]
+	if state == nil {
+		state = &fscacheBlobState{}
+		m.blobs[blobID] = state
+	}
+	if state.publishers != 0 || state.gcActive || state.lastPublished > scanEpoch {
+		m.mu.Unlock()
+		return func() {}, false
+	}
+	state.gcActive = true
+	m.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.mu.Lock()
+			state.gcActive = false
+			m.pruneLocked()
+			m.cond.Broadcast()
+			m.mu.Unlock()
+		})
+	}, true
+}
+
+func (m *fscacheBlobLifecycle) pruneLocked() {
+	minScanEpoch := m.epoch
+	for epoch := range m.activeScans {
+		if epoch < minScanEpoch {
+			minScanEpoch = epoch
+		}
+	}
+	for blobID, state := range m.blobs {
+		if state.publishers == 0 && !state.gcActive && state.lastPublished <= minScanEpoch {
+			delete(m.blobs, blobID)
+		}
+	}
 }
 
 // NewFileSystem initialize Filesystem instance
@@ -454,9 +605,21 @@ func (fs *Filesystem) Mount(ctx context.Context, snapshotID string, labels map[s
 		// Nydusd uses cache manager's directory to store blob caches. So cache
 		// manager knows where to find those blobs.
 		cacheDir := fs.cacheMgr.CacheDir()
+		blobMetaFiles, blobIDs, err := listBlobMetaFiles(bootstrap)
+		if err != nil {
+			return errors.Wrapf(err, "list blob metadata for snapshot %s", snapshotID)
+		}
+		var finishPublication func(bool)
+		published := false
+		if fsDriver == config.FsDriverFscache {
+			finishPublication = fs.BeginFscachePublication(blobIDs)
+			defer func() { finishPublication(published) }()
+		}
 
-		if err := fs.copyBlobMetaFiles(bootstrap, cacheDir); err != nil {
-			log.L.Warnf("Failed to copy blob.meta files to cache: %v", err)
+		copyBlobMetaErr := fs.copyBlobMetaFilesFromList(blobMetaFiles, cacheDir)
+		published = fsDriver == config.FsDriverFscache
+		if copyBlobMetaErr != nil {
+			log.L.Warnf("Failed to copy blob.meta files to cache: %v", copyBlobMetaErr)
 		}
 
 		if useSharedDaemon {
@@ -591,14 +754,15 @@ func (fs *Filesystem) getSnapshotMutex(snapshotID string) *sync.Mutex {
 }
 
 func (fs *Filesystem) copyBlobMetaFiles(bootstrap, cacheDir string) error {
-	bootstrapDir := filepath.Dir(bootstrap)
-	pattern := filepath.Join(bootstrapDir, "*.blob.meta")
-	matches, err := filepath.Glob(pattern)
+	blobMetaFiles, _, err := listBlobMetaFiles(bootstrap)
 	if err != nil {
 		return errors.Wrap(err, "glob blob meta files")
 	}
+	return fs.copyBlobMetaFilesFromList(blobMetaFiles, cacheDir)
+}
 
-	for _, srcPath := range matches {
+func (fs *Filesystem) copyBlobMetaFilesFromList(blobMetaFiles []string, cacheDir string) error {
+	for _, srcPath := range blobMetaFiles {
 		fileName := filepath.Base(srcPath)
 		dstPath := filepath.Join(cacheDir, fileName)
 
@@ -609,6 +773,23 @@ func (fs *Filesystem) copyBlobMetaFiles(bootstrap, cacheDir string) error {
 	}
 
 	return nil
+}
+
+func listBlobMetaFiles(bootstrap string) ([]string, []string, error) {
+	bootstrapDir := filepath.Dir(bootstrap)
+	pattern := filepath.Join(bootstrapDir, "*.blob.meta")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	blobIDs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if blobID := cache.ExtractBlobIDFromFilename(filepath.Base(match)); blobID != "" {
+			blobIDs = append(blobIDs, blobID)
+		}
+	}
+	return matches, blobIDs, nil
 }
 
 func (fs *Filesystem) copyFile(src, dst string) error {
@@ -800,11 +981,11 @@ func (fs *Filesystem) CacheUsage(ctx context.Context, blobDigest string) (snapsh
 	return fs.cacheMgr.CacheUsage(ctx, blobID)
 }
 
-func (fs *Filesystem) RemoveCache(blobDigest string) error {
+func (fs *Filesystem) RemoveCache(blobDigest string) (bool, error) {
 	log.L.Infof("remove cache %s", blobDigest)
 	digest := digest.Digest(blobDigest)
 	if err := digest.Validate(); err != nil {
-		return errors.Wrapf(err, "invalid blob digest from label %q, digest=%s",
+		return false, errors.Wrapf(err, "invalid blob digest from label %q, digest=%s",
 			snpkg.TargetLayerDigestLabel, blobDigest)
 	}
 	blobID := digest.Hex()
@@ -813,18 +994,53 @@ func (fs *Filesystem) RemoveCache(blobDigest string) error {
 		if fscacheManager != nil {
 			c, err := fs.fscacheSharedDaemon.GetClient()
 			if err != nil {
-				return err
+				return false, err
 			}
-			// delete fscache blob cache file
-			// TODO: skip error for blob not existing
-			if err := c.UnbindBlob("", blobID); err != nil {
-				return err
+			result, err := c.CullBlob(blobID, false)
+			if err != nil {
+				return false, err
 			}
-			return nil
+			if result.Status == daemon.CullBlobPending {
+				log.L.Infof("fscache cull pending for blob %s: %s", blobID, result.Reason)
+				return false, nil
+			}
+			if err := fs.cacheMgr.RemoveBlobCache(blobID); err != nil {
+				return false, err
+			}
+			return true, nil
 		}
 	}
 
-	return fs.cacheMgr.RemoveBlobCache(blobID)
+	if err := fs.cacheMgr.RemoveBlobCache(blobID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (fs *Filesystem) PendingCulls(ctx context.Context) (map[string]string, error) {
+	if fs.fscacheSharedDaemon == nil {
+		return nil, errors.New("fscache shared daemon is not initialized")
+	}
+	c, err := fs.fscacheSharedDaemon.GetClient()
+	if err != nil {
+		return nil, err
+	}
+	return c.PendingCulls(ctx)
+}
+
+// BeginFscachePublication registers metadata publication for a mount.
+func (fs *Filesystem) BeginFscachePublication(blobIDs []string) func(bool) {
+	return fs.fscacheLifecycle.beginPublication(blobIDs)
+}
+
+// BeginFscacheGCScan snapshots publication state for one cache GC pass.
+func (fs *Filesystem) BeginFscacheGCScan() (uint64, func()) {
+	return fs.fscacheLifecycle.beginScan()
+}
+
+// TryBeginFscacheBlobGC claims a blob when no overlapping mount can publish it.
+func (fs *Filesystem) TryBeginFscacheBlobGC(blobID string, scanEpoch uint64) (func(), bool) {
+	return fs.fscacheLifecycle.tryBeginGC(blobID, scanEpoch)
 }
 
 // WalkManagers iterates over all enabled managers and calls the provided function

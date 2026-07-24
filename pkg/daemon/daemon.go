@@ -360,13 +360,34 @@ func (d *Daemon) SharedUmount(rafs *rafs.Rafs) error {
 }
 
 func (d *Daemon) sharedErofsUmount(ra *rafs.Rafs) error {
-	c, err := d.GetClient()
-	if err != nil {
-		return errors.Wrapf(err, "unbind blob %s", d.ID())
-	}
+	return d.sharedErofsUmountWith(ra, mount.IsMountpoint, erofs.Umount)
+}
+
+func (d *Daemon) sharedErofsUmountWith(
+	ra *rafs.Rafs,
+	isMountpoint func(string) (bool, error),
+	umount func(string) error,
+) error {
 	domainID := ra.Annotations[rafs.AnnoFsCacheDomainID]
 	fscacheID := ra.Annotations[rafs.AnnoFsCacheID]
+	mountpoint := ra.GetMountpoint()
+	mounted, err := isMountpoint(mountpoint)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return errors.Wrapf(err, "check erofs mountpoint %s", mountpoint)
+		}
+		mounted = false
+	}
+	if mounted {
+		if err := umount(mountpoint); err != nil {
+			return errors.Wrapf(err, "umount erofs mountpoint %s", mountpoint)
+		}
+	}
 
+	c, err := d.GetClient()
+	if err != nil {
+		return errors.Wrapf(err, "get nydusd client for blob %s", d.ID())
+	}
 	if err := c.UnbindBlob(domainID, fscacheID); err != nil {
 		if !isBlobCacheEntryNotFound(err) {
 			return errors.Wrapf(err, "request to unbind fscache blob, domain %s, fscache %s", domainID, fscacheID)
@@ -374,15 +395,12 @@ func (d *Daemon) sharedErofsUmount(ra *rafs.Rafs) error {
 		log.L.Warnf("ignore missing blob cache entry while unbinding domain %s, fscache %s", domainID, fscacheID)
 	}
 
-	mountpoint := ra.GetMountpoint()
-	if err := erofs.Umount(mountpoint); err != nil {
-		return errors.Wrapf(err, "umount erofs %s mountpoint, %s", err, mountpoint)
+	result, err := c.CullBlob(fscacheID, true)
+	if err != nil {
+		return errors.Wrapf(err, "request to cull bootstrap fscache blob %s", fscacheID)
 	}
-
-	// delete fscache bootstrap cache file
-	// erofs generate fscache cache file for bootstrap with fscacheID
-	if err := c.UnbindBlob("", fscacheID); err != nil {
-		log.L.Warnf("delete bootstrap %s err %s", fscacheID, err)
+	if result.Status == CullBlobPending {
+		return &errdefs.FscacheCullPendingError{BlobID: fscacheID, Reason: result.Reason}
 	}
 
 	return nil
