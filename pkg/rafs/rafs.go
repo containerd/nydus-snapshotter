@@ -144,6 +144,27 @@ func NewRafs(snapshotID, imageID, fsDriver string) (*Rafs, error) {
 	return rafs, nil
 }
 
+// UpdateUnderlyingFiles replaces r.UnderlyingFiles while holding both the
+// global RAFS cache lock and, when given, the owning daemon's cache lock.
+//
+// The same *Rafs is registered in RafsGlobalCache and in the daemon's
+// RafsCache, and each cache's List() deep-copies the instance — reading every
+// field — under that cache's own mutex. A writer that takes only one of the
+// two locks therefore still races with the other cache's readers. The global
+// lock is acquired first; no other code path nests the two locks in the
+// opposite order.
+func (r *Rafs) UpdateUnderlyingFiles(files []string, daemonCache *Cache) {
+	RafsGlobalCache.Lock()
+	if daemonCache != nil {
+		daemonCache.Lock()
+	}
+	r.UnderlyingFiles = files
+	if daemonCache != nil {
+		daemonCache.Unlock()
+	}
+	RafsGlobalCache.Unlock()
+}
+
 func (r *Rafs) AddAnnotation(k, v string) {
 	r.Annotations[k] = v
 }
