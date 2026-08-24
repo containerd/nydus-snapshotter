@@ -464,3 +464,50 @@ func TestMountRemoteUsesPerPodLowerdirForIDMap(t *testing.T) {
 	assert.Contains(t, mounts[0].Options, fmt.Sprintf("lowerdir=%s", mountpoint))
 	assert.NotContains(t, mounts[0].Options, fmt.Sprintf("lowerdir=%s", filepath.Join(snapshotterRoot, "snapshots", "meta", "fs")))
 }
+
+func TestRemoveCleansUpDirectoriesOnlyAfterCommit(t *testing.T) {
+	originalInstances := rafs.RafsGlobalCache.List()
+	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
+	t.Cleanup(func() {
+		rafs.RafsGlobalCache.SetIntances(originalInstances)
+	})
+
+	snapshotterRoot := t.TempDir()
+	ms, err := storage.NewMetaStore(filepath.Join(snapshotterRoot, "metadata.db"))
+	require.NoError(t, err)
+	s := &snapshotter{
+		root:       snapshotterRoot,
+		ms:         ms,
+		fs:         &filesystem.Filesystem{},
+		syncRemove: true,
+	}
+
+	txCtx, trans, err := ms.TransactionContext(context.Background(), true)
+	require.NoError(t, err)
+	_, err = storage.CreateSnapshot(txCtx, snapshots.KindActive, "tmp-key", "")
+	require.NoError(t, err)
+	committedID, err := storage.CommitActive(txCtx, "tmp-key", "committed", snapshots.Usage{})
+	require.NoError(t, err)
+	require.NoError(t, trans.Commit())
+
+	committedDir := s.snapshotDir(committedID)
+	orphanDir := s.snapshotDir("99")
+	require.NoError(t, os.MkdirAll(committedDir, 0o755))
+	require.NoError(t, os.MkdirAll(orphanDir, 0o755))
+
+	// A failed removal must not delete anything: the transaction did not
+	// commit, so on-disk state has to stay consistent with the metadata.
+	require.Error(t, s.Remove(context.Background(), "no-such-key"))
+	assert.DirExists(t, committedDir)
+	assert.DirExists(t, orphanDir)
+
+	// A successful removal commits the metadata change first, then removes the
+	// now-orphaned directories.
+	require.NoError(t, s.Remove(context.Background(), "committed"))
+	assert.NoDirExists(t, committedDir)
+	assert.NoDirExists(t, orphanDir)
+
+	cleanup, err := s.cleanupDirectories(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, cleanup)
+}
