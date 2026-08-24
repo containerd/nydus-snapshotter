@@ -5,6 +5,10 @@ Before=containerd.service
 
 [Service]
 Type=simple
+# The snapshotter serves its gRPC socket only after recovering all daemon
+# state. Switch to Type=notify to keep the unit "activating" until then,
+# so dependents order on real readiness instead of process start.
+#Type=notify
 Environment=HOME=/root
 ExecStart=/usr/local/bin/containerd-nydus-grpc --config /etc/nydus/config.toml
 Restart=always
