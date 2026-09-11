@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/log"
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -203,6 +206,54 @@ func TestCredentialStoreConcurrency(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// --- renewal miss logging ---
+
+func TestRenewCredentialMissLogging(t *testing.T) {
+	const ref = "docker.io/library/nginx:latest"
+
+	setup := func(t *testing.T) *logtest.Hook {
+		oldRenewable := renewableProviders
+		oldStore := renewalStore
+		t.Cleanup(func() {
+			renewableProviders = oldRenewable
+			renewalStore = oldStore
+		})
+		renewableProviders = func() []AuthProvider {
+			return []AuthProvider{&mockProvider{err: fmt.Errorf("provider not configured")}}
+		}
+		renewalStore = newCredentialStore(5 * time.Minute)
+
+		hook := logtest.NewLocal(log.L.Logger)
+		t.Cleanup(hook.Reset)
+		return hook
+	}
+
+	warnings := func(hook *logtest.Hook) []string {
+		var msgs []string
+		for _, e := range hook.AllEntries() {
+			if e.Level == logrus.WarnLevel {
+				msgs = append(msgs, e.Message)
+			}
+		}
+		return msgs
+	}
+
+	t.Run("first-time miss is not warned", func(t *testing.T) {
+		hook := setup(t)
+
+		assert.Nil(t, RenewCredential(ref))
+		assert.Empty(t, warnings(hook))
+	})
+
+	t.Run("losing a stored credential warns", func(t *testing.T) {
+		hook := setup(t)
+		renewalStore.Add(ref, &PassKeyChain{Username: "user", Password: "pass"})
+
+		assert.Nil(t, RenewCredential(ref))
+		assert.Contains(t, warnings(hook), "stored credential could not be renewed from any provider")
+	})
 }
 
 // --- RenewCredential ---
