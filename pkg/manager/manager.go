@@ -16,6 +16,7 @@ import (
 
 	"github.com/containerd/log"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
@@ -328,17 +329,79 @@ func (m *Manager) cleanUpDaemonResources(d *daemon.Daemon) {
 	log.L.Infof("Deleting resources %v", resource)
 }
 
+// recoverConcurrency bounds how many daemons are probed at once. Probing is
+// IO-bound (an HTTP request over each daemon's API socket), so a modest
+// fan-out bounds the pre-serving window by the slowest daemons instead of the
+// sum, without stampeding hosts that accumulated many daemons.
+const recoverConcurrency = 8
+
+// probedDaemon is the outcome of the concurrent, side-effect-free probe of
+// one persisted daemon record.
+type probedDaemon struct {
+	d     *daemon.Daemon
+	state types.DaemonState
+	dead  bool
+}
+
 func (m *Manager) recoverDaemons(ctx context.Context,
 	recoveringDaemons *map[string]*daemon.Daemon, liveDaemons *map[string]*daemon.Daemon) error {
+	// Only collect records inside the walk: the per-daemon work must not run
+	// within the bolt transaction WalkDaemons holds open.
+	var states []*daemon.ConfigState
 	if err := m.store.WalkDaemons(ctx, func(s *daemon.ConfigState) error {
 		if s.FsDriver != m.FsDriver {
 			return nil
 		}
-
 		log.L.Debugf("found daemon states %#v", s)
-		opt := make([]daemon.NewDaemonOpt, 0)
-		var d, _ = daemon.NewDaemon(opt...)
-		d.States = *s
+		states = append(states, s)
+		return nil
+	}); err != nil {
+		return errors.Wrapf(err, "walk daemons to reconnect")
+	}
+
+	// Probe all daemons concurrently: rebuild the daemon object, reload its
+	// configuration and query its state. Probing mutates no shared state, so
+	// a failure here fails recovery without anything committed.
+	probed := make([]probedDaemon, len(states))
+	var eg errgroup.Group
+	eg.SetLimit(recoverConcurrency)
+
+	for i, s := range states {
+		eg.Go(func() error {
+			opt := make([]daemon.NewDaemonOpt, 0)
+			var d, _ = daemon.NewDaemon(opt...)
+			d.States = *s
+
+			if d.States.FsDriver == config.FsDriverFusedev {
+				cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
+				if err != nil {
+					log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
+					return err
+				}
+
+				d.Config = cfg
+			}
+
+			state, err := d.GetState()
+			if err != nil {
+				log.L.Warnf("Daemon %s died somehow. Clean up its vestige!, %s", d.ID(), err)
+				probed[i] = probedDaemon{d: d, dead: true}
+				//nolint:nilerr
+				return nil
+			}
+
+			probed[i] = probedDaemon{d: d, state: state}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// Commit the results serially: cache, supervisor, cgroup and the result
+	// maps only change once every probe has succeeded.
+	for i := range probed {
+		d := probed[i].d
 
 		m.daemonCache.Update(d)
 
@@ -350,38 +413,26 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 			d.Supervisor = su
 		}
 
-		if d.States.FsDriver == config.FsDriverFusedev {
-			cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
-			if err != nil {
-				log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
-				return err
-			}
-
-			d.Config = cfg
-		}
-
-		state, err := d.GetState()
-		if err != nil {
-			log.L.Warnf("Daemon %s died somehow. Clean up its vestige!, %s", d.ID(), err)
+		if probed[i].dead {
 			(*recoveringDaemons)[d.ID()] = d
-			//nolint:nilerr
-			return nil
+			continue
 		}
 
-		if state != types.DaemonStateRunning {
-			log.L.Warnf("daemon %s is not running: %s", d.ID(), state)
-			return nil
+		if probed[i].state != types.DaemonStateRunning {
+			log.L.Warnf("daemon %s is not running: %s", d.ID(), probed[i].state)
+			continue
 		}
 
 		// FIXME: Should put the a daemon back file system shared damon field.
 		log.L.Infof("found RUNNING daemon %s during reconnecting", d.ID())
-		(*liveDaemons)[d.ID()] = d
 
 		if m.CgroupMgr != nil {
 			if err := m.CgroupMgr.AddProc(d.States.ProcessID); err != nil {
 				return errors.Wrapf(err, "add daemon %s to cgroup failed", d.ID())
 			}
 		}
+		(*liveDaemons)[d.ID()] = d
+
 		d.Lock()
 		collector.NewDaemonInfoCollector(&d.Version, 1).Collect()
 		d.Unlock()
@@ -392,7 +443,7 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 				return
 			}
 
-			if err = m.SubscribeDaemonEvent(d); err != nil {
+			if err := m.SubscribeDaemonEvent(d); err != nil {
 				log.L.Errorf("Nydusd %s probably not started", d.ID())
 				return
 			}
@@ -400,10 +451,6 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 			// Snapshotter's lost the daemons' states after exit, refetch them.
 			d.SendStates()
 		}()
-
-		return nil
-	}); err != nil {
-		return errors.Wrapf(err, "walk daemons to reconnect")
 	}
 
 	return nil
