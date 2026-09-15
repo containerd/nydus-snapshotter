@@ -68,11 +68,11 @@ func TestLivenessMonitor(t *testing.T) {
 
 	notifier := make(chan deathEvent, 10)
 
-	e1 := monitor.Subscribe("daemon_1", s1.Name(), notifier)
+	e1 := monitor.Subscribe("daemon_1", 101, s1.Name(), notifier)
 	assert.Nil(t, e1)
-	e1 = monitor.Subscribe("daemon_1", s1.Name(), notifier)
+	e1 = monitor.Subscribe("daemon_1", 101, s1.Name(), notifier)
 	assert.NotNil(t, e1)
-	e2 := monitor.Subscribe("daemon_2", s2.Name(), notifier)
+	e2 := monitor.Subscribe("daemon_2", 202, s2.Name(), notifier)
 	assert.Nil(t, e2)
 
 	t.Cleanup(func() {
@@ -88,6 +88,7 @@ func TestLivenessMonitor(t *testing.T) {
 	cancel1()
 	event := <-notifier
 	assert.Equal(t, event.daemonID, "daemon_1")
+	assert.Equal(t, event.processID, 101)
 
 	err := monitor.Unsubscribe("daemon_2")
 	assert.Nil(t, err)
