@@ -36,6 +36,7 @@ func TestUnmountWithFallback(t *testing.T) {
 	tests := []struct {
 		name         string
 		errByAttempt []error // error returned for the Nth syscallUnmount call
+		wantUnclean  bool    // freed the path, but not by a plain unmount
 		wantErr      bool
 		wantCalls    []call
 	}{
@@ -50,13 +51,15 @@ func TestUnmountWithFallback(t *testing.T) {
 			wantCalls:    []call{{0}},
 		},
 		{
-			name:         "EBUSY falls back to force",
+			name:         "EBUSY falls back to force and reports it as unclean",
 			errByAttempt: []error{syscall.EBUSY, nil},
+			wantUnclean:  true,
 			wantCalls:    []call{{0}, {umountForce}},
 		},
 		{
-			name:         "force fails then lazy detach succeeds",
+			name:         "force fails then lazy detach reports it as unclean",
 			errByAttempt: []error{syscall.EBUSY, syscall.EBUSY, nil},
+			wantUnclean:  true,
 			wantCalls:    []call{{0}, {umountForce}, {umountDetach}},
 		},
 		{
@@ -79,9 +82,14 @@ func TestUnmountWithFallback(t *testing.T) {
 			}
 
 			err := unmountWithFallback("/mnt/target")
-			if tc.wantErr {
+			switch {
+			case tc.wantErr:
 				require.Error(t, err)
-			} else {
+				assert.NotErrorIs(t, err, ErrUnmountedUnclean)
+			case tc.wantUnclean:
+				// An unclean teardown must not be reported as success.
+				require.ErrorIs(t, err, ErrUnmountedUnclean)
+			default:
 				require.NoError(t, err)
 			}
 			assert.Equal(t, tc.wantCalls, gotCalls)
@@ -122,9 +130,21 @@ func TestUmount(t *testing.T) {
 
 		require.ErrorIs(t, (&Mounter{}).Umount("/mnt/target"), wantErr)
 	})
+
+	t.Run("unclean teardown is reported to the caller", func(t *testing.T) {
+		isMountpoint = func(string) (bool, error) { return true, nil }
+		syscallUnmount = func(_ string, flags int) error {
+			if flags == 0 {
+				return syscall.EBUSY
+			}
+			return nil
+		}
+
+		require.ErrorIs(t, (&Mounter{}).Umount("/mnt/target"), ErrUnmountedUnclean)
+	})
 }
 
-func TestWaitUntilUnmountedIgnoresDisconnectedMountpoint(t *testing.T) {
+func TestWaitUntilUnmountedReportsDisconnectedMountpoint(t *testing.T) {
 	origIsMountpoint := isMountpoint
 	t.Cleanup(func() { isMountpoint = origIsMountpoint })
 
@@ -134,6 +154,10 @@ func TestWaitUntilUnmountedIgnoresDisconnectedMountpoint(t *testing.T) {
 		return false, syscall.ENOTCONN
 	}
 
-	require.NoError(t, WaitUntilUnmounted("/mnt/target"))
+	// A disconnected mountpoint is still mounted, so this is not a successful
+	// unmount; and since it never reconnects, the wait must not be retried.
+	err := WaitUntilUnmounted("/mnt/target")
+	require.ErrorIs(t, err, ErrMountpointDisconnected)
+	require.ErrorIs(t, err, syscall.ENOTCONN)
 	assert.Equal(t, 1, calls)
 }
