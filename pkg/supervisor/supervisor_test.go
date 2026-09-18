@@ -7,6 +7,7 @@
 package supervisor
 
 import (
+	"context"
 	"crypto/rand"
 	"net"
 	"os"
@@ -106,4 +107,99 @@ func TestSupervisorTimeout(t *testing.T) {
 
 	_, err = net.DialUnix("unix", nil, addr)
 	assert.NotNil(t, err, "%v", err)
+}
+
+func TestFetchDaemonStatesReturnsOnTriggerError(t *testing.T) {
+	rootDir := t.TempDir()
+	oldTimeout := fetchDaemonStatesTimeout
+	fetchDaemonStatesTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		fetchDaemonStatesTimeout = oldTimeout
+	})
+
+	supervisorSet, err := NewSupervisorSet(rootDir)
+	assert.NoError(t, err)
+	su := supervisorSet.NewSupervisor("su1")
+	assert.NotNil(t, su)
+
+	start := time.Now()
+	err = su.FetchDaemonStates(func() error {
+		return assert.AnError
+	})
+	assert.ErrorIs(t, err, assert.AnError)
+	assert.Less(t, time.Since(start), time.Second)
+}
+
+func TestFetchDaemonStatesTimesOut(t *testing.T) {
+	rootDir := t.TempDir()
+	oldTimeout := fetchDaemonStatesTimeout
+	fetchDaemonStatesTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		fetchDaemonStatesTimeout = oldTimeout
+	})
+
+	supervisorSet, err := NewSupervisorSet(rootDir)
+	assert.NoError(t, err)
+	su := supervisorSet.NewSupervisor("su1")
+	assert.NotNil(t, su)
+
+	start := time.Now()
+	err = su.FetchDaemonStates(func() error {
+		return nil
+	})
+	assert.Error(t, err)
+	assert.Less(t, time.Since(start), time.Second)
+}
+
+func TestFetchDaemonStatesSkipsWhenSemaphoreBusy(t *testing.T) {
+	rootDir := t.TempDir()
+	oldAcquireTimeout := fetchDaemonStatesAcquireTimeout
+	fetchDaemonStatesAcquireTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		fetchDaemonStatesAcquireTimeout = oldAcquireTimeout
+	})
+
+	supervisorSet, err := NewSupervisorSet(rootDir)
+	assert.NoError(t, err)
+	su := supervisorSet.NewSupervisor("su1")
+	assert.NotNil(t, su)
+
+	err = su.sem.Acquire(context.Background(), 1)
+	assert.NoError(t, err)
+	defer su.sem.Release(1)
+
+	start := time.Now()
+	err = su.FetchDaemonStates(func() error {
+		t.Fatal("trigger should not run when semaphore acquisition times out")
+		return nil
+	})
+	assert.ErrorIs(t, err, ErrFetchDaemonStatesSkipped)
+	assert.Less(t, time.Since(start), time.Second)
+}
+
+func TestSendStatesTimeoutBlocksFetchDaemonStates(t *testing.T) {
+	rootDir := t.TempDir()
+	oldAcquireTimeout := fetchDaemonStatesAcquireTimeout
+	fetchDaemonStatesAcquireTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		fetchDaemonStatesAcquireTimeout = oldAcquireTimeout
+	})
+
+	supervisorSet, err := NewSupervisorSet(rootDir)
+	assert.NoError(t, err)
+	su := supervisorSet.NewSupervisor("su1")
+	assert.NotNil(t, su)
+
+	err = su.SendStatesTimeout(200 * time.Millisecond)
+	assert.NoError(t, err)
+
+	start := time.Now()
+	err = su.FetchDaemonStates(func() error {
+		t.Fatal("trigger should not run while SendStatesTimeout is holding the semaphore")
+		return nil
+	})
+	assert.ErrorIs(t, err, ErrFetchDaemonStatesSkipped)
+	assert.Less(t, time.Since(start), time.Second)
+
+	time.Sleep(250 * time.Millisecond)
 }
