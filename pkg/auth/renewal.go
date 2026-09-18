@@ -37,18 +37,34 @@ func GetStoredCredential(ref string) *PassKeyChain {
 // RenewCredential fetches fresh credentials for ref from the renewable
 // provider list and caches them in the global store. Returns the keychain
 // on success or nil on failure. Emits renewal metrics.
+//
+// A miss only warrants a warning when a previously stored credential could
+// not be renewed: that entry is about to go stale. When the store never had
+// the ref — e.g. only non-renewable providers like the CRI keychain are
+// configured, where finding nothing is the expected outcome — the miss is
+// logged at debug level.
 func RenewCredential(ref string) *PassKeyChain {
-	kc := fetchFromProviders(
+	stored := GetStoredCredential(ref)
+	kc, err := fetchFromProviders(
 		&AuthRequest{Ref: ref, ValidUntil: time.Now().Add(renewalStore.renewInterval)},
 		renewableProviders(),
 	)
 	if kc != nil {
 		data.CredentialRenewals.WithLabelValues(ref, "success").Inc()
-	} else {
-		log.L.WithField("ref", ref).Warn("credential renewal returned no credentials from any provider")
-		data.CredentialRenewals.WithLabelValues(ref, "failure").Inc()
+		return kc
 	}
-	return kc
+
+	logger := log.L.WithField("ref", ref)
+	if err != nil {
+		logger = logger.WithError(err)
+	}
+	if stored != nil {
+		logger.Warn("stored credential could not be renewed from any provider")
+	} else {
+		logger.Debug("credential renewal returned no credentials from any provider")
+	}
+	data.CredentialRenewals.WithLabelValues(ref, "failure").Inc()
+	return nil
 }
 
 // EvictStaleCredentials removes store entries whose ref is not present in
