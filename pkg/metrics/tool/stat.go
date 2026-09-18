@@ -95,6 +95,33 @@ func GetProcessStat(pid int) (*Stat, error) {
 	}, nil
 }
 
+// GetProcessStartTime returns the time the process started after system boot
+// (field 22 of `/proc/<pid>/stat`, in clock ticks). Together with the PID it
+// identifies a process instance: a recycled PID cannot have the same start
+// time.
+func GetProcessStartTime(pid int) (uint64, error) {
+	statBytes, err := os.ReadFile(path.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return 0, errors.Wrapf(err, "get process %d stat", pid)
+	}
+
+	// The comm field (2) may contain spaces and parentheses; field positions
+	// are only stable after the closing parenthesis.
+	_, after, found := strings.Cut(string(statBytes), ")")
+	fields := strings.Fields(after)
+	// `fields` starts at field 3 (state); start time is field 22.
+	if !found || len(fields) < 20 {
+		return 0, errors.Errorf("malformed stat of process %d", pid)
+	}
+
+	startTime, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return 0, errors.Wrapf(err, "parse start time of process %d", pid)
+	}
+
+	return startTime, nil
+}
+
 func GetProcessRunningState(pid int) (string, error) {
 	statBytes, err := os.ReadFile(path.Join("/proc", strconv.Itoa(pid), "stat"))
 	if err != nil {

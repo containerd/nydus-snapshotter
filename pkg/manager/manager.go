@@ -378,7 +378,9 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 		(*liveDaemons)[d.ID()] = d
 
 		if m.CgroupMgr != nil {
-			if err := m.CgroupMgr.AddProc(d.States.ProcessID); err != nil {
+			if pid, ok := d.VerifiedPid(); !ok {
+				log.L.Warnf("not adding process %d to cgroup: not the recorded daemon %s process, PID may have been recycled", d.States.ProcessID, d.ID())
+			} else if err := m.CgroupMgr.AddProc(pid); err != nil {
 				return errors.Wrapf(err, "add daemon %s to cgroup failed", d.ID())
 			}
 		}
