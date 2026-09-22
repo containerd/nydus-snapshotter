@@ -341,6 +341,7 @@ type probedDaemon struct {
 	d     *daemon.Daemon
 	state types.DaemonState
 	dead  bool
+	skip  bool
 }
 
 func (m *Manager) recoverDaemons(ctx context.Context,
@@ -360,8 +361,7 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 	}
 
 	// Probe all daemons concurrently: rebuild the daemon object, reload its
-	// configuration and query its state. Probing mutates no shared state, so
-	// a failure here fails recovery without anything committed.
+	// configuration and query its state. Probing mutates no shared state.
 	probed := make([]probedDaemon, len(states))
 	var eg errgroup.Group
 	eg.SetLimit(recoverConcurrency)
@@ -375,8 +375,12 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 			if d.States.FsDriver == config.FsDriverFusedev {
 				cfg, err := daemonconfig.NewDaemonConfig(d.States.FsDriver, d.ConfigFile(""))
 				if err != nil {
-					log.L.Errorf("Failed to reload daemon configuration %s, %s", d.ConfigFile(""), err)
-					return err
+					// A damaged record must not crash-loop the snapshotter. Keep
+					// it in the store so a later restart can retry after repair.
+					log.L.Errorf("Skipping recovery of daemon %s: failed to reload configuration %s, %s", d.ID(), d.ConfigFile(""), err)
+					probed[i] = probedDaemon{d: d, skip: true}
+					//nolint:nilerr
+					return nil
 				}
 
 				d.Config = cfg
@@ -399,9 +403,13 @@ func (m *Manager) recoverDaemons(ctx context.Context,
 	}
 
 	// Commit the results serially: cache, supervisor, cgroup and the result
-	// maps only change once every probe has succeeded.
+	// maps only change once every probe has finished.
 	for i := range probed {
 		d := probed[i].d
+		if probed[i].skip {
+			m.daemonCache.Remove(d)
+			continue
+		}
 
 		m.daemonCache.Update(d)
 

@@ -121,7 +121,7 @@ func TestRecoverDaemonsConcurrently(t *testing.T) {
 	assert.Less(t, elapsed, 4*delay)
 }
 
-func TestRecoverDaemonsCommitsNothingOnProbeFailure(t *testing.T) {
+func TestRecoverDaemonsSkipsDamagedRecordAlongsideLiveDaemon(t *testing.T) {
 	db, err := store.NewDatabase(t.TempDir())
 	require.NoError(t, err)
 	m, err := NewManager(Opt{
@@ -135,16 +135,17 @@ func TestRecoverDaemonsCommitsNothingOnProbeFailure(t *testing.T) {
 	startMockNydusd(t, sock, 0)
 	newRecoverTestDaemon(t, m, "live-0", sock, os.Getpid())
 
-	// A record whose configuration cannot be reloaded fails its probe.
+	// A damaged record must not prevent recovery of the healthy daemon.
 	configDir := newRecoverTestDaemon(t, m, "damaged-0", filepath.Join(sockDir, "damaged-0.sock"), os.Getpid())
 	require.NoError(t, os.Remove(filepath.Join(configDir, "config.json")))
 
 	recovering := make(map[string]*daemon.Daemon)
 	live := make(map[string]*daemon.Daemon)
 
-	require.Error(t, m.recoverDaemons(context.Background(), &recovering, &live))
+	require.NoError(t, m.recoverDaemons(context.Background(), &recovering, &live))
 
-	// Recovery failed before the commit phase: no partial results.
 	assert.Empty(t, recovering)
-	assert.Empty(t, live)
+	assert.Len(t, live, 1)
+	assert.Contains(t, live, "live-0")
+	assert.Nil(t, m.daemonCache.GetByDaemonID("damaged-0", nil))
 }

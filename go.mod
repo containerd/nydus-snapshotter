@@ -25,6 +25,7 @@ require (
 	github.com/containerd/stargz-snapshotter v0.15.2-0.20240709063920-1dac5ef89319
 	github.com/containerd/stargz-snapshotter/estargz v0.15.2-0.20240709063920-1dac5ef89319
 	github.com/containers/ocicrypt v1.2.1
+	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.4.0+incompatible
 	github.com/freddierice/go-losetup v0.0.0-20220711213114-2a14873012db
@@ -86,7 +87,6 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
-	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/cyphar/filepath-securejoin v0.5.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

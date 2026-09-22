@@ -5,6 +5,14 @@ Before=containerd.service
 
 [Service]
 Type=simple
+# The snapshotter serves its gRPC socket only after recovering all daemon
+# state. Switch to Type=notify to keep the unit "activating" until then,
+# so dependents order on real readiness instead of process start.
+# With Type=notify the start timeout also covers recovery. The default
+# TimeoutStartSec is 90s; if recovery takes longer, systemd restarts the
+# service forever. Set it above the slowest recovery on the node.
+#Type=notify
+#TimeoutStartSec=10min
 Environment=HOME=/root
 ExecStart=/usr/local/bin/containerd-nydus-grpc --config /etc/nydus/config.toml --fs-driver fscache --nydusd-config /etc/nydus/nydusd-config.fscache.json
 Restart=always
