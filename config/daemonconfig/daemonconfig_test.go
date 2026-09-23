@@ -8,6 +8,8 @@ package daemonconfig
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -184,4 +186,23 @@ func TestSerializeWithSecretFilter(t *testing.T) {
 	require.NotEqual(t, newCfg.Device.Backend.Config.Auth, cfg.Device.Backend.Config.Auth)
 	require.NotNil(t, newCfg.AmplifyIo)
 	require.Equal(t, *newCfg.AmplifyIo, *cfg.AmplifyIo)
+}
+
+func TestAtomicWriteFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	require.NoError(t, atomicWriteFile(path, []byte(`{"a":1}`)))
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"a":1}`, string(b))
+
+	require.NoError(t, atomicWriteFile(path, []byte(`{"a":2}`)))
+	b, err = os.ReadFile(path)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"a":2}`, string(b))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "tmp file left behind")
 }
