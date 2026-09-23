@@ -147,9 +147,10 @@ func DumpConfigFile(c interface{}, path string) error {
 // killed mid-write, sees either the previous contents or the new contents,
 // never a truncated/empty file.
 func atomicWriteFile(path string, data []byte) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return errors.Wrapf(err, "create tmp file in %s", filepath.Dir(path))
+		return errors.Wrapf(err, "create tmp file in %s", dir)
 	}
 	tmpPath := tmp.Name()
 	defer func() {
@@ -162,11 +163,29 @@ func atomicWriteFile(path string, data []byte) (err error) {
 		tmp.Close()
 		return errors.Wrapf(err, "write tmp file %s", tmpPath)
 	}
+	if err = tmp.Sync(); err != nil {
+		tmp.Close()
+		return errors.Wrapf(err, "sync tmp file %s", tmpPath)
+	}
 	if err = tmp.Close(); err != nil {
 		return errors.Wrapf(err, "close tmp file %s", tmpPath)
 	}
 	if err = os.Rename(tmpPath, path); err != nil {
 		return errors.Wrapf(err, "rename tmp file to %s", path)
+	}
+	// The parent directory is fsynced after the rename so the new name survives an OS/power crash.
+	return fsyncDir(dir)
+}
+
+// fsyncDir flushes a directory's entries to stable storage.
+func fsyncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return errors.Wrapf(err, "open dir %s for sync", dir)
+	}
+	defer d.Close()
+	if err := d.Sync(); err != nil {
+		return errors.Wrapf(err, "sync dir %s", dir)
 	}
 	return nil
 }
