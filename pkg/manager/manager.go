@@ -50,6 +50,10 @@ type Manager struct {
 	NydusdBinaryPath string
 	RecoverPolicy    config.DaemonRecoverPolicy
 	SupervisorSet    *supervisor.SupervisorsSet
+
+	// Guards against concurrent recovery for the same daemon.
+	// Key: daemon ID, Value: struct{}.
+	recoveryInFlight sync.Map
 }
 
 type Opt struct {
