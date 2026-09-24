@@ -692,8 +692,8 @@ func testImageConvertS3Backend(t *testing.T, fsVersion string) {
 	minioContainerName := fmt.Sprintf("minio-%d", time.Now().UnixNano())
 	testOpt.beforeConversionHook = func() error {
 		// setup minio server
-		if err := exec.Command("docker", "run", "-d", "-p", "9000:9000", "--name", minioContainerName, "-e", "MINIO_ACCESS_KEY=minio", "-e", "MINIO_SECRET_KEY=minio123", "minio/minio", "server", "/data").Run(); err != nil {
-			t.Fatalf("failed to start minio server: %v", err)
+		if out, err := exec.Command("docker", "run", "-d", "-p", "9000:9000", "--name", minioContainerName, "-e", "MINIO_ACCESS_KEY=minio", "-e", "MINIO_SECRET_KEY=minio123", "quay.io/minio/minio", "server", "/data").CombinedOutput(); err != nil {
+			t.Fatalf("failed to start minio server: %v, output: %s", err, out)
 			return err
 		}
 		time.Sleep(5 * time.Second)
