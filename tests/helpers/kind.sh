@@ -84,19 +84,23 @@ exec::kind delete cluster 2>/dev/null || true
 exec::kind create cluster --config tests/e2e/k8s/kind.yaml --image "kindest/node:$KUBE_VERSION"
 exec::kind load docker-image local-dev:e2e
 
-# Deploy nydus
-log::info "Deploying nydus"
-exec::kubectl create -f tests/e2e/k8s/snapshotter-"$AUTH_TYPE".yaml
-pod="$(exec::kubectl --namespace "$NAMESPACE" get pods --no-headers -o custom-columns=NAME:metadata.name)"
-exec::kubectl --namespace "$NAMESPACE" wait po "$pod" --for=condition=ready --timeout=1m
-
 # Reconfigure and restart kind containerd
+# This must happen BEFORE deploying the nydus snapshotter: its entrypoint
+# (misc/snapshotter/snapshotter.sh) rewrites /etc/containerd/config.toml from
+# a backup taken when the pod starts, discarding anything appended to the
+# file afterwards.
 log::info "Restarting containerd"
 echo '[plugins."io.containerd.grpc.v1.cri".registry.mirrors."'"$registry_url"'"]
           endpoint = ["http://'"$registry_url"'"]' |
   exec::docker exec -i kind-control-plane sh -c 'cat /dev/stdin >> /etc/containerd/config.toml'
 
 exec::docker exec kind-control-plane systemctl restart containerd
+
+# Deploy nydus
+log::info "Deploying nydus"
+exec::kubectl create -f tests/e2e/k8s/snapshotter-"$AUTH_TYPE".yaml
+pod="$(exec::kubectl --namespace "$NAMESPACE" get pods --no-headers -o custom-columns=NAME:metadata.name)"
+exec::kubectl --namespace "$NAMESPACE" wait po "$pod" --for=condition=ready --timeout=1m
 
 # Actual testing
 exec::kubectl delete --namespace "$NAMESPACE" secret generic regcred 2>/dev/null || true
