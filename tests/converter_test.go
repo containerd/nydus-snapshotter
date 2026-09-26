@@ -527,6 +527,76 @@ func testPack(t *testing.T, fsVersion string) {
 	ensureFile(t, filepath.Join(cacheDir, upperNydusBlobDigest.Hex())+".blob.data.chunk_map")
 }
 
+// sudo go test -v -count=1 -run TestMergeRepeatedLayer ./tests
+func TestMergeRepeatedLayer(t *testing.T) {
+	workDir, err := os.MkdirTemp("", "nydus-converter-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(workDir)
+
+	blobDir := filepath.Join(workDir, "blobs")
+	cacheDir := filepath.Join(workDir, "cache")
+	for _, dir := range []string{blobDir, cacheDir, filepath.Join(workDir, "mnt")} {
+		require.NoError(t, os.MkdirAll(dir, 0755))
+	}
+
+	ociTarReader, expectedFileTree := buildOCILowerTar(t, 100)
+	nydusTarPath, nydusBlobDigest := packLayer(t, ociTarReader, "", blobDir, "6")
+	ra, err := local.OpenReader(nydusTarPath)
+	require.NoError(t, err)
+	defer ra.Close()
+
+	layer := converter.Layer{
+		Digest:   nydusBlobDigest,
+		ReaderAt: ra,
+	}
+	blobDigests, entries := mergeToTarEntries(t, []converter.Layer{layer, layer})
+	require.Equal(t, []digest.Digest{nydusBlobDigest}, blobDigests)
+
+	bootstrapEntry := filepath.Join("image", converter.EntryBootstrap)
+	blobMetaName := nydusBlobDigest.Hex() + ".blob.meta"
+	blobMetaEntry := filepath.Join("image", blobMetaName)
+	require.NotEmpty(t, entries[bootstrapEntry], "missing tar entry %s", bootstrapEntry)
+	require.NotEmpty(t, entries[blobMetaEntry], "missing tar entry %s", blobMetaEntry)
+
+	_, singleLayerEntries := mergeToTarEntries(t, []converter.Layer{layer})
+	require.NotEmpty(t, singleLayerEntries[blobMetaEntry], "missing tar entry %s", blobMetaEntry)
+	require.Equal(t, digest.FromBytes(singleLayerEntries[blobMetaEntry]), digest.FromBytes(entries[blobMetaEntry]),
+		"blob.meta differs from the one merged from a single layer")
+
+	// Seed nydusd's cache dir with the converter's blob.meta, as the snapshotter does in
+	// copyBlobMetaFiles; without it nydusd builds its own from the blob and never reads ours.
+	writeToFile(t, bytes.NewReader(entries[bootstrapEntry]), filepath.Join(workDir, "bootstrap"))
+	writeToFile(t, bytes.NewReader(entries[blobMetaEntry]), filepath.Join(cacheDir, blobMetaName))
+
+	verify(t, workDir, expectedFileTree)
+}
+
+func mergeToTarEntries(t *testing.T, layers []converter.Layer) ([]digest.Digest, map[string][]byte) {
+	var merged bytes.Buffer
+	blobDigests, err := converter.Merge(context.TODO(), layers, &merged, converter.MergeOption{
+		FsVersion: "6",
+		WithTar:   true,
+	})
+	require.NoError(t, err)
+
+	entries := map[string][]byte{}
+	tr := tar.NewReader(&merged)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		require.NoError(t, err)
+		_, duplicate := entries[hdr.Name]
+		require.False(t, duplicate, "duplicate tar entry %s", hdr.Name)
+		data, err := io.ReadAll(tr)
+		require.NoError(t, err)
+		entries[hdr.Name] = data
+	}
+
+	return blobDigests, entries
+}
+
 // sudo go test -v -count=1 -run TestPackRef ./tests
 func TestPackRef(t *testing.T) {
 	if os.Getenv("TEST_PACK_REF") == "" {

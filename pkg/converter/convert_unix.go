@@ -680,8 +680,19 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 			}
 		}()
 
+		// A manifest may list one layer digest twice (two byte-identical build steps). Its blob.meta
+		// entry is named by digest, so assemble it once, apart from the raw file it is built from.
+		assembledDigests := make(map[string]struct{}, len(layers))
+		assembledDir := filepath.Join(workDir, "assembled-blob-meta")
+		if err := os.MkdirAll(assembledDir, 0755); err != nil {
+			return nil, errors.Wrap(err, "create assembled blob meta directory")
+		}
 		for idx := range layers {
 			digestHex := layers[idx].Digest.Hex()
+			if _, ok := assembledDigests[digestHex]; ok {
+				continue
+			}
+			assembledDigests[digestHex] = struct{}{}
 			blobMetaPath := getLayerPath(idx, ".blob.meta")
 			blobMetaHeaderPath := getLayerPath(idx, ".blob.meta.header")
 
@@ -704,7 +715,7 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 			}
 
 			assembledFileName := fmt.Sprintf("%s.blob.meta", digestHex)
-			assembledFilePath := filepath.Join(workDir, assembledFileName)
+			assembledFilePath := filepath.Join(assembledDir, assembledFileName)
 
 			writeMetaFile := func() error {
 				f, err := os.Create(assembledFilePath)
