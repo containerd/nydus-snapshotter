@@ -20,7 +20,7 @@ import (
 type Feature string
 type Features map[Feature]struct{}
 
-const envNydusDisableTar2Rafs string = "NYDUS_DISABLE_TAR2RAFS"
+const envNydusEnableTar2Rafs string = "NYDUS_ENABLE_TAR2RAFS"
 
 const (
 	// The option `--type tar-rafs` enables converting OCI tar blob
@@ -40,7 +40,6 @@ const (
 var requiredFeatures Features
 var detectedFeatures Features
 var detectFeaturesOnce sync.Once
-var disableTar2Rafs = os.Getenv(envNydusDisableTar2Rafs) != ""
 
 func NewFeatures(items ...Feature) Features {
 	features := Features{}
@@ -124,13 +123,13 @@ func DetectFeatures(builder string, required Features, getHelp func(string) []by
 			// The feature is supported by current version of nydus-image.
 			supported := detectFeature(helpMsg, feature)
 			if supported {
-				// It is an experimental feature, so we still provide an env
-				// variable to allow users to disable it.
-				if feature == FeatureTar2Rafs && disableTar2Rafs {
-					logrus.Warnf("the feature '%s' is disabled by env '%s'", FeatureTar2Rafs, envNydusDisableTar2Rafs)
-					continue
+				// It is an experimental feature, we provide an env variable
+				// to allow users to enable it.
+				enableTar2Rafs := os.Getenv(envNydusEnableTar2Rafs) != ""
+				if enableTar2Rafs && feature == FeatureTar2Rafs {
+					logrus.Warnf("the feature '%s' is enabled by env '%s'", FeatureTar2Rafs, envNydusEnableTar2Rafs)
+					detectedFeatures.Add(feature)
 				}
-				detectedFeatures.Add(feature)
 			} else {
 				logrus.Warnf("the feature '%s' is ignored, it requires higher version of nydus-image", feature)
 			}
