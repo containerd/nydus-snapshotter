@@ -81,6 +81,15 @@ Jan 17 16:14:23 worker containerd-nydus-grpc[1100169]: time="2024-01-17T16:14:23
 
 **NOTE:** By default, the nydus snapshotter operates as a systemd service. If you prefer to run nydus snapshotter as a standalone process, you can set `ENABLE_SYSTEMD_SERVICE` to `false` in `nydus-snapshotter.yaml`.
 
+During deployment, `snapshotter.sh` waits for the nydus gRPC socket before it restarts containerd. The default timeout is 30 seconds. If the snapshotter needs longer to start or recover, set `NYDUS_SOCKET_WAIT_TIMEOUT` to a positive number of seconds in the `nydus-snapshotter-configs` ConfigMap before the next controlled DaemonSet rollout. New pods read the value when they start. If the socket does not appear within the timeout, deployment fails without restarting containerd.
+
+```yaml
+data:
+  NYDUS_SOCKET_WAIT_TIMEOUT: "120"
+```
+
+This wait applies to containerd restarts initiated by the deploy script. For independent containerd restarts, ensure the nydus service is started and ready first. On builds containing systemd readiness notification, the shipped unit can use `Type=notify` to report readiness after the socket is available.
+
 ## Steps for Cleaning up Nydus Snapshotter 
 
 We use `preStop`` hook in the DaemonSet to uninstall nydus snapshotter and roll back the containerd configuration.
@@ -163,3 +172,4 @@ data:
 | ENABLE_CONFIG_FROM_VOLUME           | bool   | false                                 | enabling to use the configurations from volume                                                                                                  |
 | ENABLE_RUNTIME_SPECIFIC_SNAPSHOTTER | bool   | false                                 | enabling to skip to set `plugins."io.containerd.grpc.v1.cri".containerd` to `nydus` for runtime specific snapshotter feature in containerd 1.7+ |
 | ENABLE_SYSTEMD_SERVICE              | bool   | true                                  | enabling to run nydus snapshotter as a systemd service                                                                                          |
+| NYDUS_SOCKET_WAIT_TIMEOUT           | int    | 30                                    | seconds to wait for the nydus gRPC socket before the deploy script restarts containerd                                                            |
