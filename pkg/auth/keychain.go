@@ -110,13 +110,21 @@ func getRegistryKeyChainFromProviders(ref string, labels map[string]string, prov
 		// If not available, request credentials valid until the next renewal tick.
 		authReq.ValidUntil = time.Now().Add(renewalStore.renewInterval)
 	}
-	return fetchFromProviders(authReq, providers)
+	kc, err := fetchFromProviders(authReq, providers)
+	if err != nil {
+		// On the pull path a miss is a real problem: the image is being
+		// fetched right now and no provider could authenticate it.
+		logger.WithError(err).Warn("Could not get registry credentials.")
+	}
+	return kc
 }
 
 // fetchFromProviders walks providers in order and returns credentials from the
 // first one that succeeds. If the winning provider is renewable and the renewal
-// store is active, the credentials are cached for periodic renewal.
-func fetchFromProviders(req *AuthRequest, providers []AuthProvider) *PassKeyChain {
+// store is active, the credentials are cached for periodic renewal. When no
+// provider returns credentials, the joined provider errors are returned so the
+// caller can decide how loudly to report the miss.
+func fetchFromProviders(req *AuthRequest, providers []AuthProvider) (*PassKeyChain, error) {
 	logger := log.L.WithField("ref", req.Ref)
 
 	var errs []error
@@ -134,14 +142,11 @@ func fetchFromProviders(req *AuthRequest, providers []AuthProvider) *PassKeyChai
 					renewalStore.Add(req.Ref, kc)
 				}
 			}
-			return kc
+			return kc, nil
 		}
 	}
 
-	if len(errs) > 0 {
-		logger.WithError(stderrors.Join(errs...)).Warn("Could not get registry credentials.")
-	}
-	return nil
+	return nil, stderrors.Join(errs...)
 }
 
 func GetKeyChainByRef(ref string, labels map[string]string) (*PassKeyChain, error) {

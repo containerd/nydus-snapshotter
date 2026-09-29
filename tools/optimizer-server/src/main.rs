@@ -91,7 +91,7 @@ fn get_pid() -> Option<String> {
 }
 
 fn get_target() -> String {
-    env::var("_TARGET").map_or(DEFAULT_TARGET.to_string(), |str| str)
+    env::var("_TARGET").unwrap_or(DEFAULT_TARGET.to_string())
 }
 
 fn get_fd_path(fd: i32) -> io::Result<PathBuf> {

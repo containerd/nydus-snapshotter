@@ -96,6 +96,7 @@ func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, 
 	go func() {
 		<-stop
 
+		notifyStopping()
 		log.L.Infof("Shutting down nydus-snapshotter!")
 
 		if err := sn.Close(); err != nil {
@@ -106,6 +107,10 @@ func Serve(ctx context.Context, sn snapshots.Snapshotter, options ServeOptions, 
 			log.L.Errorf("Failed to close listener %s, err: %v", options.ListeningSocketPath, err)
 		}
 	}()
+
+	// The listener accepts connections from this point on; recovery completed
+	// in NewSnapshotter before Serve was entered.
+	notifyReady()
 
 	return rpc.Serve(listener)
 }
