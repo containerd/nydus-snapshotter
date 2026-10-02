@@ -69,7 +69,13 @@ spec:
               configMapKeyRef:
                 name: nydus-snapshotter-configs
                 key: ENABLE_SYSTEMD_SERVICE
-                optional: true                    
+                optional: true
+          - name: NYDUS_SOCKET_WAIT_TIMEOUT
+            valueFrom:
+              configMapKeyRef:
+                name: nydus-snapshotter-configs
+                key: NYDUS_SOCKET_WAIT_TIMEOUT
+                optional: true
         lifecycle:
           preStop:
             exec:

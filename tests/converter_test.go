@@ -762,7 +762,13 @@ func testImageConvertS3Backend(t *testing.T, fsVersion string) {
 	minioContainerName := fmt.Sprintf("minio-%d", time.Now().UnixNano())
 	testOpt.beforeConversionHook = func() error {
 		// setup minio server
-		if out, err := exec.Command("docker", "run", "-d", "-p", "9000:9000", "--name", minioContainerName, "-e", "MINIO_ACCESS_KEY=minio", "-e", "MINIO_SECRET_KEY=minio123", "quay.io/minio/minio", "server", "/data").CombinedOutput(); err != nil {
+		// Pin a public multi-architecture image: quay.io/minio/minio denies anonymous pulls.
+		const minioImage = "bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c"
+		cmd := exec.Command("docker", "run", "-d", "-p", "9000:9000", "--name", minioContainerName,
+			"--user", "0", "--entrypoint", "/opt/bitnami/minio/bin/minio",
+			"-e", "MINIO_ROOT_USER=minio", "-e", "MINIO_ROOT_PASSWORD=minio123",
+			minioImage, "server", "/data")
+		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("failed to start minio server: %v, output: %s", err, out)
 			return err
 		}
