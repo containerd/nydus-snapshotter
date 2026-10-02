@@ -6,10 +6,10 @@ ARG NYDUS_VER=v2.3.0
 
 RUN apk add -q --no-cache curl && \
     apk add -q --no-cache --upgrade grep && \
-    curl -fsSL -O https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+    curl -fsSL -O https://github.com/dragonflyoss/nydus/releases/download/$NYDUS_VER/nydus-static-$NYDUS_VER-linux-$TARGETARCH.tgz && \
     echo $NYDUS_VER > /.nydus_version && \
-    tar xzf nydus-static-$NYDUS_VER-linux-amd64.tgz && \
-    rm nydus-static-$NYDUS_VER-linux-amd64.tgz && \
+    tar xzf nydus-static-$NYDUS_VER-linux-$TARGETARCH.tgz && \
+    rm nydus-static-$NYDUS_VER-linux-$TARGETARCH.tgz && \
     mv nydus-static/* / \
     && rm -rf /nydus-overlayfs
 
