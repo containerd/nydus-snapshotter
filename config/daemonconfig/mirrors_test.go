@@ -164,3 +164,93 @@ func TestLoadMirrorConfig(t *testing.T) {
 	require.Equal(t, mirrors[0].Host, "http://p2p-mirror2:65001")
 	require.Equal(t, mirrors[0].Headers["X-Dragonfly-Registry"], "https://docker.hub.com")
 }
+
+func TestParseHostConfigPath(t *testing.T) {
+	cases := []struct {
+		name         string
+		server       string
+		overridePath bool
+		expectedPath string
+	}{
+		{name: "no path", server: "http://mirror:5000", expectedPath: "/v2"},
+		{name: "no scheme", server: "mirror:5000", expectedPath: "/v2"},
+		{name: "root path", server: "https://mirror/", expectedPath: "/v2"},
+		{name: "v2 path", server: "https://mirror/v2", expectedPath: "/v2"},
+		{name: "v2 path with override_path", server: "https://mirror/v2", overridePath: true, expectedPath: "/v2"},
+		{name: "v2 prefix with override_path", server: "http://harbor/v2/proxy", overridePath: true, expectedPath: "/v2/proxy"},
+		{name: "trailing slash with override_path", server: "http://harbor/v2/proxy/", overridePath: true, expectedPath: "/v2/proxy"},
+		{name: "nested prefix with override_path", server: "http://harbor/v2/a/b", overridePath: true, expectedPath: "/v2/a/b"},
+		{name: "v2 prefix without override_path", server: "http://harbor/v2/proxy", expectedPath: "/v2/proxy/v2"},
+		{name: "other path without override_path", server: "http://mirror/registry", expectedPath: "/registry/v2"},
+		{name: "other path with override_path", server: "http://mirror/api/registry", overridePath: true, expectedPath: "/api/registry"},
+		{name: "override_path without path", server: "http://mirror", overridePath: true, expectedPath: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, err := parseHostConfig(tc.server, HostFileConfig{OverridePath: tc.overridePath})
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedPath, h.Path)
+		})
+	}
+}
+
+func TestRepoPrefixFromAPIPath(t *testing.T) {
+	cases := []struct {
+		apiPath        string
+		expectedPrefix string
+		expectedOK     bool
+	}{
+		{apiPath: "/v2", expectedOK: true},
+		{apiPath: "/v2/proxy", expectedPrefix: "proxy", expectedOK: true},
+		{apiPath: "/v2/a/b", expectedPrefix: "a/b", expectedOK: true},
+		{apiPath: "/v2/proxy/v2", expectedPrefix: "proxy/v2", expectedOK: true},
+		{apiPath: "/registry/v2", expectedOK: false},
+		{apiPath: "/v2proxy", expectedOK: false},
+		{apiPath: "", expectedOK: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.apiPath, func(t *testing.T) {
+			prefix, ok := repoPrefixFromAPIPath(tc.apiPath)
+			require.Equal(t, tc.expectedOK, ok)
+			require.Equal(t, tc.expectedPrefix, prefix)
+		})
+	}
+}
+
+func TestLoadMirrorsConfigRepoPrefix(t *testing.T) {
+	registryHost := "registry.example.com"
+	tmpDir := t.TempDir()
+	hostDir := filepath.Join(tmpDir, registryHost)
+	require.NoError(t, os.MkdirAll(hostDir, os.ModePerm))
+
+	hosts := `
+server = "https://registry.example.com"
+
+[host."http://harbor.example.com/v2/proxy-project"]
+  capabilities = ["pull", "resolve"]
+  override_path = true
+
+[host."http://mirror.example.com/v2/proxy-project"]
+
+[host."http://other.example.com/api/registry"]
+  override_path = true
+
+[host."https://registry.example.com"]
+  capabilities = ["pull", "resolve"]
+`
+	require.NoError(t, os.WriteFile(filepath.Join(hostDir, "hosts.toml"), []byte(hosts), 0600))
+
+	mirrors, _, err := LoadMirrorsConfig(tmpDir, registryHost)
+	require.NoError(t, err)
+	require.Len(t, mirrors, 4)
+	require.Equal(t, "http://harbor.example.com", mirrors[0].Host)
+	require.Equal(t, "proxy-project", mirrors[0].RepoPrefix)
+	// Without override_path the path is ignored, as before.
+	require.Equal(t, "http://mirror.example.com", mirrors[1].Host)
+	require.Equal(t, "", mirrors[1].RepoPrefix)
+	// Not expressible as "/v2/<repo>": the path is ignored.
+	require.Equal(t, "http://other.example.com", mirrors[2].Host)
+	require.Equal(t, "", mirrors[2].RepoPrefix)
+	require.Equal(t, "https://registry.example.com", mirrors[3].Host)
+	require.Equal(t, "", mirrors[3].RepoPrefix)
+}
