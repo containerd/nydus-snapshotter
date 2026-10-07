@@ -245,7 +245,7 @@ server = "https://registry.example.com"
 	require.Len(t, mirrors, 4)
 	require.Equal(t, "http://harbor.example.com", mirrors[0].Host)
 	require.Equal(t, "proxy-project", mirrors[0].RepoPrefix)
-	// Without override_path the path is ignored, as before.
+	// Without override_path the path is ignored.
 	require.Equal(t, "http://mirror.example.com", mirrors[1].Host)
 	require.Equal(t, "", mirrors[1].RepoPrefix)
 	// Not expressible as "/v2/<repo>": the path is ignored.

@@ -22,10 +22,7 @@ import (
 )
 
 type MirrorConfig struct {
-	Host string
-	// RepoPrefix is prepended to the image repository so that nydusd's fixed
-	// "/v2/<repo>" request path matches the mirror's API root, e.g. "proxy" for
-	// a mirror defined as "https://mirror/v2/proxy" with override_path = true.
+	Host                string
 	RepoPrefix          string
 	Headers             map[string]string
 	HealthCheckInterval int
@@ -49,10 +46,8 @@ type HostFileConfig struct {
 }
 
 type hostConfig struct {
-	Scheme string
-	Host   string
-	// Path is the registry API root, computed as containerd does: "/v2" is
-	// appended unless the path already ends with it or override_path is set.
+	Scheme       string
+	Host         string
 	Path         string
 	OverridePath bool
 	Header       http.Header
@@ -85,8 +80,6 @@ func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
 
 	for i, host := range hosts {
 		parsedMirrors[i].Host = fmt.Sprintf("%s://%s", host.Scheme, host.Host)
-		// Without override_path a path other than "/v2" is ignored, as before: containerd
-		// would request "<path>/v2/<repo>", which nydusd's "/v2/<repo>" layout cannot express.
 		if host.OverridePath {
 			if prefix, ok := repoPrefixFromAPIPath(host.Path); ok {
 				parsedMirrors[i].RepoPrefix = prefix
@@ -117,9 +110,6 @@ func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
 	return parsedMirrors
 }
 
-// repoPrefixFromAPIPath maps a containerd API root onto nydusd's "/v2/<repo>"
-// request layout: "/v2" needs no prefix and "/v2/<prefix>" becomes "<prefix>".
-// Any other root cannot be expressed and is reported as not ok.
 func repoPrefixFromAPIPath(apiPath string) (string, bool) {
 	if apiPath == "/v2" {
 		return "", true
