@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/config/daemonconfig"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
+	"github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
 )
 
@@ -201,4 +203,83 @@ func TestCleanupOrphanedRafsConfigs(t *testing.T) {
 	assert.DirExists(t, filepath.Join(configDir, "active"))
 	assert.NoDirExists(t, filepath.Join(configDir, "orphan"))
 	assert.DirExists(t, otherDir)
+}
+
+func TestTerminateOnlySignalsTheRecordedProcess(t *testing.T) {
+	startVictim := func(t *testing.T) *exec.Cmd {
+		cmd := exec.Command("sleep", "60")
+		require.NoError(t, cmd.Start())
+		t.Cleanup(func() {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		})
+		return cmd
+	}
+	alive := func(pid int) bool {
+		state, err := tool.GetProcessRunningState(pid)
+		return err == nil && state != "Z"
+	}
+
+	t.Run("mismatched start time is not signaled", func(t *testing.T) {
+		cmd := startVictim(t)
+		d := &Daemon{States: ConfigState{ID: "d1"}}
+		d.RecordProcess(cmd.Process.Pid)
+		require.NotZero(t, d.States.ProcessStartTime)
+		// A record whose PID has been recycled by another process: same PID,
+		// different start time.
+		d.States.ProcessStartTime++
+
+		require.NoError(t, d.Terminate())
+		assert.True(t, alive(cmd.Process.Pid))
+	})
+
+	t.Run("record without start time keeps the pre-check behavior", func(t *testing.T) {
+		cmd := startVictim(t)
+		d := &Daemon{States: ConfigState{
+			ID:        "d2",
+			ProcessID: cmd.Process.Pid,
+		}}
+
+		require.NoError(t, d.Terminate())
+		_, err := cmd.Process.Wait()
+		require.NoError(t, err)
+		assert.False(t, alive(cmd.Process.Pid))
+	})
+
+	t.Run("recorded process is signaled", func(t *testing.T) {
+		cmd := startVictim(t)
+		d := &Daemon{States: ConfigState{ID: "d3"}}
+		d.RecordProcess(cmd.Process.Pid)
+
+		require.NoError(t, d.Terminate())
+		_, err := cmd.Process.Wait()
+		require.NoError(t, err)
+		assert.False(t, alive(cmd.Process.Pid))
+	})
+}
+
+func TestRecordProcessResetsStaleStartTime(t *testing.T) {
+	cmd := exec.Command("sleep", "60")
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	})
+
+	d := &Daemon{States: ConfigState{ID: "d4"}}
+	d.RecordProcess(cmd.Process.Pid)
+	require.NotZero(t, d.States.ProcessStartTime)
+
+	// Restart/failover reuses the same Daemon: recording a process whose
+	// start time cannot be read must clear the previously recorded start
+	// time, or IsRecordedProcess would compare the new PID against the
+	// stale value and Terminate would permanently skip this daemon.
+	gone := exec.Command("true")
+	require.NoError(t, gone.Start())
+	require.NoError(t, gone.Wait())
+	d.RecordProcess(gone.Process.Pid)
+
+	assert.Equal(t, gone.Process.Pid, d.States.ProcessID)
+	assert.Zero(t, d.States.ProcessStartTime)
+	assert.True(t, d.isRecordedProcess())
 }

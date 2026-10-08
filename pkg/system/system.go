@@ -417,7 +417,7 @@ func (sc *Controller) upgradeNydusDaemon(d *daemon.Daemon, c upgradeRequest, man
 		return errors.Wrap(err, "start process")
 	}
 
-	newDaemon.States.ProcessID = cmd.Process.Pid
+	newDaemon.RecordProcess(cmd.Process.Pid)
 
 	if err := newDaemon.WaitUntilState(types.DaemonStateInit); err != nil {
 		return errors.Wrap(err, "wait until init state")
