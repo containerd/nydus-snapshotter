@@ -184,6 +184,13 @@ Configuration file is compatible with containerd's configuration file in toml fo
 
 Before each mount, the snapshotter reads the mirror configuration for the target registry host and rewrites nydusd's backend `host` to the first reachable mirror. If a mirror has no `ping_url` it is selected immediately. If all mirrors fail their health check, the original registry host is used as fallback.
 
+A mirror whose registry API lives under a path, such as a Harbor proxy-cache project, is declared as in containerd with `override_path = true`. The path must start with `/v2`; the rest is prepended to the image repository, so nydusd requests `/v2/proxy-project/<repo>/...`. Without `override_path`, the path is ignored.
+
+```toml
+[host."http://harbor.example.com/v2/proxy-project"]
+  override_path = true
+```
+
 ## Community
 
 Nydus aims to form a **vendor-neutral opensource** image distribution solution to all communities.

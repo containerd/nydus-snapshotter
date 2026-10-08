@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,6 +23,7 @@ import (
 
 type MirrorConfig struct {
 	Host                string
+	RepoPrefix          string
 	Headers             map[string]string
 	HealthCheckInterval int
 	FailureLimit        uint8
@@ -44,9 +46,11 @@ type HostFileConfig struct {
 }
 
 type hostConfig struct {
-	Scheme string
-	Host   string
-	Header http.Header
+	Scheme       string
+	Host         string
+	Path         string
+	OverridePath bool
+	Header       http.Header
 
 	CACerts             []string
 	HealthCheckInterval int
@@ -76,6 +80,17 @@ func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
 
 	for i, host := range hosts {
 		parsedMirrors[i].Host = fmt.Sprintf("%s://%s", host.Scheme, host.Host)
+		if host.OverridePath {
+			if prefix, ok := repoPrefixFromAPIPath(host.Path); ok {
+				parsedMirrors[i].RepoPrefix = prefix
+			} else {
+				log.L.Warnf("mirror %s: override_path API root %q is not under /v2, which nydusd always requests; ignoring the path",
+					parsedMirrors[i].Host, host.Path)
+			}
+		} else if host.Path != "/v2" {
+			log.L.Warnf("mirror %s: path is only honored with override_path = true; ignoring API root %q",
+				parsedMirrors[i].Host, host.Path)
+		}
 		parsedMirrors[i].HealthCheckInterval = host.HealthCheckInterval
 		parsedMirrors[i].FailureLimit = host.FailureLimit
 		parsedMirrors[i].PingURL = host.PingURL
@@ -93,6 +108,16 @@ func parseMirrorsConfig(hosts []hostConfig) []MirrorConfig {
 	}
 
 	return parsedMirrors
+}
+
+func repoPrefixFromAPIPath(apiPath string) (string, bool) {
+	if apiPath == "/v2" {
+		return "", true
+	}
+	if prefix, found := strings.CutPrefix(apiPath, "/v2/"); found {
+		return prefix, true
+	}
+	return "", false
 }
 
 // hostDirectory converts ":port" to "_port_" in directory names
@@ -163,6 +188,14 @@ func parseHostConfig(server string, config HostFileConfig) (hostConfig, error) {
 	}
 	result.Scheme = u.Scheme
 	result.Host = u.Host
+
+	if u.Path != "" && u.Path != "/" {
+		result.Path = path.Clean(u.Path)
+	}
+	if !config.OverridePath && !strings.HasSuffix(result.Path, "/v2") {
+		result.Path += "/v2"
+	}
+	result.OverridePath = config.OverridePath
 
 	if config.Header != nil {
 		header := http.Header{}

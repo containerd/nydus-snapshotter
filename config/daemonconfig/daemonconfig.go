@@ -216,16 +216,20 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 			registryHost = "index.docker.io"
 		}
 
-		effectiveScheme, effectiveHost, caCerts := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
+		effectiveScheme, effectiveHost, repoPrefix, caCerts := selectMirrorHost(config.GetMirrorsConfigDir(), registryHost)
 		// No mirror configured use the original registry host
 		if effectiveHost == "" {
 			effectiveHost = registryHost
+		}
+		effectiveRepo := image.Repo
+		if repoPrefix != "" {
+			effectiveRepo = repoPrefix + "/" + image.Repo
 		}
 		// If no auth is provided, don't touch auth from provided nydusd configuration file.
 		// We don't validate the original nydusd auth from configuration file since it can be empty
 		// when repository is public.
 		keyChain := auth.GetRegistryKeyChain(imageID, labels)
-		c.Supplement(effectiveHost, image.Repo, snapshotID, params)
+		c.Supplement(effectiveHost, effectiveRepo, snapshotID, params)
 		c.FillAuth(keyChain)
 		_, bc := c.StorageBackend()
 		if len(caCerts) > 0 {
@@ -245,14 +249,14 @@ func SupplementDaemonConfig(c DaemonConfig, imageID, snapshotID string,
 	return nil
 }
 
-// selectMirrorHost loads mirror configs for the given registry host and returns the host and
-// scheme of the first reachable mirror. If a mirror has no PingURL it is used unconditionally.
-// Falls back to (registryHost, "") when no mirror is configured or reachable.
-func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, host string, caCerts []string) {
+// selectMirrorHost loads mirror configs for the given registry host and returns the host,
+// scheme and repository prefix of the first reachable mirror. If a mirror has no PingURL it
+// is used unconditionally. Falls back to (registryHost, "") when no mirror is configured or reachable.
+func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme, host, repoPrefix string, caCerts []string) {
 	mirrors, caCerts, err := LoadMirrorsConfig(mirrorsConfigDir, registryHost)
 	if err != nil {
 		log.L.Warnf("Failed to load mirrors config for %s: %v, falling back to origin", registryHost, err)
-		return "", registryHost, nil
+		return "", registryHost, "", nil
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -263,13 +267,13 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 			continue
 		}
 		if mirror.PingURL == "" {
-			return scheme, host, caCerts
+			return scheme, host, mirror.RepoPrefix, caCerts
 		}
 		resp, pingErr := client.Get(mirror.PingURL)
 		if pingErr == nil {
 			resp.Body.Close()
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				return scheme, host, caCerts
+				return scheme, host, mirror.RepoPrefix, caCerts
 			}
 		}
 
@@ -291,7 +295,7 @@ func selectMirrorHost(mirrorsConfigDir, registryHost string) (scheme string, hos
 		}
 	}
 
-	return "", registryHost, nil
+	return "", registryHost, "", nil
 }
 
 // splitMirrorURL splits a mirror host URL (e.g. "http://mirror:5000") into scheme and bare host.
