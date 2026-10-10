@@ -125,17 +125,13 @@ func (m *Manager) doDaemonRestart(d *daemon.Daemon) {
 		return
 	}
 
-	// Mount rafs instance by http API
-	instances := d.RafsCache.List()
-	for _, r := range instances {
-		// For dedicated nydusd daemon, Rafs has already been mounted during starting nydusd
-		if d.HostMountpoint() == r.GetMountpoint() {
-			break
-		}
+	if err := d.WaitUntilState(types.DaemonStateRunning); err != nil {
+		log.L.WithError(err).Errorf("daemon %s is not managed to reach RUNNING state", d.ID())
+		return
+	}
 
-		if err := d.SharedMount(r); err != nil {
-			log.L.Warnf("Failed to mount rafs instance, %v", err)
-		}
+	if err := d.RecoverRafsInstances(); err != nil {
+		log.L.Warnf("Failed to recover RAFS mounts for daemon %s, %v", d.ID(), err)
 	}
 }
 
