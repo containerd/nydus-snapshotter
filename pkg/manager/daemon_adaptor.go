@@ -36,7 +36,13 @@ const endpointGetBackend string = "/api/v1/daemons/%s/backend"
 //     ensure the daemon has reached specified state.
 //   - `d` may have not been inserted into daemonStates and store yet.
 func (m *Manager) StartDaemon(d *daemon.Daemon) error {
-	cmd, err := m.BuildDaemonCommand(d, "", false)
+	return m.startDaemon(d, false)
+}
+
+// startDaemon spawns nydusd in the requested startup mode. Failover uses
+// upgrade mode so the replacement waits in INIT until takeover completes.
+func (m *Manager) startDaemon(d *daemon.Daemon, upgrade bool) error {
+	cmd, err := m.BuildDaemonCommand(d, "", upgrade)
 	if err != nil {
 		return errors.Wrapf(err, "create command for daemon %s", d.ID())
 	}
