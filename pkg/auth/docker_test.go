@@ -75,7 +75,7 @@ func TestDockerCred(t *testing.T) {
 	assert.Error(err)
 
 	// Unmatching host should get empty auth
-	auth, err = NewDockerProvider().GetCredentials(&AuthRequest{Ref: "foo"})
+	auth, err = NewDockerProvider().GetCredentials(&AuthRequest{Ref: "unmatched.example.com/foo:bar"})
 	assert.Nil(auth)
 	assert.Error(err)
 
