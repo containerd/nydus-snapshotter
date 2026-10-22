@@ -451,16 +451,17 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		if info.Parent != "" {
 			pKey := info.Parent
 			if pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
-				if label.IsNydusMetaLayer(pInfo.Labels) {
+				switch {
+				case label.IsNydusMetaLayer(pInfo.Labels):
 					if err = o.fs.WaitUntilReady(pID, info.Labels); err != nil {
 						return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 					}
 					needRemoteMounts = true
 					metaSnapshotID = pID
-				} else if (o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels)) || label.IsNydusProxyMode(pInfo.Labels) {
+				case (o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels)) || label.IsNydusProxyMode(pInfo.Labels):
 					needRemoteMounts = true
 					metaSnapshotID = pID
-				} else {
+				default:
 					// Docker inserts an ordinary init snapshot above the image.
 					// Resolve the same metadata ancestor as Prepare instead of
 					// mounting the bootstrap and blob directories as a rootfs.
