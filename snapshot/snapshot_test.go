@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -467,6 +468,21 @@ func TestMountRemoteUsesPerPodLowerdirForIDMap(t *testing.T) {
 }
 
 func TestRemoveCleansUpDirectoriesOnlyAfterCommit(t *testing.T) {
+	// The commit-failure injection changes the process-wide file size limit.
+	// Run it without the parent's -test.testlogfile so a buffered test-cache
+	// log write cannot fail while regular file writes are forbidden.
+	const childEnv = "NYDUS_TEST_REMOVE_FAILURE_CHILD"
+	if os.Getenv(childEnv) != t.Name() {
+		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+		cmd.Env = append(os.Environ(), childEnv+"="+t.Name())
+		if coverDir := os.Getenv("GOCOVERDIR"); testing.CoverMode() != "" && coverDir != "" {
+			cmd.Args = append(cmd.Args, "-test.gocoverdir="+coverDir)
+		}
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "isolated test failed:\n%s", output)
+		return
+	}
+
 	originalInstances := rafs.RafsGlobalCache.List()
 	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
 	t.Cleanup(func() {

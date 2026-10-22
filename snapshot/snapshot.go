@@ -451,15 +451,30 @@ func (o *snapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, er
 		if info.Parent != "" {
 			pKey := info.Parent
 			if pID, pInfo, _, err := snapshot.GetSnapshotInfo(ctx, o.ms, pKey); err == nil {
-				if label.IsNydusMetaLayer(pInfo.Labels) {
+				switch {
+				case label.IsNydusMetaLayer(pInfo.Labels):
 					if err = o.fs.WaitUntilReady(pID, info.Labels); err != nil {
 						return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready, err: %v", pID, err)
 					}
 					needRemoteMounts = true
 					metaSnapshotID = pID
-				} else if (o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels)) || label.IsNydusProxyMode(pInfo.Labels) {
+				case (o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels)) || label.IsNydusProxyMode(pInfo.Labels):
 					needRemoteMounts = true
 					metaSnapshotID = pID
+				default:
+					// Docker inserts an ordinary init snapshot above the image.
+					// Resolve the same metadata ancestor as Prepare instead of
+					// mounting the bootstrap and blob directories as a rootfs.
+					metaID, _, err := o.findMetaLayer(ctx, pKey)
+					if err == nil {
+						if err := o.fs.WaitUntilReady(metaID, info.Labels); err != nil {
+							return nil, errors.Wrapf(err, "mounts: snapshot %s is not ready", metaID)
+						}
+						needRemoteMounts = true
+						metaSnapshotID = metaID
+					} else if !errors.Is(err, errdefs.ErrNotFound) {
+						return nil, errors.Wrapf(err, "find metadata ancestor of snapshot %q", pKey)
+					}
 				}
 			} else {
 				return nil, errors.Wrapf(err, "get parent snapshot info, parent key=%q", pKey)
@@ -1156,11 +1171,13 @@ func (o *snapshotter) mountRemote(ctx context.Context, labels map[string]string,
 	}
 
 	lowerPaths := make([]string, 0, 8)
-	if o.fs.ReferrerDetectEnabled() || o.fs.IndexDetectEnabled() {
+	if s.ID != id {
 		// From the parent list, we want to add all the layers
 		// between the upmost snapshot and the nydus meta snapshot.
 		// On the other hand, we consider that all the layers below
 		// the nydus meta snapshot will be included in its mount.
+		// Ordinary layers such as Docker's init snapshot must also be
+		// preserved when referrer and index detection are disabled.
 		for i := range s.ParentIDs {
 			if s.ParentIDs[i] == id {
 				break
