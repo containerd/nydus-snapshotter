@@ -102,13 +102,12 @@ jobs:
     needs: [build]
     strategy:
       matrix:
+        # Only architectures for which dragonflyoss/nydus publishes static binaries.
         include:
           - build-os: linux
             build-arch: amd64
           - build-os: linux
             build-arch: arm64
-          - build-os: linux
-            build-arch: s390x
           - build-os: linux
             build-arch: ppc64le
     steps:
@@ -181,7 +180,6 @@ jobs:
             docker manifest create "${tag}" \
               --amend "${tag}-amd64" \
               --amend "${tag}-arm64" \
-              --amend "${tag}-s390x" \
               --amend "${tag}-ppc64le"
             docker manifest push "${tag}"
           done
