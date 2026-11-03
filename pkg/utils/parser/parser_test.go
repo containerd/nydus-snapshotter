@@ -87,3 +87,11 @@ func TestMemoryLimitToBytes(t *testing.T) {
 		assert.Equal(t, memoryLimitInBytes, test.expected)
 	}
 }
+
+func TestMemoryLimitToBytesUnknownUnit(t *testing.T) {
+	for _, memoryLimit := range []string{"512MB", "1G", "2GB", "100Kb"} {
+		memoryLimitInBytes, err := MemoryConfigToBytes(memoryLimit, 10000)
+		assert.Error(t, err, "memory limit %q", memoryLimit)
+		assert.Equal(t, int64(0), memoryLimitInBytes, "memory limit %q", memoryLimit)
+	}
+}
