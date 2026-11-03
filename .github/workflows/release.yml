@@ -90,7 +90,7 @@ jobs:
         with:
           path: builds
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           name: "Nydus Snapshotter ${{ github.ref_name }} Release"
           generate_release_notes: true
