@@ -73,7 +73,10 @@ func MemoryConfigToBytes(data string, totalMemoryBytes int) (int64, error) {
 
 	unitMultipliersOnce.Do(InitUnitMultipliers)
 
-	multiplier := unitMultipliers[unit]
+	multiplier, ok := unitMultipliers[unit]
+	if !ok {
+		return 0, errors.Errorf("failed to convert data to bytes: unknown unit %q in %s", unit, data)
+	}
 	return int64(value * float64(multiplier)), nil
 }
 
