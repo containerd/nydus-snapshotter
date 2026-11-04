@@ -8,6 +8,7 @@ package snapshot
 
 import (
 	"context"
+	"maps"
 	"path"
 
 	"github.com/pkg/errors"
@@ -40,20 +41,23 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		return true, nil, nil
 	}
 
-	remoteHandler := func(id string, labels map[string]string) func() (bool, []mount.Mount, error) {
+	remoteHandler := func(id string, remoteLabels map[string]string) func() (bool, []mount.Mount, error) {
+		// Prepare and Mounts must select the same per-container RAFS instance,
+		// regardless of how the remote image was discovered.
+		remoteLabels = remoteSnapshotLabels(remoteLabels, labels)
 		return func() (bool, []mount.Mount, error) {
 			logger.Debugf("Prepare remote snapshot %s", id)
-			if err := sn.fs.Mount(ctx, id, labels, &s); err != nil {
+			if err := sn.fs.Mount(ctx, id, remoteLabels, &s); err != nil {
 				return false, nil, err
 			}
 
 			// Let Prepare operation show the rootfs content.
-			if err := sn.fs.WaitUntilReady(id, labels); err != nil {
+			if err := sn.fs.WaitUntilReady(id, remoteLabels); err != nil {
 				return false, nil, err
 			}
 
 			logger.Infof("Nydus remote snapshot %s is ready", id)
-			mounts, err := sn.mountRemote(ctx, labels, s, id, key)
+			mounts, err := sn.mountRemote(ctx, remoteLabels, s, id, key)
 			return false, mounts, err
 		}
 	}
@@ -142,17 +146,6 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 		if handler == nil {
 			if id, info, err := sn.findMetaLayer(ctx, key); err == nil {
 				logger.Infof("Prepare active Nydus snapshot %s", key)
-				// Propagate user-namespace remap-ids labels from the Active
-				// snapshot to the meta layer so fs.Mount() and mountRemote()
-				// can apply the correct id_mapping.
-				for _, k := range []string{
-					label.SnapshotUIDMapping,
-					label.SnapshotGIDMapping,
-				} {
-					if v, ok := labels[k]; ok {
-						info.Labels[k] = v
-					}
-				}
 				handler = remoteHandler(id, info.Labels)
 			}
 		}
@@ -207,4 +200,18 @@ func chooseProcessor(ctx context.Context, logger *logrus.Entry,
 	}
 
 	return handler, target, commitLabels, err
+}
+
+// remoteSnapshotLabels preserves image metadata while taking remap IDs only
+// from the active snapshot. Never retain a previous container's mapping.
+func remoteSnapshotLabels(remoteLabels, activeLabels map[string]string) map[string]string {
+	labels := make(map[string]string, len(remoteLabels)+2)
+	maps.Copy(labels, remoteLabels)
+	for _, key := range []string{label.SnapshotUIDMapping, label.SnapshotGIDMapping} {
+		delete(labels, key)
+		if value, ok := activeLabels[key]; ok {
+			labels[key] = value
+		}
+	}
+	return labels
 }
