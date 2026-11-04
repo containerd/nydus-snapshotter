@@ -782,7 +782,14 @@ func Merge(ctx context.Context, layers []Layer, dest io.Writer, opt MergeOption)
 }
 
 // Unpack converts a nydus blob layer to OCI formatted tar stream.
+// Cancellation or a destination error terminates and reaps the external
+// builder before its temporary files are removed. Success requires both a
+// complete output stream and a successful builder exit.
 func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt UnpackOption) error {
+	parentCtx := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	workDir, err := ensureWorkDir(opt.WorkDir)
 	if err != nil {
 		return errors.Wrap(err, "ensure work directory")
@@ -826,26 +833,45 @@ func Unpack(ctx context.Context, ra content.ReaderAt, dest io.Writer, opt Unpack
 		unpackOpt.BackendConfigPath = backendConfigPath
 	}
 
-	unpackErrChan := make(chan error)
+	unpackErrChan := make(chan error, 1)
 	go func() {
-		defer close(unpackErrChan)
-		err := tool.Unpack(unpackOpt)
+		err := tool.UnpackContext(ctx, unpackOpt)
+		// Publish the builder result before closing the FIFO so a resulting
+		// reader error cannot hide the original builder failure.
+		unpackErrChan <- err
 		if err != nil {
 			blobFifo.Close()
-			unpackErrChan <- err
 		}
 	}()
 
 	buffer := bufPool.Get().(*[]byte)
 	defer bufPool.Put(buffer)
-	if _, err := io.CopyBuffer(dest, blobFifo, *buffer); err != nil {
-		if unpackErr := <-unpackErrChan; unpackErr != nil {
-			return errors.Wrap(unpackErr, "unpack")
+	_, copyErr := io.CopyBuffer(dest, blobFifo, *buffer)
+	var unpackErr error
+	if copyErr != nil {
+		select {
+		case unpackErr = <-unpackErrChan:
+		default:
+			// A closed destination can leave the builder blocked opening or
+			// writing its FIFO. Cancel and reap it before removing its files.
+			cancel()
+			blobFifo.Close()
+			<-unpackErrChan
+			if parentCtx.Err() != nil {
+				return errors.Wrap(parentCtx.Err(), "unpack")
+			}
+			return errors.Wrap(copyErr, "copy oci tar")
 		}
-		return errors.Wrap(err, "copy oci tar")
+	} else {
+		unpackErr = <-unpackErrChan
 	}
-
-	return nil
+	if parentCtx.Err() != nil {
+		return errors.Wrap(parentCtx.Err(), "unpack")
+	}
+	if unpackErr != nil {
+		return errors.Wrap(unpackErr, "unpack")
+	}
+	return errors.Wrap(copyErr, "copy oci tar")
 }
 
 // IsNydusBlobAndExists returns true when the specified digest of content exists in

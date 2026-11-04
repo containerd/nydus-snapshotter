@@ -293,7 +293,14 @@ func Merge(option MergeOption) ([]digest.Digest, error) {
 	return blobDigests, nil
 }
 
+// Unpack runs the builder with the optional timeout in option.
 func Unpack(option UnpackOption) error {
+	return UnpackContext(context.Background(), option)
+}
+
+// UnpackContext runs the builder until it exits, ctx is canceled, or the
+// optional timeout in option expires. It waits for the builder to be reaped.
+func UnpackContext(ctx context.Context, option UnpackOption) error {
 	args := []string{
 		"unpack",
 		"--log-level",
@@ -336,7 +343,6 @@ func Unpack(option UnpackOption) error {
 		args = append(args, "--blob", option.BlobPath)
 	}
 
-	ctx := context.Background()
 	var cancel context.CancelFunc
 	if option.Timeout != nil {
 		ctx, cancel = context.WithTimeout(ctx, *option.Timeout)
