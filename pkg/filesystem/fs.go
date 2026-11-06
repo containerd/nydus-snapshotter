@@ -646,6 +646,23 @@ func (fs *Filesystem) copyFile(src, dst string) error {
 	return os.Rename(tmpPath, dst)
 }
 
+// UmountIfUnused unmounts the fusedev RAFS instance of snapshotID, stopping its
+// dedicated nydusd, unless inUse reports it is still needed. It holds Mount's
+// lock, so a concurrent Mount either reuses the instance or mounts a new one.
+func (fs *Filesystem) UmountIfUnused(ctx context.Context, snapshotID string, inUse func() (bool, error)) error {
+	mu := fs.getSnapshotMutex(snapshotID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if r := racache.RafsGlobalCache.Get(snapshotID); r == nil || r.GetFsDriver() != config.FsDriverFusedev {
+		return nil
+	}
+	if used, err := inUse(); err != nil || used {
+		return err
+	}
+	return fs.Umount(ctx, snapshotID)
+}
+
 func (fs *Filesystem) Umount(_ context.Context, snapshotID string) error {
 	rafsList := fs.collectRafsInstances(snapshotID)
 	if len(rafsList) == 0 {

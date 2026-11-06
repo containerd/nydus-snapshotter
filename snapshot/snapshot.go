@@ -679,10 +679,11 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 		return errors.Wrapf(err, "get snapshot %s", key)
 	}
 
-	var removeRafsSnapshotID string
+	var removeRafsSnapshotID, releaseMetaID string
 	if info.Kind == snapshots.KindActive || info.Kind == snapshots.KindView {
-		if idMapping, parseErr := label.ParseIDMapping(info.Labels); parseErr == nil && idMapping != nil {
-			if metaID, _, metaErr := o.findMetaLayer(ctx, key); metaErr == nil {
+		if metaID, _, metaErr := o.findMetaLayer(ctx, key); metaErr == nil {
+			releaseMetaID = metaID
+			if idMapping, parseErr := label.ParseIDMapping(info.Labels); parseErr == nil && idMapping != nil {
 				removeRafsSnapshotID = metaID
 			}
 		}
@@ -741,7 +742,37 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 	if o.cleanupQueue != nil {
 		o.cleanupQueue.enqueue(o.snapshotDir(id), key)
 	}
+	if releaseMetaID != "" {
+		inUse := func() (bool, error) { return o.imageInUse(ctx, releaseMetaID) }
+		if err := o.fs.UmountIfUnused(ctx, releaseMetaID, inUse); err != nil {
+			log.G(ctx).WithError(err).WithField("snapshot_id", releaseMetaID).Warn("failed to release unused RAFS instance")
+		}
+	}
 	return nil
+}
+
+// imageInUse reports whether any active or view snapshot sits on nydus meta
+// snapshot metaID.
+func (o *snapshotter) imageInUse(ctx context.Context, metaID string) (bool, error) {
+	var keys []string
+	if err := o.Walk(ctx, func(_ context.Context, i snapshots.Info) error {
+		if i.Kind == snapshots.KindActive || i.Kind == snapshots.KindView {
+			keys = append(keys, i.Name)
+		}
+		return nil
+	}); err != nil {
+		return false, err
+	}
+	for _, key := range keys {
+		id, _, err := o.findMetaLayer(ctx, key)
+		if errdefs.IsNotFound(err) {
+			continue
+		}
+		if err != nil || id == metaID {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...string) error {
@@ -1472,7 +1503,7 @@ func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error)
 
 	// Get a write transaction to ensure no other write transaction can be entered
 	// while the cleanup is scanning.
-	_, t, err := o.ms.TransactionContext(ctx, true)
+	txCtx, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1505,6 +1536,16 @@ func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error)
 		// instead of guessing and let a later round retry.
 		log.L.Info("[getUnusedCacheBlobs] usage of some RAFS instances is still unknown after reconciliation, skipping cache GC this round")
 		return nil, nil
+	}
+	// Images whose nydusd was released on last container removal still own
+	// their cached blobs.
+	if err := storage.WalkInfo(txCtx, func(_ context.Context, i snapshots.Info) error {
+		if digest := i.Labels[label.CRILayerDigest]; label.IsNydusDataLayer(i.Labels) && digest != "" {
+			usedBlobIDs[strings.TrimPrefix(digest, "sha256:")] = true
+		}
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "walk snapshots to collect used blobs")
 	}
 
 	log.L.Debugf("[getUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))
