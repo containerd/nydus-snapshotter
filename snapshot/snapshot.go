@@ -564,6 +564,16 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 		metaSnapshotID   string
 	)
 
+	if label.IsNydusDataLayer(pInfo.Labels) {
+		return nil, errors.New("only can view nydus topmost layer")
+	}
+	// Record the view before mounting, so a concurrent Remove releasing the
+	// image's nydusd sees it in use.
+	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	if label.IsNydusMetaLayer(pInfo.Labels) {
 		// Nydusd might not be running. We should run nydusd to reflect the rootfs.
 		if err = o.fs.WaitUntilReady(pID, pInfo.Labels); err != nil {
@@ -582,15 +592,8 @@ func (o *snapshotter) View(ctx context.Context, key, parent string, opts ...snap
 
 		needRemoteMounts = true
 		metaSnapshotID = pID
-	} else if label.IsNydusDataLayer(pInfo.Labels) {
-		return nil, errors.New("only can view nydus topmost layer")
 	}
 	// Otherwise, it is OCI snapshots
-
-	base, s, err := o.createSnapshot(ctx, snapshots.KindView, key, parent, opts)
-	if err != nil {
-		return nil, err
-	}
 
 	if o.fs.TarfsEnabled() && label.IsTarfsDataLayer(pInfo.Labels) {
 		log.L.Infof("Prepare view snapshot %s in Nydus tarfs mode", pID)
@@ -681,7 +684,7 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 
 	var removeRafsSnapshotID, releaseMetaID string
 	if info.Kind == snapshots.KindActive || info.Kind == snapshots.KindView {
-		if metaID, _, metaErr := o.findMetaLayer(ctx, key); metaErr == nil {
+		if metaID, metaErr := nydusMetaOf(ctx, key); metaErr == nil {
 			releaseMetaID = metaID
 			if idMapping, parseErr := label.ParseIDMapping(info.Labels); parseErr == nil && idMapping != nil {
 				removeRafsSnapshotID = metaID
@@ -754,25 +757,45 @@ func (o *snapshotter) Remove(ctx context.Context, key string) error {
 // imageInUse reports whether any active or view snapshot sits on nydus meta
 // snapshot metaID.
 func (o *snapshotter) imageInUse(ctx context.Context, metaID string) (bool, error) {
-	var keys []string
-	if err := o.Walk(ctx, func(_ context.Context, i snapshots.Info) error {
-		if i.Kind == snapshots.KindActive || i.Kind == snapshots.KindView {
-			keys = append(keys, i.Name)
-		}
-		return nil
-	}); err != nil {
+	ctx, t, err := o.ms.TransactionContext(ctx, false)
+	if err != nil {
 		return false, err
 	}
-	for _, key := range keys {
-		id, _, err := o.findMetaLayer(ctx, key)
+	defer func() {
+		if err := t.Rollback(); err != nil {
+			log.L.WithError(err).Warn("failed to rollback transaction")
+		}
+	}()
+
+	inUse := false
+	err = storage.WalkInfo(ctx, func(ctx context.Context, i snapshots.Info) error {
+		if inUse || (i.Kind != snapshots.KindActive && i.Kind != snapshots.KindView) {
+			return nil
+		}
+		id, err := nydusMetaOf(ctx, i.Name)
 		if errdefs.IsNotFound(err) {
-			continue
+			return nil
 		}
-		if err != nil || id == metaID {
-			return true, err
+		inUse = id == metaID
+		return err
+	})
+	return inUse, err
+}
+
+// nydusMetaOf returns the ID of the nydus meta snapshot key sits on, using the
+// transaction in ctx.
+func nydusMetaOf(ctx context.Context, key string) (string, error) {
+	for key != "" {
+		id, info, _, err := storage.GetInfo(ctx, key)
+		if err != nil {
+			return "", err
 		}
+		if label.IsNydusMetaLayer(info.Labels) {
+			return id, nil
+		}
+		key = info.Parent
 	}
-	return false, nil
+	return "", errdefs.ErrNotFound
 }
 
 func (o *snapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, fs ...string) error {

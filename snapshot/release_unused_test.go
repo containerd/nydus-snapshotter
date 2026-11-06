@@ -42,6 +42,20 @@ func TestImageInUseUntilLastContainerRemoved(t *testing.T) {
 	}
 }
 
+// View must record its snapshot before mounting, or a concurrent Remove can
+// release the nydusd it is about to use. A failing mount shows the order.
+func TestViewRecordsSnapshotBeforeMounting(t *testing.T) {
+	sn := newDockerChainTestSnapshotter(t)
+	ctx := context.Background()
+	createCommittedDockerChainLayer(t, sn, "data", "", map[string]string{label.NydusDataLayer: "true"})
+	createCommittedDockerChainLayer(t, sn, "meta", "data", map[string]string{label.NydusMetaLayer: "true"})
+
+	_, err := sn.View(ctx, "v1", "meta")
+	require.Error(t, err, "no nydusd can be mounted in this test")
+	_, err = sn.Stat(ctx, "v1")
+	require.NoError(t, err)
+}
+
 func TestUnusedCacheBlobsKeepsBlobsOfCachedImages(t *testing.T) {
 	sn := newDockerChainTestSnapshotter(t)
 	cacheDir := t.TempDir()
