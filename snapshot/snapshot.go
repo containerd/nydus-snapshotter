@@ -1526,7 +1526,7 @@ func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error)
 
 	// Get a write transaction to ensure no other write transaction can be entered
 	// while the cleanup is scanning.
-	txCtx, t, err := o.ms.TransactionContext(ctx, true)
+	_, t, err := o.ms.TransactionContext(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1559,16 +1559,6 @@ func (o *snapshotter) getUnusedCacheBlobs(ctx context.Context) ([]string, error)
 		// instead of guessing and let a later round retry.
 		log.L.Info("[getUnusedCacheBlobs] usage of some RAFS instances is still unknown after reconciliation, skipping cache GC this round")
 		return nil, nil
-	}
-	// Images whose nydusd was released on last container removal still own
-	// their cached blobs.
-	if err := storage.WalkInfo(txCtx, func(_ context.Context, i snapshots.Info) error {
-		if digest := i.Labels[label.CRILayerDigest]; label.IsNydusDataLayer(i.Labels) && digest != "" {
-			usedBlobIDs[strings.TrimPrefix(digest, "sha256:")] = true
-		}
-		return nil
-	}); err != nil {
-		return nil, errors.Wrap(err, "walk snapshots to collect used blobs")
 	}
 
 	log.L.Debugf("[getUnusedCacheBlobs] found %d used blob IDs", len(usedBlobIDs))

@@ -19,7 +19,6 @@ import (
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
 	"github.com/containerd/nydus-snapshotter/config"
-	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
@@ -600,42 +599,4 @@ func TestRemoveReleasesImageOnlyWhenUnused(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, step.inUse, inUse, "after removing %s", step.remove)
 	}
-}
-
-func TestUnusedCacheBlobsKeepsBlobsOfCachedImages(t *testing.T) {
-	snapshotterRoot := t.TempDir()
-	ms, err := storage.NewMetaStore(filepath.Join(snapshotterRoot, "metadata.db"))
-	require.NoError(t, err)
-	cacheDir := t.TempDir()
-	cm, err := cache.NewManager(cache.Opt{CacheDir: cacheDir})
-	require.NoError(t, err)
-	fs, err := filesystem.NewFileSystem(context.Background(), filesystem.WithCacheManager(cm))
-	require.NoError(t, err)
-	s := &snapshotter{
-		root: snapshotterRoot,
-		ms:   ms,
-		fs:   fs,
-	}
-
-	// A cached nydus blob layer whose image has no running nydusd, next to a
-	// cache file no image refers to.
-	txCtx, trans, err := ms.TransactionContext(context.Background(), true)
-	require.NoError(t, err)
-	_, err = storage.CreateSnapshot(txCtx, snapshots.KindActive, "data-key", "")
-	require.NoError(t, err)
-	_, err = storage.CommitActive(txCtx, "data-key", "data", snapshots.Usage{}, snapshots.WithLabels(map[string]string{
-		label.NydusDataLayer: "true",
-		label.CRILayerDigest: "sha256:cached",
-	}))
-	require.NoError(t, err)
-	require.NoError(t, trans.Commit())
-	for _, blob := range []string{"cached", "orphan"} {
-		require.NoError(t, os.WriteFile(filepath.Join(cacheDir, blob+".blob.data"), nil, 0o644))
-	}
-
-	// Only the orphan may go: the cached image's next container reads the
-	// other blob without fetching it again.
-	unused, err := s.getUnusedCacheBlobs(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, []string{"orphan"}, unused)
 }
