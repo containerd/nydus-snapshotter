@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/config"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
@@ -547,5 +548,55 @@ func forbidFileWrites(t *testing.T) func() {
 	require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 0, Max: old.Max}))
 	return func() {
 		require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &old))
+	}
+}
+
+func TestRemoveReleasesImageOnlyWhenUnused(t *testing.T) {
+	originalInstances := rafs.RafsGlobalCache.List()
+	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
+	t.Cleanup(func() {
+		rafs.RafsGlobalCache.SetIntances(originalInstances)
+	})
+
+	snapshotterRoot := t.TempDir()
+	cfg := &config.SnapshotterConfig{Root: snapshotterRoot, DaemonMode: string(config.DaemonModeDedicated)}
+	cfg.DaemonConfig.FsDriver = config.FsDriverFusedev
+	require.NoError(t, config.ProcessConfigurations(cfg))
+	require.NoError(t, os.Mkdir(filepath.Join(snapshotterRoot, "snapshots"), 0o755))
+	ms, err := storage.NewMetaStore(filepath.Join(snapshotterRoot, "metadata.db"))
+	require.NoError(t, err)
+	s := &snapshotter{
+		root: snapshotterRoot,
+		ms:   ms,
+		fs:   &filesystem.Filesystem{},
+	}
+	ctx := context.Background()
+
+	_, _, err = s.createSnapshot(ctx, snapshots.KindActive, "meta-key", "", nil)
+	require.NoError(t, err)
+	txCtx, trans, err := ms.TransactionContext(ctx, true)
+	require.NoError(t, err)
+	metaID, err := storage.CommitActive(txCtx, "meta-key", "meta", snapshots.Usage{},
+		snapshots.WithLabels(map[string]string{label.NydusMetaLayer: "true"}))
+	require.NoError(t, err)
+	require.NoError(t, trans.Commit())
+
+	// View records the view before mounting, so a Remove racing that mount
+	// sees the image in use. No nydusd can start here, so the mount fails.
+	_, err = s.View(ctx, "v1", "meta")
+	require.Error(t, err)
+	_, _, err = s.createSnapshot(ctx, snapshots.KindActive, "c1", "meta", nil)
+	require.NoError(t, err)
+
+	// The image's nydusd may only be released once neither the container nor
+	// the view uses it.
+	for _, step := range []struct {
+		remove string
+		inUse  bool
+	}{{"c1", true}, {"v1", false}} {
+		require.NoError(t, s.Remove(ctx, step.remove))
+		inUse, err := s.imageInUse(ctx, metaID)
+		require.NoError(t, err)
+		assert.Equal(t, step.inUse, inUse, "after removing %s", step.remove)
 	}
 }
