@@ -18,6 +18,8 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/config"
+	"github.com/containerd/nydus-snapshotter/pkg/cache"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
@@ -548,4 +550,83 @@ func forbidFileWrites(t *testing.T) func() {
 	return func() {
 		require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &old))
 	}
+}
+
+// newNydusImageSnapshotter returns a snapshotter whose metastore holds one
+// nydus image: data layer "data" (blob "cached") under meta layer "meta".
+func newNydusImageSnapshotter(t *testing.T) (*snapshotter, string) {
+	originalInstances := rafs.RafsGlobalCache.List()
+	rafs.RafsGlobalCache.SetIntances(make(map[string]*rafs.Rafs))
+	t.Cleanup(func() {
+		rafs.RafsGlobalCache.SetIntances(originalInstances)
+	})
+
+	snapshotterRoot := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(snapshotterRoot, "snapshots"), 0o755))
+	ms, err := storage.NewMetaStore(filepath.Join(snapshotterRoot, "metadata.db"))
+	require.NoError(t, err)
+	s := &snapshotter{root: snapshotterRoot, ms: ms, fs: &filesystem.Filesystem{}}
+
+	commit := func(name, parent string, labels map[string]string) string {
+		_, _, err := s.createSnapshot(context.Background(), snapshots.KindActive, name+"-key", parent, nil)
+		require.NoError(t, err)
+		txCtx, trans, err := ms.TransactionContext(context.Background(), true)
+		require.NoError(t, err)
+		id, err := storage.CommitActive(txCtx, name+"-key", name, snapshots.Usage{}, snapshots.WithLabels(labels))
+		require.NoError(t, err)
+		require.NoError(t, trans.Commit())
+		return id
+	}
+	commit("data", "", map[string]string{label.NydusDataLayer: "true", label.CRILayerDigest: "sha256:cached"})
+	return s, commit("meta", "data", map[string]string{label.NydusMetaLayer: "true"})
+}
+
+func TestImageInUseUntilLastContainerRemoved(t *testing.T) {
+	s, metaID := newNydusImageSnapshotter(t)
+	ctx := context.Background()
+	_, _, err := s.createSnapshot(ctx, snapshots.KindActive, "c1", "meta", nil)
+	require.NoError(t, err)
+	_, _, err = s.createSnapshot(ctx, snapshots.KindView, "v1", "meta", nil)
+	require.NoError(t, err)
+
+	for _, step := range []struct {
+		remove string
+		inUse  bool
+	}{{"c1", true}, {"v1", false}} {
+		require.NoError(t, s.Remove(ctx, step.remove))
+		inUse, err := s.imageInUse(ctx, metaID)
+		require.NoError(t, err)
+		assert.Equal(t, step.inUse, inUse, "after removing %s", step.remove)
+	}
+}
+
+// View must record its snapshot before mounting, or a concurrent Remove can
+// release the nydusd it is about to use. A failing mount shows the order.
+func TestViewRecordsSnapshotBeforeMounting(t *testing.T) {
+	s, _ := newNydusImageSnapshotter(t)
+	ctx := context.Background()
+	cfg := &config.SnapshotterConfig{Root: s.root, DaemonMode: string(config.DaemonModeDedicated)}
+	cfg.DaemonConfig.FsDriver = config.FsDriverFusedev
+	require.NoError(t, config.ProcessConfigurations(cfg))
+
+	_, err := s.View(ctx, "v1", "meta")
+	require.Error(t, err, "no nydusd can be mounted in this test")
+	_, err = s.Stat(ctx, "v1")
+	require.NoError(t, err)
+}
+
+func TestUnusedCacheBlobsKeepsBlobsOfCachedImages(t *testing.T) {
+	s, _ := newNydusImageSnapshotter(t)
+	cacheDir := t.TempDir()
+	cm, err := cache.NewManager(cache.Opt{CacheDir: cacheDir})
+	require.NoError(t, err)
+	s.fs, err = filesystem.NewFileSystem(context.Background(), filesystem.WithCacheManager(cm))
+	require.NoError(t, err)
+	for _, blob := range []string{"cached", "orphan"} {
+		require.NoError(t, os.WriteFile(filepath.Join(cacheDir, blob+".blob.data"), nil, 0644))
+	}
+
+	unused, err := s.getUnusedCacheBlobs(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"orphan"}, unused)
 }
