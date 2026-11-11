@@ -100,8 +100,9 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	// Headers set after WriteHeader are ignored, so set the content type first.
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(respBody); err != nil {
 		log.L.Errorf("write body %s", err)
 	}
