@@ -7,6 +7,7 @@
 package system
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,8 @@ import (
 	"github.com/containerd/nydus-snapshotter/pkg/manager"
 	metrics "github.com/containerd/nydus-snapshotter/pkg/metrics/tool"
 	"github.com/containerd/nydus-snapshotter/pkg/prefetch"
+	"github.com/containerd/nydus-snapshotter/pkg/rafs"
+	"github.com/containerd/nydus-snapshotter/pkg/store"
 	"github.com/containerd/nydus-snapshotter/pkg/utils/signals"
 )
 
@@ -60,6 +63,7 @@ const defaultErrorCode string = "Unknown"
 type Controller struct {
 	fs       *filesystem.Filesystem
 	managers []*manager.Manager
+	db       *store.Database
 	// httpSever *http.Server
 	addr   *net.UnixAddr
 	uid    int
@@ -100,8 +104,9 @@ func jsonResponse(w http.ResponseWriter, payload interface{}) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	// Headers set after WriteHeader are ignored, so set the content type first.
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(respBody); err != nil {
 		log.L.Errorf("write body %s", err)
 	}
@@ -128,7 +133,14 @@ type rafsInstanceInfo struct {
 	ImageID     string `json:"image_id"`
 }
 
-func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager, sock string, uid, gid int) (*Controller, error) {
+// daemonRecords holds the daemon and RAFS instance records persisted in the
+// database, as they are stored there.
+type daemonRecords struct {
+	Daemons   []*daemon.ConfigState `json:"daemons"`
+	Instances []*rafs.Rafs          `json:"instances"`
+}
+
+func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager, db *store.Database, sock string, uid, gid int) (*Controller, error) {
 	if err := os.MkdirAll(filepath.Dir(sock), os.ModePerm); err != nil {
 		return nil, err
 	}
@@ -147,6 +159,7 @@ func NewSystemController(fs *filesystem.Filesystem, managers []*manager.Manager,
 	sc := Controller{
 		fs:       fs,
 		managers: managers,
+		db:       db,
 		addr:     addr,
 		uid:      uid,
 		gid:      gid,
@@ -299,12 +312,47 @@ func (sc *Controller) describeDaemons() func(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-// TODO: Implement me!
+// GET /api/v1/daemons/records
+// Dump the daemon and RAFS instance records persisted in the database. Unlike
+// GET /api/v1/daemons, which describes the daemons cached in memory, this also
+// shows records that no manager has loaded, e.g. daemons skipped during
+// recovery because their configuration could not be reloaded.
 func (sc *Controller) getDaemonRecords() func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		m := newErrorMessage("not implemented")
-		http.Error(w, m.encode(), http.StatusNotImplemented)
+	return func(w http.ResponseWriter, r *http.Request) {
+		records, err := sc.readDaemonRecords(r.Context())
+		if err != nil {
+			log.L.WithError(err).Error("Failed to read daemon records")
+			m := newErrorMessage(err.Error())
+			http.Error(w, m.encode(), http.StatusInternalServerError)
+			return
+		}
+
+		jsonResponse(w, records)
 	}
+}
+
+func (sc *Controller) readDaemonRecords(ctx context.Context) (*daemonRecords, error) {
+	// Start from empty slices so that an empty bucket is encoded as [] rather than null.
+	records := &daemonRecords{
+		Daemons:   []*daemon.ConfigState{},
+		Instances: []*rafs.Rafs{},
+	}
+
+	if err := sc.db.WalkDaemons(ctx, func(state *daemon.ConfigState) error {
+		records.Daemons = append(records.Daemons, state)
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "walk daemon records")
+	}
+
+	if err := sc.db.WalkRafsInstances(ctx, func(instance *rafs.Rafs) error {
+		records.Instances = append(records.Instances, instance)
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "walk RAFS instance records")
+	}
+
+	return records, nil
 }
 
 // PUT /api/v1/nydusd/upgrade
