@@ -66,6 +66,14 @@ type snapshotter struct {
 	cleanupQueue            *snapshotCleanupQueue
 }
 
+// isCgroupUnavailable reports whether err, returned by cgroup.NewManager,
+// means the host cannot provide a cgroup for nydusd. The snapshotter then
+// runs nydusd without one instead of failing to start.
+func isCgroupUnavailable(err error) bool {
+	return errors.Is(err, cgroup.ErrCgroupNotSupported) ||
+		errors.Is(err, v2.ErrRootMemorySubtreeControllerDisabled)
+}
+
 func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapshots.Snapshotter, error) {
 	verifier, err := signature.NewVerifier(cfg.ImageConfig.PublicKeyFile, cfg.ImageConfig.ValidateSignature)
 	if err != nil {
@@ -94,8 +102,11 @@ func NewSnapshotter(ctx context.Context, cfg *config.SnapshotterConfig) (snapsho
 			Name:   "nydusd",
 			Config: cgroupConfig,
 		})
-		if err != nil && (err != cgroup.ErrCgroupNotSupported || err != v2.ErrRootMemorySubtreeControllerDisabled) {
-			return nil, errors.Wrap(err, "create cgroup manager")
+		if err != nil {
+			if !isCgroupUnavailable(err) {
+				return nil, errors.Wrap(err, "create cgroup manager")
+			}
+			log.L.WithError(err).Warn("nydusd cgroup is unavailable, running nydusd without cgroup")
 		}
 	}
 
