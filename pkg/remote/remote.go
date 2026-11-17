@@ -10,16 +10,26 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net/http"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
 	"github.com/containerd/nydus-snapshotter/pkg/auth"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes"
 	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker"
+	"github.com/containerd/nydus-snapshotter/pkg/remote/remotes/docker/config"
 	"github.com/distribution/reference"
 	"github.com/pkg/errors"
 )
+
+// containerd reads registry mirrors, TLS certificates and headers from
+// certs.d. RKE2 keeps its containerd state under /var/lib/rancher/rke2, while
+// standalone containerd installations use /etc/containerd. Keep the same
+// lookup order as the node kubelet/containerd layout.
+var defaultCertsDRoots = []string{
+	"/var/lib/rancher/rke2/agent/etc/containerd/certs.d",
+	"/etc/containerd/certs.d",
+}
 
 // IsErrHTTPResponseToHTTPSClient returns whether err is
 // "http: server gave HTTP response to HTTPS client"
@@ -51,50 +61,86 @@ type Remote struct {
 	// HTTP fallback is only allowed when insecure is true,
 	// matching Docker's --insecure-registry semantics.
 	insecure bool
+	// certsDRoots are the containerd certs.d roots inspected for hosts.toml.
+	certsDRoots []string
 }
 
-func New(keyChain *auth.PassKeyChain, insecure bool) *Remote {
-	// nolint:unparam
-	credFunc := func(string) (string, string, error) {
-		if keyChain == nil {
-			return "", "", nil
-		}
-		return keyChain.Username, keyChain.Password, nil
+// Option customizes a Remote.
+type Option func(*Remote)
+
+// WithCertsDRoots overrides the containerd certs.d lookup roots. It is useful
+// for tests and for nodes with a non-standard containerd state directory.
+func WithCertsDRoots(roots ...string) Option {
+	return func(r *Remote) {
+		r.certsDRoots = roots
+	}
+}
+
+func New(keyChain *auth.PassKeyChain, insecure bool, opts ...Option) *Remote {
+	r := &Remote{
+		insecure:    insecure,
+		certsDRoots: defaultCertsDRoots,
+	}
+	for _, opt := range opts {
+		opt(r)
 	}
 
-	newClient := func(insecure bool) *http.Client {
-		client := http.DefaultClient
-		transport := http.DefaultTransport.(*http.Transport)
-		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: insecure,
-		}
-		client.Transport = transport
-		return client
-	}
-
-	resolverFunc := func(plainHTTP bool) remotes.Resolver {
-		registryHosts := docker.ConfigureDefaultRegistries(
-			docker.WithAuthorizer(
-				docker.NewDockerAuthorizer(
-					docker.WithAuthClient(newClient(insecure)),
-					docker.WithAuthCreds(credFunc),
-				),
-			),
-			docker.WithClient(newClient(insecure)),
-			docker.WithPlainHTTP(func(_ string) (bool, error) {
-				return plainHTTP, nil
-			}),
-		)
-
+	r.resolverFunc = func(plainHTTP bool) remotes.Resolver {
 		return docker.NewResolver(docker.ResolverOptions{
-			Hosts: registryHosts,
+			Hosts: newRegistryHosts(keyChain, insecure, plainHTTP, r.certsDRoots),
 		})
 	}
 
-	return &Remote{
-		resolverFunc:  resolverFunc,
-		withPlainHTTP: false,
-		insecure:      insecure,
+	return r
+}
+
+// newRegistryHosts builds a resolver host list from containerd certs.d,
+// including hosts.toml server/host entries, capabilities and headers. When no
+// certs.d override exists it falls back to the previous default behavior
+// (docker.io maps to registry-1.docker.io).
+func newRegistryHosts(keyChain *auth.PassKeyChain, insecure, plainHTTP bool, certsDRoots []string) docker.RegistryHosts {
+	scheme := "https"
+	if plainHTTP {
+		scheme = "http"
+	}
+
+	return config.ConfigureHosts(context.Background(), config.HostOptions{
+		HostDir: certsDHostDir(certsDRoots),
+		Credentials: func(string) (string, string, error) {
+			if keyChain == nil {
+				return "", "", nil
+			}
+			return keyChain.Username, keyChain.Password, nil
+		},
+		DefaultScheme: scheme,
+		DefaultTLS: &tls.Config{
+			InsecureSkipVerify: insecure,
+		},
+	})
+}
+
+// certsDHostDir returns the first existing containerd certs.d host directory
+// from the configured roots.
+func certsDHostDir(roots []string) func(string) (string, error) {
+	lookups := make([]func(string) (string, error), 0, len(roots))
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		lookups = append(lookups, config.HostDirFromRoot(root))
+	}
+
+	return func(host string) (string, error) {
+		for _, lookup := range lookups {
+			dir, err := lookup(host)
+			if err == nil {
+				return dir, nil
+			}
+			if !errdefs.IsNotFound(err) {
+				return "", err
+			}
+		}
+		return "", errdefs.ErrNotFound
 	}
 }
 

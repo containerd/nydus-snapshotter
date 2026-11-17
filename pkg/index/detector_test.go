@@ -7,11 +7,24 @@
 package index
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
 	"testing"
 
+	"github.com/containerd/nydus-snapshotter/pkg/converter"
+	"github.com/containerd/nydus-snapshotter/pkg/label"
+	"github.com/containerd/nydus-snapshotter/pkg/remote"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHasNydusFeatures(t *testing.T) {
@@ -271,4 +284,107 @@ func TestFindNydusManifestInIndex(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckIndexAlternativeUsesCertsDMirror(t *testing.T) {
+	originalDigest := digest.FromString("original manifest")
+	nydusDigest := digest.FromString("nydus manifest")
+	metaLayerDigest := digest.FromString("nydus bootstrap")
+
+	indexBytes, err := json.Marshal(ocispec.Index{
+		MediaType: ocispec.MediaTypeImageIndex,
+		Manifests: []ocispec.Descriptor{
+			{
+				MediaType: ocispec.MediaTypeImageManifest,
+				Digest:    originalDigest,
+				Size:      100,
+				Platform:  &ocispec.Platform{OS: "linux", Architecture: "amd64"},
+			},
+			{
+				MediaType: ocispec.MediaTypeImageManifest,
+				Digest:    nydusDigest,
+				Size:      100,
+				Platform: &ocispec.Platform{
+					OS:           "linux",
+					Architecture: "amd64",
+					OSFeatures:   []string{converter.ManifestOSFeatureNydus},
+				},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	indexDigest := digest.FromBytes(indexBytes)
+
+	manifestBytes, err := json.Marshal(ocispec.Manifest{
+		MediaType: ocispec.MediaTypeImageManifest,
+		Layers: []ocispec.Descriptor{
+			{
+				MediaType:   ocispec.MediaTypeImageLayerGzip,
+				Digest:      metaLayerDigest,
+				Size:        42,
+				Annotations: map[string]string{label.NydusMetaLayer: "true"},
+			},
+		},
+	})
+	assert.NoError(t, err)
+
+	const dragonflyRegistry = "https://registry-1.docker.io"
+	var (
+		mu       sync.Mutex
+		requests []string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+
+		assert.Equal(t, dragonflyRegistry, r.Header.Get("X-Dragonfly-Registry"))
+
+		switch r.URL.Path {
+		case "/v2/library/nginx/manifests/latest":
+			w.Header().Set("Content-Type", string(ocispec.MediaTypeImageIndex))
+			w.Header().Set("Docker-Content-Digest", indexDigest.String())
+			w.Header().Set("Content-Length", strconv.Itoa(len(indexBytes)))
+			if r.Method == http.MethodGet {
+				_, _ = w.Write(indexBytes)
+			}
+		case "/v2/library/nginx/manifests/" + indexDigest.String():
+			w.Header().Set("Content-Type", string(ocispec.MediaTypeImageIndex))
+			w.Header().Set("Content-Length", strconv.Itoa(len(indexBytes)))
+			_, _ = w.Write(indexBytes)
+		case "/v2/library/nginx/manifests/" + nydusDigest.String():
+			w.Header().Set("Content-Type", string(ocispec.MediaTypeImageManifest))
+			w.Header().Set("Content-Length", strconv.Itoa(len(manifestBytes)))
+			_, _ = w.Write(manifestBytes)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	hostDir := filepath.Join(root, "docker.io")
+	assert.NoError(t, os.MkdirAll(hostDir, 0o755))
+	hostsTOML := fmt.Sprintf(`
+server = "https://registry-1.docker.io"
+
+[host.%q]
+  capabilities = ["pull", "resolve"]
+  [host.%q.header]
+    X-Dragonfly-Registry = %q
+`, server.URL, server.URL, dragonflyRegistry)
+	assert.NoError(t, os.WriteFile(filepath.Join(hostDir, "hosts.toml"), []byte(hostsTOML), 0o644))
+
+	d := &detector{remote: remote.New(nil, false, remote.WithCertsDRoots(root))}
+	desc, err := d.checkIndexAlternative(context.Background(), "docker.io/library/nginx:latest", originalDigest)
+	require.NoError(t, err)
+	assert.Equal(t, metaLayerDigest, desc.Digest)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{
+		"HEAD /v2/library/nginx/manifests/latest",
+		"GET /v2/library/nginx/manifests/" + indexDigest.String(),
+		"GET /v2/library/nginx/manifests/" + nydusDigest.String(),
+	}, requests)
 }
