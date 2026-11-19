@@ -18,9 +18,12 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/core/snapshots/storage"
+	"github.com/containerd/nydus-snapshotter/pkg/cgroup"
+	v2 "github.com/containerd/nydus-snapshotter/pkg/cgroup/v2"
 	"github.com/containerd/nydus-snapshotter/pkg/filesystem"
 	"github.com/containerd/nydus-snapshotter/pkg/label"
 	"github.com/containerd/nydus-snapshotter/pkg/rafs"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -547,5 +550,24 @@ func forbidFileWrites(t *testing.T) func() {
 	require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 0, Max: old.Max}))
 	return func() {
 		require.NoError(t, syscall.Setrlimit(syscall.RLIMIT_FSIZE, &old))
+	}
+}
+
+func TestIsCgroupUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"cgroup not supported", cgroup.ErrCgroupNotSupported, true},
+		{"root memory subtree controller disabled", v2.ErrRootMemorySubtreeControllerDisabled, true},
+		{"wrapped", errors.Wrap(v2.ErrRootMemorySubtreeControllerDisabled, "create cgroup"), true},
+		{"other error", os.ErrPermission, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isCgroupUnavailable(tt.err))
+		})
 	}
 }
