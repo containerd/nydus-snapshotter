@@ -36,19 +36,19 @@ jobs:
             build-linker: static
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
       - name: cache go mod
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/go/pkg/mod
           key: ${{ matrix.build-os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ matrix.build-os }}-go
       - name: cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -74,7 +74,7 @@ jobs:
             CGO_ENABLED=0 make package GOOS=${{ matrix.build-os }} GOARCH=${{ matrix.build-arch }}
           fi
       - name: upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-tars-${{ matrix.build-os }}-${{ matrix.build-arch }}
           path: |
@@ -86,11 +86,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: builds
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           name: "Nydus Snapshotter ${{ github.ref_name }} Release"
           generate_release_notes: true
@@ -115,19 +115,19 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to the container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: release-tars-${{ matrix.build-os }}-${{ matrix.build-arch }}
           path: misc/snapshotter
@@ -136,7 +136,7 @@ jobs:
           cd misc/snapshotter && tar -zxf *.tar.gz && mv bin/* . && rm -rf bin
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       - name: Get the nydusd version
@@ -145,7 +145,7 @@ jobs:
           echo "NYDUS_STABLE_VER=$NYDUS_STABLE_VER" >> "$GITHUB_ENV"
           printf 'nydus version is: %s\n' "$NYDUS_STABLE_VER"
       - name: build and push nydus-snapshotter image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: misc/snapshotter
           file: misc/snapshotter/Dockerfile
@@ -163,14 +163,14 @@ jobs:
     needs: [publish-image]
     steps:
       - name: Log in to the container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       - name: Publish manifest for multi-arch image

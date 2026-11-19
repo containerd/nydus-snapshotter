@@ -21,7 +21,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
       - name: Setup Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
@@ -69,7 +69,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
       - name: Setup Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
@@ -92,7 +92,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
       - name: Setup Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
@@ -108,7 +108,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
       - name: Setup Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
@@ -137,7 +137,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
       - name: Setup Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
@@ -154,14 +154,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - name: Setup Golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache-dependency-path: "go.sum"
       - name: Run unit tests.
         run: make cover
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./coverage.txt
