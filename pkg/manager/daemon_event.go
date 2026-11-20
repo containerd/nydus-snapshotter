@@ -88,7 +88,7 @@ func (m *Manager) doDaemonFailover(d *daemon.Daemon) {
 
 	// Failover nydusd still depends on the old supervisor
 
-	if err := m.StartDaemon(d); err != nil {
+	if err := m.startDaemon(d, true); err != nil {
 		log.L.Errorf("fail to start daemon %s when recovering", d.ID())
 		return
 	}
