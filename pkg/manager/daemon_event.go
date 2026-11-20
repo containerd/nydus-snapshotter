@@ -172,7 +172,7 @@ func (m *Manager) DoDaemonUpgrade(d *daemon.Daemon, nydusdPath string, manager *
 		return nil, errors.Wrap(err, "start process")
 	}
 
-	newDaemon.States.ProcessID = cmd.Process.Pid
+	newDaemon.RecordProcess(cmd.Process.Pid)
 
 	if err := newDaemon.WaitUntilState(types.DaemonStateInit); err != nil {
 		return nil, errors.Wrap(err, "wait until init state")
