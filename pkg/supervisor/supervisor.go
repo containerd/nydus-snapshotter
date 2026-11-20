@@ -81,7 +81,12 @@ func (su *Supervisor) save(data []byte, fd int) {
 	// Always overwrite states and FDs
 	// We should clean up the stored states since each received states set is atomic
 	su.dataStorage.Clean()
-	if fd > 0 {
+	if fd >= 0 {
+		if su.fd >= 0 && su.fd != fd {
+			if err := syscall.Close(su.fd); err != nil {
+				log.L.Warnf("Failed to close replaced supervisor fd %d: %v", su.fd, err)
+			}
+		}
 		su.fd = fd
 	}
 	su.dataStorage.Save(data)
@@ -104,9 +109,29 @@ func (su *Supervisor) load() ([]byte, int, error) {
 	return data, su.fd, nil
 }
 
-func recv(uc *net.UnixConn) ([]byte, int, error) {
-	data := make([]byte, 0)
-	oob := make([]byte, 0)
+func (su *Supervisor) closeFD() {
+	su.mu.Lock()
+	defer su.mu.Unlock()
+
+	if su.fd >= 0 {
+		if err := syscall.Close(su.fd); err != nil {
+			log.L.Errorf("Failed to close supervisor fd %d: %v", su.fd, err)
+		}
+		su.fd = -1
+	}
+}
+
+func recv(uc *net.UnixConn) (data []byte, fd int, retErr error) {
+	data = make([]byte, 0)
+	fd = -1
+	var receivedFDs []int
+	defer func() {
+		if retErr != nil {
+			for _, receivedFD := range receivedFDs {
+				_ = syscall.Close(receivedFD)
+			}
+		}
+	}()
 
 	var dataBufLen = 1024 * 256 // Bytes
 
@@ -120,44 +145,42 @@ func recv(uc *net.UnixConn) ([]byte, int, error) {
 		dataBuf := make([]byte, dataBufLen)
 		oobBuf := make([]byte, oobSpace)
 
-		n, oobn, _, _, err := uc.ReadMsgUnix(dataBuf, oobBuf)
+		n, oobn, flags, _, err := uc.ReadMsgUnix(dataBuf, oobBuf)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, 0, errors.Wrap(err, "receive message")
+			return nil, fd, errors.Wrap(err, "receive message")
+		}
+		if oobn > 0 {
+			scms, err := unix.ParseSocketControlMessage(oobBuf[:oobn])
+			if err != nil {
+				return nil, fd, errors.Wrap(err, "parse control message")
+			}
+			for i := range scms {
+				fds, err := unix.ParseUnixRights(&scms[i])
+				if err != nil {
+					return nil, fd, errors.Wrap(err, "extract file descriptors")
+				}
+				receivedFDs = append(receivedFDs, fds...)
+			}
+		}
+		if flags&unix.MSG_CTRUNC != 0 {
+			return nil, fd, errors.New("received truncated control message")
 		}
 		if n == 0 {
 			break // EOF
 		}
 
 		data = append(data, dataBuf[:n]...)
-		oob = append(oob, oobBuf[:oobn]...)
 	}
 
-	scms, err := unix.ParseSocketControlMessage(oob)
-	if err != nil {
-		return nil, 0, errors.Wrap(err, "parse control message")
+	if len(receivedFDs) != 1 {
+		return nil, fd, fmt.Errorf("expected exactly one control file descriptor, received %d", len(receivedFDs))
 	}
 
-	var fds []int
-	if len(scms) == 0 {
-		return nil, 0, fmt.Errorf("received no control file descriptor")
-	}
-
-	scm := scms[0]
-	fds, err = unix.ParseUnixRights(&scm)
-	if err != nil {
-		return nil, 0, errors.Wrap(err, "extract file descriptors")
-	}
-
-	var fd int
-	if len(fds) > 0 {
-		fd = fds[0]
-	} else {
-		fd = -1
-	}
-
+	fd = receivedFDs[0]
+	receivedFDs = nil
 	return data, fd, nil
 }
 
@@ -403,16 +426,7 @@ func (ss *SupervisorsSet) DestroySupervisor(id string) error {
 	}
 
 	delete(ss.set, id)
-
-	supervisor.mu.Lock()
-	defer supervisor.mu.Unlock()
-
-	if supervisor.fd > 0 {
-		// Prevent hanging after nydusd exits.
-		if err := syscall.Close(supervisor.fd); err != nil {
-			log.L.Errorf("Fail to close fd %d, %s", supervisor.fd, err)
-		}
-	}
+	supervisor.closeFD()
 
 	return nil
 }
